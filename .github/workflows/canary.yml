@@ -1,0 +1,196 @@
+name: Canary Release
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/${{ github.repository }}
+
+jobs:
+  canary-release:
+    name: Create Canary Release
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      packages: ${{ steps.detect.outputs.packages }}
+      has_releases: ${{ steps.detect.outputs.has_releases }}
+      canary_version: ${{ steps.calc_version.outputs.version }}
+      root_version: ${{ steps.calc_version.outputs.root_version }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Calculate Canary Version
+        id: calc_version
+        run: |
+          # Get current version from root package.json as the source of truth
+          CURRENT_VERSION=$(jq -r '.version' package.json)
+          echo "Current base version: $CURRENT_VERSION"
+          echo "root_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Clean existing suffix if any
+          CLEAN_VERSION=$(echo $CURRENT_VERSION | cut -d- -f1)
+
+          # Bump patch version
+          IFS='.' read -r -a parts <<< "$CLEAN_VERSION"
+          MAJOR=${parts[0]}
+          MINOR=${parts[1]}
+          PATCH=${parts[2]}
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH"
+          
+          echo "Target canary base: $NEXT_VERSION"
+          
+          # Find latest canary tag for this version
+          # Pattern: v2.0.3-canary.1
+          LAST_CANARY=$(git tag -l "v$NEXT_VERSION-canary.*" | sort -V | tail -n 1)
+          
+          if [ -z "$LAST_CANARY" ]; then
+            NEXT_NUM=1
+          else
+            # Extract number
+            LAST_NUM=$(echo $LAST_CANARY | awk -F. '{print $NF}')
+            NEXT_NUM=$((LAST_NUM + 1))
+          fi
+          
+          NEW_VERSION="$NEXT_VERSION-canary.$NEXT_NUM"
+          echo "Next canary version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Update Lockfile
+        run: pnpm install --lockfile-only
+
+      - name: Push Canary Tag
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          TAG="v${{ steps.calc_version.outputs.version }}"
+          echo "Creating tag: $TAG"
+          
+          git tag $TAG
+          git push origin $TAG
+
+      - name: Find All Packages with Dockerfiles
+        id: detect
+        run: |
+          PACKAGES="[]"
+          
+          # Find all package.json files in apps and packages directories
+          PACKAGE_JSONS=$(find apps packages -maxdepth 2 -name "package.json" 2>/dev/null || true)
+          
+          for PKG_FILE in $PACKAGE_JSONS; do
+            DIR=$(dirname "$PKG_FILE")
+            
+            # Only include packages that have a Dockerfile
+            if [ -f "$DIR/Dockerfile" ]; then
+              NAME=$(jq -r '.name // empty' "$PKG_FILE" 2>/dev/null || echo "")
+              
+              if [ -n "$NAME" ]; then
+                ITEM=$(jq -n \
+                  --arg name "$NAME" \
+                  --arg dir "$DIR" \
+                  '{name: $name, dir: $dir}')
+                
+                PACKAGES=$(echo "$PACKAGES" | jq -c --argjson item "$ITEM" '. + [$item]')
+                echo "Found: $NAME (dir: $DIR)"
+              fi
+            fi
+          done
+          
+          # Use heredoc to safely output JSON
+          echo "packages<<EOF" >> $GITHUB_OUTPUT
+          echo "$PACKAGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          if [ "$PACKAGES" != "[]" ]; then
+            echo "has_releases=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_releases=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.calc_version.outputs.version }}
+          name: v${{ steps.calc_version.outputs.version }}
+          generate_release_notes: true
+          make_latest: false
+          prerelease: true
+
+  publish-docker-canary:
+    name: Publish Docker Images
+    needs: canary-release
+    if: needs.canary-release.outputs.has_releases == 'true'
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.canary-release.outputs.packages) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.canary-release.outputs.canary_version }}
+          
+      - name: Prepare Docker Metadata
+        id: prep
+        run: |
+          PACKAGE_NAME="${{ matrix.package.name }}"
+          # Remove scope if present (e.g. @uptimekit/dash -> dash)
+          APP_NAME=${PACKAGE_NAME#@*/}
+          APP_NAME=${APP_NAME#*/}
+          
+          # Construct image name
+          IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner }}/${APP_NAME}
+          # Lowercase just in case
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "app_name_clean=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "app_dir=${{ matrix.package.dir }}" >> $GITHUB_OUTPUT
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ steps.prep.outputs.image_name }}
+          tags: |
+            type=raw,value=${{ needs.canary-release.outputs.root_version }}
+            type=raw,value=${{ needs.canary-release.outputs.canary_version }}
+            type=raw,value=canary
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Docker Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Image Publish
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: ${{ steps.prep.outputs.app_dir }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

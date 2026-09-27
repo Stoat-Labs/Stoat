@@ -12,7 +12,7 @@
   </p>
 </div>
 <br/>
-
+9
 ## Features
 
 Stoat sits between the simplicity of Docker and the complexity of Kubernetes: deploy Compose apps across your own machines from a single dashboard.
