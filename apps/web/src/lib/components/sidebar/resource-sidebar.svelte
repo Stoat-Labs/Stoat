@@ -9,6 +9,7 @@
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
     import { sidebarMenuButtonVariants } from "$lib/components/ui/sidebar/sidebar-menu-button.svelte";
     import { orpc } from "$lib/orpc";
+    import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
     import Braces from "@lucide/svelte/icons/braces";
@@ -245,6 +246,13 @@
                         <SidebarMenuButton isActive={pathname === resourceBase + "/deployments" || pathname.startsWith(resourceBase + "/deployments/")}>
                             {#snippet child({ props })}
                                 <a {...props} onclick={closeNavigation} href="{resourceBase}/deployments" title="Deployments" aria-current={pathname === resourceBase + "/deployments" ? "page" : undefined}><Rocket aria-hidden="true" /><span>Deployments</span></a>
+                            {/snippet}
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton isActive={pathname === resourceBase + "/metrics"}>
+                            {#snippet child({ props })}
+                                <a {...props} onclick={closeNavigation} href="{resourceBase}/metrics" title="Metrics" aria-current={pathname === resourceBase + "/metrics" ? "page" : undefined}><Activity aria-hidden="true" /><span>Metrics</span></a>
                             {/snippet}
                         </SidebarMenuButton>
                     </SidebarMenuItem>

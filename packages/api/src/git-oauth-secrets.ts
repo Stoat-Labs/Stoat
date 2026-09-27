@@ -12,7 +12,7 @@ type Scope = {
 const domain = "stoat/git-oauth-client-secret/v1";
 
 function keyMaterial(scope: Scope, salt: Buffer) {
-    const secret = process.env.BETTER_AUTH_SECRET;
+    const secret = process.env.APP_SECRET;
 
     if (!secret || Buffer.byteLength(secret) < 32) throw new Error();
 

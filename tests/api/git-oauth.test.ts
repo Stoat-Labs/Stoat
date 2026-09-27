@@ -102,8 +102,8 @@ function event(url: string, request?: Request, cookie?: string) {
 
 beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubEnv("BETTER_AUTH_SECRET", "oauth-test-secret-that-is-at-least-32-bytes");
-    vi.stubEnv("BETTER_AUTH_URL", "https://stoat.example.com");
+    vi.stubEnv("APP_SECRET", "oauth-test-secret-that-is-at-least-32-bytes");
+    vi.stubEnv("APP_URL", "https://stoat.example.com");
     configure();
     mocks.membership.mockResolvedValue({ role: "admin" });
     mocks.session.mockResolvedValue(session);
@@ -191,8 +191,8 @@ describe("Git OAuth configuration", () => {
     it("reports malformed JSON and missing trusted app configuration", () => {
         vi.stubEnv("GIT_OAUTH_PROVIDERS", "not-json-client-secret");
         expect(() => getGitOAuthProviders()).toThrow("GIT_OAUTH_PROVIDERS");
-        vi.stubEnv("BETTER_AUTH_URL", "");
-        expect(() => getGitOAuthCallbackUrl()).toThrow("BETTER_AUTH_URL");
+        vi.stubEnv("APP_URL", "");
+        expect(() => getGitOAuthCallbackUrl()).toThrow("APP_URL");
     });
 
     it.each([
@@ -201,14 +201,14 @@ describe("Git OAuth configuration", () => {
         "ftp://localhost",
         "",
     ])("never selects an insecure cookie for invalid app configuration %s", (baseUrl) => {
-        vi.stubEnv("BETTER_AUTH_URL", baseUrl);
+        vi.stubEnv("APP_URL", baseUrl);
         expect(() => getGitOAuthCookieConfig()).toThrow(
             expect.objectContaining({ code: "configuration" }),
         );
     });
 
     it("derives the exact callback from the trusted app base, never request headers", () => {
-        vi.stubEnv("BETTER_AUTH_URL", "https://stoat.example.com/base/");
+        vi.stubEnv("APP_URL", "https://stoat.example.com/base/");
         expect(getGitOAuthCallbackUrl()).toBe("https://stoat.example.com/base/git/oauth/callback");
 
         const request = new Request("https://stoat.example.com/base/git/oauth/start", {
@@ -302,7 +302,7 @@ describe("Git OAuth state and authorization", () => {
         configure([{ ...provider, serverUrl: "https://github.example.com" }]);
         expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity)).toThrow("invalid_state");
         configure();
-        vi.stubEnv("BETTER_AUTH_URL", "https://other.example.com");
+        vi.stubEnv("APP_URL", "https://other.example.com");
         expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity)).toThrow("invalid_state");
     });
 
@@ -533,7 +533,7 @@ describe("Git OAuth endpoints", () => {
     ] as const)(
         "uses consistent cookies for start, callback and denial at %s",
         async (baseUrl, name, secure) => {
-            vi.stubEnv("BETTER_AUTH_URL", baseUrl);
+            vi.stubEnv("APP_URL", baseUrl);
             const options = { path: "/", httpOnly: true, sameSite: "lax", maxAge: 600, secure };
             expect(getGitOAuthCookieConfig()).toEqual({ name, options });
             const url = `${baseUrl}/git/oauth/start`;
@@ -601,7 +601,7 @@ describe("Git OAuth endpoints", () => {
     });
 
     it("clears the secure cookie and returns a safe error when app configuration is invalid", async () => {
-        vi.stubEnv("BETTER_AUTH_URL", "http://stoat.example.com");
+        vi.stubEnv("APP_URL", "http://stoat.example.com");
         const input = event("https://stoat.example.com/git/oauth/callback?code=secret-code");
         const response = await GET(input);
         expect(response.headers.get("location")).toBe("/git?oauth=configuration");

@@ -38,7 +38,9 @@ export function subscribeToStream<T>(
 
             const reconnecting =
                 !delivering &&
-                (!(error instanceof ORPCError) || retryCodes.includes(error.code) || [502, 503, 504].includes(gatewayStatus ?? 0));
+                (!(error instanceof ORPCError) ||
+                    retryCodes.includes(error.code) ||
+                    [502, 503, 504].includes(gatewayStatus ?? 0));
 
             onError(
                 error instanceof Error ? error : new Error("Stream connection failed."),

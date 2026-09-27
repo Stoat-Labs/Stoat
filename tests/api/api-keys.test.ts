@@ -23,7 +23,7 @@ describe("organization API keys (PostgreSQL)", () => {
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
         auth = createAuth(
-            { BETTER_AUTH_URL: baseURL, BETTER_AUTH_SECRET: "test-secret-that-is-long-enough-123" },
+            { APP_URL: baseURL, APP_SECRET: "test-secret-that-is-long-enough-123" },
             db,
         );
     });

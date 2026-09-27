@@ -12,7 +12,7 @@
   </p>
 </div>
 <br/>
-9
+
 ## Features
 
 Stoat sits between the simplicity of Docker and the complexity of Kubernetes: deploy Compose apps across your own machines from a single dashboard.
@@ -20,7 +20,7 @@ Stoat sits between the simplicity of Docker and the complexity of Kubernetes: de
 - **Clusters** - Connect Uncloud clusters and manage every machine from one place.
 - **Projects & Resources** - Group your services into projects and deploy them from Compose files.
 - **Templates** - One-click deploys for common apps (PostgreSQL, Jellyfin, Seafile, ...). See [TEMPLATES.md](TEMPLATES.md).
-- **Git** - Connect GitHub (incl. Enterprise), Forgejo or any Git server via token, SSH or OAuth, then deploy and push Compose files straight from your repos.
+- **Git** - Connect Forgejo, GitHub (incl. Enterprise) or any Git server via token, SSH or OAuth, then deploy and push Compose files straight from your repos.
 - **Variables** - Per-resource environment variables.
 - **Deployments** - Deployment history with live build/deploy logs.
 - **Logs** - Live log tailing and historical search per resource.
@@ -58,8 +58,8 @@ Stoat does not talk to your servers directly. A small Go **sidecar** runs global
     ```
 
     ```bash
-    BETTER_AUTH_SECRET=change_me_to_a_secure_secret # openssl rand -hex 32
-    BETTER_AUTH_URL=http://localhost:3001
+    APP_SECRET=change_me_to_a_secure_secret # openssl rand -hex 32
+    APP_URL=http://localhost:3001
     DATABASE_URL=postgresql://postgres:password@localhost:5435/stoat
     ```
 

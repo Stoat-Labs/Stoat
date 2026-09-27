@@ -23,7 +23,7 @@ describe("Git account migration 0017 (PostgreSQL)", () => {
     beforeAll(async () => {
         if (!process.env.DATABASE_URL)
             throw new Error("Testcontainers setup must provide DATABASE_URL");
-        vi.stubEnv("BETTER_AUTH_SECRET", "git-migration-test-secret-at-least-32-bytes");
+        vi.stubEnv("APP_SECRET", "git-migration-test-secret-at-least-32-bytes");
         admin = createDb({ DATABASE_URL: process.env.DATABASE_URL });
         await admin.$client.query(`CREATE DATABASE "${databaseName}"`);
         databaseCreated = true;

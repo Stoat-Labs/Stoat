@@ -11,14 +11,14 @@ description: Configure rate limiting, manage auth secrets, set up CSRF protectio
 import { betterAuth } from "better-auth";
 
 export const auth = betterAuth({
-    secret: process.env.BETTER_AUTH_SECRET, // or via `BETTER_AUTH_SECRET` env
+    secret: process.env.APP_SECRET, // or via `APP_SECRET` env
 });
 ```
 
 Better Auth looks for secrets in this order:
 
 1. `options.secret` in your config
-2. `BETTER_AUTH_SECRET` environment variable
+2. `APP_SECRET` environment variable
 3. `AUTH_SECRET` environment variable
 
 ### Secret Requirements
@@ -340,7 +340,7 @@ Built-in: consistent response messages, dummy operations on invalid requests, ba
 import { betterAuth } from "better-auth";
 
 export const auth = betterAuth({
-    secret: process.env.BETTER_AUTH_SECRET,
+    secret: process.env.APP_SECRET,
     baseURL: "https://api.example.com",
     trustedOrigins: ["https://app.example.com", "https://*.preview.example.com"],
 

@@ -379,6 +379,9 @@ importers:
       codemirror:
         specifier: ^6.0.2
         version: 6.0.2
+      drizzle-kit:
+        specifier: ^0.31.10
+        version: 0.31.10
       effect:
         specifier: 4.0.0-rc.116
         version: 4.0.0-rc.116

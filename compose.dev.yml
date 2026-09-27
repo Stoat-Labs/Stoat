@@ -1,16 +1,35 @@
 name: stoat
 
+# for my personal cluster for now, blacksmith suspended me and i had to appeal
+
 services:
     stoat:
+        build:
+            context: .
+            dockerfile: apps/web/Dockerfile
+            # Use the host resolver; DNS fails on the local Docker bridge.
+            network: host
+        image: stoat:dev
         x-ports:
-            - "${APP_URL}:3001/https"
-        env_file: .env.dev
+            - "${APP_URL:-stoat.example.com}:3001/https"
+        env_file: .env
         environment:
-            APP_URL: http://localhost:3001
-            DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/stoat
-            SIDECAR_TOKEN: ${SIDECAR_TOKEN:-sidecar}
+            # Configure APP_URL as the hostname; the app receives its full URL.
+            APP_URL: https://${APP_URL:-stoat.example.com}
+            DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
+        x-pre_deploy:
+            # pnpm 12 auto-installs before running scripts, but the deployed
+            # package has no workspace catalog. Use the bundled CLI directly.
+            command:
+                [
+                    "node",
+                    "node_modules/drizzle-kit/bin.cjs",
+                    "migrate",
+                    "--config",
+                    "drizzle.config.ts",
+                ]
         depends_on:
-            postgres:
+            stoat-db:
                 condition: service_healthy
         healthcheck:
             test:
@@ -28,21 +47,25 @@ services:
 
     stoat-db:
         image: postgres:18
-        container_name: stoat-db
         environment:
-            POSTGRES_DB: stoat
-            POSTGRES_USER: postgres
+            POSTGRES_DB: ${POSTGRES_DB:-stoat}
+            POSTGRES_USER: ${POSTGRES_USER:-postgres}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
         volumes:
-            - stoat_postgres_data:/var/lib/postgresql
+            - stoat_db_data:/var/lib/postgresql
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            # pg_isready succeeds even when the role/database doesn't exist.
+            test: ["CMD-SHELL", 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -Atqc "SELECT 1"']
             interval: 10s
             timeout: 5s
             retries: 5
         restart: unless-stopped
     sidecar:
-        image: ghcr.io/irazvan2745/sidecar:latest
+        build:
+            context: apps/sidecar
+            dockerfile: Dockerfile
+            network: host
+        image: stoat-sidecar:dev
         # Uncloud does not propagate Compose group_add. The sidecar needs
         # root-equivalent access to the host's Uncloud control socket.
         user: root

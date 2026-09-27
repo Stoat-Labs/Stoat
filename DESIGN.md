@@ -6,9 +6,9 @@ Stoat's **resource overview and Variables pages are the primary design reference
 
 Local source of truth, in priority order:
 
-- [Resource overview](apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+page.svelte): heading, two-column workspace, container list, frame headers, compose editor, and action placement.
-- [Variables page](apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/variables/+page.svelte): compact single-editor workspace, inline status, visibility toggle, and save action.
-- [Resource layout](apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+layout.svelte): full-width, full-height resource workspace.
+- [Resource overview](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+page.svelte>): heading, two-column workspace, container list, frame headers, compose editor, and action placement.
+- [Variables page](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/variables/+page.svelte>): compact single-editor workspace, inline status, visibility toggle, and save action.
+- [Resource layout](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+layout.svelte>): full-width, full-height resource workspace.
 - [Application shell](apps/web/src/lib/components/sidebar/app-shell.svelte) and [resource sidebar](apps/web/src/lib/components/sidebar/resource-sidebar.svelte): inset, breadcrumbs, and contextual navigation.
 - [Frame primitives](apps/web/src/lib/components/ui/frame) and [code editor](apps/web/src/lib/components/code-editor.svelte): exact surface construction and editor treatment.
 
@@ -25,7 +25,7 @@ Local implementation:
 - [Theme class](apps/web/src/app.html)
 - [UI components](apps/web/src/lib/components/ui)
 - [Authentication form](apps/web/src/lib/components/auth/auth-form.svelte)
-- [Default application layout](apps/web/src/routes/(app)/+layout.svelte)
+- [Default application layout](<apps/web/src/routes/(app)/+layout.svelte>)
 
 Change shared tokens or primitives when changing the system. Keep equivalent controls consistent. Purposeful density overrides such as a zero-padding editor panel or compact variables toolbar are part of the system, not exceptions to eliminate. The UptimeKit repository is a reference; Stoat does not import its React components at runtime. Dimensions below assume a 16px root font size.
 
@@ -35,19 +35,19 @@ Light tokens live in `:root`; dark overrides live in `.dark`. Stoat currently st
 
 Use semantic Tailwind classes rather than raw colors in page markup:
 
-| Role | Class/token | Light | Dark |
-| --- | --- | --- | --- |
-| Canvas | `bg-background` | White | Neutral 950 mixed with 5% white |
-| Main text | `text-foreground` | Neutral 800 | Neutral 100 |
-| Cards, popovers | `bg-card`, `bg-popover` | White | Canvas mixed with 2% white |
-| Primary action | `bg-primary` | Neutral 800 | Neutral 100 |
-| Primary action text | `text-primary-foreground` | Neutral 50 | Neutral 800 |
-| Muted, secondary, hover | `bg-muted`, `bg-secondary`, `bg-accent` | Black at 4% | White at 4% |
-| Supporting text | `text-muted-foreground` | Neutral 500 mixed with 10% black | Neutral 500 mixed with 10% white |
-| Dividers | `border-border` | Black at 8% | White at 6% |
-| Control borders | `border-input` | Black at 10% | White at 8% |
-| Focus | `ring-ring` | Neutral 400 | Neutral 500 |
-| Sidebar | `bg-sidebar` | Neutral 50 | Neutral 950 mixed with 3% white |
+| Role                    | Class/token                             | Light                            | Dark                             |
+| ----------------------- | --------------------------------------- | -------------------------------- | -------------------------------- |
+| Canvas                  | `bg-background`                         | White                            | Neutral 950 mixed with 5% white  |
+| Main text               | `text-foreground`                       | Neutral 800                      | Neutral 100                      |
+| Cards, popovers         | `bg-card`, `bg-popover`                 | White                            | Canvas mixed with 2% white       |
+| Primary action          | `bg-primary`                            | Neutral 800                      | Neutral 100                      |
+| Primary action text     | `text-primary-foreground`               | Neutral 50                       | Neutral 800                      |
+| Muted, secondary, hover | `bg-muted`, `bg-secondary`, `bg-accent` | Black at 4%                      | White at 4%                      |
+| Supporting text         | `text-muted-foreground`                 | Neutral 500 mixed with 10% black | Neutral 500 mixed with 10% white |
+| Dividers                | `border-border`                         | Black at 8%                      | White at 6%                      |
+| Control borders         | `border-input`                          | Black at 10%                     | White at 8%                      |
+| Focus                   | `ring-ring`                             | Neutral 400                      | Neutral 500                      |
+| Sidebar                 | `bg-sidebar`                            | Neutral 50                       | Neutral 950 mixed with 3% white  |
 
 Primary actions are monochrome. Color communicates state:
 
@@ -66,20 +66,20 @@ Preserve the resource page's surface hierarchy: sidebar/canvas, translucent shel
 
 Use **Outfit Variable**, already self-hosted through `@fontsource-variable/outfit`, for body text, headings, and controls. Keep the system sans-serif fallbacks. UptimeKit loads Outfit remotely; Stoat retains its local font package.
 
-| Context | Convention |
-| --- | --- |
-| Auth heading | `text-2xl font-bold tracking-wide` |
-| Application page heading | `text-2xl font-semibold` |
-| Resource overview frame heading | `text-base font-semibold` (16px) |
-| Default FrameTitle | `text-sm font-semibold` (14px) |
-| Variables toolbar filename | `text-sm font-medium` (14px) |
-| Default CardTitle | `text-lg font-semibold leading-none` (18px) |
-| Brand name | `text-lg font-semibold` |
-| Auth description | `text-base text-muted-foreground` |
-| Body, field labels, supporting text | `text-sm` on desktop |
-| Secondary metadata, field hints | `text-xs text-muted-foreground` |
-| Code, identifiers | `font-mono` |
-| Code editor | System monospace, 13px type, 24px line height |
+| Context                             | Convention                                    |
+| ----------------------------------- | --------------------------------------------- |
+| Auth heading                        | `text-2xl font-bold tracking-wide`            |
+| Application page heading            | `text-2xl font-semibold`                      |
+| Resource overview frame heading     | `text-base font-semibold` (16px)              |
+| Default FrameTitle                  | `text-sm font-semibold` (14px)                |
+| Variables toolbar filename          | `text-sm font-medium` (14px)                  |
+| Default CardTitle                   | `text-lg font-semibold leading-none` (18px)   |
+| Brand name                          | `text-lg font-semibold`                       |
+| Auth description                    | `text-base text-muted-foreground`             |
+| Body, field labels, supporting text | `text-sm` on desktop                          |
+| Secondary metadata, field hints     | `text-xs text-muted-foreground`               |
+| Code, identifiers                   | `font-mono`                                   |
+| Code editor                         | System monospace, 13px type, 24px line height |
 
 Use short, direct product copy. A heading and one supporting sentence are usually enough. Avoid marketing taglines, uppercase decorative eyebrows, and ornamental footer copy in account flows.
 
@@ -91,12 +91,12 @@ Use the 4px spacing unit with existing half-steps for fine alignment. Typical ga
 
 The base radius is 10px in light mode and 8px in dark mode, matching UptimeKit. Derived radii:
 
-| Token | Formula | Light / dark |
-| --- | --- | --- |
-| `rounded-sm` | Base − 4px | 6px / 4px |
-| `rounded-md` | Base − 2px | 8px / 6px |
-| `rounded-lg` | Base | 10px / 8px |
-| `rounded-xl` | Base + 4px | 14px / 12px |
+| Token         | Formula    | Light / dark  |
+| ------------- | ---------- | ------------- |
+| `rounded-sm`  | Base − 4px | 6px / 4px     |
+| `rounded-md`  | Base − 2px | 8px / 6px     |
+| `rounded-lg`  | Base       | 10px / 8px    |
+| `rounded-xl`  | Base + 4px | 14px / 12px   |
 | `rounded-2xl` | Base × 1.8 | 18px / 14.4px |
 
 Buttons and inputs use `rounded-lg`; frame surrounds and cards use `rounded-2xl`; inset frame panels use `rounded-xl`. Badges use `rounded-sm`, not pill shapes. Keep the existing primitive's one-pixel inset highlight and subtle shadow. Use the shared shadow scale; do not add large floating shadows to ordinary panels.
@@ -133,13 +133,13 @@ Use `text-destructive-foreground` for readable inline error text. Keep errors ne
 
 **Use Frame for a titled work area with an inset content surface:** editors, runtime lists, and comparable data workspaces. The header belongs on the outer muted surround; the list or editor belongs inside the bordered panel. This intentional two-layer construction is not unnecessary card nesting.
 
-| Part | Construction | Purpose |
-| --- | --- | --- |
-| `Frame` | `relative flex flex-col rounded-2xl bg-muted/72 p-1` | Muted surround with a 4px inset; no default outer border |
-| `FrameHeader` | `flex flex-col px-5 py-4` | 20px horizontal and 16px vertical padding; holds title, description, count, or actions |
-| `FrameTitle` | `text-sm font-semibold` | Override to `text-base` for overview sections |
-| `FrameDescription` | `text-sm text-muted-foreground` | One short supporting sentence |
-| `FramePanel` | `rounded-xl border bg-background bg-clip-padding p-5 shadow-xs/5` | Recessed content surface; 20px padding by default |
+| Part               | Construction                                                      | Purpose                                                                                |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Frame`            | `relative flex flex-col rounded-2xl bg-muted/72 p-1`              | Muted surround with a 4px inset; no default outer border                               |
+| `FrameHeader`      | `flex flex-col px-5 py-4`                                         | 20px horizontal and 16px vertical padding; holds title, description, count, or actions |
+| `FrameTitle`       | `text-sm font-semibold`                                           | Override to `text-base` for overview sections                                          |
+| `FrameDescription` | `text-sm text-muted-foreground`                                   | One short supporting sentence                                                          |
+| `FramePanel`       | `rounded-xl border bg-background bg-clip-padding p-5 shadow-xs/5` | Recessed content surface; 20px padding by default                                      |
 
 Adjacent FramePanels have 4px separation. Use `p-0` for edge-to-edge lists and editors, with clipping or scrolling on the correct content region. Do not add a second wrapper card around the editor. Keep the panel's subtle one-pixel highlight: black at 4% in light mode, white at 6% in dark mode.
 

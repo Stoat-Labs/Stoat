@@ -31,3 +31,5 @@ docker-compose.yml
 local.db
 local.db-*
 .data
+**/.evlog
+**/*.tsbuildinfo

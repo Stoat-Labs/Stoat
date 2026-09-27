@@ -3,41 +3,41 @@
 // package isn't a dependency of this project, so these are hand-rolled rather than official.
 
 export interface GooglePlace {
-  fetchFields: (options: { fields: string[] }) => Promise<void>;
-  formattedAddress?: string;
-  location?: { lat: () => number; lng: () => number };
+    fetchFields: (options: { fields: string[] }) => Promise<void>;
+    formattedAddress?: string;
+    location?: { lat: () => number; lng: () => number };
 }
 
 export interface GooglePlacePrediction {
-  placeId?: string;
-  text?: { text: string };
-  toPlace?: () => GooglePlace;
+    placeId?: string;
+    text?: { text: string };
+    toPlace?: () => GooglePlace;
 }
 
 export interface GoogleAutocompleteSuggestion {
-  placePrediction?: GooglePlacePrediction;
+    placePrediction?: GooglePlacePrediction;
 }
 
 export type GoogleAutocompleteSessionToken = object;
 
 export interface GooglePlacesLibrary {
-  AutocompleteSessionToken: new () => GoogleAutocompleteSessionToken;
-  AutocompleteSuggestion: {
-    fetchAutocompleteSuggestions: (request: {
-      includedRegionCodes: string[];
-      input: string;
-      region: string;
-      sessionToken: GoogleAutocompleteSessionToken;
-    }) => Promise<{ suggestions: GoogleAutocompleteSuggestion[] }>;
-  };
+    AutocompleteSessionToken: new () => GoogleAutocompleteSessionToken;
+    AutocompleteSuggestion: {
+        fetchAutocompleteSuggestions: (request: {
+            includedRegionCodes: string[];
+            input: string;
+            region: string;
+            sessionToken: GoogleAutocompleteSessionToken;
+        }) => Promise<{ suggestions: GoogleAutocompleteSuggestion[] }>;
+    };
 }
 
 declare global {
-  interface Window {
-    google?: {
-      maps?: {
-        importLibrary: (library: 'places') => Promise<GooglePlacesLibrary>;
-      };
-    };
-  }
+    interface Window {
+        google?: {
+            maps?: {
+                importLibrary: (library: "places") => Promise<GooglePlacesLibrary>;
+            };
+        };
+    }
 }

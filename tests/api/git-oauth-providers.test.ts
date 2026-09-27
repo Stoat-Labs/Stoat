@@ -71,7 +71,7 @@ const scope = { ...input, organizationId: "org-1", id: `db_${randomUUID()}` };
 const globalApp = { ...input, id: "env-forge", name: "Global Forge" };
 
 describe("Git OAuth app secret boundaries", () => {
-    beforeEach(() => vi.stubEnv("BETTER_AUTH_SECRET", "oauth-app-test-secret-at-least-32-bytes"));
+    beforeEach(() => vi.stubEnv("APP_SECRET", "oauth-app-test-secret-at-least-32-bytes"));
     afterEach(() => vi.unstubAllEnvs());
 
     it("encrypts with random nonces and a domain distinct from account credentials", () => {
@@ -119,9 +119,9 @@ describe("Git OAuth app secret boundaries", () => {
             expect(() => decryptGitOAuthClientSecret(envelope, scope)).toThrow("Unable to decrypt");
         }
 
-        vi.stubEnv("BETTER_AUTH_SECRET", "another-test-secret-at-least-32-bytes");
+        vi.stubEnv("APP_SECRET", "another-test-secret-at-least-32-bytes");
         expect(() => decryptGitOAuthClientSecret(encrypted, scope)).toThrow("Unable to decrypt");
-        vi.stubEnv("BETTER_AUTH_SECRET", "short");
+        vi.stubEnv("APP_SECRET", "short");
         expect(() => encryptGitOAuthClientSecret(input.clientSecret, scope)).toThrow(
             "Unable to encrypt",
         );
@@ -271,8 +271,8 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
     }, 30_000);
 
     beforeEach(async () => {
-        vi.stubEnv("BETTER_AUTH_SECRET", "oauth-app-test-secret-at-least-32-bytes");
-        vi.stubEnv("BETTER_AUTH_URL", "https://stoat.example.com");
+        vi.stubEnv("APP_SECRET", "oauth-app-test-secret-at-least-32-bytes");
+        vi.stubEnv("APP_URL", "https://stoat.example.com");
         vi.stubEnv("GIT_OAUTH_PROVIDERS", JSON.stringify([globalApp]));
         await db.delete(gitConnections);
         await db.delete(gitOAuthProviders);

@@ -221,7 +221,7 @@ export async function createOrganizationGitOAuthProvider(
 
 export function getGitOAuthCallbackUrl(): string {
     try {
-        const raw = process.env.BETTER_AUTH_URL;
+        const raw = process.env.APP_URL;
 
         if (!raw || raw.length > 2048) throw new Error();
         const url = new URL(raw);
@@ -244,7 +244,7 @@ export function getGitOAuthCallbackUrl(): string {
     } catch {
         throw new GitOAuthError(
             "configuration",
-            "Set BETTER_AUTH_URL to the trusted HTTPS application base URL and register that URL plus /git/oauth/callback with your Git OAuth application.",
+            "Set APP_URL to the trusted HTTPS application base URL and register that URL plus /git/oauth/callback with your Git OAuth application.",
         );
     }
 }
@@ -436,12 +436,12 @@ function fingerprint(provider: GitOAuthProvider): string {
 }
 
 function stateKey(salt: Buffer, identity: GitOAuthIdentity) {
-    const secret = process.env.BETTER_AUTH_SECRET;
+    const secret = process.env.APP_SECRET;
 
     if (!secret || Buffer.byteLength(secret) < 32) {
         throw new GitOAuthError(
             "configuration",
-            "Set BETTER_AUTH_SECRET to at least 32 bytes for encrypted Git OAuth state.",
+            "Set APP_SECRET to at least 32 bytes for encrypted Git OAuth state.",
         );
     }
 

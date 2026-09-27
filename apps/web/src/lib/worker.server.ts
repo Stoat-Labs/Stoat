@@ -24,10 +24,10 @@ function requireEnv(name: string) {
  */
 export function startMonitoringWorker() {
     requireEnv("DATABASE_URL");
-    const secret = requireEnv("BETTER_AUTH_SECRET");
+    const secret = requireEnv("APP_SECRET");
 
     if (secret.length < 32) {
-        throw new Error("[worker] BETTER_AUTH_SECRET must contain at least 32 characters.");
+        throw new Error("[worker] APP_SECRET must contain at least 32 characters.");
     }
 
     startWorker(

@@ -476,20 +476,33 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
     describe("internal projects for organization admins", () => {
         beforeAll(async () => {
-            await db.$client.query(`UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`);
+            await db.$client.query(
+                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
+            );
         });
 
         afterAll(async () => {
-            await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'core-member'`);
+            await db.$client.query(
+                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+            );
         });
 
         it("reads the internal project under a derived cluster name", async () => {
             expect(
-                await call(projectsRouter.getProject, { projectId: internalProjectId }, { context }),
-            ).toMatchObject({ id: internalProjectId, clusterId, name: "Owned-internal", isInternal: true });
-            expect(
-                await call(projectsRouter.getProject, { projectId }, { context }),
-            ).toMatchObject({ id: projectId, name: "Owned", isInternal: false });
+                await call(
+                    projectsRouter.getProject,
+                    { projectId: internalProjectId },
+                    { context },
+                ),
+            ).toMatchObject({
+                id: internalProjectId,
+                clusterId,
+                name: "Owned-internal",
+                isInternal: true,
+            });
+            expect(await call(projectsRouter.getProject, { projectId }, { context })).toMatchObject(
+                { id: projectId, name: "Owned", isInternal: false },
+            );
         });
 
         it("still hides the internal project from ordinary project lists", async () => {
@@ -499,7 +512,10 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
         it("reads internal resources", async () => {
             expect(
-                await client.getResource({ projectId: internalProjectId, resourceId: internalResourceId }),
+                await client.getResource({
+                    projectId: internalProjectId,
+                    resourceId: internalResourceId,
+                }),
             ).toMatchObject({ id: internalResourceId, projectId: internalProjectId });
             expect(
                 (await client.listResources({ projectId: internalProjectId })).map((row) => row.id),
@@ -508,7 +524,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
         it("derives monitoring variables without storing them", async () => {
             const secret = "monitoring-env-test-secret-at-least-32-bytes";
-            vi.stubEnv("BETTER_AUTH_SECRET", secret);
+            vi.stubEnv("APP_SECRET", secret);
             await db.insert(clusterMonitoring).values({
                 clusterId,
                 projectId: internalProjectId,
@@ -549,9 +565,11 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 });
                 expect((await storedResource(internalResourceId)).settings).toEqual(settings);
 
-                fetch.mockReset().mockImplementation(async () =>
-                    Response.json({ containers: [{ id: "monitoring-container" }] }),
-                );
+                fetch
+                    .mockReset()
+                    .mockImplementation(async () =>
+                        Response.json({ containers: [{ id: "monitoring-container" }] }),
+                    );
                 expect(
                     await client.getContainers({
                         clusterId,
@@ -564,7 +582,9 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     expect.stringContaining("/api/v1/services/stoat-monitoring-alloy"),
                 ]);
             } finally {
-                await db.delete(clusterMonitoring).where(eq(clusterMonitoring.clusterId, clusterId));
+                await db
+                    .delete(clusterMonitoring)
+                    .where(eq(clusterMonitoring.clusterId, clusterId));
                 await db
                     .update(clusters)
                     .set({ initializationConfiguration: null })

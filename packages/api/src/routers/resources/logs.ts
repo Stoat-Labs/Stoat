@@ -1034,7 +1034,7 @@ export const resourceLogsRouter = {
 
                 const password = decryptMonitoringPassword(
                     monitoring.encryptedPassword,
-                    process.env.BETTER_AUTH_SECRET ?? "",
+                    process.env.APP_SECRET ?? "",
                     logCluster.id,
                 );
 

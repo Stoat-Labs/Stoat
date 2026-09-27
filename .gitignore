@@ -59,3 +59,5 @@ coverage
 .cache
 tmp
 temp
+
+.env.dev

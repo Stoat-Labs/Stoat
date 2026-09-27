@@ -1,8 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 
 function encryptionKey(secret: string, clusterId: string) {
-    if (secret.length < 32)
-        throw new Error("BETTER_AUTH_SECRET must contain at least 32 characters.");
+    if (secret.length < 32) throw new Error("APP_SECRET must contain at least 32 characters.");
 
     return Buffer.from(hkdfSync("sha256", secret, clusterId, "stoat/monitoring/password/v1", 32));
 }

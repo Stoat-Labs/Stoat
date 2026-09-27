@@ -242,6 +242,11 @@
     });
 
     $effect(() => {
+        // Links from other tabs (e.g. metrics → "logs around this time") set the search range in the URL.
+        if (!active) restoreSearch = true;
+    });
+
+    $effect(() => {
         if (!restoreSearch || !ready || !active || view.logMode.current !== "search" || !servicesQuery.data || !selectedIds.length || !start || !end) return;
         restoreSearch = false;
         void search(false, undefined, true);

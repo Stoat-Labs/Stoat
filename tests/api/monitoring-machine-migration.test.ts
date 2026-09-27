@@ -66,7 +66,11 @@ describe("Monitoring machine name migration 0025 (PostgreSQL)", () => {
                 legacy,
                 unconfigured,
                 organizationId,
-                JSON.stringify({ machineId: "machine-id-1", greptimeStorage: storage, retentionDays: 7 }),
+                JSON.stringify({
+                    machineId: "machine-id-1",
+                    greptimeStorage: storage,
+                    retentionDays: 7,
+                }),
             ],
         );
 
@@ -81,7 +85,11 @@ describe("Monitoring machine name migration 0025 (PostgreSQL)", () => {
         expect(rows.rows).toEqual([
             {
                 id: legacy,
-                configuration: { machine: "machine-id-1", greptimeStorage: storage, retentionDays: 7 },
+                configuration: {
+                    machine: "machine-id-1",
+                    greptimeStorage: storage,
+                    retentionDays: 7,
+                },
             },
             { id: unconfigured, configuration: null },
         ]);

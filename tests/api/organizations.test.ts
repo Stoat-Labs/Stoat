@@ -144,8 +144,8 @@ describe("organization authentication (PostgreSQL)", () => {
 
         auth = createAuth(
             {
-                BETTER_AUTH_URL: baseURL,
-                BETTER_AUTH_SECRET: "integration-test-secret-at-least-32-characters",
+                APP_URL: baseURL,
+                APP_SECRET: "integration-test-secret-at-least-32-characters",
             },
             db,
         );

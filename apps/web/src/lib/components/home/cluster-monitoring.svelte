@@ -1,5 +1,6 @@
 <script lang="ts">
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import { Badge } from "$lib/components/ui/badge";
     import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from "$lib/components/ui/card";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/orpc";
@@ -115,7 +116,7 @@
                     {/if}
                 </div>
                 <div class="rounded-lg border p-3">
-                    <p class="text-xs text-muted-foreground">Memory</p>
+                    <p class="flex items-center justify-between gap-2 text-xs text-muted-foreground">Memory{#if memPct !== null && memPct >= 90}<Badge size="sm" variant="warning">High</Badge>{/if}</p>
                     <p class="mt-1 text-xl font-semibold">
                         {metrics.memory ? formatBytes(metrics.memory.used) : "—"}
                     </p>
@@ -129,7 +130,7 @@
                     {/if}
                 </div>
                 <div class="rounded-lg border p-3">
-                    <p class="text-xs text-muted-foreground">Disk (/)</p>
+                    <p class="flex items-center justify-between gap-2 text-xs text-muted-foreground">Disk (/){#if diskPct !== null && diskPct >= 85}<Badge size="sm" variant={diskPct >= 95 ? "error" : "warning"}>{diskPct >= 95 ? "Almost full" : "Filling up"}</Badge>{/if}</p>
                     <p class="mt-1 text-xl font-semibold">
                         {metrics.disk ? formatBytes(metrics.disk.used) : "—"}
                     </p>

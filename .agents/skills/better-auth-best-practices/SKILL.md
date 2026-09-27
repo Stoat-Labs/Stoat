@@ -22,7 +22,7 @@ When planning an upgrade, separate guidance for the currently installed version 
 ## Setup Workflow
 
 1. Install: `npm install better-auth`
-2. Set env vars: `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`
+2. Set env vars: `APP_SECRET` and `APP_URL`
 3. Create `auth.ts` with database + config
 4. Create route handler for your framework
 5. Run migrations:
@@ -37,8 +37,8 @@ When planning an upgrade, separate guidance for the currently installed version 
 
 ### Environment Variables
 
-- `BETTER_AUTH_SECRET` - Encryption secret (min 32 chars). Generate: `openssl rand -base64 32`
-- `BETTER_AUTH_URL` - Base URL (e.g., `https://example.com`)
+- `APP_SECRET` - Encryption secret (min 32 chars). Generate: `openssl rand -base64 32`
+- `APP_URL` - Base URL (e.g., `https://example.com`)
 
 Only define `baseURL`/`secret` in config if env vars are NOT set.
 
@@ -61,9 +61,9 @@ CLI looks for `auth.ts` in: `./`, `./lib`, `./utils`, or under `./src`. Use `--c
 | Option             | Notes                                          |
 | ------------------ | ---------------------------------------------- |
 | `appName`          | Optional display name                          |
-| `baseURL`          | Only if `BETTER_AUTH_URL` not set              |
+| `baseURL`          | Only if `APP_URL` not set              |
 | `basePath`         | Default `/api/auth`. Set `/` for root.         |
-| `secret`           | Only if `BETTER_AUTH_SECRET` not set           |
+| `secret`           | Only if `APP_SECRET` not set           |
 | `database`         | Required for most features. See adapters docs. |
 | `secondaryStorage` | Redis/KV for sessions & rate limits            |
 | `emailAndPassword` | `{ enabled: true }` to activate                |

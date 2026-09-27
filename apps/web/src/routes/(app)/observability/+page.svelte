@@ -1,6 +1,8 @@
 <script lang="ts">
     import { browser } from "$app/environment";
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
+    import RangeControls from "$lib/components/observability/range-controls.svelte";
+    import { useObservabilityRange } from "$lib/components/observability/range";
     import ServicesTable from "$lib/components/observability/services-table.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
@@ -9,63 +11,20 @@
     import { Checkbox } from "$lib/components/ui/checkbox";
     import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "$lib/components/ui/empty";
     import { Frame, FrameHeader, FramePanel, FrameTitle } from "$lib/components/ui/frame";
-    import { Input } from "$lib/components/ui/input";
-    import { Label } from "$lib/components/ui/label";
     import { Popover, PopoverContent, PopoverTrigger } from "$lib/components/ui/popover";
     import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { assembleCluster, bandwidth, bytes, chartSeries, chartSeriesRatio, machineList, machineValue, percent, serviceRows, sumMachines, type ClusterData } from "$lib/observability";
+    import { assembleCluster, bandwidth, bytes, chartSeries, chartSeriesRatio, machineList, machineValue, percent, rankCpu, rankMemory, rankTraffic, serviceRows, serviceSeries, sumMachines, topServices, type ClusterData } from "$lib/observability";
     import { orpc } from "$lib/orpc";
-    import { metricNames, rangePresets } from "@stoat/api/observability";
+    import { metricNames } from "@stoat/api/observability";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
-    import { createQueries, createQuery } from "@tanstack/svelte-query";
+    import { createQueries, createQuery, keepPreviousData } from "@tanstack/svelte-query";
     import { ChartGroup } from "layerchart";
-    import { parseAsArrayOf, parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs-svelte";
+    import { parseAsArrayOf, parseAsString, useQueryStates } from "nuqs-svelte";
 
-    const filters = useQueryStates({ clusters: parseAsArrayOf(parseAsString), range: parseAsStringLiteral(rangePresets).withDefault("1h"), from: parseAsInteger, to: parseAsInteger, machine: parseAsString.withDefault(""), q: parseAsString.withDefault("") }, { shallow: true, scroll: false });
+    const filters = useQueryStates({ clusters: parseAsArrayOf(parseAsString), machine: parseAsString.withDefault(""), q: parseAsString.withDefault("") }, { shallow: true, scroll: false });
 
-    // A custom from/to pair in the URL overrides the preset.
-    const custom = $derived(filters.from.current && filters.to.current && filters.to.current > filters.from.current ? { from: filters.from.current, to: filters.to.current } : null);
-
-    let customOpen = $state(false);
-
-    let draftFrom = $state("");
-
-    let draftTo = $state("");
-
-    // datetime-local wants local wall-clock time without a zone.
-    function toLocalInput(seconds: number) {
-        const date = new Date(seconds * 1000);
-        date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-
-        return date.toISOString().slice(0, 16);
-    }
-
-    function formatRange(range: { from: number; to: number }) {
-        const format = (seconds: number) => new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-
-        return `${format(range.from)} – ${format(range.to)}`;
-    }
-
-    function openCustom(open: boolean) {
-        customOpen = open;
-
-        if (!open) return;
-        const now = Math.floor(Date.now() / 1000);
-        draftFrom = toLocalInput(custom?.from ?? now - 3600);
-        draftTo = toLocalInput(custom?.to ?? now);
-    }
-
-    const draftValid = $derived(Boolean(draftFrom && draftTo) && new Date(draftTo).getTime() - new Date(draftFrom).getTime() >= 60_000);
-
-    function applyCustom(event: SubmitEvent) {
-        event.preventDefault();
-
-        if (!draftValid) return;
-        void filters.set({ from: Math.floor(new Date(draftFrom).getTime() / 1000), to: Math.floor(new Date(draftTo).getTime() / 1000) });
-        customOpen = false;
-    }
+    const range = useObservabilityRange();
 
     let paused = $state(false);
 
@@ -80,14 +39,14 @@
     const selection = $derived(clusters.filter((cluster) => selected.includes(cluster.id)));
 
     // Live refresh only makes sense for ranges ending now; a custom range is a fixed window.
-    const options = $derived({ enabled: browser, refetchInterval: paused || custom ? (false as const) : 30_000, retry: false, staleTime: 25_000 });
+    const options = $derived({ enabled: browser, refetchInterval: paused || range.custom ? (false as const) : 30_000, retry: false, staleTime: 25_000 });
 
     const machineQueries = createQueries(() => ({ queries: selection.map((cluster) => orpc.cluster.getObservabilityMachines.queryOptions({ input: { clusterId: cluster.id }, ...options })) }));
 
     const serviceQueries = createQueries(() => ({ queries: selection.map((cluster) => orpc.cluster.getObservabilityServices.queryOptions({ input: { clusterId: cluster.id }, ...options })) }));
 
     // One query per metric so each chart renders as soon as its own data arrives.
-    const metricQueries = createQueries(() => ({ queries: selection.flatMap((cluster) => metricNames.map((name) => orpc.cluster.getObservabilityMetric.queryOptions({ input: { clusterId: cluster.id, name, range: custom ?? filters.range.current }, ...options }))) }));
+    const metricQueries = createQueries(() => ({ queries: selection.flatMap((cluster) => metricNames.map((name) => orpc.cluster.getObservabilityMetric.queryOptions({ input: { clusterId: cluster.id, name, range: range.value }, ...options }))) }));
 
     const queries = $derived([...machineQueries, ...serviceQueries, ...metricQueries]);
 
@@ -102,7 +61,7 @@
 
     const visibleMachines = $derived(machines.filter((machine) => !filters.machine.current || machine.key === filters.machine.current));
 
-    const services = $derived(serviceRows(data).filter((row) => !filters.machine.current || `${row.clusterId}:${row.machineId}` === filters.machine.current));
+    const services = $derived(serviceRows(data, filters.machine.current));
 
     const machineOptions = $derived([{ value: "", label: "All machines" }, ...machines.map((machine) => ({ value: machine.key, label: `${machine.cluster.name} / ${machine.name}` }))]);
 
@@ -125,7 +84,47 @@
 
     const diskTotal = $derived(sumMachines(visibleMachines, "diskTotal"));
 
+    let hoveredService = $state("");
+
+    const serviceNames = ["serviceCpu", "serviceMemory", "serviceNetworkIn", "serviceNetworkOut"] as const;
+
+    // The table's queries only carry the latest sample (and a coarse CPU sparkline), so fetch full history for the charted services only.
+    const chartedIds = $derived(selection.map((cluster) => [...new Set([rankCpu, rankMemory, rankTraffic].flatMap((rank) => topServices(services, rank).flatMap((row) => (row.clusterId === cluster.id ? [row.id] : []))))].toSorted()));
+
+    const chartQueries = createQueries(() => ({ queries: selection.flatMap((cluster, index) => serviceNames.map((name) => orpc.cluster.getObservabilityMetric.queryOptions({ input: { clusterId: cluster.id, name, range: range.value, serviceIds: chartedIds[index] ?? [] }, ...options, enabled: options.enabled && Boolean(chartedIds[index]?.length), placeholderData: keepPreviousData }))) }));
+
+    const chartData = $derived(selection.flatMap((cluster, index): ClusterData[] => {
+        const machines = machineQueries[index];
+        const services = serviceQueries[index];
+
+        return machines && services ? [assembleCluster(cluster, machines, services, chartQueries.slice(index * serviceNames.length, (index + 1) * serviceNames.length), serviceNames)] : [];
+    }));
+
+    const serviceCharts = $derived([
+        { title: "CPU by service", unit: "percent" as const, series: serviceSeries(chartData, services, ["serviceCpu"], rankCpu), note: "Top 5 by current CPU · 100% = one core" },
+        { title: "Memory by service", unit: "bytes" as const, series: serviceSeries(chartData, services, ["serviceMemory"], rankMemory), note: "Top 5 by current memory" },
+        { title: "Network by service", unit: "rate" as const, series: serviceSeries(chartData, services, ["serviceNetworkIn", "serviceNetworkOut"], rankTraffic), note: "Top 5 by current traffic · solid: receive · dashed: send" },
+    ]);
+
     const reporting = $derived(visibleMachines.filter((machine) => machineValue(machine, "cpu") !== null).length);
+
+    const pressure = $derived(visibleMachines.flatMap((machine) => {
+        const ratio = (used: "disk" | "memory", total: "diskTotal" | "memoryTotal") => {
+            const value = machineValue(machine, used);
+            const capacity = machineValue(machine, total);
+
+            return value !== null && capacity ? (100 * value) / capacity : null;
+        };
+
+        const disk = ratio("disk", "diskTotal");
+        const memory = ratio("memory", "memoryTotal");
+        const label = `${machine.cluster.name} / ${machine.name}`;
+
+        return [
+            ...(disk !== null && disk >= 85 ? [{ key: `${machine.key}:disk`, text: `${label}: disk ${percent(disk)} full`, critical: disk >= 95 }] : []),
+            ...(memory !== null && memory >= 90 ? [{ key: `${machine.key}:memory`, text: `${label}: memory ${percent(memory)} used`, critical: memory >= 97 }] : []),
+        ];
+    }));
 
     useHeaderActions(toolbar);
 
@@ -155,22 +154,7 @@
             <SelectTrigger aria-label="Filter by machine" class="w-52"><SelectValue placeholder="All machines" /></SelectTrigger>
             <SelectContent>{#each machineOptions as option (option.value)}<SelectItem value={option.value} label={option.label} />{/each}</SelectContent>
         </Select>
-        <div class="flex flex-wrap items-center gap-1 rounded-lg border p-0.5" role="group" aria-label="Time range">
-            {#each rangePresets as range (range)}<Button variant={!custom && filters.range.current === range ? "secondary" : "ghost"} size="sm" class="h-7 px-2.5" aria-pressed={!custom && filters.range.current === range} onclick={() => void filters.set({ range, from: null, to: null })}>{range}</Button>{/each}
-            <Popover bind:open={() => customOpen, openCustom}>
-                <PopoverTrigger class={buttonVariants({ variant: custom ? "secondary" : "ghost", size: "sm", class: "h-7 px-2.5" })} aria-pressed={!!custom}>{custom ? formatRange(custom) : "Custom"}<ChevronDown class="ml-1 size-4" /></PopoverTrigger>
-                <PopoverContent align="end" class="w-72 p-3">
-                    <form class="space-y-3" onsubmit={applyCustom}>
-                        <div class="space-y-1.5"><Label for="range-from">From</Label><Input id="range-from" type="datetime-local" bind:value={draftFrom} max={draftTo} required /></div>
-                        <div class="space-y-1.5"><Label for="range-to">To</Label><Input id="range-to" type="datetime-local" bind:value={draftTo} min={draftFrom} required /></div>
-                        {#if draftFrom && draftTo && !draftValid}<p class="text-xs text-destructive" role="alert">The range must span at least one minute.</p>{/if}
-                        <Button type="submit" size="sm" class="w-full" disabled={!draftValid}>Apply range</Button>
-                    </form>
-                </PopoverContent>
-            </Popover>
-        </div>
-        <Button variant="outline" size="sm" aria-pressed={paused} disabled={!!custom} onclick={() => (paused = !paused)}>{custom ? "Fixed range" : paused ? "Paused" : "Live · 30s"}</Button>
-        <Button variant="outline" size="icon-sm" aria-label="Refresh metrics" disabled={fetching || !selection.length} onclick={() => { for (const query of queries) void query.refetch(); }}><RefreshCw class={fetching ? "size-4 animate-spin motion-reduce:animate-none" : "size-4"} /></Button>
+        <RangeControls {range} bind:paused fetching={fetching || chartQueries.some((query) => query.isFetching)} disabled={!selection.length} onrefresh={() => { for (const query of [...queries, ...chartQueries]) void query.refetch(); }} />
     </div>
 {/snippet}
 
@@ -197,6 +181,9 @@
             <Alert variant="info"><AlertDescription>{cluster.name}: some metrics are unavailable ({cluster.unavailable.join(", ")}). Available charts are shown below.</AlertDescription></Alert>
         {/if}
     {/each}
+    {#if pressure.length}
+        <Alert variant={pressure.some((item) => item.critical) ? "error" : "warning"}><AlertDescription><span class="font-medium">Resource pressure:</span> {pressure.map((item) => item.text).join(" · ")}</AlertDescription></Alert>
+    {/if}
     {#if !list.isPending && !selection.length}
         <Empty><EmptyHeader><EmptyTitle>{clusters.length ? "Select a cluster" : "No clusters yet"}</EmptyTitle><EmptyDescription>{clusters.length ? "Choose one or more clusters to view their machines and services." : "Add a cluster and initialize monitoring to see system usage."}</EmptyDescription></EmptyHeader><a class={buttonVariants({ variant: "outline" })} href="/clusters">Open clusters</a></Empty>
     {:else if data.some((cluster) => cluster.available)}
@@ -222,6 +209,19 @@
              <Frame class="min-w-0"><FrameHeader class="flex-row flex-wrap items-center justify-between gap-2"><FrameTitle>Disk usage · root filesystem</FrameTitle><span class="text-xs text-muted-foreground tabular-nums"><span class="font-medium text-foreground">{disk !== null && diskTotal ? percent(100 * disk / diskTotal) : "—"}</span> · {bytes(disk)} of {bytes(diskTotal)}</span></FrameHeader><FramePanel class="min-w-0 p-4"><MetricChart series={chartSeriesRatio(visibleMachines, "disk", "diskTotal")} {start} {end} max={100} bind:hoveredMachine /><div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">{#each visibleMachines as machine (machine.key)}<span class="flex items-center gap-2 text-xs" style:opacity={hoveredMachine && hoveredMachine !== machine.key ? 0.4 : 1}><span class="size-2 rounded-full" style:background={machine.color}></span>{machine.cluster.name} / {machine.name}</span>{/each}</div></FramePanel></Frame>
             <Frame class="min-w-0"><FrameHeader class="flex-row flex-wrap items-center justify-between gap-2"><FrameTitle>Network · receive / send</FrameTitle><span class="text-xs text-muted-foreground tabular-nums">↓ <span class="font-medium text-foreground">{bandwidth(sumMachines(visibleMachines, "networkIn"))}</span> · ↑ <span class="font-medium text-foreground">{bandwidth(sumMachines(visibleMachines, "networkOut"))}</span></span></FrameHeader><FramePanel class="min-w-0 p-4"><MetricChart series={[...chartSeries(visibleMachines, "networkIn").map((item) => ({ ...item, label: `${item.label} receive` })), ...chartSeries(visibleMachines, "networkOut").map((item) => ({ ...item, label: `${item.label} send` }))]} {start} {end} unit="rate" bind:hoveredMachine /><p class="mt-2 text-xs text-muted-foreground">Solid: receive · dashed: send · bytes per second</p></FramePanel></Frame>
             <Frame class="min-w-0"><FrameHeader class="flex-row flex-wrap items-center justify-between gap-2"><FrameTitle>Disk I/O · read / write</FrameTitle><span class="text-xs text-muted-foreground tabular-nums">R <span class="font-medium text-foreground">{bandwidth(sumMachines(visibleMachines, "diskRead"))}</span> · W <span class="font-medium text-foreground">{bandwidth(sumMachines(visibleMachines, "diskWrite"))}</span></span></FrameHeader><FramePanel class="min-w-0 p-4"><MetricChart series={[...chartSeries(visibleMachines, "diskRead").map((item) => ({ ...item, label: `${item.label} read` })), ...chartSeries(visibleMachines, "diskWrite").map((item) => ({ ...item, label: `${item.label} write` }))]} {start} {end} unit="rate" bind:hoveredMachine /><p class="mt-2 text-xs text-muted-foreground">Solid: read · dashed: write · bytes per second</p></FramePanel></Frame>
+        </div>
+
+        <div class="grid gap-4 xl:grid-cols-3">
+            {#each serviceCharts as chart (chart.title)}
+                <Frame class="min-w-0">
+                    <FrameHeader><FrameTitle>{chart.title}</FrameTitle></FrameHeader>
+                    <FramePanel class="min-w-0 p-4">
+                        <MetricChart series={chart.series} {start} {end} unit={chart.unit} bind:hoveredMachine={hoveredService} />
+                        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">{#each chart.series.filter((item) => !item.dashed) as item (item.key)}<span class="flex items-center gap-2 text-xs" style:opacity={hoveredService && hoveredService !== item.machineKey ? 0.4 : 1}><span class="size-2 rounded-full" style:background={item.color}></span>{item.label}</span>{/each}</div>
+                        <p class="mt-2 text-xs text-muted-foreground">{chart.note}</p>
+                    </FramePanel>
+                </Frame>
+            {/each}
         </div>
         </ChartGroup>
         <ServicesTable data={services} {start} {end} bind:search={() => filters.q.current, (value) => (filters.q.current = value)} />

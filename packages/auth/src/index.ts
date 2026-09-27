@@ -8,8 +8,8 @@ import { organization } from "better-auth/plugins/organization";
 import { listUserOrganizations } from "@stoat/db/organizations";
 
 export type AuthConfig = {
-    BETTER_AUTH_URL: string;
-    BETTER_AUTH_SECRET: string;
+    APP_URL: string;
+    APP_SECRET: string;
 };
 
 // Named so tsc emits a reference instead of inlining the plugin's huge type (TS7056).
@@ -37,10 +37,10 @@ export function createAuth(env: AuthConfig, database: Database) {
                 },
             },
         },
-        trustedOrigins: [env.BETTER_AUTH_URL],
+        trustedOrigins: [env.APP_URL],
         emailAndPassword: { enabled: true },
-        secret: env.BETTER_AUTH_SECRET,
-        baseURL: env.BETTER_AUTH_URL,
+        secret: env.APP_SECRET,
+        baseURL: env.APP_URL,
         plugins: [
             organization(),
             admin(),

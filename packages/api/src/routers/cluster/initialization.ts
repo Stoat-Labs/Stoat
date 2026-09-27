@@ -251,7 +251,7 @@ export const monitoringRouter = {
             let password: string | null = null;
 
             if (isAdmin) {
-                const secret = process.env.BETTER_AUTH_SECRET;
+                const secret = process.env.APP_SECRET;
 
                 if (secret) {
                     try {

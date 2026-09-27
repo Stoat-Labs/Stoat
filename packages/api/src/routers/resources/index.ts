@@ -595,7 +595,7 @@ export const resourcesRouter = {
             try {
                 password = decryptMonitoringPassword(
                     monitoring.encryptedPassword,
-                    process.env.BETTER_AUTH_SECRET ?? "",
+                    process.env.APP_SECRET ?? "",
                     monitoring.clusterId,
                 );
             } catch {

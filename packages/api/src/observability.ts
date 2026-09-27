@@ -19,7 +19,13 @@ export const ranges: Record<RangePreset, number> = {
 
 export type MetricPoint = { time: number; value: number | null };
 
-export type MetricSeries = { machineId: string; serviceId: string; points: MetricPoint[] };
+/** `container` is the Docker container name for per-container service metrics, otherwise empty. */
+export type MetricSeries = {
+    machineId: string;
+    serviceId: string;
+    container: string;
+    points: MetricPoint[];
+};
 
 export const metricNames = [
     "cpu",
@@ -55,14 +61,31 @@ export function metricWindow(
     return { start: end - Math.ceil(duration / step) * step, end, step, duration };
 }
 
-export type ObservabilityService = {
+export const httpMetricNames = ["httpRequests", "httpErrors", "httpLatency"] as const;
+
+export type HttpMetricName = (typeof httpMetricNames)[number];
+
+/** Limits are null when the container is unlimited. */
+export type ObservabilityContainer = {
     id: string;
     name: string;
     machineId: string;
     machineName: string;
-    running: number;
-    containers: number;
+    running: boolean;
+    state: string;
+    health: string | null;
+    restarts: number;
+    oomKilled: boolean;
+    startedAt: string | null;
+    memoryLimit: number | null;
+    cpuLimit: number | null;
+};
+
+export type ObservabilityService = {
+    id: string;
+    name: string;
     href: string | null;
+    containers: ObservabilityContainer[];
 };
 
 export type ClusterObservability = {
@@ -77,9 +100,21 @@ export type ClusterObservability = {
     unavailable: string[];
 };
 
-export function metricQueries(clusterId: string, step: number): Record<MetricName, string> {
-    // IDs are validated UUIDs at the procedure boundary; JSON quoting also escapes PromQL strings.
+/** Uncloud service IDs are hex; the pattern also keeps them safe inside a PromQL regex matcher. */
+export const serviceIdPattern = /^[\w-]+$/;
+
+export function metricQueries(
+    clusterId: string,
+    step: number,
+    serviceIds: string[] = [],
+): Record<MetricName, string> {
+    // IDs are validated at the procedure boundary; JSON quoting also escapes PromQL strings.
     const scope = `customer_id=${JSON.stringify(clusterId)}`;
+
+    const services = serviceIds.length
+        ? `container_label_uncloud_service_id=~${JSON.stringify(serviceIds.join("|"))}`
+        : 'container_label_uncloud_service_id!=""';
+
     const window = `${Math.max(60, step * 2)}s`;
     const host = (metric: string, extra = "") => `${metric}{${scope}${extra}}`;
 
@@ -88,10 +123,11 @@ export function metricQueries(clusterId: string, step: number): Record<MetricNam
 
     const gauge = (metric: string, extra = "") => `max by (machine_id) (${host(metric, extra)})`;
 
+    // Per container (cAdvisor's `name` label); service totals are summed client-side.
     const service = (metric: string, counter = false) => {
-        const selector = host(metric, ',container_label_uncloud_service_id!=""');
+        const selector = host(metric, `,${services}`);
 
-        return `sum by (machine_id, container_label_uncloud_service_id) (${counter ? `rate(${selector}[${window}])` : selector})`;
+        return `sum by (machine_id, container_label_uncloud_service_id, name) (${counter ? `rate(${selector}[${window}])` : selector})`;
     };
 
     // Exclude guest modes (already included in user/nice) and virtual host interfaces to avoid double counting.
@@ -116,6 +152,67 @@ export function metricQueries(clusterId: string, step: number): Record<MetricNam
     };
 }
 
+const hostnamePattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * Ingress hostnames from Uncloud's `uncloud.service.ports` label
+ * (`[hostname:][published:]container/protocol`, comma-separated). Host-mode ports have no hostname.
+ */
+export function serviceHosts(label: string | undefined) {
+    const hosts = new Set<string>();
+
+    for (const port of label?.split(",") ?? []) {
+        const [address = "", protocol] = port.trim().split("/");
+        const first = address.split(":")[0]?.toLowerCase() ?? "";
+
+        if ((protocol === "http" || protocol === "https") && hostnamePattern.test(first))
+            hosts.add(first);
+    }
+
+    return [...hosts];
+}
+
+/**
+ * HTTP metrics come from Caddy access logs, which Alloy turns into per-host counters. Hosts are
+ * mapped back to services here, one `or` branch per service, so each series carries its service ID.
+ */
+export function httpQueries(
+    clusterId: string,
+    step: number,
+    hosts: Map<string, string[]>,
+): Record<HttpMetricName, string> | null {
+    const entries = [...hosts].filter(([, names]) => names.length);
+
+    if (!entries.length) return null;
+    const window = `${Math.max(60, step * 2)}s`;
+
+    const each = (build: (selector: (metric: string, extra?: string) => string) => string) =>
+        entries
+            .map(([serviceId, names]) => {
+                // Hostnames match hostnamePattern, so escaping dots is the only regex quoting needed.
+                const matcher = `customer_id=${JSON.stringify(clusterId)},http_host=~${JSON.stringify(names.map((name) => name.replaceAll(".", "\\.")).join("|"))}`;
+
+                return `label_replace(${build((metric, extra = "") => `${metric}{${matcher}${extra}}`)}, "container_label_uncloud_service_id", ${JSON.stringify(serviceId)}, "", "")`;
+            })
+            .join(" or ");
+
+    const requests = "loki_process_custom_http_requests_total";
+    const buckets = "loki_process_custom_http_request_duration_seconds_bucket";
+
+    return {
+        httpRequests: each((selector) => `sum(rate(${selector(requests)}[${window}]))`),
+        // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
+        httpErrors: each(
+            (selector) =>
+                `(sum(rate(${selector(requests, ',http_status=~"5.."')}[${window}])) or sum(rate(${selector(requests)}[${window}])) * 0)`,
+        ),
+        httpLatency: each(
+            (selector) =>
+                `histogram_quantile(0.95, sum by (le) (rate(${selector(buckets)}[${window}])))`,
+        ),
+    };
+}
+
 const matrix = z.object({
     status: z.literal("success"),
     data: z.object({
@@ -123,8 +220,9 @@ const matrix = z.object({
         result: z.array(
             z.object({
                 metric: z.object({
-                    machine_id: z.string(),
+                    machine_id: z.string().optional(),
                     container_label_uncloud_service_id: z.string().optional(),
+                    name: z.string().optional(),
                 }),
                 values: z.array(z.tuple([z.number().finite(), z.string()])),
             }),
@@ -154,8 +252,9 @@ export function parseMetricSeries(
         }
 
         return {
-            machineId: series.metric.machine_id,
+            machineId: series.metric.machine_id ?? "",
             serviceId: series.metric.container_label_uncloud_service_id ?? "",
+            container: series.metric.name ?? "",
             points,
         };
     });

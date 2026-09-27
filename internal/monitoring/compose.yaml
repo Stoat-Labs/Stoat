@@ -296,8 +296,84 @@ configs:
             loki.process "docker" {
               stage.docker {}
 
+              // Turn Caddy access logs into per-host HTTP metrics (requests, status, latency).
+              stage.match {
+                selector = "{uncloud_service=\"caddy\"} |= \"handled request\""
+
+                stage.json {
+                  expressions = {
+                    http_host   = "request.host",
+                    http_status = "status",
+                    duration    = "duration",
+                  }
+                }
+
+                // Drop the port and case so the host matches the service's ingress hostname.
+                stage.regex {
+                  source     = "http_host"
+                  expression = "^(?P<http_host>[^:]+)"
+                }
+
+                stage.template {
+                  source   = "http_host"
+                  template = "{{ ToLower .Value }}"
+                }
+
+                stage.labels {
+                  values = { http_host = "", http_status = "" }
+                }
+
+                // Only DNS names: requests to raw IPs (scanners, health probes) would add
+                // unbounded host labels. Stale series expire after max_idle_duration.
+                stage.match {
+                  selector = "{http_host=~\"[a-z0-9-]+(\\\\.[a-z0-9-]+)*\\\\.[a-z][a-z0-9-]+\"}"
+
+                  stage.metrics {
+                    metric.counter {
+                      name        = "http_requests_total"
+                      description = "Requests proxied by Caddy"
+                      match_all   = true
+                      action      = "inc"
+                    }
+
+                    metric.histogram {
+                      name        = "http_request_duration_seconds"
+                      description = "Caddy request duration"
+                      source      = "duration"
+                      buckets     = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+                    }
+                  }
+                }
+
+                stage.label_drop {
+                  values = ["http_host", "http_status"]
+                }
+              }
+
               forward_to = [
                 loki.write.greptime.receiver,
+              ]
+            }
+
+            // stage.metrics series are exposed on Alloy's own /metrics endpoint.
+            prometheus.scrape "http" {
+              targets         = [{"__address__" = "127.0.0.1:12345"}]
+              scrape_interval = "15s"
+
+              forward_to = [
+                prometheus.relabel.http.receiver,
+              ]
+            }
+
+            prometheus.relabel "http" {
+              rule {
+                source_labels = ["__name__"]
+                regex         = "loki_process_custom_http_.*"
+                action        = "keep"
+              }
+
+              forward_to = [
+                prometheus.remote_write.greptime.receiver,
               ]
             }
 

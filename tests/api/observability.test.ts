@@ -134,7 +134,7 @@ beforeAll(async () => {
 
     for (const name of [...gauges.keys(), ...counters]) {
         await sql(
-            `CREATE TABLE monitoring."${name}" (customer_id STRING, machine_id STRING, cpu STRING, "mode" STRING, device STRING, mountpoint STRING, container_label_uncloud_service_id STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,machine_id,cpu,"mode",device,mountpoint,container_label_uncloud_service_id))`,
+            `CREATE TABLE monitoring."${name}" (customer_id STRING, machine_id STRING, cpu STRING, "mode" STRING, device STRING, mountpoint STRING, container_label_uncloud_service_id STRING, "name" STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,machine_id,cpu,"mode",device,mountpoint,container_label_uncloud_service_id,"name"))`,
         );
         const values: string[] = [];
 
@@ -143,7 +143,7 @@ beforeAll(async () => {
 
             const add = (value: number, cpu = "", mode = "", device = "eth0") =>
                 values.push(
-                    `('${clusterId}','machine-1','${cpu}','${mode}','${device}','/','${name.startsWith("container") ? "web-id" : ""}',${value},'${timestamp}')`,
+                    `('${clusterId}','machine-1','${cpu}','${mode}','${device}','/','${name.startsWith("container") ? "web-id" : ""}','${name.startsWith("container") ? "web-1" : ""}',${value},'${timestamp}')`,
                 );
 
             if (name === "node_cpu_seconds_total") {
@@ -163,6 +163,46 @@ beforeAll(async () => {
 
         await sql(`INSERT INTO monitoring."${name}" VALUES ${values.join(",")}`);
     }
+
+    await sql(
+        `CREATE TABLE monitoring.loki_process_custom_http_requests_total (customer_id STRING, http_host STRING, http_status STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,http_host,http_status))`,
+    );
+    await sql(
+        `CREATE TABLE monitoring.loki_process_custom_http_request_duration_seconds_bucket (customer_id STRING, http_host STRING, http_status STRING, le STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,http_host,http_status,le))`,
+    );
+    const requests: string[] = [];
+    const buckets: string[] = [];
+
+    for (let index = 0; index <= 8; index++) {
+        const timestamp = new Date((end - 120 + index * 15) * 1000).toISOString();
+
+        // 1.5 req/s of 200s and 0.5 req/s of 500s; other hosts must not be counted.
+        for (const [host, status, rate] of [
+            ["app.example.com", "200", 1.5],
+            ["app.example.com", "500", 0.5],
+            ["other.example.com", "200", 100],
+        ] as const) {
+            requests.push(
+                `('${clusterId}','${host}','${status}',${index * 15 * rate},'${timestamp}')`,
+            );
+
+            for (const [le, share] of [
+                ["0.1", 0.5],
+                ["1", 1],
+                ["+Inf", 1],
+            ] as const)
+                buckets.push(
+                    `('${clusterId}','${host}','${status}','${le}',${index * 15 * rate * share},'${timestamp}')`,
+                );
+        }
+    }
+
+    await sql(
+        `INSERT INTO monitoring.loki_process_custom_http_requests_total VALUES ${requests.join(",")}`,
+    );
+    await sql(
+        `INSERT INTO monitoring.loki_process_custom_http_request_duration_seconds_bucket VALUES ${buckets.join(",")}`,
+    );
 }, 60000);
 
 afterEach(() => {
@@ -182,7 +222,7 @@ afterAll(async () => {
 });
 
 it("queries real GreptimeDB through the private transport, showing percent CPU and scoped service placements", async () => {
-    vi.stubEnv("BETTER_AUTH_SECRET", secret);
+    vi.stubEnv("APP_SECRET", secret);
     vi.spyOn(Date, "now").mockReturnValue(end * 1000);
 
     const fetch = vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
@@ -213,12 +253,15 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
                 parameters.set(argument.slice(0, separator), argument.slice(separator + 1));
             }
 
-            expect(parameters.get("query")).toContain(`customer_id="${clusterId}"`);
+            const target = new URL(command.at(-1)!);
 
-            const response = await nativeFetch(
-                `${greptimeUrl}/v1/prometheus/api/v1/query_range?db=monitoring`,
-                { method: "POST", body: parameters },
-            );
+            if (target.pathname.includes("prometheus"))
+                expect(parameters.get("query")).toContain(`customer_id="${clusterId}"`);
+
+            const response = await nativeFetch(`${greptimeUrl}${target.pathname}${target.search}`, {
+                method: "POST",
+                body: parameters,
+            });
 
             return Response.json({
                 exitCode: response.ok ? 0 : 22,
@@ -241,7 +284,18 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
                             {
                                 machineId: "machine-1",
                                 machineName: "Node",
-                                container: { State: { Running: true } },
+                                container: {
+                                    Id: "abc",
+                                    Name: "/web-1",
+                                    RestartCount: 3,
+                                    State: { Running: true, Status: "running", OOMKilled: false },
+                                    HostConfig: { Memory: 512, NanoCpus: 500000000 },
+                                    Config: {
+                                        Labels: {
+                                            "uncloud.service.ports": "app.example.com:80/http",
+                                        },
+                                    },
+                                },
                             },
                         ],
                         hookContainers: [],
@@ -287,13 +341,33 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     expect(result.step).toBe(15);
     expect(result.end).toBe(end);
     expect(result.metrics.cpu?.[0]?.points).toHaveLength(61);
+
     for (const name of ["disk", "diskTotal"] as const) {
         expect(result.metrics[name]?.[0]?.points).toHaveLength(61);
-        expect(result.metrics[name]?.[0]?.points.slice(-9).every((point) => point.value !== null)).toBe(true);
+        expect(
+            result.metrics[name]?.[0]?.points.slice(-9).every((point) => point.value !== null),
+        ).toBe(true);
     }
+
     expect(result.metrics.serviceCpu?.[0]?.points.length).toBeLessThanOrEqual(25);
+    expect(result.metrics.serviceCpu?.[0]?.container).toBe("web-1");
     expect(result.services).toMatchObject([
-        { id: "web-id", running: 1, containers: 1, href: `/projects/${projectId}/${resourceId}` },
+        {
+            id: "web-id",
+            href: `/projects/${projectId}/${resourceId}`,
+            containers: [
+                {
+                    id: "abc",
+                    name: "web-1",
+                    machineName: "Node",
+                    running: true,
+                    restarts: 3,
+                    oomKilled: false,
+                    memoryLimit: 512,
+                    cpuLimit: 0.5,
+                },
+            ],
+        },
     ]);
     expect(JSON.stringify(result)).not.toContain("password");
     const execs = fetch.mock.calls.filter(([request]) => String(request).endsWith("/exec"));
@@ -312,11 +386,43 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     await expect(metric("cpu", { from: end, to: end + 30 })).rejects.toMatchObject({
         code: "BAD_REQUEST",
     });
+
+    const scoped = (serviceIds: string[]) =>
+        call(
+            observabilityRouter.getObservabilityMetric,
+            { clusterId, name: "serviceMemory", range, serviceIds },
+            { context },
+        );
+
+    // Scoped requests chart the whole window instead of the table's latest-only sample.
+    expect((await scoped(["web-id"])).series[0]?.points).toHaveLength(61);
+    await expect(scoped(["other-id"])).resolves.toMatchObject({ series: [] });
+    await expect(scoped(['web-id"}) or vector(1'])).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
     const before = fetch.mock.calls.length;
     await expect(
         metric("cpu", "1h", { ...context, apiKey: { id: "other", organizationId: randomUUID() } }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(fetch.mock.calls).toHaveLength(before);
+
+    const http = (name: "httpRequests" | "httpErrors" | "httpLatency", serviceIds = ["web-id"]) =>
+        call(
+            observabilityRouter.getObservabilityMetric,
+            { clusterId, name, range, serviceIds },
+            { context },
+        );
+
+    // Alloy's Caddy access-log counters are recorded per host; the query maps them back to the service.
+    const requests = await http("httpRequests");
+    expect(requests.status).toBe("ok");
+    expect(requests.series[0]).toMatchObject({ serviceId: "web-id" });
+    expect(requests.series[0]?.points.at(-1)?.value).toBeCloseTo(2);
+    expect((await http("httpErrors")).series[0]?.points.at(-1)?.value).toBeCloseTo(0.5);
+    expect((await http("httpLatency")).series[0]?.points.at(-1)?.value).toBeGreaterThan(0);
+    await expect(http("httpRequests", ["other-id"])).resolves.toMatchObject({
+        status: "no-routes",
+        series: [],
+    });
 }, 60000);
 
 it("preserves missing, NaN and stale samples as gaps rather than inventing zeros", () => {

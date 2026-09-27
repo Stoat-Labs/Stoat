@@ -175,7 +175,9 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 call(resourcesRouter.listResources, { projectId }, { context }),
             ).rejects.toMatchObject({ code: "NOT_FOUND" });
         } finally {
-            await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
+            await db.$client.query(
+                `UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`,
+            );
         }
     });
 
@@ -335,8 +337,8 @@ describe("cluster initialization API (PostgreSQL)", () => {
             resourceId,
             encryptedPassword: encryptMonitoringPassword("greptime-pw", secret, clusterId),
         });
-        const previous = process.env.BETTER_AUTH_SECRET;
-        process.env.BETTER_AUTH_SECRET = secret;
+        const previous = process.env.APP_SECRET;
+        process.env.APP_SECRET = secret;
 
         try {
             const conn = await call(
@@ -355,11 +357,11 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 canReveal: true,
             });
         } finally {
-            if (previous === undefined) delete process.env.BETTER_AUTH_SECRET;
-            else process.env.BETTER_AUTH_SECRET = previous;
+            if (previous === undefined) delete process.env.APP_SECRET;
+            else process.env.APP_SECRET = previous;
         }
 
-        process.env.BETTER_AUTH_SECRET = `${secret}-rotated`;
+        process.env.APP_SECRET = `${secret}-rotated`;
 
         try {
             const rotated = await call(
@@ -374,8 +376,8 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 canReveal: true,
             });
         } finally {
-            if (previous === undefined) delete process.env.BETTER_AUTH_SECRET;
-            else process.env.BETTER_AUTH_SECRET = previous;
+            if (previous === undefined) delete process.env.APP_SECRET;
+            else process.env.APP_SECRET = previous;
         }
 
         await expect(
@@ -562,7 +564,7 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 },
             } as Context;
 
-            vi.stubEnv("BETTER_AUTH_SECRET", secret);
+            vi.stubEnv("APP_SECRET", secret);
 
             try {
                 const connection = await call(

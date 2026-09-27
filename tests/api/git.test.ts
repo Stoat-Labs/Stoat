@@ -333,7 +333,7 @@ describe("Git validation", () => {
 describe("Git credential envelopes", () => {
     const scope = { organizationId: "org-1", connectionId: "connection-1" };
     beforeEach(() => {
-        vi.stubEnv("BETTER_AUTH_SECRET", "a-strong-test-secret-with-at-least-32-bytes");
+        vi.stubEnv("APP_SECRET", "a-strong-test-secret-with-at-least-32-bytes");
     });
 
     it("round-trips token/basic, SSH and empty credentials with randomized envelopes", () => {
@@ -382,12 +382,12 @@ describe("Git credential envelopes", () => {
 
     it("reads the secret internally on each call and fails closed on missing/short secrets", () => {
         const envelope = encryptGitCredentials({}, scope);
-        vi.stubEnv("BETTER_AUTH_SECRET", "another-secret-that-is-at-least-32-bytes");
+        vi.stubEnv("APP_SECRET", "another-secret-that-is-at-least-32-bytes");
         expect(() => decryptGitCredentials(envelope, scope)).toThrow();
 
         for (const secret of ["", "short"]) {
-            vi.stubEnv("BETTER_AUTH_SECRET", secret);
-            expect(() => encryptGitCredentials({}, scope)).toThrow("BETTER_AUTH_SECRET");
+            vi.stubEnv("APP_SECRET", secret);
+            expect(() => encryptGitCredentials({}, scope)).toThrow("APP_SECRET");
             expect(() => decryptGitCredentials(envelope, scope)).toThrow("Unable to decrypt");
         }
     });

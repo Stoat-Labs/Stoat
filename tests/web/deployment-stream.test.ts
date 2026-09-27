@@ -174,14 +174,18 @@ it("retries opted-in log discovery failures but still stops on revoked access", 
     vi.useFakeTimers();
     const gateway = new ORPCError("BAD_GATEWAY");
     const forbidden = new ORPCError("FORBIDDEN");
-    const connect = vi.fn(async (): Promise<AsyncIterable<never>> => { throw gateway; });
+    const connect = vi.fn(async (): Promise<AsyncIterable<never>> => {
+        throw gateway;
+    });
     const onError = vi.fn();
     const stop = subscribeToStream(connect, vi.fn(), onError, () => false, ["BAD_GATEWAY"]);
 
     try {
         await vi.advanceTimersByTimeAsync(0);
         expect(onError).toHaveBeenLastCalledWith(gateway, true);
-        connect.mockImplementationOnce(async () => { throw forbidden; });
+        connect.mockImplementationOnce(async () => {
+            throw forbidden;
+        });
         await vi.advanceTimersByTimeAsync(2000);
         expect(connect).toHaveBeenCalledTimes(2);
         expect(onError).toHaveBeenLastCalledWith(forbidden, false);

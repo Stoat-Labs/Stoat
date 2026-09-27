@@ -1,5 +1,10 @@
 import { ORPCError } from "@orpc/client";
-import { metricNames } from "../../packages/api/src/observability";
+import {
+    httpQueries,
+    metricNames,
+    serviceHosts,
+    type ObservabilityContainer,
+} from "../../packages/api/src/observability";
 import { expect, it } from "vite-plus/test";
 import {
     assembleCluster,
@@ -9,8 +14,26 @@ import {
     machineList,
     percent,
     serviceRows,
+    serviceSeries,
+    rankMemory,
     type ClusterData,
 } from "../../apps/web/src/lib/observability";
+
+const container = (overrides: Partial<ObservabilityContainer>): ObservabilityContainer => ({
+    id: "c1",
+    name: "web-1",
+    machineId: "node",
+    machineName: "Node",
+    running: true,
+    state: "running",
+    health: null,
+    restarts: 0,
+    oomKilled: false,
+    startedAt: null,
+    memoryLimit: null,
+    cpuLimit: null,
+    ...overrides,
+});
 
 it("keeps machine and service identities cluster-scoped and CPU above 100%, without replacing missing data with zero", () => {
     const base: ClusterData = {
@@ -22,25 +45,21 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
         step: 15,
         unavailable: [],
         machines: [{ id: "node", name: "Node", state: "Up" }],
-        services: [
-            {
-                id: "web",
-                name: "Web",
-                machineId: "node",
-                machineName: "Node",
-                running: 1,
-                containers: 1,
-                href: null,
-            },
-        ],
+        services: [{ id: "web", name: "Web", href: null, containers: [container({})] }],
         metrics: {
             serviceCpu: [
-                { machineId: "node", serviceId: "web", points: [{ time: 60000, value: 120 }] },
+                {
+                    machineId: "node",
+                    serviceId: "web",
+                    container: "web-1",
+                    points: [{ time: 60000, value: 120 }],
+                },
             ],
             networkOut: [
                 {
                     machineId: "node",
                     serviceId: "",
+                    container: "",
                     points: [
                         { time: 45000, value: null },
                         { time: 60000, value: 2048 },
@@ -48,13 +67,28 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
                 },
             ],
             diskWrite: [
-                { machineId: "node", serviceId: "", points: [{ time: 60000, value: 1024 }] },
+                {
+                    machineId: "node",
+                    serviceId: "",
+                    container: "",
+                    points: [{ time: 60000, value: 1024 }],
+                },
             ],
             disk: [
-                { machineId: "node", serviceId: "", points: [{ time: 60000, value: 50 }] },
+                {
+                    machineId: "node",
+                    serviceId: "",
+                    container: "",
+                    points: [{ time: 60000, value: 50 }],
+                },
             ],
             diskTotal: [
-                { machineId: "node", serviceId: "", points: [{ time: 60000, value: 100 }] },
+                {
+                    machineId: "node",
+                    serviceId: "",
+                    container: "",
+                    points: [{ time: 60000, value: 100 }],
+                },
             ],
         },
     };
@@ -68,7 +102,7 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
     expect(percent(rows[0]?.cpu)).toBe("120%");
     expect(percent(0)).toBe("0%");
     expect(percent(null)).toBe("—");
-    expect(current(base.metrics.serviceCpu?.[0], 90, 15)).toBeNull();
+    expect(current(base.metrics.serviceCpu?.[0]?.points, 90, 15)).toBeNull();
     const sent = chartSeries(machines, "networkOut");
     const written = chartSeries(machines, "diskWrite");
     expect(sent[0]?.points.map((point) => point.value)).toEqual([null, 2048]);
@@ -81,10 +115,99 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
     expect(chartSeriesRatio(machines, "disk", "diskTotal")[0]?.points[0]?.value).toBe(50);
 });
 
+it("combines a service's containers across machines and keeps each container's own usage", () => {
+    const sample = (machineId: string, name: string, value: number) => ({
+        machineId,
+        serviceId: "web",
+        container: name,
+        points: [{ time: 60000, value }],
+    });
+
+    const cluster: ClusterData = {
+        id: "a",
+        name: "A",
+        available: true,
+        start: 0,
+        end: 60,
+        step: 15,
+        unavailable: [],
+        machines: [],
+        services: [
+            {
+                id: "web",
+                name: "Web",
+                href: null,
+                containers: [
+                    container({ restarts: 2, memoryLimit: 1000 }),
+                    container({
+                        id: "c2",
+                        name: "web-2",
+                        machineId: "other",
+                        machineName: "Other",
+                        running: false,
+                        state: "exited",
+                        oomKilled: true,
+                        memoryLimit: 1000,
+                    }),
+                ],
+            },
+        ],
+        metrics: {
+            serviceCpu: [sample("node", "web-1", 30), sample("other", "web-2", 20)],
+            serviceMemory: [sample("node", "web-1", 400), sample("other", "web-2", 500)],
+        },
+    };
+
+    const [row] = serviceRows([cluster]);
+    expect(row).toMatchObject({
+        cpu: 50,
+        memory: 900,
+        memoryLimit: 2000,
+        memoryPercent: 45,
+        running: 1,
+        restarts: 2,
+        oomKilled: 1,
+        machines: ["Node", "Other"],
+    });
+    expect(row?.containers.map((item) => [item.name, item.cpu, item.memoryPercent])).toEqual([
+        ["web-1", 30, 40],
+        ["web-2", 20, 50],
+    ]);
+    expect(row?.trend).toEqual([{ time: 60000, value: 50 }]);
+
+    // The machine filter narrows both the containers and the service totals.
+    const [scoped] = serviceRows([cluster], "a:other");
+    expect(scoped).toMatchObject({ cpu: 20, memory: 500, containers: [{ name: "web-2" }] });
+    expect(serviceRows([cluster], "b:other")).toEqual([]);
+    expect(serviceSeries([cluster], [scoped!], ["serviceMemory"], rankMemory)[0]?.points).toEqual([
+        { time: 60000, value: 500 },
+    ]);
+});
+
+it("maps ingress hostnames to per-service HTTP queries", () => {
+    expect(
+        serviceHosts(
+            "App.example.com:8080/https, api.example.com:80/http, 5432:5432/tcp@host, 80/http",
+        ),
+    ).toEqual(["app.example.com", "api.example.com"]);
+    expect(serviceHosts(undefined)).toEqual([]);
+    expect(httpQueries("cluster", 15, new Map([["web", []]]))).toBeNull();
+
+    const queries = httpQueries("cluster", 15, new Map([["web", ["app.example.com"]]]));
+    expect(queries?.httpRequests).toContain('http_host=~"app\\\\.example\\\\.com"');
+    expect(queries?.httpRequests).toContain('"container_label_uncloud_service_id", "web"');
+    expect(queries?.httpErrors).toContain('http_status=~"5.."');
+    expect(queries?.httpLatency).toContain("histogram_quantile(0.95");
+});
+
 it("assembles per-procedure queries into cluster data, filling charts as metrics arrive", () => {
     const settled = { error: null, isPending: false };
     const window = { start: 0, end: 60, step: 15 };
-    const cpu = { ...window, series: [{ machineId: "node", serviceId: "", points: [] }] };
+
+    const cpu = {
+        ...window,
+        series: [{ machineId: "node", serviceId: "", container: "", points: [] }],
+    };
 
     const metrics = metricNames.map((name) => {
         if (name === "cpu") return { data: cpu, ...settled };

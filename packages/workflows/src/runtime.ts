@@ -25,7 +25,7 @@ function createHandlerDb(): Database {
 }
 
 function encryptionSecret() {
-    return requireEnv("BETTER_AUTH_SECRET");
+    return requireEnv("APP_SECRET");
 }
 
 const TERMINAL_FAILURE_MESSAGE =

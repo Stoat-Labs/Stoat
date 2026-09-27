@@ -203,7 +203,7 @@ Regression test: Fail with an unavailable machine, retry with a valid machine/st
 
 Status: Confirmed.
 
-Evidence: Monitoring encryption derives directly from `BETTER_AUTH_SECRET` in `packages/workflows/src/secrets.ts:3-36`. Connection retrieval returns a null password after decryption failure at `packages/api/src/routers/cluster/initialization.ts:210-229`, but retry is limited to failed clusters and the worker exits early for already initialized clusters at `packages/workflows/src/initialize-cluster.ts:212-216`.
+Evidence: Monitoring encryption derives directly from `APP_SECRET` in `packages/workflows/src/secrets.ts:3-36`. Connection retrieval returns a null password after decryption failure at `packages/api/src/routers/cluster/initialization.ts:210-229`, but retry is limited to failed clusters and the worker exits early for already initialized clusters at `packages/workflows/src/initialize-cluster.ts:212-216`.
 
 Potential fix: Use a dedicated versioned encryption keyring, and add an admin-only credential rotation workflow that updates the remote credential before atomically replacing the envelope.
 
@@ -345,7 +345,7 @@ Regression test: Assert invalid service/Compose input returns 400 and readiness 
 
 Status: Confirmed.
 
-Evidence: `docker-compose.yml:13-19` loads `apps/web/.env` and then overrides `BETTER_AUTH_URL` with `http://localhost:3001`; Better Auth uses it as base URL and trusted origin at `packages/auth/src/index.ts:35-38`. `CORS_ORIGIN` is not consumed by source.
+Evidence: `docker-compose.yml:13-19` loads `apps/web/.env` and then overrides `APP_URL` with `http://localhost:3001`; Better Auth uses it as base URL and trusted origin at `packages/auth/src/index.ts:35-38`. `CORS_ORIGIN` is not consumed by source.
 
 Potential fix: Parameterize the real external URL and keep localhost in a development override. Remove the unused setting.
 

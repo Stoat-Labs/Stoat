@@ -5,6 +5,7 @@ import {
     type MetricName,
     type MetricPoint,
     type MetricSeries,
+    type ObservabilityContainer,
     type ObservabilityService,
 } from "@stoat/api/observability";
 
@@ -20,6 +21,7 @@ export function assembleCluster(
     machines: Loaded<ClusterObservability["machines"]>,
     services: Loaded<ObservabilityService[]>,
     metrics: Loaded<MetricResult>[],
+    names: readonly MetricName[] = metricNames,
 ): ClusterData {
     const loaded = metrics.flatMap((query) => (query.data ? [query.data] : []));
 
@@ -42,7 +44,7 @@ export function assembleCluster(
         ],
     };
 
-    metricNames.forEach((name, index) => {
+    names.forEach((name, index) => {
         const query = metrics[index];
 
         if (query?.data) result.metrics[name] = query.data.series;
@@ -73,17 +75,36 @@ export type ChartSeries = {
     points: MetricPoint[];
 };
 
-export type ServiceRow = ObservabilityService & {
-    key: string;
-    clusterId: string;
-    clusterName: string;
+type Usage = {
     cpu: number | null;
+    /** Cores; null when any container is unlimited. */
+    cpuLimit: number | null;
     memory: number | null;
+    /** Bytes; null when any container is unlimited. */
+    memoryLimit: number | null;
+    /** Of the memory limit, or of machine memory when unlimited. */
     memoryPercent: number | null;
     networkIn: number | null;
     networkOut: number | null;
+    restarts: number;
+    oomKilled: number;
     trend: MetricPoint[];
 };
+
+export type ContainerRow = Omit<ObservabilityContainer, "oomKilled"> & Usage & { key: string };
+
+export type ServiceRow = Omit<ObservabilityService, "containers"> &
+    Usage & {
+        key: string;
+        clusterId: string;
+        clusterName: string;
+        /** Machine ID when the rows are filtered to one machine, otherwise "". */
+        scope: string;
+        containers: ContainerRow[];
+        running: number;
+        unhealthy: number;
+        machines: string[];
+    };
 
 export function percent(value: number | null | undefined) {
     return value == null
@@ -107,19 +128,57 @@ export function bandwidth(value: number | null | undefined) {
     return value == null ? "—" : `${bytes(value)}/s`;
 }
 
+export function requests(value: number | null | undefined) {
+    return value == null
+        ? "—"
+        : `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 2 : 0 })} req/s`;
+}
+
+export function duration(seconds: number | null | undefined) {
+    if (seconds == null) return "—";
+
+    return seconds < 1
+        ? `${(seconds * 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} ms`
+        : `${seconds.toLocaleString(undefined, { maximumFractionDigits: 2 })} s`;
+}
+
+/** Point-wise sum; a timestamp is a gap only when no series has a sample there. */
+export function sumPoints(series: (MetricPoint[] | undefined)[]): MetricPoint[] {
+    const totals = new Map<number, number | null>();
+
+    for (const points of series)
+        for (const point of points ?? [])
+            totals.set(
+                point.time,
+                point.value === null
+                    ? (totals.get(point.time) ?? null)
+                    : (totals.get(point.time) ?? 0) + point.value,
+            );
+
+    return [...totals].sort(([a], [b]) => a - b).map(([time, value]) => ({ time, value }));
+}
+
+/** Combined points of every series matching the machine, service and container ("" for host metrics; undefined matches any). */
 export function metric(
     cluster: ClusterObservability,
     name: MetricName,
-    machineId: string,
+    machineId?: string,
     serviceId = "",
+    container?: string,
 ) {
-    return cluster.metrics[name]?.find(
-        (series) => series.machineId === machineId && series.serviceId === serviceId,
+    return sumPoints(
+        (cluster.metrics[name] ?? []).flatMap((series) =>
+            (machineId === undefined || series.machineId === machineId) &&
+            series.serviceId === serviceId &&
+            (container === undefined || series.container === container)
+                ? [series.points]
+                : [],
+        ),
     );
 }
 
-export function current(series: MetricSeries | undefined, end: number, step: number) {
-    const last = series?.points.at(-1);
+export function current(points: MetricPoint[] | undefined, end: number, step: number) {
+    const last = points?.at(-1);
 
     return last && end * 1000 - last.time < step * 1000 ? last.value : null;
 }
@@ -167,7 +226,7 @@ export function chartSeries(machines: MachineData[], name: MetricName): ChartSer
         label: `${machine.cluster.name} / ${machine.name}`,
         color: machine.color,
         dashed: name === "networkOut" || name === "diskWrite",
-        points: metric(machine.cluster, name, machine.id)?.points ?? [],
+        points: metric(machine.cluster, name, machine.id),
     }));
 }
 
@@ -178,7 +237,10 @@ export function chartSeriesRatio(
 ): ChartSeries[] {
     return machines.map((machine) => {
         const total = new Map(
-            metric(machine.cluster, denominator, machine.id)?.points.map((point) => [point.time, point.value]),
+            metric(machine.cluster, denominator, machine.id).map((point) => [
+                point.time,
+                point.value,
+            ]),
         );
 
         return {
@@ -186,12 +248,64 @@ export function chartSeriesRatio(
             machineKey: machine.key,
             label: `${machine.cluster.name} / ${machine.name}`,
             color: machine.color,
-            points: metric(machine.cluster, numerator, machine.id)?.points.map((point) => {
+            points: metric(machine.cluster, numerator, machine.id).map((point) => {
                 const value = total.get(point.time);
-                return { time: point.time, value: point.value !== null && value ? (100 * point.value) / value : null };
-            }) ?? [],
+
+                return {
+                    time: point.time,
+                    value: point.value !== null && value ? (100 * point.value) / value : null,
+                };
+            }),
         };
     });
+}
+
+/** The busiest `limit` services by `rank`, so chart palettes stay distinguishable. */
+export function topServices(
+    rows: ServiceRow[],
+    rank: (row: ServiceRow) => number | null,
+    limit = 5,
+) {
+    return [...rows].sort((a, b) => (rank(b) ?? -1) - (rank(a) ?? -1)).slice(0, limit);
+}
+
+export const rankCpu = (row: ServiceRow) => row.cpu;
+
+export const rankMemory = (row: ServiceRow) => row.memory;
+
+export const rankTraffic = (row: ServiceRow) =>
+    row.networkIn === null && row.networkOut === null
+        ? null
+        : (row.networkIn ?? 0) + (row.networkOut ?? 0);
+
+/** One line per service (all its containers combined) for the top services by `rank`. */
+export function serviceSeries(
+    clusters: ClusterData[],
+    rows: ServiceRow[],
+    names: MetricName[],
+    rank: (row: ServiceRow) => number | null,
+    limit = 5,
+): ChartSeries[] {
+    const top = topServices(rows, rank, limit);
+
+    return names.flatMap((name) =>
+        top.flatMap((row, index) => {
+            const cluster = clusters.find((item) => item.id === row.clusterId);
+
+            return cluster
+                ? [
+                      {
+                          key: `${row.key}:${name}`,
+                          machineKey: row.key,
+                          label: row.name,
+                          color: `var(--chart-${(index % 5) + 1})`,
+                          dashed: name === "serviceNetworkOut",
+                          points: metric(cluster, name, row.scope || undefined, row.id),
+                      },
+                  ]
+                : [];
+        }),
+    );
 }
 
 export function sumMachines(machines: MachineData[], name: MetricName) {
@@ -202,36 +316,93 @@ export function sumMachines(machines: MachineData[], name: MetricName) {
         : null;
 }
 
-export function serviceRows(clusters: ClusterData[]): ServiceRow[] {
+function total(values: (number | null)[]) {
+    return values.length && values.some((value) => value !== null)
+        ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+        : null;
+}
+
+function limit(values: (number | null)[]) {
+    return values.length && values.every((value) => value !== null) ? total(values) : null;
+}
+
+/**
+ * One row per service with its containers nested. Metrics are matched to containers by machine and
+ * Docker name; `machineKey` (cluster:machine) keeps only containers on that machine.
+ */
+export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRow[] {
     return clusters.flatMap((cluster) =>
-        cluster.services.map((service) => {
+        cluster.services.flatMap((service) => {
+            const at = (points: MetricPoint[]) => current(points, cluster.end, cluster.step);
+
+            const scope = machineKey.startsWith(`${cluster.id}:`)
+                ? machineKey.slice(cluster.id.length + 1)
+                : "";
+
+            if (machineKey && !scope) return [];
+
+            const containers = service.containers.flatMap((item): ContainerRow[] => {
+                if (scope && item.machineId !== scope) return [];
+
+                const value = (name: MetricName) =>
+                    at(metric(cluster, name, item.machineId, service.id, item.name));
+
+                const memory = value("serviceMemory");
+
+                const capacity =
+                    item.memoryLimit ?? at(metric(cluster, "memoryTotal", item.machineId));
+
+                return [
+                    {
+                        ...item,
+                        key: `${cluster.id}:${service.id}:${item.machineId}:${item.id || item.name}`,
+                        cpu: value("serviceCpu"),
+                        memory,
+                        memoryPercent:
+                            memory !== null && capacity ? (100 * memory) / capacity : null,
+                        networkIn: value("serviceNetworkIn"),
+                        networkOut: value("serviceNetworkOut"),
+                        oomKilled: item.oomKilled ? 1 : 0,
+                        trend: metric(cluster, "serviceCpu", item.machineId, service.id, item.name),
+                    },
+                ];
+            });
+
+            if (scope && !containers.length) return [];
+
+            // Totals come from every series of the service, so they hold even if container names don't match.
             const value = (name: MetricName) =>
-                current(
-                    metric(cluster, name, service.machineId, service.id),
-                    cluster.end,
-                    cluster.step,
-                );
+                at(metric(cluster, name, scope || undefined, service.id));
 
             const memory = value("serviceMemory");
+            const memoryLimit = limit(containers.map((item) => item.memoryLimit));
 
-            const total = current(
-                metric(cluster, "memoryTotal", service.machineId),
-                cluster.end,
-                cluster.step,
-            );
-
-            return {
-                ...service,
-                key: `${cluster.id}:${service.id}:${service.machineId}`,
-                clusterId: cluster.id,
-                clusterName: cluster.name,
-                cpu: value("serviceCpu"),
-                memory,
-                memoryPercent: memory !== null && total ? (100 * memory) / total : null,
-                networkIn: value("serviceNetworkIn"),
-                networkOut: value("serviceNetworkOut"),
-                trend: metric(cluster, "serviceCpu", service.machineId, service.id)?.points ?? [],
-            };
+            return [
+                {
+                    id: service.id,
+                    name: service.name,
+                    href: service.href,
+                    key: `${cluster.id}:${service.id}`,
+                    clusterId: cluster.id,
+                    clusterName: cluster.name,
+                    scope,
+                    containers,
+                    running: containers.filter((item) => item.running).length,
+                    unhealthy: containers.filter((item) => item.health === "unhealthy").length,
+                    machines: [...new Set(containers.map((item) => item.machineName))],
+                    cpu: value("serviceCpu"),
+                    cpuLimit: limit(containers.map((item) => item.cpuLimit)),
+                    memory,
+                    memoryLimit,
+                    memoryPercent:
+                        memory !== null && memoryLimit ? (100 * memory) / memoryLimit : null,
+                    networkIn: value("serviceNetworkIn"),
+                    networkOut: value("serviceNetworkOut"),
+                    restarts: containers.reduce((sum, item) => sum + item.restarts, 0),
+                    oomKilled: containers.reduce((sum, item) => sum + item.oomKilled, 0),
+                    trend: metric(cluster, "serviceCpu", scope || undefined, service.id),
+                },
+            ];
         }),
     );
 }

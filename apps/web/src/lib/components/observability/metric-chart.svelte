@@ -1,15 +1,15 @@
 <script lang="ts">
     import { Chart } from "$lib/components/ui/chart";
-    import { bandwidth, bytes, percent, type ChartSeries } from "$lib/observability";
-    import { ChartClipPath, Circle, LineChart, Spline, Tooltip, type ChartState, type HighlightPoint } from "layerchart";
+    import { bandwidth, bytes, duration, percent, requests, type ChartSeries } from "$lib/observability";
+    import { AnnotationLine, ChartClipPath, Circle, LineChart, Spline, Tooltip, type ChartState, type HighlightPoint } from "layerchart";
 
-    let { series, start, end, unit = "percent", max, compact = false, hoveredMachine = $bindable("") }: {
-        series: ChartSeries[]; start: number; end: number; unit?: "percent" | "bytes" | "rate"; max?: number; compact?: boolean; hoveredMachine?: string;
+    let { series, start, end, unit = "percent", max, compact = false, markers = [], hoveredMachine = $bindable(""), onselecttime }: {
+        series: ChartSeries[]; start: number; end: number; unit?: "percent" | "bytes" | "rate" | "requests" | "duration"; max?: number; compact?: boolean; markers?: { key: string; time: number; label: string }[]; hoveredMachine?: string; onselecttime?: (time: number) => void;
     } = $props();
 
     let context = $state<ChartState<Record<string, number | null>>>();
 
-    const format = $derived({ percent, bytes, rate: bandwidth }[unit]);
+    const format = $derived({ percent, bytes, rate: bandwidth, requests, duration }[unit]);
 
     const chartData = $derived.by(() => {
         // Rebuilt within this derivation; the temporary Map is not reactive state.
@@ -32,11 +32,14 @@
         return !hoveredMachine || series.find((item) => item.key === key)?.machineKey === hoveredMachine ? 1 : 0.15;
     }
 
-    function hover(event: PointerEvent) {
-        if (compact || !context?.tooltip.data || !context.containerRef) return;
+    let pinned = $state("");
+
+    function nearestLine(event: PointerEvent) {
+        if (!context?.tooltip.data || !context.containerRef) return "";
         const y = event.clientY - context.containerRef.getBoundingClientRect().top - context.padding.top;
         let nearest = "";
-        let distance = Infinity;
+        // Only counts as hovering a line when the pointer is within a few pixels of it.
+        let distance = 8;
 
         for (const item of series) {
             const value = context.tooltip.data[item.key];
@@ -50,7 +53,22 @@
             }
         }
 
-        hoveredMachine = nearest;
+        return nearest;
+    }
+
+    function hover(event: PointerEvent) {
+        if (compact) return;
+        hoveredMachine = nearestLine(event) || pinned;
+    }
+
+    function select(event: PointerEvent) {
+        if (compact) return;
+        const line = nearestLine(event);
+        pinned = line === pinned ? "" : line;
+        hoveredMachine = pinned;
+        const time = context?.tooltip.data?.time;
+
+        if (time) onselecttime?.(time);
     }
 
     const config = $derived(Object.fromEntries(lines.map((item) => [item.key, { label: item.label, color: item.color }])));
@@ -69,7 +87,7 @@
 {/snippet}
 
 {#if hasData}
-    <Chart {config} class={compact ? "h-8 w-24 shrink-0 aspect-auto" : "h-48 min-w-0 w-full aspect-auto [&_.lc-highlight-line]:stroke-1! [&_.lc-highlight-line]:stroke-muted-foreground!"} aria-label={series.map((item) => item.label).join(", ")} onpointermove={hover} onpointerleave={() => (hoveredMachine = "")}>
+    <Chart {config} class={compact ? "h-8 w-24 shrink-0 aspect-auto" : "h-48 min-w-0 w-full aspect-auto [&_.lc-highlight-line]:stroke-1! [&_.lc-highlight-line]:stroke-muted-foreground!"} aria-label={series.map((item) => item.label).join(", ")} onpointermove={hover} onpointerup={select} onpointerleave={() => (hoveredMachine = pinned)}>
         <!-- With no motion prop, domains derive synchronously as live data and ranges change. -->
         <LineChart bind:context data={chartData} x="time" series={lines} xDomain={[start * 1000, end * 1000]} xNice={false} yDomain={max ? [0, max] : undefined} seriesLayout="overlap" clip
             axis={!compact} grid={!compact} rule={false} highlight={compact ? false : { axis: "x", lines: { dashArray: "4 4" }, points: hoverPoints }} tooltipContext={!compact}
@@ -78,6 +96,7 @@
             {#snippet marks()}
                 <ChartClipPath>
                     {#each lines as line (line.key)}<Spline seriesKey={line.key} strokeWidth={compact ? 1.5 : 2} opacity={opacity(line.key)} />{/each}
+                    {#each markers as marker (marker.key)}<AnnotationLine x={marker.time} label={marker.label} labelPlacement="top-right" class="pointer-events-none stroke-muted-foreground/60 text-[10px] [stroke-dasharray:2_3]" />{/each}
                 </ChartClipPath>
             {/snippet}
             {#snippet tooltip({ context })}

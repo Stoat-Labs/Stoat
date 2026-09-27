@@ -1,193 +1,193 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+    push:
+        tags:
+            - "v*"
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_BASE: ghcr.io/${{ github.repository }}
-  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    REGISTRY: ghcr.io
+    IMAGE_BASE: ghcr.io/${{ github.repository }}
+    DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
 jobs:
-  prepare:
-    name: Prepare Release
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    permissions:
-      contents: write
-    outputs:
-      packages: ${{ steps.detect.outputs.packages }}
-      has_releases: ${{ steps.detect.outputs.has_releases }}
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+    prepare:
+        name: Prepare Release
+        runs-on: blacksmith-4vcpu-ubuntu-2404
+        permissions:
+            contents: write
+        outputs:
+            packages: ${{ steps.detect.outputs.packages }}
+            has_releases: ${{ steps.detect.outputs.has_releases }}
+            version: ${{ steps.get_version.outputs.version }}
+        steps:
+            - name: Checkout Repo
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
 
-      - name: Extract Version
-        id: get_version
-        run: |
-          # Read version from root package.json
-          ROOT_VERSION=$(jq -r '.version' package.json)
-          echo "VERSION=$ROOT_VERSION" >> $GITHUB_ENV
-          echo "version=$ROOT_VERSION" >> $GITHUB_OUTPUT
-      
-      - name: Update Lockfile
-        run: pnpm install --lockfile-only
+            - name: Extract Version
+              id: get_version
+              run: |
+                  # Read version from root package.json
+                  ROOT_VERSION=$(jq -r '.version' package.json)
+                  echo "VERSION=$ROOT_VERSION" >> $GITHUB_ENV
+                  echo "version=$ROOT_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Git Identity
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            - name: Update Lockfile
+              run: pnpm install --lockfile-only
 
-      - name: Commit and Sync
-        run: |
-          # Commit changes only if there are any
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .
-            git commit -m "chore: release v${{ env.VERSION }}"
-          else
-            echo "No changes to commit. Version might have been manually bumped."
-          fi
-          
-          # Push to release branch
-          git push --force origin HEAD:release
-          
-          # Sync to the repository default branch
-          git fetch origin release ${{ env.DEFAULT_BRANCH }}
-          git checkout -B ${{ env.DEFAULT_BRANCH }} origin/${{ env.DEFAULT_BRANCH }}
-          git merge origin/release
-          git push origin ${{ env.DEFAULT_BRANCH }}
+            - name: Git Identity
+              run: |
+                  git config --global user.name 'github-actions[bot]'
+                  git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Find All Packages with Dockerfiles
-        id: detect
-        run: |
-          PACKAGES="[]"
-          
-          # Find all package.json files in apps and packages directories
-          PACKAGE_JSONS=$(find apps packages -maxdepth 2 -name "package.json" 2>/dev/null || true)
-          
-          for PKG_FILE in $PACKAGE_JSONS; do
-            DIR=$(dirname "$PKG_FILE")
-            
-            # Only include packages that have a Dockerfile
-            if [ -f "$DIR/Dockerfile" ]; then
-              NAME=$(jq -r '.name // empty' "$PKG_FILE" 2>/dev/null || echo "")
-              VERSION=$(jq -r '.version // empty' "$PKG_FILE" 2>/dev/null || echo "")
-              
-              # Include if it has a name (version is optional - Go apps may not have it)
-              if [ -n "$NAME" ]; then
-                ITEM=$(jq -n \
-                  --arg name "$NAME" \
-                  --arg version "$VERSION" \
-                  --arg dir "$DIR" \
-                  '{name: $name, version: $version, dir: $dir}')
-                
-                PACKAGES=$(echo "$PACKAGES" | jq -c --argjson item "$ITEM" '. + [$item]')
-                if [ -n "$VERSION" ]; then
-                  echo "Found: $NAME@$VERSION (dir: $DIR)"
-                else
-                  echo "Found: $NAME (dir: $DIR)"
-                fi
-              fi
-            fi
-          done
-          
-          # Use heredoc to safely output JSON
-          echo "packages<<EOF" >> $GITHUB_OUTPUT
-          echo "$PACKAGES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          if [ "$PACKAGES" != "[]" ]; then
-            echo "has_releases=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_releases=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "Packages for Docker build:"
-          echo "$PACKAGES" | jq .
+            - name: Commit and Sync
+              run: |
+                  # Commit changes only if there are any
+                  if [ -n "$(git status --porcelain)" ]; then
+                    git add .
+                    git commit -m "chore: release v${{ env.VERSION }}"
+                  else
+                    echo "No changes to commit. Version might have been manually bumped."
+                  fi
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
+                  # Push to release branch
+                  git push --force origin HEAD:release
 
-  publish-docker:
-    name: Publish Docker Images
-    needs: prepare
-    if: needs.prepare.outputs.has_releases == 'true'
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJson(needs.prepare.outputs.packages) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: release
-          
-      - name: Prepare Docker Metadata
-        id: prep
-        run: |
-          PACKAGE_NAME="${{ matrix.package.name }}"
-          # Remove scope if present (e.g. @uptimekit/dash -> dash)
-          APP_NAME=${PACKAGE_NAME#@*/}
-          APP_NAME=${APP_NAME#*/}
-          
-          # Construct image name
-          IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner }}/${APP_NAME}
-          # Lowercase just in case
-          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "app_name_clean=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "app_dir=${{ matrix.package.dir }}" >> $GITHUB_OUTPUT
+                  # Sync to the repository default branch
+                  git fetch origin release ${{ env.DEFAULT_BRANCH }}
+                  git checkout -B ${{ env.DEFAULT_BRANCH }} origin/${{ env.DEFAULT_BRANCH }}
+                  git merge origin/release
+                  git push origin ${{ env.DEFAULT_BRANCH }}
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ steps.prep.outputs.image_name }}
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest
+            - name: Find All Packages with Dockerfiles
+              id: detect
+              run: |
+                  PACKAGES="[]"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+                  # Find all package.json files in apps and packages directories
+                  PACKAGE_JSONS=$(find apps packages -maxdepth 2 -name "package.json" 2>/dev/null || true)
 
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-        with:
-          platforms: linux/amd64,linux/arm64
+                  for PKG_FILE in $PACKAGE_JSONS; do
+                    DIR=$(dirname "$PKG_FILE")
+                    
+                    # Only include packages that have a Dockerfile
+                    if [ -f "$DIR/Dockerfile" ]; then
+                      NAME=$(jq -r '.name // empty' "$PKG_FILE" 2>/dev/null || echo "")
+                      VERSION=$(jq -r '.version // empty' "$PKG_FILE" 2>/dev/null || echo "")
+                      
+                      # Include if it has a name (version is optional - Go apps may not have it)
+                      if [ -n "$NAME" ]; then
+                        ITEM=$(jq -n \
+                          --arg name "$NAME" \
+                          --arg version "$VERSION" \
+                          --arg dir "$DIR" \
+                          '{name: $name, version: $version, dir: $dir}')
+                        
+                        PACKAGES=$(echo "$PACKAGES" | jq -c --argjson item "$ITEM" '. + [$item]')
+                        if [ -n "$VERSION" ]; then
+                          echo "Found: $NAME@$VERSION (dir: $DIR)"
+                        else
+                          echo "Found: $NAME (dir: $DIR)"
+                        fi
+                      fi
+                    fi
+                  done
 
-      - name: Docker Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+                  # Use heredoc to safely output JSON
+                  echo "packages<<EOF" >> $GITHUB_OUTPUT
+                  echo "$PACKAGES" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Docker Image Publish
-        uses: useblacksmith/build-push-action@v2
-        with:
-          context: .
-          file: ${{ steps.prep.outputs.app_dir }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+                  if [ "$PACKAGES" != "[]" ]; then
+                    echo "has_releases=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "has_releases=false" >> $GITHUB_OUTPUT
+                  fi
+
+                  echo "Packages for Docker build:"
+                  echo "$PACKAGES" | jq .
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  name: ${{ github.ref_name }}
+                  generate_release_notes: true
+
+    publish-docker:
+        name: Publish Docker Images
+        needs: prepare
+        if: needs.prepare.outputs.has_releases == 'true'
+        runs-on: blacksmith-8vcpu-ubuntu-2404
+        permissions:
+            contents: read
+            packages: write
+        strategy:
+            fail-fast: false
+            matrix:
+                package: ${{ fromJson(needs.prepare.outputs.packages) }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  ref: release
+
+            - name: Prepare Docker Metadata
+              id: prep
+              run: |
+                  PACKAGE_NAME="${{ matrix.package.name }}"
+                  # Remove scope if present (e.g. @uptimekit/dash -> dash)
+                  APP_NAME=${PACKAGE_NAME#@*/}
+                  APP_NAME=${APP_NAME#*/}
+
+                  # Construct image name
+                  IMAGE_NAME=${{ env.REGISTRY }}/${{ github.repository_owner }}/${APP_NAME}
+                  # Lowercase just in case
+                  IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+
+                  echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+                  echo "app_name_clean=$APP_NAME" >> $GITHUB_OUTPUT
+                  echo "app_dir=${{ matrix.package.dir }}" >> $GITHUB_OUTPUT
+
+            - name: Docker meta
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: |
+                      ${{ steps.prep.outputs.image_name }}
+                  tags: |
+                      type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+                      type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+                      type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }}
+                      type=raw,value=latest
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
+
+            - name: Setup Blacksmith Builder
+              uses: useblacksmith/setup-docker-builder@v1
+              with:
+                  platforms: linux/amd64,linux/arm64
+
+            - name: Docker Login to GHCR
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Docker Image Publish
+              uses: useblacksmith/build-push-action@v2
+              with:
+                  context: .
+                  file: ${{ steps.prep.outputs.app_dir }}/Dockerfile
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}

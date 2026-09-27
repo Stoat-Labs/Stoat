@@ -223,7 +223,7 @@ describe("resource logs backend", () => {
     }, 60_000);
 
     beforeEach(async () => {
-        vi.stubEnv("BETTER_AUTH_SECRET", secret);
+        vi.stubEnv("APP_SECRET", secret);
         await db.delete(clusters);
         await db.$client.query(`DELETE FROM session WHERE user_id = 'logger'`);
         await db.$client.query(`UPDATE "user" SET banned = false WHERE id = 'logger'`);
@@ -986,7 +986,7 @@ describe("resource logs backend", () => {
     );
 
     it("multiplexes idle connected statuses and nanosecond logs without Greptime; return aborts pending reads", async () => {
-        vi.stubEnv("BETTER_AUTH_SECRET", "");
+        vi.stubEnv("APP_SECRET", "");
         const stream = await openBoth();
 
         try {

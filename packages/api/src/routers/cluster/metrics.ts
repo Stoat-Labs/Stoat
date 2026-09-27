@@ -70,7 +70,7 @@ export const metricsRouter = {
                 try {
                     const password = decryptMonitoringPassword(
                         cluster.encryptedPassword,
-                        process.env.BETTER_AUTH_SECRET ?? "",
+                        process.env.APP_SECRET ?? "",
                         cluster.id,
                     );
 
