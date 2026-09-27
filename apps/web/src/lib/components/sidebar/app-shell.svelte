@@ -11,7 +11,10 @@
     import { Separator } from "$lib/components/ui/separator";
     import { SidebarInset, SidebarProvider, SidebarTrigger } from "$lib/components/ui/sidebar";
     import { orpc } from "$lib/orpc";
+    import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
+    import { Button } from "$lib/components/ui/button";
     import Boxes from "@lucide/svelte/icons/boxes";
+    import Pencil from "@lucide/svelte/icons/pencil";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
     import { setHeaderActions } from "./header-actions";
@@ -29,7 +32,9 @@
 
     setHeaderActions(headerActions);
 
-    const pageTitle = $derived(page.url.pathname.startsWith("/settings") ? "Settings" : page.url.pathname.startsWith("/projects") ? "Projects" : page.url.pathname.startsWith("/clusters") ? "Clusters" : "Home");
+    const pageTitle = $derived(page.url.pathname.startsWith("/settings") ? "Settings" : page.url.pathname.startsWith("/observability") ? "Observability" : page.url.pathname.startsWith("/projects") ? "Projects" : page.url.pathname.startsWith("/clusters") ? "Clusters" : page.url.pathname.startsWith("/deployments") ? "Deployments" : page.url.pathname.startsWith("/git") ? "Git" : "Home");
+
+    const deploymentId = $derived(page.params.deploymentId);
 
     // On a project detail route, show Projects › <name> in the header.
     // The projects list is shared from the TanStack cache, so this does not
@@ -42,13 +47,18 @@
 
     const isProjectScope = $derived(Boolean(projectId));
 
-    const projectsQuery = createQuery(() =>
-        orpc.projects.listProjects.queryOptions({ enabled: isProjectDetail || isProjectScope }),
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({
+            input: { projectId: projectId ?? "" },
+            enabled: isProjectDetail || isProjectScope,
+        }),
     );
 
-    const projectName = $derived(
-        (projectsQuery.data ?? []).find((p) => p.id === projectId)?.name,
-    );
+    const project = $derived(projectQuery.data);
+
+    const projectName = $derived(project?.name);
+
+    let editProjectOpen = $state(false);
 
     const resourceId = $derived(page.params.resourceId);
 
@@ -68,6 +78,13 @@
     const resource = $derived(
         resources.find((r) => r.id === resourceId),
     );
+
+    // /projects/:projectId/:resourceId/<tab> → "Deployments", "Settings", …
+    const resourceTab = $derived.by(() => {
+        const tab = isResourceDetail ? page.url.pathname.split("/")[4] : undefined;
+
+        return tab ? tab[0].toUpperCase() + tab.slice(1) : undefined;
+    });
 
     const clusterId = $derived(page.params.clusterId);
 
@@ -90,16 +107,32 @@
 
     onMount(() => { ready = true; });
 </script>
+{#snippet resourceLabel()}
+    {#if resource?.icon}
+        <img src={resource.icon} alt="" class="size-4 shrink-0 rounded object-contain" />
+    {:else}
+        <Boxes class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    {/if}
+    <span class="truncate">{resource?.name ?? "…"}</span>
+{/snippet}
 <SidebarProvider class={fullHeight ? "xl:h-dvh xl:min-h-0" : undefined}>
     {@render sidebar()}
     <SidebarInset class={fullHeight ? "min-h-0 overflow-visible border" : "overflow-visible border"}>
-        <header class="sticky top-0 z-40 flex min-h-16 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg">
+        <header class="group/header sticky top-0 z-40 flex min-h-16 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg">
             <div class="flex min-w-0 max-w-full items-center gap-2">
                 <SidebarTrigger disabled={!ready} />
                 <Separator orientation="vertical" class="mx-2 h-4" />
                 <Breadcrumb class="min-w-0">
                     <BreadcrumbList class="flex-nowrap">
-                        {#if isClusterDetail}
+                        {#if deploymentId && !isResourceDetail}
+                            <BreadcrumbItem>
+                                <BreadcrumbLink href="/deployments">Deployments</BreadcrumbLink>
+                            </BreadcrumbItem>
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem class="min-w-0">
+                                <BreadcrumbPage class="font-mono">{deploymentId.slice(0, 8)}</BreadcrumbPage>
+                            </BreadcrumbItem>
+                        {:else if isClusterDetail}
                             <BreadcrumbItem>
                                 <BreadcrumbLink href="/clusters">Clusters</BreadcrumbLink>
                             </BreadcrumbItem>
@@ -124,24 +157,55 @@
                             </BreadcrumbItem>
                             <BreadcrumbSeparator />
                             <BreadcrumbItem class="min-w-0">
-                                <BreadcrumbPage class="flex min-w-0 max-w-48 items-center gap-2 sm:max-w-64">
-                                    {#if resource?.icon}
-                                        <img src={resource.icon} alt="" class="size-4 shrink-0 rounded object-contain" />
-                                    {:else}
-                                        <Boxes class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                    {/if}
-                                    <span class="truncate">{resource?.name ?? "…"}</span>
-                                </BreadcrumbPage>
+                                {#if resourceTab}
+                                    <BreadcrumbLink
+                                        href="/projects/{projectId}/{resourceId}"
+                                        class="flex min-w-0 max-w-48 items-center gap-2 sm:max-w-64"
+                                    >
+                                        {@render resourceLabel()}
+                                    </BreadcrumbLink>
+                                {:else}
+                                    <BreadcrumbPage class="flex min-w-0 max-w-48 items-center gap-2 sm:max-w-64">
+                                        {@render resourceLabel()}
+                                    </BreadcrumbPage>
+                                {/if}
                             </BreadcrumbItem>
+                            {#if resourceTab}
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem>
+                                    {#if deploymentId}
+                                        <BreadcrumbLink href="/projects/{projectId}/{resourceId}/deployments">{resourceTab}</BreadcrumbLink>
+                                    {:else}
+                                        <BreadcrumbPage>{resourceTab}</BreadcrumbPage>
+                                    {/if}
+                                </BreadcrumbItem>
+                            {/if}
+                            {#if deploymentId}
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem class="min-w-0">
+                                    <BreadcrumbPage class="font-mono">{deploymentId.slice(0, 8)}</BreadcrumbPage>
+                                </BreadcrumbItem>
+                            {/if}
                         {:else if isProjectDetail}
                             <BreadcrumbItem>
                                 <BreadcrumbLink href="/projects">Projects</BreadcrumbLink>
                             </BreadcrumbItem>
                             <BreadcrumbSeparator />
                             <BreadcrumbItem class="min-w-0">
-                                <BreadcrumbPage class="max-w-48 truncate sm:max-w-64">
+                                <BreadcrumbPage class="max-w-48 truncate sm:max-w-64" title={project?.description ?? undefined}>
                                     {projectName ?? "…"}
                                 </BreadcrumbPage>
+                                {#if project && !project.isInternal}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        class="opacity-0 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+                                        aria-label="Edit project"
+                                        onclick={() => (editProjectOpen = true)}
+                                    >
+                                        <Pencil class="size-3.5" />
+                                    </Button>
+                                {/if}
                             </BreadcrumbItem>
                         {:else}
                             <BreadcrumbItem>
@@ -162,3 +226,6 @@
         </div>
     </SidebarInset>
 </SidebarProvider>
+{#if project}
+    <EditProjectDialog bind:open={editProjectOpen} {project} />
+{/if}

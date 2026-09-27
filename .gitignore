@@ -16,6 +16,7 @@ local.db-*
 
 # Environment variables
 .env
+!templates/*/versions/*/.env
 .env*.local
 
 # IDEs and editors

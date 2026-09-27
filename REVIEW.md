@@ -615,16 +615,16 @@ Potential fix: Upgrade/override to patched versions when compatible. The esbuild
 
 ## Validation results
 
-| Command | Result |
-| --- | --- |
-| `pnpm check-types` | Passed; 0 errors, 28 Svelte warnings in 15 files. |
-| `pnpm build` | Passed; production bundle built, with env/reactivity warnings. Bundle inspection confirmed R-01. |
-| `pnpm lint` | Passed with 9 warnings. |
-| `pnpm test` | Failed overall; 159 tests passed, 2 suites failed during import because `DATABASE_URL` was required before skip. |
-| `go test ./...` in `apps/sidecar` | Passed. |
-| `go vet ./...` in `apps/sidecar` | Passed. |
-| OpenAPI source/artifact diff | Failed; committed `packages/uncloud/openapi.json` differs from the Go generator. |
-| `pnpm audit --prod` | 1 moderate and 1 low advisory. |
+| Command                           | Result                                                                                                           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm check-types`                | Passed; 0 errors, 28 Svelte warnings in 15 files.                                                                |
+| `pnpm build`                      | Passed; production bundle built, with env/reactivity warnings. Bundle inspection confirmed R-01.                 |
+| `pnpm lint`                       | Passed with 9 warnings.                                                                                          |
+| `pnpm test`                       | Failed overall; 159 tests passed, 2 suites failed during import because `DATABASE_URL` was required before skip. |
+| `go test ./...` in `apps/sidecar` | Passed.                                                                                                          |
+| `go vet ./...` in `apps/sidecar`  | Passed.                                                                                                          |
+| OpenAPI source/artifact diff      | Failed; committed `packages/uncloud/openapi.json` differs from the Go generator.                                 |
+| `pnpm audit --prod`               | 1 moderate and 1 low advisory.                                                                                   |
 
 ## Positive findings
 

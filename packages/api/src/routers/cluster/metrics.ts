@@ -21,7 +21,11 @@ function usage(row: unknown[] | undefined): Usage {
     const used = Number(row?.[0]);
     const total = Number(row?.[1]);
 
-    return row?.[0] != null && row[1] != null && Number.isFinite(used) && Number.isFinite(total) && total > 0
+    return row?.[0] != null &&
+        row[1] != null &&
+        Number.isFinite(used) &&
+        Number.isFinite(total) &&
+        total > 0
         ? { used: Math.min(total, Math.max(0, used)), total }
         : null;
 }

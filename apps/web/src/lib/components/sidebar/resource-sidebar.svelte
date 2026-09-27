@@ -15,6 +15,7 @@
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Container from "@lucide/svelte/icons/container";
     import Plus from "@lucide/svelte/icons/plus";
+    import Rocket from "@lucide/svelte/icons/rocket";
     import Settings from "@lucide/svelte/icons/settings-2";
     import ScrollText from "@lucide/svelte/icons/scroll-text";
     import { createQuery } from "@tanstack/svelte-query";
@@ -73,8 +74,8 @@
 
     const resourceBase = $derived(`/projects/${projectId}/${resourceId}`);
 
-    const projectsQuery = createQuery(() =>
-        orpc.projects.listProjects.queryOptions({ enabled: Boolean(projectId) }),
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({ input: { projectId: projectId ?? "" }, enabled: Boolean(projectId) }),
     );
 
     const resourcesQuery = createQuery(() =>
@@ -85,7 +86,7 @@
     );
 
     const projectName = $derived(
-        (projectsQuery.data ?? []).find((p) => p.id === projectId)?.name ?? "Project",
+        projectQuery.data?.name ?? "Project",
     );
 
     const resources = $derived(resourcesQuery.data ?? []);
@@ -138,7 +139,14 @@
                 <SidebarMenuItem>
                     <SidebarMenuButton isActive={current}>
                         {#snippet child({ props })}
-                            <a {...props} onclick={closeNavigation} {href} title={resource.name} aria-current={current ? "page" : undefined}><Container aria-hidden="true" /><span>{resource.name}</span></a>
+                            <a {...props} onclick={closeNavigation} {href} title={resource.name} aria-current={current ? "page" : undefined}>
+                                {#if resource.icon}
+                                    <img src={resource.icon} alt="" class="size-4 shrink-0 rounded object-contain" />
+                                {:else}
+                                    <Container aria-hidden="true" />
+                                {/if}
+                                <span>{resource.name}</span>
+                            </a>
                         {/snippet}
                     </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -227,13 +235,6 @@
                         </SidebarMenuSub> -->
                     </SidebarMenuItem>
                     <SidebarMenuItem>
-                        <SidebarMenuButton isActive={pathname === resourceBase + "/logs"}>
-                            {#snippet child({ props })}
-                                <a {...props} onclick={closeNavigation} href="{resourceBase}/logs" title="Logs" aria-current={pathname === resourceBase + "/logs" ? "page" : undefined}><ScrollText aria-hidden="true" /><span>Logs</span></a>
-                            {/snippet}
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                    <SidebarMenuItem>
                         <SidebarMenuButton isActive={pathname === resourceBase + "/variables"}>
                             {#snippet child({ props })}
                                 <a {...props} onclick={closeNavigation} href="{resourceBase}/variables" title="Variables" aria-current={pathname === resourceBase + "/variables" ? "page" : undefined}><Braces aria-hidden="true" /><span>Variables</span></a>
@@ -241,12 +242,28 @@
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
+                        <SidebarMenuButton isActive={pathname === resourceBase + "/deployments" || pathname.startsWith(resourceBase + "/deployments/")}>
+                            {#snippet child({ props })}
+                                <a {...props} onclick={closeNavigation} href="{resourceBase}/deployments" title="Deployments" aria-current={pathname === resourceBase + "/deployments" ? "page" : undefined}><Rocket aria-hidden="true" /><span>Deployments</span></a>
+                            {/snippet}
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton isActive={pathname === resourceBase + "/logs"}>
+                            {#snippet child({ props })}
+                                <a {...props} onclick={closeNavigation} href="{resourceBase}/logs" title="Logs" aria-current={pathname === resourceBase + "/logs" ? "page" : undefined}><ScrollText aria-hidden="true" /><span>Logs</span></a>
+                            {/snippet}
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {#if !projectQuery.data?.isInternal}
+                    <SidebarMenuItem>
                         <SidebarMenuButton isActive={pathname === resourceBase + "/settings"}>
                             {#snippet child({ props })}
                                 <a {...props} onclick={closeNavigation} href="{resourceBase}/settings" title="Resource settings" aria-current={pathname === resourceBase + "/settings" ? "page" : undefined}><Settings aria-hidden="true" /><span>Settings</span></a>
                             {/snippet}
                         </SidebarMenuButton>
                     </SidebarMenuItem>
+                    {/if}
                 </SidebarMenu>
             </SidebarGroupContent>
         </SidebarGroup>

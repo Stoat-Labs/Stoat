@@ -1,16 +1,15 @@
-import { OpenAPIGenerator } from "@orpc/openapi";
+import { BatchResponseCompressionHandlerPlugin } from "@orpc/node";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
-import { OpenAPIReferenceHandlerPlugin } from "@orpc/openapi/plugins";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { ValibotToJsonSchemaConverter } from "@orpc/valibot";
-import { ZodToJsonSchemaConverter } from "@orpc/zod";
+import { BatchHandlerPlugin } from "@orpc/server/plugins";
 import { appRouter } from "@stoat/api/routers/index";
 import type { RequestHandler } from "@sveltejs/kit";
 
 import { createContext } from "../../../context";
 
 const rpcHandler = new RPCHandler(appRouter, {
+    plugins: [new BatchHandlerPlugin(), new BatchResponseCompressionHandlerPlugin()],
     interceptors: [
         onError((error) => {
             console.error(error);
@@ -18,25 +17,7 @@ const rpcHandler = new RPCHandler(appRouter, {
     ],
 });
 
-const openAPIGenerator = new OpenAPIGenerator({
-    converters: [new ZodToJsonSchemaConverter(), new ValibotToJsonSchemaConverter()],
-});
-
 const apiHandler = new OpenAPIHandler(appRouter, {
-    plugins: [
-        new OpenAPIReferenceHandlerPlugin({
-            spec: () =>
-                openAPIGenerator.generate(appRouter, {
-                    version: "3.1.1",
-                    base: {
-                        info: {
-                            title: "Stoat API",
-                            version: "1.0.0",
-                        },
-                    },
-                }),
-        }),
-    ],
     interceptors: [
         onError((error) => {
             console.error(error);
@@ -57,7 +38,7 @@ const handle: RequestHandler = async ({ request }) => {
     if (rpcResult.response) return rpcResult.response;
 
     const apiResult = await apiHandler.handle(request, {
-        prefix: "/rpc/api-reference",
+        prefix: "/rpc/api",
         context,
     });
 

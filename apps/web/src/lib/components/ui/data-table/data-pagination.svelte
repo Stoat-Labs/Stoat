@@ -50,7 +50,7 @@
 </script>
 
 {#if totalPages > 1}
-	<div class="flex items-center justify-end border-t bg-muted/20 px-4 py-3">
+	<div class="flex items-center justify-end">
 		<Pagination class="mx-0 w-auto">
 			<PaginationContent>
 				<PaginationItem>

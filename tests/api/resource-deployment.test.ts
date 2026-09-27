@@ -137,6 +137,7 @@ describe("resource deployment API", () => {
                 deploymentId: result.id,
                 spec: draftSpec,
                 prefix: `${projectId.slice(0, 8)}-${input.resourceId.slice(0, 8)}`,
+                env: "",
             });
             expect(deployment).not.toHaveProperty("spec");
         },

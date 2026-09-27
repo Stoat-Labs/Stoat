@@ -19,6 +19,7 @@
   }>('marker');
 
   let wrapperElement: HTMLDivElement | null = $state(null);
+
   let movedContent: Node[] = [];
 
   // Move content to marker element when ready

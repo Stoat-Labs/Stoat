@@ -47,12 +47,16 @@
 
   // Generate a unique ID if none is provided
   let generatedId = $state(`number-field-${Math.random().toString(36).slice(2, 9)}`);
+
   let fieldId = $derived(id ?? generatedId);
 
   function clamp(v: number): number {
     let result = v;
+
     if (min !== undefined) result = Math.max(min, result);
+
     if (max !== undefined) result = Math.min(max, result);
+
     return result;
   }
 
@@ -61,15 +65,19 @@
   function getDecimalPlaces(n: number): number {
     if (!Number.isFinite(n)) return 0;
     const str = n.toString();
+
     if (str.includes('e-')) return Number(str.split('e-')[1]);
     const dotIndex = str.indexOf('.');
+
     return dotIndex === -1 ? 0 : str.length - dotIndex - 1;
   }
 
   function roundToStep(v: number): number {
     const decimals = getDecimalPlaces(step);
+
     if (decimals === 0) return v;
     const factor = 10 ** decimals;
+
     return Math.round(v * factor) / factor;
   }
 

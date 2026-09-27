@@ -44,6 +44,7 @@
   }>('map');
 
   const sourceId = $derived(`route-source-${id}`);
+
   const layerId = $derived(`route-layer-${id}`);
 
   // Add route when map is ready
@@ -102,6 +103,7 @@
     return () => {
       try {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
+
         if (map.getSource(sourceId)) map.removeSource(sourceId);
       } catch {
         // Ignore errors during cleanup
@@ -117,6 +119,7 @@
     if (!loaded || !map || coordinates.length < 2) return;
 
     const source = map.getSource(sourceId) as MapLibreGL.GeoJSONSource | undefined;
+
     if (source) {
       source.setData({
         type: 'Feature',
@@ -162,10 +165,12 @@
     const handleClick = () => {
       onclick?.();
     };
+
     const handleMouseEnter = () => {
       map.getCanvas().style.cursor = 'pointer';
       onmouseenter?.();
     };
+
     const handleMouseLeave = () => {
       map.getCanvas().style.cursor = '';
       onmouseleave?.();

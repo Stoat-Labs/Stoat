@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, createRouterClient } from "@orpc/server";
 import { createDb } from "@stoat/db";
+import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
 import {
+    clusterMonitoring,
     clusters,
     deployments,
     gitConnections,
@@ -311,15 +313,31 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         const listed = await client.listResources({ projectId: otherProjectId });
         expect(listed).toEqual(
             [first, second].map(
-                ({ id, name, description, icon, type, projectId, createdAt, updatedAt }) => ({
+                ({
                     id,
                     name,
                     description,
                     icon,
                     type,
                     projectId,
+                    gitSource,
                     createdAt,
                     updatedAt,
+                }) => ({
+                    id,
+                    name,
+                    description,
+                    icon,
+                    type,
+                    projectId,
+                    gitBranch: gitSource?.branch ?? null,
+                    createdAt,
+                    updatedAt,
+                    deploymentId: null,
+                    deploymentStatus: null,
+                    deploymentProgress: null,
+                    deploymentCreatedAt: null,
+                    deploymentFinishedAt: null,
                 }),
             ),
         );
@@ -330,6 +348,34 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
         expect(project?.resourceCount).toBe(2);
         expect(await client.listResources({ projectId: legacyProjectId })).toEqual([]);
+
+        const olderId = randomUUID();
+        const latestId = randomUUID();
+        await db.insert(deployments).values([
+            {
+                id: olderId,
+                jobId: olderId,
+                clusterId,
+                resourceId: first.id,
+                name: "DeployResource",
+                status: "failed",
+                createdAt: new Date("2021-01-01"),
+            },
+            {
+                id: latestId,
+                jobId: latestId,
+                clusterId,
+                resourceId: first.id,
+                name: "DeployResource",
+                status: "running",
+                createdAt: new Date("2021-01-02"),
+            },
+        ]);
+        const withStatus = await client.listResources({ projectId: otherProjectId });
+        expect(withStatus.map((row) => [row.deploymentId, row.deploymentStatus])).toEqual([
+            [latestId, "running"],
+            [null, null],
+        ]);
     });
 
     it("allows resource access in a legacy project with a null internal flag", async () => {
@@ -426,6 +472,135 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 expect(fetch).not.toHaveBeenCalled();
             },
         );
+    });
+
+    describe("internal projects for organization admins", () => {
+        beforeAll(async () => {
+            await db.$client.query(`UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`);
+        });
+
+        afterAll(async () => {
+            await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'core-member'`);
+        });
+
+        it("reads the internal project under a derived cluster name", async () => {
+            expect(
+                await call(projectsRouter.getProject, { projectId: internalProjectId }, { context }),
+            ).toMatchObject({ id: internalProjectId, clusterId, name: "Owned-internal", isInternal: true });
+            expect(
+                await call(projectsRouter.getProject, { projectId }, { context }),
+            ).toMatchObject({ id: projectId, name: "Owned", isInternal: false });
+        });
+
+        it("still hides the internal project from ordinary project lists", async () => {
+            const listed = await call(projectsRouter.listProjects, undefined, { context });
+            expect(listed.map((row) => row.id)).not.toContain(internalProjectId);
+        });
+
+        it("reads internal resources", async () => {
+            expect(
+                await client.getResource({ projectId: internalProjectId, resourceId: internalResourceId }),
+            ).toMatchObject({ id: internalResourceId, projectId: internalProjectId });
+            expect(
+                (await client.listResources({ projectId: internalProjectId })).map((row) => row.id),
+            ).toEqual([internalResourceId]);
+        });
+
+        it("derives monitoring variables without storing them", async () => {
+            const secret = "monitoring-env-test-secret-at-least-32-bytes";
+            vi.stubEnv("BETTER_AUTH_SECRET", secret);
+            await db.insert(clusterMonitoring).values({
+                clusterId,
+                projectId: internalProjectId,
+                resourceId: internalResourceId,
+                encryptedPassword: encryptMonitoringPassword("s3cret", secret, clusterId),
+            });
+            // A pre-rename configuration still holds the machine ID.
+            await db
+                .update(clusters)
+                .set({
+                    initializationConfiguration: {
+                        machine: "machine-id-1",
+                        greptimeStorage: { type: "volume", source: "greptime" },
+                        alloyStorage: { type: "volume", source: "alloy" },
+                        retentionDays: 14,
+                    },
+                })
+                .where(eq(clusters.id, clusterId));
+            fetch.mockImplementation(async () =>
+                Response.json({ items: [{ id: "machine-id-1", name: "edge-1", state: "Up" }] }),
+            );
+
+            try {
+                const read = await client.getResource({
+                    projectId: internalProjectId,
+                    resourceId: internalResourceId,
+                });
+
+                expect(read.settings).toMatchObject({
+                    machine: "edge-1",
+                    env: expect.stringContaining("GREPTIME_PASSWORD=s3cret\n"),
+                });
+                expect(read.settings).toMatchObject({
+                    env: expect.stringContaining("GREPTIME_MACHINE=edge-1\n"),
+                });
+                expect(read.settings).toMatchObject({
+                    env: expect.stringContaining(`CLUSTER_ID=${clusterId}\n`),
+                });
+                expect((await storedResource(internalResourceId)).settings).toEqual(settings);
+
+                fetch.mockReset().mockImplementation(async () =>
+                    Response.json({ containers: [{ id: "monitoring-container" }] }),
+                );
+                expect(
+                    await client.getContainers({
+                        clusterId,
+                        projectId: internalProjectId,
+                        resourceId: internalResourceId,
+                    }),
+                ).toHaveLength(2);
+                expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+                    expect.stringContaining("/api/v1/services/stoat-monitoring-greptimedb"),
+                    expect.stringContaining("/api/v1/services/stoat-monitoring-alloy"),
+                ]);
+            } finally {
+                await db.delete(clusterMonitoring).where(eq(clusterMonitoring.clusterId, clusterId));
+                await db
+                    .update(clusters)
+                    .set({ initializationConfiguration: null })
+                    .where(eq(clusters.id, clusterId));
+            }
+        });
+
+        it.each([
+            "updateSettings",
+            "updateVariables",
+            "updateDetails",
+            "updateComposeSpec",
+            "createResource",
+        ] as const)("denies %s on internal resources without writes", async (operation) => {
+            const before = await db.select().from(resources).orderBy(asc(resources.id));
+            await expect(
+                client[operation]({
+                    projectId: internalProjectId,
+                    resourceId: internalResourceId,
+                    prefixNames: false,
+                    env: "INJECTED=1",
+                    name: "Injected",
+                    spec: "services: {}\n",
+                    expectedSpec: null,
+                    expectedSource: null,
+                }),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+            expect(await db.select().from(resources).orderBy(asc(resources.id))).toEqual(before);
+            expect(fetch).not.toHaveBeenCalled();
+        });
+    });
+
+    it("hides the internal project from members by id", async () => {
+        await expect(
+            call(projectsRouter.getProject, { projectId: internalProjectId }, { context }),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
     it.each(["updateSettings", "updateVariables", "updateDetails"] as const)(

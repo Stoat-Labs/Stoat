@@ -5,8 +5,49 @@ export type LogLevel = "error" | "warning" | "success" | "other";
 
 export type DisplayLog = ResourceLog & { id: number; level: LogLevel; time: number };
 
-export function selectedLogServices(services: { id: string; name: string }[], names: string[] | null) {
-    return names === null ? services.slice(0, 20) : services.filter((service) => names.includes(service.name));
+/** Minimal row shape rendered by the shared log viewer. */
+export type LogRow = {
+    id: number;
+    key: string;
+    time: number;
+    timestamp: string;
+    level: LogLevel;
+    message: string;
+    label?: string;
+    muted?: boolean;
+};
+
+export type LogBucket = { index: number; domainStart: number; domainEnd: number };
+
+export function logEntryKey(log: ResourceLog) {
+    const source = JSON.stringify([
+        log.timestamp,
+        log.serviceId,
+        log.machine,
+        log.container,
+        log.stream,
+        log.message,
+    ]);
+
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+
+    for (let index = 0; index < source.length; index++) {
+        const code = source.charCodeAt(index);
+        first = Math.imul(first ^ code, 0x01000193);
+        second = Math.imul(second ^ code, 0x85ebca6b);
+    }
+
+    return `${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}`;
+}
+
+export function selectedLogServices(
+    services: { id: string; name: string }[],
+    names: string[] | null,
+) {
+    return names === null
+        ? services.slice(0, 20)
+        : services.filter((service) => names.includes(service.name));
 }
 
 const statusCode = z.union([z.number(), z.string()]).optional().catch(undefined);
@@ -27,6 +68,25 @@ const structuredLog = z.object({
         .catch(undefined),
 });
 
+const logTimestamp = String.raw`(?:\[[\d:.TZ +/-]+\]|\d{4}-\d{2}-\d{2}[T ]\s*\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)`;
+
+const logLevelWord = String.raw`(?:error|err|fatal|panic|crit(?:ical)?|warn(?:ing)?|notice|note|info|debug|trace|success|ok)`;
+
+const logLevelPrefix = new RegExp(
+    String.raw`^(?:${logTimestamp}\s+)?(?:\d+\s+)?\[?(error|fatal|panic|warn(?:ing)?|success|ok)\]?(?=[\s:|-]|$)`,
+    "iu",
+);
+
+const logPrefix = new RegExp(
+    String.raw`^(?:${logTimestamp}(?:\s+(?:\d+\s+)?\[?${logLevelWord}\]?(?=[\s:|-]|$))?|(?:\d+\s+)?\[${logLevelWord}\])[\s:|-]*`,
+    "iu",
+);
+
+/** Removes a leading timestamp, thread ID and level already shown in their own columns. */
+export function stripLogPrefix(message: string) {
+    return message.replace(logPrefix, "");
+}
+
 export function classifyLog(message: string): LogLevel {
     let level: string | number | undefined;
     let status = Number.NaN;
@@ -45,10 +105,7 @@ export function classifyLog(message: string): LogLevel {
         if (level === undefined && entry?.status === "success") level = "success";
     } catch {
         // Allow a timestamp and numeric thread ID before an explicit level (e.g. MariaDB).
-        level =
-            /^(?:(?:\[[\d:.TZ +/-]+\]|\d{4}-\d{2}-\d{2}[T ][\d:.+-]+Z?)\s+)?(?:\d+\s+)?\[?(error|fatal|panic|warn(?:ing)?|success|ok)\]?(?=[\s:|-]|$)/iu.exec(
-                message.trim(),
-            )?.[1];
+        level = logLevelPrefix.exec(message.trim())?.[1];
     }
 
     if (
@@ -77,7 +134,7 @@ export function logBucketIndex(time: number, start: number, end: number) {
     return Math.min(23, Math.floor((time - start) / (Math.max(1, end - start) / 24)));
 }
 
-export function logActivity(logs: DisplayLog[], start: number, end: number) {
+export function logActivity(logs: Pick<LogRow, "time" | "level">[], start: number, end: number) {
     const width = Math.max(1, end - start) / 24;
     const counts = { error: 0, warning: 0, success: 0, other: 0 };
 

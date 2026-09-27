@@ -40,7 +40,7 @@ export async function prepareMonitoring(
         await tx.insert(projects).values({
             id: projectId,
             clusterId,
-            name: "Monitoring",
+            name: `${cluster.name}-internal`,
             isInternal: true,
             description: "System-managed cluster metrics and logs.",
         });
@@ -59,7 +59,6 @@ export async function prepareMonitoring(
                 clusterId,
                 projectId,
                 resourceId,
-                machineId: cluster.initializationConfiguration.machineId,
                 encryptedPassword,
             })
             .returning();

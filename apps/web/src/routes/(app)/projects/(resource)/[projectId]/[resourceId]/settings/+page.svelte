@@ -25,17 +25,21 @@
     import { Label } from "$lib/components/ui/label";
     import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "$lib/components/ui/menu";
     import { Skeleton } from "$lib/components/ui/skeleton";
+    import { Spinner } from "$lib/components/ui/spinner";
     import { Switch } from "$lib/components/ui/switch";
     import { Textarea } from "$lib/components/ui/textarea";
     import { orpc, queryClient } from "$lib/orpc";
     import { cn } from "$lib/utils";
     import Boxes from "@lucide/svelte/icons/boxes";
+    import Check from "@lucide/svelte/icons/check";
     import Link from "@lucide/svelte/icons/link";
     import Pencil from "@lucide/svelte/icons/pencil";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import Upload from "@lucide/svelte/icons/upload";
     import { createMutation, createQuery } from "@tanstack/svelte-query";
+    import { parseAsBoolean, parseAsStringLiteral, useQueryStates } from "nuqs-svelte";
     import { untrack } from "svelte";
+    import { fade } from "svelte/transition";
     import { watch } from "runed";
     import { z } from "zod";
 
@@ -50,7 +54,10 @@
         }),
     );
 
-    const resource = $derived(resourceQuery.data);
+    const view = useQueryStates({
+        iconMenu: parseAsBoolean.withDefault(false),
+        iconDialog: parseAsStringLiteral(["upload", "link"]),
+    }, { shallow: true, scroll: false });
 
     const prefixNamesSchema = z.object({ prefixNames: z.boolean().catch(false) }).catch({ prefixNames: false });
 
@@ -88,11 +95,11 @@
 
     const iconPreview = $derived(detailIcon.trim());
 
-    let iconMenuOpen = $state(false);
+    const iconMenuOpen = $derived(view.iconMenu.current);
 
-    let uploadOpen = $state(false);
+    const uploadOpen = $derived(view.iconDialog.current === "upload");
 
-    let linkOpen = $state(false);
+    const linkOpen = $derived(view.iconDialog.current === "link");
 
     let linkDraft = $state("");
 
@@ -123,24 +130,24 @@
     });
 
     function openUploadDialog() {
-        iconMenuOpen = false;
+        void view.set({ iconMenu: false });
         uploadError = "";
         uploadPreview = "";
         uploadFileName = "";
         uploadProcessing = false;
-        uploadOpen = true;
+        void view.set({ iconDialog: "upload" });
     }
 
     function openLinkDialog() {
-        iconMenuOpen = false;
+        void view.set({ iconMenu: false });
         linkError = "";
         const current = detailIcon.trim();
         linkDraft = current && !current.startsWith("data:") ? current : "";
-        linkOpen = true;
+        void view.set({ iconDialog: "link" });
     }
 
     function removeIcon() {
-        iconMenuOpen = false;
+        void view.set({ iconMenu: false });
         detailIcon = "";
         iconLoadFailed = false;
     }
@@ -240,7 +247,7 @@
         if (!uploadPreview || uploadProcessing) return;
         detailIcon = uploadPreview;
         iconLoadFailed = false;
-        uploadOpen = false;
+        void view.set({ iconDialog: null });
     }
 
     function confirmLink() {
@@ -269,7 +276,7 @@
         linkError = "";
         detailIcon = value;
         iconLoadFailed = false;
-        linkOpen = false;
+        void view.set({ iconDialog: null });
     }
 
     const saveMutation = createMutation(() =>
@@ -322,7 +329,7 @@
     );
 
     $effect(() => {
-        const current = resource;
+        const current = resourceQuery.data;
 
         if (!current) return;
         untrack(() => {
@@ -404,7 +411,7 @@
     }
 </script>
 
-<svelte:head><title>Settings / {resource?.name ?? "Resource"} / Stoat</title></svelte:head>
+<svelte:head><title>Settings / {resourceQuery.data?.name ?? "Resource"} / Stoat</title></svelte:head>
 
 <div class="mx-auto w-full max-w-5xl space-y-8 py-6 sm:py-8">
     {#if resourceQuery.isPending}
@@ -436,7 +443,7 @@
                 Unable to load resource settings: {resourceQuery.error.message}
             </AlertDescription>
         </Alert>
-    {:else if !resource}
+    {:else if !resourceQuery.data}
         <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
                 <EmptyMedia variant="icon"><Boxes aria-hidden="true" /></EmptyMedia>
@@ -459,7 +466,7 @@
                 <Card>
                     <CardPanel class="space-y-5 p-5 sm:p-6">
                         <div class="flex items-end gap-4">
-                            <Menu bind:open={iconMenuOpen}>
+                            <Menu bind:open={() => iconMenuOpen, (open) => void view.set({ iconMenu: open })}>
                                 <MenuTrigger
                                     aria-label={iconPreview ? "Change icon" : "Add icon"}
                                     disabled={detailsMutation.isPending}
@@ -598,42 +605,43 @@
                                     Prefix service, network, and volume names in the Compose spec with this resource's name so they are unique across the cluster.
                                 </FieldDescription>
                             </Field>
-                            <Switch id="prefix-names" aria-describedby="prefix-names-description" bind:checked={prefixNames} />
+                            <div class="flex shrink-0 items-center gap-3">
+                                <span class="grid size-4 place-items-center text-muted-foreground" aria-live="polite">
+                                    {#if saveMutation.isPending || isDirty}
+                                        <span transition:fade={{ duration: 150 }} class="col-start-1 row-start-1">
+                                            <Spinner class="size-4" />
+                                            <span class="sr-only">Saving…</span>
+                                        </span>
+                                    {:else if saveMutation.isSuccess}
+                                        <span transition:fade={{ duration: 150 }} class="col-start-1 row-start-1" title="Saved">
+                                            <Check class="size-4" />
+                                            <span class="sr-only">Saved</span>
+                                        </span>
+                                    {/if}
+                                </span>
+                                <Switch id="prefix-names" aria-describedby="prefix-names-description" bind:checked={prefixNames} />
+                            </div>
                         </div>
                     </CardPanel>
-                    <div aria-live="polite">
-                        {#if saveMutation.isError || saveMutation.isPending || isDirty || saveMutation.isSuccess}
-                            <CardFooter class="border-t px-5 py-3 sm:px-6">
-                                {#if saveMutation.isError && failedValue === prefixNames}
-                                    <Alert variant="error" class="py-2">
-                                        <AlertDescription>
-                                            Unable to save: {saveMutation.error.message}
-                                        </AlertDescription>
-                                        <AlertAction>
-                                            <Button variant="link" size="sm" class="h-auto p-0" onclick={retrySave}>Retry</Button>
-                                        </AlertAction>
-                                    </Alert>
-                                {:else}
-                                    <p class="text-sm text-muted-foreground">
-                                        {#if saveMutation.isPending}
-                                        Saving…
-                                        {:else if isDirty}
-                                            Waiting to save…
-                                        {:else if saveMutation.isSuccess}
-                                            Saved.
-                                        {/if}
-                                    </p>
-                                {/if}
-                            </CardFooter>
-                        {/if}
-                    </div>
+                    {#if saveMutation.isError && failedValue === prefixNames}
+                        <CardFooter class="border-t px-5 py-3 sm:px-6">
+                            <Alert variant="error" class="py-2">
+                                <AlertDescription>
+                                    Unable to save: {saveMutation.error.message}
+                                </AlertDescription>
+                                <AlertAction>
+                                    <Button variant="link" size="sm" class="h-auto p-0" onclick={retrySave}>Retry</Button>
+                                </AlertAction>
+                            </Alert>
+                        </CardFooter>
+                    {/if}
                 </Card>
             </div>
         </section>
     {/if}
 </div>
 
-<Dialog bind:open={uploadOpen}>
+<Dialog bind:open={() => uploadOpen, (open) => { if (!open) void view.set({ iconDialog: null }); }}>
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Upload icon</DialogTitle>
@@ -671,13 +679,13 @@
             </div>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" onclick={() => (uploadOpen = false)}>Cancel</Button>
+            <Button variant="outline" onclick={() => void view.set({ iconDialog: null })}>Cancel</Button>
             <Button disabled={!uploadPreview || uploadProcessing} onclick={confirmUpload}>Use icon</Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>
 
-<Dialog bind:open={linkOpen}>
+<Dialog bind:open={() => linkOpen, (open) => { if (!open) void view.set({ iconDialog: null }); }}>
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Use icon link</DialogTitle>
@@ -718,7 +726,7 @@
             </div>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" onclick={() => (linkOpen = false)}>Cancel</Button>
+            <Button variant="outline" onclick={() => void view.set({ iconDialog: null })}>Cancel</Button>
             <Button disabled={!isLinkValid} onclick={confirmLink}>Use icon</Button>
         </DialogFooter>
     </DialogContent>

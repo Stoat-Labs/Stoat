@@ -5,7 +5,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
-import { organizationAdminProcedure, organizationProcedure } from "../..";
+import { organizationAdminProcedure, organizationProcedure, requireAuth } from "../..";
 import {
     type GitCredentials,
     inspectGitRemote,
@@ -296,6 +296,7 @@ export const connectionsRouter = {
         callbackUrl: getGitOAuthCallbackUrl(),
     })),
     createOAuthProvider: organizationAdminProcedure
+        .use(requireAuth)
         .use(async ({ next }) => {
             try {
                 return await next();
@@ -541,6 +542,7 @@ export const connectionsRouter = {
             ),
         ),
     pushFile: organizationAdminProcedure
+        .use(requireAuth)
         .input(
             v.object({
                 connectionId: id,

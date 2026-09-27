@@ -13,7 +13,7 @@ templates/
         .env
 ```
 
-Stoat lists every valid app under this directory in the **Add service → Template** dialog.
+Stoat lists every valid app under this directory in the **New resource → From template** dialog. Templates are bundled into the app at build time, so rebuild after adding or changing one.
 
 ## Layout
 
@@ -56,9 +56,22 @@ If there is no local file, set `"icon"` in the manifest to the SVGL library name
 
 ## Compose and environment
 
-`compose.yaml` is copied onto the new service as-is (after secret expansion). Do not use `env_file: .env` or a fixed `container_name` — Stoat stores `.env` values as service environment variables and injects them at deploy time.
+`compose.yaml` is copied onto the new service as-is (after secret expansion). Do not use `env_file: .env` or a fixed `container_name` — Stoat stores `.env` values as the service's Variables and substitutes them into the compose file at deploy time, so pass them to containers explicitly (`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}`).
 
 `.env` uses standard `NAME=value` syntax (quotes, `export`, and comments are supported). Those variables are created on the service so they can be edited under **Environment**.
+
+Leave a value empty (`ADMIN_EMAIL=`) to make it required: the deploy screen asks for it and the service can't be created until it is set. Values are single-line.
+
+Stoat also provides these variables at deploy time. A variable you define with the same name overrides any of them.
+
+| Variable                  | Value                                                                     |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `<SERVICE>_SERVICE_NAME`  | The service's deployed name, e.g. `a1b2c3d4-e5f6a7b8-my-db`               |
+| `<SERVICE>_INTERNAL_HOST` | Its cluster-internal hostname, e.g. `a1b2c3d4-e5f6a7b8-my-db.internal`    |
+| `STOAT_PREFIX`            | The resource prefix, or empty when prefixing is off                       |
+| `STOAT_DOMAIN`            | The cluster's reserved domain, read on every deploy, e.g. `abc.uncld.dev` |
+
+`<SERVICE>` is the service name uppercased with non-alphanumerics turned into `_` (`my-db` → `MY_DB`). Names include the prefix when prefixing is on; template services are always prefixed. Prefer `STOAT_DOMAIN` over `{{ DNS }}` when the value should follow domain changes: `${APP_HOST:-app.${STOAT_DOMAIN}}:8080/https`.
 
 For PostgreSQL, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. The service page builds:
 
@@ -69,10 +82,11 @@ For PostgreSQL, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
 
 Placeholders in `.env` values and in `compose.yaml` are expanded **once**, when the service is created. Each placeholder generates a new value.
 
-| Placeholder  | Result                                                              |
-| ------------ | ------------------------------------------------------------------- |
-| `{{ UUID }}` | A random UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)              |
-| `{{ 32 }}`   | A random 32-character base64 string (`A–Z`, `a–z`, `0–9`, `+`, `/`) |
+| Placeholder  | Result                                                                        |
+| ------------ | ----------------------------------------------------------------------------- |
+| `{{ UUID }}` | A random UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)                        |
+| `{{ 32 }}`   | A random 32-character base64 string (`A–Z`, `a–z`, `0–9`, `+`, `/`)           |
+| `{{ DNS }}`  | The cluster's reserved domain, e.g. `files.{{ DNS }}` → `files.abc.uncld.dev` |
 
 Spaces inside the braces are optional (`{{UUID}}` and `{{32}}` work). `{{ N }}` accepts any length from 1 to 256.
 

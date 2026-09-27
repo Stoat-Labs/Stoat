@@ -31,6 +31,7 @@
   } = $props();
 
   const manager = ToastPrimitive.getToastManager<ToastData>();
+
   const swipeDirection = $derived(getSwipeDirection(position));
 </script>
 

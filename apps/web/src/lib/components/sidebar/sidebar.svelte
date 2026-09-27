@@ -3,13 +3,15 @@
     import { authClient } from "$lib/auth-client";
     import CreateOrganizationDialog from "$lib/components/organization/create-organization-dialog.svelte";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "$lib/components/ui/collapsible";
     import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "$lib/components/ui/menu";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator } from "$lib/components/ui/sidebar";
+    import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarRail, SidebarSeparator } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
     import { sidebarMenuButtonVariants } from "$lib/components/ui/sidebar/sidebar-menu-button.svelte";
     import { orpc } from "$lib/orpc";
     import Boxes from "@lucide/svelte/icons/boxes";
+    import Activity from "@lucide/svelte/icons/activity";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Container from "@lucide/svelte/icons/container";
     import GitBranch from "@lucide/svelte/icons/git-branch";
@@ -55,13 +57,30 @@
 
     let ready = $state(false);
 
+    let projectsOpen = $state(false);
+
+    let projectsOpenReady = false;
+
     let pending = $state(false);
 
     let error = $state("");
 
     const dialog = useQueryState("dialog", parseAsString.withOptions({ shallow: true, scroll: false }));
 
-    onMount(() => { ready = true; });
+    onMount(() => {
+        ready = true;
+        projectsOpen = localStorage.getItem(`stoat:sidebar:projects-open:${activeOrganizationId ?? "default"}`) === "true";
+        projectsOpenReady = true;
+    });
+
+    watch(
+        () => projectsOpen,
+        (isOpen) => {
+            if (projectsOpenReady) {
+                localStorage.setItem(`stoat:sidebar:projects-open:${activeOrganizationId ?? "default"}`, String(isOpen));
+            }
+        },
+    );
 
     // The queries below reuse the TanStack cache warmed by the layout and the
     // detail pages, so they don't trigger extra requests.
@@ -71,12 +90,6 @@
 
     const isProjectPage = $derived(Boolean(projectId) && !resourceId);
 
-    const projectBase = $derived(`/projects/${projectId}`);
-
-    const projectsQuery = createQuery(() =>
-        orpc.projects.listProjects.queryOptions({ enabled: Boolean(projectId) }),
-    );
-
     const resourcesQuery = createQuery(() =>
         orpc.resources.listResources.queryOptions({
             input: { projectId: projectId ?? "" },
@@ -84,11 +97,11 @@
         }),
     );
 
-    const projectName = $derived(
-        (projectsQuery.data ?? []).find((p) => p.id === projectId)?.name ?? "Project",
-    );
-
     const resources = $derived(resourcesQuery.data ?? []);
+
+    const projectsQuery = createQuery(() => orpc.projects.listProjects.queryOptions());
+
+    const projects = $derived(projectsQuery.data ?? []);
 
     const mainLinks = [
         { title: "Home", url: "/", icon: LayoutDashboard },
@@ -98,6 +111,7 @@
 
     const configLinks = [
         { title: "Clusters", url: "/clusters", icon: Boxes },
+        { title: "Observability", url: "/observability", icon: Activity },
         { title: "Git", url: "/git", icon: GitBranch },
         { title: "Settings", url: "/settings", icon: Settings },
     ];
@@ -146,7 +160,14 @@
                 <SidebarMenuItem>
                     <SidebarMenuButton isActive={current}>
                         {#snippet child({ props })}
-                            <a {...props} onclick={closeNavigation} {href} title={resource.name} aria-current={current ? "page" : undefined}><Container aria-hidden="true" /><span>{resource.name}</span></a>
+                            <a {...props} onclick={closeNavigation} {href} title={resource.name} aria-current={current ? "page" : undefined}>
+                                {#if resource.icon}
+                                    <img src={resource.icon} alt="" class="size-4 shrink-0 rounded object-contain" />
+                                {:else}
+                                    <Container aria-hidden="true" />
+                                {/if}
+                                <span>{resource.name}</span>
+                            </a>
                         {/snippet}
                     </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -192,35 +213,44 @@
         {/if}
     </SidebarHeader>
     <SidebarContent class="overflow-x-hidden">
-        {#if isProjectPage}
-            <SidebarGroup>
-                <SidebarGroupLabel class="truncate">{projectName}</SidebarGroupLabel>
-                <SidebarGroupContent>
-                    <SidebarMenu>
-                        <SidebarMenuItem>
-                            <SidebarMenuButton isActive={pathname === projectBase}>
-                                {#snippet child({ props })}
-                                    <a {...props} onclick={closeNavigation} href={projectBase} title="Project overview" aria-current={pathname === projectBase ? "page" : undefined}><LayoutDashboard aria-hidden="true" /><span>Overview</span></a>
-                                {/snippet}
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                    </SidebarMenu>
-                </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Resources</SidebarGroupLabel>
-                <SidebarGroupContent>
-                    {@render resourceList(true)}
-                </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarSeparator />
-        {/if}
         <SidebarGroup>
             <SidebarGroupLabel>Main</SidebarGroupLabel>
             <SidebarGroupContent>
                 <SidebarMenu>
                     {#each mainLinks as link (link.url)}
+                        {#if link.url === "/projects"}
+                            <SidebarMenuItem>
+                                <Collapsible bind:open={projectsOpen}>
+                                    <SidebarMenuButton isActive={pathname.startsWith(link.url)}>
+                                        {#snippet child({ props })}
+                                            <a {...props} onclick={closeNavigation} href={link.url} title={link.title} aria-current={pathname === link.url ? "page" : undefined}><link.icon aria-hidden="true" /><span>{link.title}</span></a>
+                                        {/snippet}
+                                    </SidebarMenuButton>
+                                    <CollapsibleTrigger aria-label="Toggle projects" class="group/projects-trigger absolute end-0 top-0 flex h-8 w-10 items-center justify-center rounded-lg text-sidebar-foreground outline-hidden ring-sidebar-ring focus-visible:ring-2 group-data-[collapsible=icon]:hidden data-panel-open:[&>span>svg]:rotate-180">
+                                        <span class="flex size-6 items-center justify-center rounded-lg group-hover/projects-trigger:bg-sidebar-accent group-hover/projects-trigger:text-sidebar-accent-foreground">
+                                            <ChevronDown class="size-4 transition-transform" aria-hidden="true" />
+                                        </span>
+                                    </CollapsibleTrigger>
+                                    <CollapsiblePanel>
+                                        <SidebarMenuSub class="mt-1">
+                                            {#if projectsQuery.isPending}
+                                                <li class="px-2 text-xs text-muted-foreground">Loading…</li>
+                                            {:else if projects.length === 0}
+                                                <li class="px-2 text-xs text-muted-foreground">No projects yet.</li>
+                                            {/if}
+                                            {#each projects as project (project.id)}
+                                                {@const href = `/projects/${project.id}`}
+                                                <SidebarMenuSubItem>
+                                                    <SidebarMenuSubButton {href} onclick={closeNavigation} title={project.name} isActive={pathname.startsWith(href)} aria-current={pathname === href ? "page" : undefined}>
+                                                        <span>{project.name}</span>
+                                                    </SidebarMenuSubButton>
+                                                </SidebarMenuSubItem>
+                                            {/each}
+                                        </SidebarMenuSub>
+                                    </CollapsiblePanel>
+                                </Collapsible>
+                            </SidebarMenuItem>
+                        {:else}
                         <SidebarMenuItem>
                             <SidebarMenuButton isActive={link.url === "/" ? pathname === "/" : pathname.startsWith(link.url)}>
                                 {#snippet child({ props })}
@@ -228,6 +258,7 @@
                                 {/snippet}
                             </SidebarMenuButton>
                         </SidebarMenuItem>
+                        {/if}
                     {/each}
                 </SidebarMenu>
             </SidebarGroupContent>
@@ -249,6 +280,15 @@
                 </SidebarMenu>
             </SidebarGroupContent>
         </SidebarGroup>
+        {#if isProjectPage}
+            <SidebarSeparator />
+            <SidebarGroup>
+                <SidebarGroupLabel>Resources</SidebarGroupLabel>
+                <SidebarGroupContent>
+                    {@render resourceList(true)}
+                </SidebarGroupContent>
+            </SidebarGroup>
+        {/if}
     </SidebarContent>
     <SidebarFooter>
         <SidebarMenu><SidebarMenuItem><UserMenu {user} /></SidebarMenuItem></SidebarMenu>

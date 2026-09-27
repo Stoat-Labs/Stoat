@@ -20,7 +20,7 @@ describe("monitoring provisioning (PostgreSQL)", () => {
     const clusterId = randomUUID();
 
     const config: ClusterInitializationConfiguration = {
-        machineId: "machine-1",
+        machine: "machine-1",
         greptimeStorage: { type: "volume", source: "greptime-data" },
         alloyStorage: { type: "bind", source: "/srv/alloy" },
         retentionDays: 14,
@@ -103,7 +103,7 @@ describe("monitoring provisioning (PostgreSQL)", () => {
             expect.objectContaining({
                 id: state!.projectId,
                 clusterId,
-                name: "Monitoring",
+                name: "Monitoring cluster-internal",
                 isInternal: true,
             }),
         ]);
@@ -118,7 +118,6 @@ describe("monitoring provisioning (PostgreSQL)", () => {
                 settings: config,
             }),
         ]);
-        expect(state!.machineId).toBe(config.machineId);
     });
 
     it("reuses persisted credentials and resource snapshots on subsequent attempts", async () => {

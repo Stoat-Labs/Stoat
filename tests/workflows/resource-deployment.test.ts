@@ -66,6 +66,7 @@ describe("resource deployment worker", () => {
         | "pause" = "success";
 
     let failures = 0;
+    let httpStatus = 500;
     let requestCount = 0;
     let requestBody = "";
     let authorization: string | undefined;
@@ -83,7 +84,7 @@ describe("resource deployment worker", () => {
         response.on("close", () => closed.resolve());
 
         if (mode === "http-error") {
-            response.writeHead(500, { "Content-Type": "application/json" });
+            response.writeHead(httpStatus, { "Content-Type": "application/json" });
             response.end(JSON.stringify({ error: httpError }));
 
             return;
@@ -180,6 +181,7 @@ describe("resource deployment worker", () => {
     afterEach(() => {
         mode = "success";
         failures = 0;
+        httpStatus = 500;
         received = Promise.withResolvers<void>();
         closed = Promise.withResolvers<void>();
         finish.resolve();
@@ -384,8 +386,9 @@ describe("resource deployment worker", () => {
             expect(
                 await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
             ).toMatchObject({ spec: previousSpec, draftSpec: spec });
+            expect(outcome.logs.filter((log) => log.text === reason)).toHaveLength(1);
             expect(outcome.logs.at(-1)).toMatchObject({
-                text: reason,
+                text: "Deployment failed.",
                 metadata: { level: "error", event: "failed" },
             });
 
@@ -407,6 +410,23 @@ describe("resource deployment worker", () => {
             expect(cluster[0]?.initializationStatus).toBe("ready");
         },
     );
+
+    it("does not retry input the sidecar rejects", async () => {
+        mode = "http-error";
+        httpStatus = 400;
+        const id = await snapshot();
+        const count = requestCount;
+        await Effect.runPromise(
+            DeployResource.enqueue(
+                { deploymentId: id },
+                { attempts: 3, backoff: { type: "fixed", delay: "100 millis" } },
+            ).pipe(Effect.provide(JobStoreLive)),
+        );
+        const outcome = await terminal(id);
+        expect(outcome.status).toBe("failed");
+        expect(outcome.logs.some((log) => log.metadata.event === "retry")).toBe(false);
+        expect(requestCount).toBe(count + 1);
+    });
 
     it("retries without publishing a terminal failure and then reaches ready", async () => {
         failures = 1;

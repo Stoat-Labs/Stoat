@@ -28,6 +28,7 @@
   }: Props = $props();
 
   const chipsRefCtx = getComboboxChipsRefCtx();
+
   const resolvedAnchor = $derived(anchor ?? chipsRefCtx?.current ?? undefined);
 </script>
 

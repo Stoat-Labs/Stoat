@@ -13,12 +13,14 @@ import (
 
 	"github.com/acarl005/stripansi"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
+	"github.com/docker/docker/api/types/container"
 	"github.com/psviderski/uncloud/pkg/api"
 	"github.com/psviderski/uncloud/pkg/client"
 	"github.com/psviderski/uncloud/pkg/client/compose"
 	"github.com/psviderski/uncloud/pkg/client/deploy"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -48,6 +50,58 @@ func NewClientBackendWithHostService(cli *client.Client, hostServiceName string)
 func (b *clientBackend) Ready(ctx context.Context) error {
 	_, err := b.Client.ListMachines(ctx, nil)
 	return err
+}
+
+// ListServices replaces uncloud's implementation, which re-broadcasts a container
+// listing to every machine once per service (N+1). This groups a single broadcast.
+func (b *clientBackend) ListServices(ctx context.Context) ([]api.Service, error) {
+	machines, err := b.Client.ListMachines(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list machines: %w", err)
+	}
+	md := metadata.New(nil)
+	for _, m := range machines {
+		if state := m.State.String(); state == "UP" || state == "SUSPECT" {
+			md.Append("machines", m.Machine.Id)
+		}
+	}
+	machineContainers, err := b.Client.Docker.ListServiceContainers(
+		metadata.NewOutgoingContext(ctx, md), "", container.ListOptions{All: true},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	servicesByID := make(map[string]*api.Service)
+	var order []string
+	for _, mc := range machineContainers {
+		if mc.Metadata == nil || mc.Metadata.Error != "" {
+			continue
+		}
+		for _, ctr := range append(mc.Containers, mc.HookContainers...) {
+			id := ctr.ServiceID()
+			svc, ok := servicesByID[id]
+			if !ok {
+				svc = &api.Service{ID: id, Name: ctr.ServiceName(), Mode: ctr.ServiceMode()}
+				servicesByID[id] = svc
+				order = append(order, id)
+			}
+			entry := api.MachineServiceContainer{
+				MachineID: mc.Metadata.MachineId, MachineName: mc.Metadata.MachineName, Container: ctr,
+			}
+			if ctr.IsHook() {
+				svc.HookContainers = append(svc.HookContainers, entry)
+			} else {
+				svc.Containers = append(svc.Containers, entry)
+			}
+		}
+	}
+
+	services := make([]api.Service, 0, len(order))
+	for _, id := range order {
+		services = append(services, *servicesByID[id])
+	}
+	return services, nil
 }
 
 func (b *clientBackend) ClusterDiagnostics(ctx context.Context) (ClusterDiagnosticsResponse, error) {
@@ -365,7 +419,7 @@ func (b *clientBackend) ListVolumeAttachments(ctx context.Context) ([]VolumeAtta
 	if err != nil {
 		return nil, err
 	}
-	services, err := b.Client.ListServices(ctx)
+	services, err := b.ListServices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -510,13 +564,16 @@ func (b *clientBackend) DeployCompose(
 	project, err := compose.LoadProjectFromContent(ctx, deployment.Content,
 		composecli.WithDefaultProfiles(deployment.Options.Profiles...))
 	if err != nil {
-		return nil, redactedDeployError{err, "load compose file: " + stripansi.Strip(err.Error())}
+		// Invalid input: 400, so callers do not retry a deployment that cannot succeed.
+		text := "load compose file: " + stripansi.Strip(err.Error())
+		return nil, redactedDeployError{status.Error(codes.InvalidArgument, text), text}
 	}
 
 	if len(deployment.Options.Services) > 0 {
 		project, err = project.WithSelectedServices(deployment.Options.Services)
 		if err != nil {
-			return nil, redactedDeployError{err, "select services: " + stripansi.Strip(err.Error())}
+			text := "select services: " + stripansi.Strip(err.Error())
+			return nil, redactedDeployError{status.Error(codes.InvalidArgument, text), text}
 		}
 	}
 

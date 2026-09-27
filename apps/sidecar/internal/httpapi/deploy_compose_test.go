@@ -174,6 +174,7 @@ services:
 `})
 	require.ErrorContains(t, err, "load compose file:")
 	assert.ErrorContains(t, err, "services.app.image must be a string")
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 
 	_, err = backend.DeployCompose(context.Background(), ComposeDeployment{Content: `
 services:

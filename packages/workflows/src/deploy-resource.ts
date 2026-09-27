@@ -1,8 +1,9 @@
 import type { Database } from "@stoat/db";
 import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
-import { ucClient } from "@stoat/uncloud";
+import { ucClient, unwrap } from "@stoat/uncloud";
+import { Job } from "effect-mq";
 import { YAMLParseError } from "yaml";
-import { formatComposeFile } from "./compose";
+import { ComposeVariableError, formatComposeFile, interpolateCompose } from "./compose";
 import { deployCompose, DeploymentError } from "./deploy-compose";
 
 export const RESOURCE_FAILURE_MESSAGE =
@@ -58,7 +59,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
 
             // Claim after locking, so a cancellation while acquiring the lock wins.
             const claimed = await db.$client.query(
-                `UPDATE deployments SET status = 'running', error = NULL, finished_at = NULL, updated_at = now()
+                `UPDATE deployments SET status = 'running', progress = 0, error = NULL, finished_at = NULL, updated_at = now()
                  WHERE id = $1 AND status IN ('queued', 'running') RETURNING id`,
                 [deploymentId],
             );
@@ -78,23 +79,66 @@ export async function deployResource(db: Database, deploymentId: string, signal:
 
             if (!input || !cluster) throw new Error(RESOURCE_FAILURE_MESSAGE);
             signal.throwIfAborted();
+            const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+            // Only ask the sidecar when STOAT_DOMAIN is actually referenced.
+            let domain: string | undefined;
+
+            if (/STOAT_DOMAIN/u.test(input.spec + input.env)) {
+                step = "Loading the cluster domain.";
+                ({ domain } = await unwrap(uc.GET("/api/v1/cluster/domain")));
+            }
+
             step = "Formatting Compose snapshot.";
             await log(step);
-            const compose = formatComposeFile(input.spec, input.prefix ?? undefined);
+            let spec: string;
 
-            if (compose.serviceCount === 0) throw new Error(RESOURCE_FAILURE_MESSAGE);
+            try {
+                spec = interpolateCompose(input.spec, input.env, input.prefix ?? undefined, domain);
+            } catch (error) {
+                if (!(error instanceof ComposeVariableError)) throw error;
+                await log(error.message, "error", "attempt-failed");
+                throw new DeploymentError(error.message, false);
+            }
+
+            const compose = formatComposeFile(spec, input.prefix ?? undefined);
+
+            if (compose.serviceCount === 0) {
+                const reason = "Compose file defines no services.";
+
+                await log(reason, "error", "attempt-failed");
+                throw new DeploymentError(reason, false);
+            }
+
             await log(`Formatted ${compose.serviceCount} service(s).`);
             step = "Deploying Compose to the cluster.";
             await log(step);
-            const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
-            await deployCompose(uc, compose.yaml, signal, log, undefined, [cluster.sidecarToken]);
+
+            const setProgress = async (percent: number) => {
+                await db.$client.query(
+                    "UPDATE deployments SET progress = $2 WHERE id = $1 AND status = 'running' AND progress < $2",
+                    [deploymentId, percent],
+                );
+            };
+
+            await setProgress(5);
+            await deployCompose(
+                uc,
+                compose.yaml,
+                signal,
+                log,
+                undefined,
+                [cluster.sidecarToken],
+                setProgress,
+                input.recreate,
+            );
 
             // Publish the captured source and ready status together, before releasing
             // the cluster lock. Cancellation wins without overwriting newer drafts.
             step = "Saving the deployed Compose snapshot.";
             await db.$client.query(
                 `WITH ready AS (
-                    UPDATE deployments SET status = 'ready', error = NULL, finished_at = now(), updated_at = now()
+                    UPDATE deployments SET status = 'ready', progress = 100, error = NULL, finished_at = now(), updated_at = now()
                     WHERE id = $1 AND status = 'running' RETURNING resource_id
                 ), published AS (
                     UPDATE resources SET spec = $2, updated_at = now()
@@ -114,6 +158,10 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             }
         }
     } catch (error) {
+        const permanent =
+            error instanceof YAMLParseError ||
+            (error instanceof DeploymentError && !error.retryable);
+
         if (!signal.aborted) {
             const position = error instanceof YAMLParseError ? error.linePos?.[0] : undefined;
 
@@ -124,7 +172,9 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                       ? `Invalid Compose YAML: ${error.code}${position ? ` at line ${position.line}, column ${position.col}` : ""}.`
                       : `Attempt failed: ${step}`;
 
-            await log(reason, "error", "attempt-failed").catch(() => {});
+            // deployCompose already logs its own failures.
+            if (!(error instanceof DeploymentError))
+                await log(reason, "error", "attempt-failed").catch(() => {});
             await db.$client
                 .query(
                     "UPDATE deployments SET error = $2, updated_at = now() WHERE id = $1 AND status IN ('queued', 'running')",
@@ -134,6 +184,8 @@ export async function deployResource(db: Database, deploymentId: string, signal:
         }
 
         // Includes DB, YAML parser, transport, and cleanup errors. No raw cause reaches effect-mq.
-        throw new Error(RESOURCE_FAILURE_MESSAGE);
+        const failure = new Error(RESOURCE_FAILURE_MESSAGE);
+
+        throw permanent ? Job.unrecoverable(failure) : failure;
     }
 }

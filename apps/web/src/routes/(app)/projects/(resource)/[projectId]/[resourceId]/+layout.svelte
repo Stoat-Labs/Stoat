@@ -17,9 +17,15 @@
     const isLogs = $derived(
         page.route.id === "/(app)/projects/(resource)/[projectId]/[resourceId]/logs",
     );
+
+    const isDeployment = $derived(
+        page.route.id === "/(app)/projects/(resource)/[projectId]/[resourceId]/deployments/[deploymentId]",
+    );
+
+    const fullPage = $derived(isOverview || isVariables || isLogs || isDeployment);
 </script>
 
-<AppShell fullWidth={isOverview || isVariables || isLogs} fullHeight={isOverview || isVariables || isLogs}>
+<AppShell fullWidth={fullPage} fullHeight={fullPage}>
     {#snippet children()}
         {@render pageContent()}
         {#key `${data.activeOrganizationId}/${page.params.projectId}/${page.params.resourceId}`}

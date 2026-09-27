@@ -19,7 +19,7 @@ import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, desc, DrizzleQueryError, eq, sql } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { organizationProcedure, resourceMiddleware } from "../..";
+import { organizationProcedure, requireAuth, resourceReadMiddleware } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import { cancellableStream } from "../../stream";
 
@@ -44,7 +44,12 @@ export type ResourceLogEvent =
       }
     | { type: "logs"; logs: ResourceLog[] }
     | { type: "reset"; serviceId: string; replacement?: { id: string; name: string } }
-    | { type: "status"; serviceId: string; state: "connected" | "reconnecting" | "error"; message?: string };
+    | {
+          type: "status";
+          serviceId: string;
+          state: "connected" | "reconnecting" | "error";
+          message?: string;
+      };
 
 type LogService = Service;
 
@@ -135,49 +140,65 @@ function literal(value: string) {
     return `'${value.replaceAll("'", "''")}'`;
 }
 
+/** The system-managed monitoring resource is deployed by InitializeCluster, not DeployResource. */
+export async function isMonitoringResource(db: Database, resourceId: string) {
+    const [row] = await db
+        .select({ id: clusterMonitoring.resourceId })
+        .from(clusterMonitoring)
+        .where(eq(clusterMonitoring.resourceId, resourceId))
+        .limit(1);
+
+    return Boolean(row);
+}
+
 async function deployedServices(
     db: Database,
     cluster: LogCluster,
     resource: typeof resources.$inferSelect,
     signal: AbortSignal,
 ) {
-    const candidates = await db
-        .select({
-            id: deployments.id,
-            status: deployments.status,
-        })
-        .from(deployments)
-        .innerJoin(
-            resourceDeploymentInputs,
-            eq(resourceDeploymentInputs.deploymentId, deployments.id),
-        )
-        .where(
-            and(
-                eq(deployments.resourceId, resource.id),
-                eq(deployments.clusterId, cluster.id),
-                sql`(${deployments.status} = 'ready' OR EXISTS (
+    const monitoring = await isMonitoringResource(db, resource.id);
+
+    const candidates = monitoring
+        ? []
+        : await db
+              .select({
+                  id: deployments.id,
+                  status: deployments.status,
+              })
+              .from(deployments)
+              .innerJoin(
+                  resourceDeploymentInputs,
+                  eq(resourceDeploymentInputs.deploymentId, deployments.id),
+              )
+              .where(
+                  and(
+                      eq(deployments.resourceId, resource.id),
+                      eq(deployments.clusterId, cluster.id),
+                      sql`(${deployments.status} = 'ready' OR EXISTS (
                 SELECT 1 FROM deployment_logs l WHERE l.deployment_id = ${deployments.id}
                 AND l.text = 'Deploying Compose to the cluster.' AND l.metadata->>'event' = 'step'
             ))`,
-            ),
-        )
-        .orderBy(desc(deployments.createdAt), desc(deployments.id))
-        .limit(101)
-        .catch((error) => {
-            if (
-                error instanceof DrizzleQueryError &&
-                z.object({ code: z.enum(["42P01", "42703"]) }).safeParse(error.cause).success
-            )
-                throw new ORPCError("PRECONDITION_FAILED", {
-                    message: "Database schema is out of date. Run pnpm db:migrate on the server.",
-                });
+                  ),
+              )
+              .orderBy(desc(deployments.createdAt), desc(deployments.id))
+              .limit(101)
+              .catch((error) => {
+                  if (
+                      error instanceof DrizzleQueryError &&
+                      z.object({ code: z.enum(["42P01", "42703"]) }).safeParse(error.cause).success
+                  )
+                      throw new ORPCError("PRECONDITION_FAILED", {
+                          message:
+                              "Database schema is out of date. Run pnpm db:migrate on the server.",
+                      });
 
-            throw new ORPCError("INTERNAL_SERVER_ERROR", {
-                message: "Unable to read resource deployment history.",
-            });
-        });
+                  throw new ORPCError("INTERNAL_SERVER_ERROR", {
+                      message: "Unable to read resource deployment history.",
+                  });
+              });
 
-    const names = new Set<string>();
+    const names = new Set<string>(monitoring ? [GREPTIME_SERVICE, ALLOY_SERVICE] : []);
 
     if (candidates.length === 0 && resource.spec?.trim()) {
         const [tracked] = await db
@@ -221,27 +242,38 @@ async function deployedServices(
     if (names.size > 100) throw new Error("Too many deployed services.");
     const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
     const services: LogService[] = [];
-    const serviceNames = [...names].filter((name) => name !== GREPTIME_SERVICE && name !== ALLOY_SERVICE && !name.startsWith("stoat-monitoring-"));
+
+    // User resources must never reach monitoring services by naming them.
+    const serviceNames = [...names].filter(
+        (name) =>
+            monitoring ||
+            (name !== GREPTIME_SERVICE &&
+                name !== ALLOY_SERVICE &&
+                !name.startsWith("stoat-monitoring-")),
+    );
 
     for (let offset = 0; offset < serviceNames.length; offset += 8) {
-        const batch = await Promise.all(serviceNames.slice(offset, offset + 8).map(async (name) => {
-            signal.throwIfAborted();
+        const batch = await Promise.all(
+            serviceNames.slice(offset, offset + 8).map(async (name) => {
+                signal.throwIfAborted();
 
-            if (!identifier.safeParse(name).success) throw new Error("Invalid deployed service name.");
+                if (!identifier.safeParse(name).success)
+                    throw new Error("Invalid deployed service name.");
 
-            const result = await uc.GET("/api/v1/services/{id}", {
-                params: { path: { id: name } },
-                signal,
-            });
+                const result = await uc.GET("/api/v1/services/{id}", {
+                    params: { path: { id: name } },
+                    signal,
+                });
 
-            if (result.response.status === 404) return null;
-            const service = await unwrap(Promise.resolve(result));
+                if (result.response.status === 404) return null;
+                const service = await unwrap(Promise.resolve(result));
 
-            if (service.name !== name || !identifier.safeParse(service.id).success)
-                throw new Error("Invalid service inspection.");
+                if (service.name !== name || !identifier.safeParse(service.id).success)
+                    throw new Error("Invalid service inspection.");
 
-            return service;
-        }));
+                return service;
+            }),
+        );
 
         for (const service of batch) if (service) services.push(service);
     }
@@ -526,12 +558,14 @@ async function* followServiceEvents(
         let retryable = !initial;
 
         try {
-            let current = initial ?? await unwrap(
-                uc.GET("/api/v1/services/{id}", {
-                    params: { path: { id: service.name } },
-                    signal: bounded(signal, 5_000),
-                }),
-            );
+            let current =
+                initial ??
+                (await unwrap(
+                    uc.GET("/api/v1/services/{id}", {
+                        params: { path: { id: service.name } },
+                        signal: bounded(signal, 5_000),
+                    }),
+                ));
 
             retryable = false;
 
@@ -598,12 +632,18 @@ async function* followServiceEvents(
             inspectionError = undefined;
             replacement = current.id === service.id ? undefined : current;
 
-            if (fingerprint !== undefined && (replacement || next !== fingerprint || waiting)) cycle.abort();
+            if (fingerprint !== undefined && (replacement || next !== fingerprint || waiting))
+                cycle.abort();
             fingerprint = next;
         } catch (error) {
             if (!signal.aborted) {
-                inspectionError = retryable && (!(error instanceof UcApiError) || [404, 408, 429].includes(error.status) || error.status >= 500)
-                    ? "retry" : "terminal";
+                inspectionError =
+                    retryable &&
+                    (!(error instanceof UcApiError) ||
+                        [404, 408, 429].includes(error.status) ||
+                        error.status >= 500)
+                        ? "retry"
+                        : "terminal";
                 cycle.abort();
             }
         } finally {
@@ -633,19 +673,24 @@ async function* followServiceEvents(
                         type: "status",
                         serviceId: service.id,
                         state: failure === "retry" ? "reconnecting" : "error",
-                        message: failure === "retry"
-                            ? "Service could not be inspected. Retrying automatically."
-                            : "Service is no longer in this resource or its inspection was invalid.",
+                        message:
+                            failure === "retry"
+                                ? "Service could not be inspected. Retrying automatically."
+                                : "Service is no longer in this resource or its inspection was invalid.",
                     };
 
                     if (failure === "terminal") return;
                 } else {
                     for await (const event of serviceEvents(cluster, service, combined)) {
-                        if (event.type === "status" && event.state === "reconnecting") waiting = true;
+                        if (event.type === "status" && event.state === "reconnecting")
+                            waiting = true;
 
                         if (event.type === "logs")
                             for (const log of event.logs)
-                                if (log.container) log.container = containerNames.get(`${log.machine}:${log.container}`) ?? log.container;
+                                if (log.container)
+                                    log.container =
+                                        containerNames.get(`${log.machine}:${log.container}`) ??
+                                        log.container;
                         yield event;
 
                         if (event.type === "status" && event.state === "error") return;
@@ -669,7 +714,11 @@ async function* followServiceEvents(
                 if (replacement) {
                     service = replacement;
                     replacement = undefined;
-                    yield { type: "reset", serviceId, replacement: { id: service.id, name: service.name } };
+                    yield {
+                        type: "reset",
+                        serviceId,
+                        replacement: { id: service.id, name: service.name },
+                    };
                 } else yield { type: "reset", serviceId };
             }
         }
@@ -681,10 +730,8 @@ async function* followServiceEvents(
 
 const logProcedure = organizationProcedure
     .input(z.object(scopeInput))
-    .use(resourceMiddleware)
+    .use(resourceReadMiddleware)
     .use(async ({ context, next }) => {
-        if (context.resource.type !== "compose") throw new ORPCError("NOT_FOUND");
-
         const [cluster] = await context.db
             .select({
                 id: clusters.id,
@@ -711,7 +758,13 @@ export const resourceLogsRouter = {
     listLogServices: logProcedure.handler(
         async ({ context: { db, logCluster, resource }, signal }) => {
             try {
-                const { services } = await deployedServices(db, logCluster, resource, bounded(signal));
+                const { services } = await deployedServices(
+                    db,
+                    logCluster,
+                    resource,
+                    bounded(signal),
+                );
+
                 const history = await logHistory(db, logCluster);
 
                 return {
@@ -728,189 +781,216 @@ export const resourceLogsRouter = {
         },
     ),
 
-    streamLogs: logProcedure.input(z.object({
-        ...selectionInput,
-        serviceIds: selectionInput.serviceIds.optional(),
-        serviceNames: selectionInput.serviceIds.optional(),
-    }).refine((input) => input.serviceIds === undefined || input.serviceNames === undefined, {
-        message: "Select services by either ID or name, not both.",
-    })).handler(({ context, input, signal }) =>
-        cancellableStream(async function* (signal): AsyncGenerator<ResourceLogEvent> {
-            const { db, logCluster, session, organizationId } = context;
-            const controller = new AbortController();
-            const combined = AbortSignal.any([signal, controller.signal]);
-            let failure: ORPCError<string, unknown> | undefined;
-            let checking = false;
-            const refreshers = new Map<string, () => Promise<void>>();
-            let rediscovering: ReturnType<typeof deployedServices> | undefined;
+    streamLogs: logProcedure
+        .use(requireAuth)
+        .input(
+            z
+                .object({
+                    ...selectionInput,
+                    serviceIds: selectionInput.serviceIds.optional(),
+                    serviceNames: selectionInput.serviceIds.optional(),
+                })
+                .refine(
+                    (input) => input.serviceIds === undefined || input.serviceNames === undefined,
+                    {
+                        message: "Select services by either ID or name, not both.",
+                    },
+                ),
+        )
+        .handler(({ context, input, signal }) =>
+            cancellableStream(async function* (signal): AsyncGenerator<ResourceLogEvent> {
+                const { db, logCluster, session, organizationId } = context;
+                const controller = new AbortController();
+                const combined = AbortSignal.any([signal, controller.signal]);
+                let failure: ORPCError<string, unknown> | undefined;
+                let checking = false;
+                const refreshers = new Map<string, () => Promise<void>>();
+                let rediscovering: ReturnType<typeof deployedServices> | undefined;
 
-            const rediscover = () => {
-                // Share a refresh when several services are recreated in the same deployment.
-                rediscovering ??= (async () => {
-                    const [resource] = await db.select().from(resources).where(and(
-                        eq(resources.id, input.resourceId),
-                        eq(resources.projectId, input.projectId),
-                        eq(resources.type, "compose"),
-                    ));
+                const rediscover = () => {
+                    // Share a refresh when several services are recreated in the same deployment.
+                    rediscovering ??= (async () => {
+                        const [resource] = await db
+                            .select()
+                            .from(resources)
+                            .where(
+                                and(
+                                    eq(resources.id, input.resourceId),
+                                    eq(resources.projectId, input.projectId),
+                                ),
+                            );
 
-                    combined.throwIfAborted();
+                        combined.throwIfAborted();
 
-                    if (!resource) throw new ORPCError("NOT_FOUND");
+                        if (!resource) throw new ORPCError("NOT_FOUND");
 
-                    return deployedServices(db, logCluster, resource, bounded(combined));
-                })().finally(() => { rediscovering = undefined; });
-
-                return rediscovering;
-            };
-
-            const check = async () => {
-                if (checking || combined.aborted) return;
-                checking = true;
-
-                try {
-                    await requireLiveAccess(
-                        db,
-                        session.session.id,
-                        session.session.token,
-                        session.user.id,
-                        organizationId,
-                        input.projectId,
-                        input.resourceId,
-                        logCluster.id,
-                        combined,
-                    );
-
-                    // Replica discovery is per service and must never delay the auth deadline.
-                    for (const refresh of refreshers.values()) void refresh();
-                } catch {
-                    if (combined.aborted) return;
-                    failure = new ORPCError("FORBIDDEN", {
-                        message:
-                            "Log access expired or could not be verified. Refresh the resource.",
+                        return deployedServices(db, logCluster, resource, bounded(combined));
+                    })().finally(() => {
+                        rediscovering = undefined;
                     });
-                    controller.abort();
-                } finally {
-                    checking = false;
-                }
-            };
 
-            let interval: ReturnType<typeof setInterval> | undefined;
-            const iterators: AsyncGenerator<ResourceLogEvent>[] = [];
-            let wake = () => {};
+                    return rediscovering;
+                };
 
-            const abort = () => wake();
-            combined.addEventListener("abort", abort, { once: true });
+                const check = async () => {
+                    if (checking || combined.aborted) return;
+                    checking = true;
 
-            try {
-                if (combined.aborted) return;
-                await check();
+                    try {
+                        await requireLiveAccess(
+                            db,
+                            session.session.id,
+                            session.session.token,
+                            session.user.id,
+                            organizationId,
+                            input.projectId,
+                            input.resourceId,
+                            logCluster.id,
+                            combined,
+                        );
 
-                if (failure) throw failure;
+                        // Replica discovery is per service and must never delay the auth deadline.
+                        for (const refresh of refreshers.values()) void refresh();
+                    } catch {
+                        if (combined.aborted) return;
+                        failure = new ORPCError("FORBIDDEN", {
+                            message:
+                                "Log access expired or could not be verified. Refresh the resource.",
+                        });
+                        controller.abort();
+                    } finally {
+                        checking = false;
+                    }
+                };
 
-                if (combined.aborted) return;
-                // Refresh authorization during discovery, idle tails and browser backpressure.
-                interval = setInterval(() => {
-                    void check();
-                }, 15_000);
-                let services: LogService[];
+                let interval: ReturnType<typeof setInterval> | undefined;
+                const iterators: AsyncGenerator<ResourceLogEvent>[] = [];
+                let wake = () => {};
+
+                const abort = () => wake();
+                combined.addEventListener("abort", abort, { once: true });
 
                 try {
-                    const discovered = await deployedServices(
-                        db,
-                        logCluster,
-                        context.resource,
-                        bounded(combined),
-                    );
+                    if (combined.aborted) return;
+                    await check();
 
-                    services = discovered.services;
+                    if (failure) throw failure;
 
-                    if (input.serviceIds === undefined) {
-                        const history = await logHistory(db, logCluster);
+                    if (combined.aborted) return;
+                    // Refresh authorization during discovery, idle tails and browser backpressure.
+                    interval = setInterval(() => {
+                        void check();
+                    }, 15_000);
+                    let services: LogService[];
 
+                    try {
+                        const discovered = await deployedServices(
+                            db,
+                            logCluster,
+                            context.resource,
+                            bounded(combined),
+                        );
+
+                        services = discovered.services;
+
+                        if (input.serviceIds === undefined) {
+                            const history = await logHistory(db, logCluster);
+
+                            if (failure) throw failure;
+
+                            if (combined.aborted) return;
+                            yield {
+                                type: "services",
+                                services: services.map(({ id, name }) => ({ id, name })),
+                                ...history,
+                            };
+                        }
+                    } catch (error) {
                         if (failure) throw failure;
 
                         if (combined.aborted) return;
-                        yield {
-                            type: "services",
-                            services: services.map(({ id, name }) => ({ id, name })),
-                            ...history,
-                        };
+
+                        if (error instanceof ORPCError) throw error;
+                        throw new ORPCError("BAD_GATEWAY", {
+                            message: "Unable to inspect deployed log services.",
+                        });
                     }
-                } catch (error) {
+
                     if (failure) throw failure;
 
                     if (combined.aborted) return;
 
-                    if (error instanceof ORPCError) throw error;
-                    throw new ORPCError("BAD_GATEWAY", {
-                        message: "Unable to inspect deployed log services.",
-                    });
-                }
+                    const selected =
+                        input.serviceNames !== undefined
+                            ? services.filter((service) =>
+                                  input.serviceNames!.includes(service.name),
+                              )
+                            : input.serviceIds === undefined
+                              ? services.slice(0, 20)
+                              : selectedServices(services, input.serviceIds);
 
-                if (failure) throw failure;
+                    // A deployment may temporarily remove selected names. End this attempt so
+                    // the live client rediscovers them, never broadening the user's selection.
+                    if (input.serviceNames && selected.length !== input.serviceNames.length) return;
 
-                if (combined.aborted) return;
+                    const ready: { index: number; result: IteratorResult<ResourceLogEvent> }[] = [];
 
-                const selected = input.serviceNames !== undefined
-                    ? services.filter((service) => input.serviceNames!.includes(service.name))
-                    : input.serviceIds === undefined
-                        ? services.slice(0, 20)
-                        : selectedServices(services, input.serviceIds);
+                    for (const service of selected)
+                        iterators.push(
+                            followServiceEvents(
+                                logCluster,
+                                service,
+                                combined,
+                                refreshers,
+                                rediscover,
+                            ),
+                        );
 
-                // A deployment may temporarily remove selected names. End this attempt so
-                // the live client rediscovers them, never broadening the user's selection.
-                if (input.serviceNames && selected.length !== input.serviceNames.length) return;
-
-                const ready: { index: number; result: IteratorResult<ResourceLogEvent> }[] = [];
-
-                for (const service of selected)
-                    iterators.push(followServiceEvents(logCluster, service, combined, refreshers, rediscover));
-
-                // One outstanding read/event per service, including under a slow consumer.
-                // Repeated Promise.race would accumulate handlers on every idle service.
-                const read = (index: number) => {
-                    void iterators[index]!.next()
-                        .then((result) => {
-                            ready.push({ index, result });
-                            wake();
-                        })
-                        .catch(() => {
-                            failure = new ORPCError("BAD_GATEWAY", {
-                                message: "Log stream interrupted. Reconnect to retry.",
+                    // One outstanding read/event per service, including under a slow consumer.
+                    // Repeated Promise.race would accumulate handlers on every idle service.
+                    const read = (index: number) => {
+                        void iterators[index]!.next()
+                            .then((result) => {
+                                ready.push({ index, result });
+                                wake();
+                            })
+                            .catch(() => {
+                                failure = new ORPCError("BAD_GATEWAY", {
+                                    message: "Log stream interrupted. Reconnect to retry.",
+                                });
+                                controller.abort();
                             });
-                            controller.abort();
-                        });
-                };
+                    };
 
-                iterators.forEach((_, index) => read(index));
-                let remaining = iterators.length;
+                    iterators.forEach((_, index) => read(index));
+                    let remaining = iterators.length;
 
-                while (remaining && !combined.aborted) {
-                    if (!ready.length)
-                        await new Promise<void>((resolve) => {
-                            wake = resolve;
-                        });
+                    while (remaining && !combined.aborted) {
+                        if (!ready.length)
+                            await new Promise<void>((resolve) => {
+                                wake = resolve;
+                            });
 
-                    if (combined.aborted) break;
-                    const item = ready.shift()!;
+                        if (combined.aborted) break;
+                        const item = ready.shift()!;
 
-                    if (item.result.done) remaining--;
-                    else {
-                        yield item.result.value;
+                        if (item.result.done) remaining--;
+                        else {
+                            yield item.result.value;
 
-                        if (!combined.aborted) read(item.index);
+                            if (!combined.aborted) read(item.index);
+                        }
                     }
-                }
 
-                if (failure) throw failure;
-            } finally {
-                clearInterval(interval);
-                controller.abort();
-                combined.removeEventListener("abort", abort);
-                await Promise.all(iterators.map((iterator) => iterator.return(undefined)));
-            }
-        }, signal),
-    ),
+                    if (failure) throw failure;
+                } finally {
+                    clearInterval(interval);
+                    controller.abort();
+                    combined.removeEventListener("abort", abort);
+                    await Promise.all(iterators.map((iterator) => iterator.return(undefined)));
+                }
+            }, signal),
+        ),
 
     searchLogs: logProcedure
         .input(
@@ -1008,6 +1088,14 @@ export const resourceLogsRouter = {
 
                 const uc = ucClient(logCluster.sidecarUrl, { token: logCluster.sidecarToken });
 
+                // Telemetry is labelled with Uncloud machine IDs; show names where known.
+                const machineNames = unwrap(
+                    uc.GET("/api/v1/machines", { signal: querySignal }),
+                ).then(
+                    ({ items }) => new Map(items.map((machine) => [machine.id, machine.name])),
+                    () => new Map<string, string>(),
+                );
+
                 const greptime = await unwrap(
                     uc.GET("/api/v1/services/{id}", {
                         params: { path: { id: GREPTIME_SERVICE } },
@@ -1079,6 +1167,8 @@ export const resourceLogsRouter = {
 
                 if (rows.length > pageSize + 1) throw new Error("Unexpected log page size.");
 
+                const machineLabels = await machineNames;
+
                 const logs = rows.slice(0, pageSize).map((row): ResourceLog => {
                     const [time, serviceId, message, machine, container, stream] =
                         historicalRow.parse(row);
@@ -1099,7 +1189,7 @@ export const resourceLogsRouter = {
                         serviceId,
                         serviceName: service.name,
                         message,
-                        machine,
+                        machine: machine ? (machineLabels.get(machine) ?? machine) : machine,
                         container,
                         stream,
                     };

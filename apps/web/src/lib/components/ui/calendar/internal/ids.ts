@@ -5,6 +5,7 @@ let idCounter = 0;
  */
 export function useId(prefix = 'bits') {
   idCounter++;
+
   return `${prefix}-${idCounter}`;
 }
 

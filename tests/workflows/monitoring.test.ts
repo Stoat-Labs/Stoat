@@ -10,7 +10,7 @@ import {
 } from "../../packages/workflows/src/monitoring-compose";
 
 const config: ClusterInitializationConfiguration = {
-    machineId: "machine-1",
+    machine: "machine-1",
     greptimeStorage: { type: "volume", source: "greptime-data" },
     alloyStorage: { type: "bind", source: "/srv/alloy" },
     retentionDays: 14,
@@ -91,6 +91,16 @@ it("renders the bundled monitoring template with isolated storage and private se
         bind: { create_host_path: false },
     });
     expect(compose.services[ALLOY_SERVICE].environment.GREPTIME_PASSWORD).toBe("password");
+    // Docker's overlayfs handler cannot collect any container metrics without this socket.
+    expect(compose.configs.alloy_config.content).toContain(
+        'containerd_host = "/rootfs/run/containerd/containerd.sock"',
+    );
+    expect(compose.services[ALLOY_SERVICE].volumes).toContainEqual({
+        type: "bind",
+        source: "/",
+        target: "/rootfs",
+        read_only: true,
+    });
 
     for (const service of Object.values(compose.services)) {
         expect(service).not.toHaveProperty("ports");

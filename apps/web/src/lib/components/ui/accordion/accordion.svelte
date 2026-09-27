@@ -19,6 +19,7 @@
   const internalValue = $derived.by((): string[] => {
     if (multiple) return Array.isArray(value) ? value : value != null ? [value] : [];
     const single = Array.isArray(value) ? value[0] : value;
+
     return single != null ? [single] : [];
   });
 </script>

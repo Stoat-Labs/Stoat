@@ -36,7 +36,9 @@
   }>('map');
 
   let waitingForLocation = $state(false);
+
   let compassElement: SVGSVGElement | null = $state(null);
+
   const loaded = $derived(mapCtx.isLoaded());
 
   const positionClasses = {
@@ -86,7 +88,9 @@
 
   function handleLocate() {
     const map = mapCtx.getMap();
+
     if (!map) return;
+
     if (!('geolocation' in navigator)) return;
 
     waitingForLocation = true;
@@ -97,6 +101,7 @@
           longitude: position.coords.longitude,
           latitude: position.coords.latitude
         };
+
         map.flyTo({
           center: [coords.longitude, coords.latitude],
           zoom: 14,
@@ -116,6 +121,7 @@
   function handleFullscreen() {
     const map = mapCtx.getMap();
     const container = map?.getContainer();
+
     if (!container) return;
 
     if (document.fullscreenElement) {

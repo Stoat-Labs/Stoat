@@ -11,9 +11,11 @@ export const o = os.$context<Context>();
 
 export const publicProcedure = o;
 
-const requireAuth = o.middleware(async ({ context, next }) => {
+export const requireAuth = o.middleware(async ({ context, next }) => {
     if (!context.session?.user) {
-        throw new ORPCError("UNAUTHORIZED");
+        throw new ORPCError("UNAUTHORIZED", {
+            message: context.apiKey ? "This action requires a signed-in user." : undefined,
+        });
     }
 
     return next({
@@ -25,11 +27,24 @@ const requireAuth = o.middleware(async ({ context, next }) => {
 
 export const protectedProcedure = publicProcedure.use(requireAuth);
 
-export const organizationProcedure = protectedProcedure.use(async ({ context, next }) => {
-    const organizationId = context.session.session.activeOrganizationId;
+export const organizationProcedure = publicProcedure.use(async ({ context, next }) => {
+    const { session } = context;
+
+    // Organization API keys act with admin rights inside their organization.
+    if (context.apiKey) {
+        return next({
+            context: { organizationId: context.apiKey.organizationId, organizationRole: "admin" },
+        });
+    }
+
+    if (!session?.user) {
+        throw new ORPCError("UNAUTHORIZED");
+    }
+
+    const organizationId = session.session.activeOrganizationId;
 
     const membership = organizationId
-        ? await getOrganizationMembership(context.db, context.session.user.id, organizationId)
+        ? await getOrganizationMembership(context.db, session.user.id, organizationId)
         : null;
 
     if (!organizationId || !membership) {
@@ -52,6 +67,14 @@ export const organizationAdminProcedure = organizationProcedure.use(async ({ con
 
     return next();
 });
+
+export function isOrganizationAdmin(role: string) {
+    return role.split(",").some((part) => {
+        const value = part.trim();
+
+        return value === "owner" || value === "admin";
+    });
+}
 
 export const uncloudMiddleware = organizationProcedure.middleware(
     async ({ context: { db, organizationId }, next }, input: { clusterId: string }) => {
@@ -78,43 +101,55 @@ export const uncloudMiddleware = organizationProcedure.middleware(
     },
 );
 
-export const resourceMiddleware = organizationProcedure.middleware(
-    async (
-        { context: { db, organizationId }, next },
-        input: { projectId: string; resourceId: string; clusterId?: string },
-    ) => {
-        const [project] = await db
-            .select({ id: projects.id })
-            .from(projects)
-            .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-            .where(
-                and(
-                    eq(projects.id, input.projectId),
-                    input.clusterId === undefined
-                        ? undefined
-                        : eq(projects.clusterId, input.clusterId),
-                    sql`${projects.isInternal} is not true`,
-                    eq(clusters.organizationId, organizationId),
-                ),
-            )
-            .limit(1);
+// System-managed internal projects are readable by owners/admins only and never writable here.
+function resourceAccess(allowInternalRead: boolean) {
+    return organizationProcedure.middleware(
+        async (
+            { context: { db, organizationId, organizationRole }, next },
+            input: { projectId: string; resourceId: string; clusterId?: string },
+        ) => {
+            const [project] = await db
+                .select({ id: projects.id })
+                .from(projects)
+                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                .where(
+                    and(
+                        eq(projects.id, input.projectId),
+                        input.clusterId === undefined
+                            ? undefined
+                            : eq(projects.clusterId, input.clusterId),
+                        allowInternalRead && isOrganizationAdmin(organizationRole)
+                            ? undefined
+                            : sql`${projects.isInternal} is not true`,
+                        eq(clusters.organizationId, organizationId),
+                    ),
+                )
+                .limit(1);
 
-        if (!project) {
-            throw new ORPCError("NOT_FOUND", { message: "Project not found." });
-        }
+            if (!project) {
+                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+            }
 
-        const [resource] = await db
-            .select()
-            .from(resources)
-            .where(
-                and(eq(resources.id, input.resourceId), eq(resources.projectId, input.projectId)),
-            )
-            .limit(1);
+            const [resource] = await db
+                .select()
+                .from(resources)
+                .where(
+                    and(
+                        eq(resources.id, input.resourceId),
+                        eq(resources.projectId, input.projectId),
+                    ),
+                )
+                .limit(1);
 
-        if (!resource) {
-            throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
-        }
+            if (!resource) {
+                throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+            }
 
-        return next({ context: { resource } });
-    },
-);
+            return next({ context: { resource } });
+        },
+    );
+}
+
+export const resourceMiddleware = resourceAccess(false);
+
+export const resourceReadMiddleware = resourceAccess(true);

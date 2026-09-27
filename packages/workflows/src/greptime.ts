@@ -41,30 +41,77 @@ export async function sql(
     query: string,
     signal: AbortSignal,
 ) {
-    const container = Schema.decodeUnknownSync(Schema.String)(service.containers[0]?.container.Id);
-    // curl config input is not a shell, but still has its own quoting rules.
-    const credential = password.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+    return readSqlRows(
+        await monitoringRequest(
+            uc,
+            service,
+            password,
+            "/v1/sql?db=public",
+            new URLSearchParams({ sql: query }),
+            signal,
+        ),
+    );
+}
 
-    if (/[\r\n\0]/u.test(credential)) throw new Error("Invalid monitoring credential.");
+/** Query the private monitoring HTTP API through the existing bounded exec transport. */
+export async function monitoringRequest(
+    uc: UcClient,
+    service: Service,
+    password: string,
+    path: string,
+    parameters: URLSearchParams,
+    signal: AbortSignal,
+) {
+    const result = await exec(
+        uc,
+        service,
+        [
+            "curl",
+            "--silent",
+            "--show-error",
+            "--fail-with-body",
+            "--max-time",
+            "15",
+            "--config",
+            "-",
+            ...Array.from(parameters, ([key, value]) => [
+                "--data-urlencode",
+                `${key}=${value}`,
+            ]).flat(),
+            `http://127.0.0.1:4000${path}`,
+        ],
+        `user = ${curlQuote(`stoat:${password}`)}\n`,
+        signal,
+        1024 * 1024,
+    );
+
+    if (result.truncated) throw new GreptimeResponseTooLargeError();
+
+    if (result.exitCode !== 0) throw new Error("Monitoring database query failed.");
+
+    return result.stdout;
+}
+
+function curlQuote(value: string) {
+    // curl config input is not a shell, but still has its own quoting rules.
+    if (/[\r\n\0]/u.test(value)) throw new Error("Invalid monitoring request.");
+
+    return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+async function exec(
+    uc: UcClient,
+    service: Service,
+    command: string[],
+    stdin: string,
+    signal: AbortSignal,
+    limit: number,
+) {
+    const container = Schema.decodeUnknownSync(Schema.String)(service.containers[0]?.container.Id);
 
     const response = await uc.POST("/api/v1/services/{id}/containers/{container}/exec", {
         params: { path: { id: service.id, container } },
-        body: {
-            command: [
-                "curl",
-                "--silent",
-                "--show-error",
-                "--fail-with-body",
-                "--max-time",
-                "15",
-                "--config",
-                "-",
-                "--data-urlencode",
-                `sql=${query}`,
-                "http://127.0.0.1:4000/v1/sql?db=public",
-            ],
-            stdin: `user = "stoat:${credential}"\n`,
-        },
+        body: { command, stdin },
         parseAs: "stream",
         signal,
     });
@@ -96,7 +143,7 @@ export async function sql(
             if (done) break;
             size += value.byteLength;
 
-            if (size > 1024 * 1024) throw new GreptimeResponseTooLargeError();
+            if (size > limit) throw new GreptimeResponseTooLargeError();
             chunks.push(value);
         }
     } finally {
@@ -105,17 +152,11 @@ export async function sql(
         reader.releaseLock();
     }
 
-    const result = Schema.decodeUnknownSync(
+    return Schema.decodeUnknownSync(
         Schema.Struct({
             exitCode: Schema.Number,
             truncated: Schema.Boolean,
             stdout: Schema.String,
         }),
     )(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-
-    if (result.truncated) throw new GreptimeResponseTooLargeError();
-
-    if (result.exitCode !== 0) throw new Error("Monitoring database query failed.");
-
-    return readSqlRows(result.stdout);
 }

@@ -16,6 +16,7 @@
         "check-types": "tsc -b"
     },
     "dependencies": {
+        "@better-auth/api-key": "catalog:",
         "@stoat/db": "workspace:*",
         "better-auth": "catalog:",
         "zod": "catalog:"

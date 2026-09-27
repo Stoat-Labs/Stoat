@@ -10,6 +10,49 @@
         lastActivityAt: Date | string;
         resources: { id: string; name: string; status: ResourceStatus }[];
     };
+
+    export const statusLabels: Record<Exclude<ResourceStatus, null>, string> = {
+        queued: "Deploy queued",
+        running: "Deploying",
+        ready: "Deployed",
+        failed: "Deploy failed",
+        cancelled: "Deploy cancelled",
+    };
+
+    export function dotClass(status: ResourceStatus) {
+        switch (status) {
+            case "ready":
+                return "bg-success";
+            case "failed":
+                return "bg-destructive";
+            case "queued":
+            case "running":
+                return "animate-pulse bg-warning";
+            default:
+                return "bg-muted-foreground/40";
+        }
+    }
+
+    const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
+
+    export function ago(value: Date | string, now: number) {
+        const seconds = Math.round((new Date(value).getTime() - now) / 1000);
+
+        const units: [Intl.RelativeTimeFormatUnit, number][] = [
+            ["year", 31_536_000],
+            ["month", 2_592_000],
+            ["week", 604_800],
+            ["day", 86_400],
+            ["hour", 3_600],
+            ["minute", 60],
+        ];
+
+        for (const [unit, size] of units) {
+            if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
+        }
+
+        return "just now";
+    }
 </script>
 
 <script lang="ts">
@@ -29,48 +72,6 @@
     const visible = $derived(project.resources.slice(0, maxResources));
 
     const hidden = $derived(project.resources.length - visible.length);
-
-    const statusLabels: Record<Exclude<ResourceStatus, null>, string> = {
-        queued: "Deploy queued",
-        running: "Deploying",
-        ready: "Deployed",
-        failed: "Deploy failed",
-        cancelled: "Deploy cancelled",
-    };
-
-    function dotClass(status: ResourceStatus) {
-        switch (status) {
-            case "ready":
-                return "bg-success";
-            case "failed":
-                return "bg-destructive";
-            case "queued":
-            case "running":
-                return "animate-pulse bg-warning";
-            default:
-                return "bg-muted-foreground/40";
-        }
-    }
-
-    const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
-
-    function ago(value: Date | string) {
-        const seconds = Math.round((new Date(value).getTime() - now) / 1000);
-        const units: [Intl.RelativeTimeFormatUnit, number][] = [
-            ["year", 31_536_000],
-            ["month", 2_592_000],
-            ["week", 604_800],
-            ["day", 86_400],
-            ["hour", 3_600],
-            ["minute", 60],
-        ];
-
-        for (const [unit, size] of units) {
-            if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
-        }
-
-        return "just now";
-    }
 </script>
 
 <Card class="group h-full gap-0 p-4 transition-colors hover:border-input" data-slot="project-overview-card">
@@ -82,7 +83,7 @@
                 </a>
             </h2>
             <p class={cn("mt-0.5 truncate text-sm text-muted-foreground", !project.description?.trim() && "italic opacity-64")}>
-                {project.description?.trim() || "No description"}
+                {project.description?.trim() || ""}
             </p>
         </div>
         <Menu>
@@ -128,6 +129,6 @@
     <p class="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <span class="truncate">{project.clusterName}</span>
         <span aria-hidden="true">·</span>
-        <time class="shrink-0" datetime={new Date(project.lastActivityAt).toISOString()}>{ago(project.lastActivityAt)}</time>
+        <time class="shrink-0" datetime={new Date(project.lastActivityAt).toISOString()}>{ago(project.lastActivityAt, now)}</time>
     </p>
 </Card>

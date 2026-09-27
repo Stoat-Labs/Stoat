@@ -41,8 +41,11 @@
   let colorFormat = $state<'hex' | 'hsl' | 'rgb'>('hex');
 
   const inputBase = 'text-center h-6 text-xs px-1 min-w-0 w-full border-0 bg-muted text-foreground';
+
   const inputFirst = `${inputBase} rounded-l`;
+
   const inputMiddle = `${inputBase} border-l-2 border-l-popover`;
+
   const inputAlpha = `${inputBase} border-l-2 border-l-popover rounded-r w-12 shrink-0`;
 </script>
 

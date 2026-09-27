@@ -35,6 +35,7 @@
   }: Props = $props();
 
   const ctx = getContext<{ position: () => DrawerPosition } | undefined>('drawer-position');
+
   const position = $derived(positionProp ?? ctx?.position() ?? 'bottom');
 </script>
 

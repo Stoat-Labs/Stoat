@@ -9,6 +9,7 @@
   import type { RangeCalendarRootProps } from '../types';
 
   const noop = () => {};
+
   const uid = $props.id();
 
   let {
@@ -46,6 +47,7 @@
   }: RangeCalendarRootProps = $props();
 
   let startValue = $state<DateValue | undefined>(value?.start);
+
   let endValue = $state<DateValue | undefined>(value?.end);
 
   const defaultPlaceholder = getDefaultDate({ defaultValue: value?.start, minValue, maxValue });
@@ -54,7 +56,9 @@
     if (placeholder !== undefined) return;
     placeholder = defaultPlaceholder;
   }
+
   handleDefaultPlaceholder();
+
   watch.pre(
     () => placeholder,
     () => {
@@ -66,7 +70,9 @@
     if (value !== undefined) return;
     value = { start: undefined, end: undefined };
   }
+
   handleDefaultValue();
+
   watch.pre(
     () => value,
     () => {

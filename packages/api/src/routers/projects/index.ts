@@ -9,7 +9,7 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { organizationProcedure } from "../..";
+import { isOrganizationAdmin, organizationProcedure } from "../..";
 
 export const projectsRouter = {
     listProjects: organizationProcedure.handler(({ context: { db, organizationId } }) =>
@@ -42,6 +42,41 @@ export const projectsRouter = {
             )
             .orderBy(asc(projects.createdAt)),
     ),
+
+    getProject: organizationProcedure
+        .input(z.object({ projectId: z.string().uuid() }))
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+            const [row] = await db
+                .select({
+                    id: projects.id,
+                    name: projects.name,
+                    description: projects.description,
+                    clusterId: projects.clusterId,
+                    clusterName: clusters.name,
+                    createdAt: projects.createdAt,
+                    updatedAt: projects.updatedAt,
+                    isInternal: projects.isInternal,
+                })
+                .from(projects)
+                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                .where(
+                    and(
+                        eq(projects.id, input.projectId),
+                        eq(clusters.organizationId, organizationId),
+                    ),
+                )
+                .limit(1);
+
+            if (!row || (row.isInternal && !isOrganizationAdmin(organizationRole)))
+                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+
+            const { clusterName, ...project } = row;
+
+            // Derived so existing clusters and cluster renames need no data migration.
+            return project.isInternal
+                ? { ...project, isInternal: true, name: `${clusterName}-internal` }
+                : { ...project, isInternal: false };
+        }),
 
     listProjectOverviews: organizationProcedure.handler(
         async ({ context: { db, organizationId } }) => {
@@ -102,11 +137,7 @@ export const projectsRouter = {
 
                 const activity = items.reduce(
                     (value, item) =>
-                        Math.max(
-                            value,
-                            item.updatedAt.getTime(),
-                            item.deployedAt?.getTime() ?? 0,
-                        ),
+                        Math.max(value, item.updatedAt.getTime(), item.deployedAt?.getTime() ?? 0),
                     project.updatedAt.getTime(),
                 );
 
@@ -167,5 +198,43 @@ export const projectsRouter = {
                 });
 
             return { ...project, resourceCount: 0 };
+        }),
+
+    updateProject: organizationProcedure
+        .input(
+            z.object({
+                projectId: z.string().uuid(),
+                name: z.string().trim().min(1).max(100),
+                description: z.string().trim().max(500).optional(),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [project] = await db
+                .update(projects)
+                .set({ name: input.name, description: input.description || null })
+                .where(
+                    and(
+                        eq(projects.id, input.projectId),
+                        sql`${projects.isInternal} is not true`,
+                        inArray(
+                            projects.clusterId,
+                            db
+                                .select({ id: clusters.id })
+                                .from(clusters)
+                                .where(eq(clusters.organizationId, organizationId)),
+                        ),
+                    ),
+                )
+                .returning({
+                    id: projects.id,
+                    name: projects.name,
+                    description: projects.description,
+                });
+
+            if (!project) {
+                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+            }
+
+            return project;
         }),
 };

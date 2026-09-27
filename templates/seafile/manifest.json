@@ -1,0 +1,6 @@
+{
+    "name": "Seafile",
+    "description": "Self-hosted file sync and share with online document editing.",
+    "type": "compose",
+    "tags": ["storage", "productivity"]
+}

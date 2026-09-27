@@ -1,0 +1,1 @@
+ALTER TABLE "resource_deployment_inputs" ADD COLUMN "recreate" boolean DEFAULT false NOT NULL;

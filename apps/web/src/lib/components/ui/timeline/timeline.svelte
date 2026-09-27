@@ -9,6 +9,7 @@
     orientation?: 'horizontal' | 'vertical';
     value?: number;
   };
+
   let {
     children,
     class: className,

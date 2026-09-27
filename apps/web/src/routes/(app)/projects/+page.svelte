@@ -1,6 +1,7 @@
 <script lang="ts">
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
@@ -27,6 +28,8 @@
 
     let ready = $state(false);
 
+    useHeaderActions(createProjectAction);
+
     onMount(() => {
         ready = true;
 
@@ -36,18 +39,14 @@
 
 <svelte:head><title>Projects / Stoat</title></svelte:head>
 
-<div class="w-full space-y-6 py-6">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-            <h1 class="text-2xl font-semibold">Projects</h1>
-            <p class="mt-1 text-sm text-muted-foreground">Projects in your active organization.</p>
-        </div>
-        <Button size="sm" disabled={!ready} onclick={() => void dialog.set("create-project")}>
-            <Plus class="size-4" aria-hidden="true" />
-            Create project
-        </Button>
-    </div>
+{#snippet createProjectAction()}
+    <Button size="sm" disabled={!ready} onclick={() => void dialog.set("create-project")}>
+        <Plus class="size-4" aria-hidden="true" />
+        Create project
+    </Button>
+{/snippet}
 
+<div class="w-full space-y-6 py-6">
     {#if projectsQuery.isPending}
         <Skeleton loading count={2} count-gap={12} loading-label="Loading projects">
             <ProjectCard

@@ -10,6 +10,7 @@
 
   export function getTabsListSize(): () => SegmentedControlSize {
     const getSize = getContext<(() => SegmentedControlSize) | undefined>('tabsListSize');
+
     return () => getSize?.() ?? 'default';
   }
 </script>

@@ -21,6 +21,7 @@ function loadGoogleMapsScript(apiKey: string): Promise<void> {
       existing.addEventListener("error", () =>
         reject(new Error("Failed to load the Google Maps script")),
       );
+
       return;
     }
 
@@ -57,12 +58,14 @@ export class GooglePlacesScript {
       if (!apiKey) {
         this.isLoaded = false;
         this.error = null;
+
         return;
       }
 
       if (window.google?.maps?.importLibrary) {
         this.isLoaded = true;
         this.error = null;
+
         return;
       }
 
@@ -89,6 +92,7 @@ export class GooglePlacesScript {
 
   get hasApiKey(): boolean {
     const k=this.#options.apiKey()
+
     return k !== undefined && k.trim().length > 10;
   }
 }

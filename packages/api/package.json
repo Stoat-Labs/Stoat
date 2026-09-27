@@ -24,6 +24,7 @@
         "drizzle-orm": "^0.45.2",
         "effect": "4.0.0-rc.116",
         "ofetch": "catalog:",
+        "unstorage": "^1.17.5",
         "valibot": "catalog:",
         "yaml": "catalog:",
         "zod": "catalog:"

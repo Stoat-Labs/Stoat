@@ -115,7 +115,15 @@ export const DeployResourceLive = DeployResource.toLayer(
                 }
             })().then(
                 () => resume(Effect.void),
-                () => resume(Effect.die(new Error(RESOURCE_FAILURE_MESSAGE))),
+                // Keep the redacted failure (and its unrecoverable mark), never a raw cause.
+                (error) =>
+                    resume(
+                        Effect.die(
+                            error instanceof Error && error.message === RESOURCE_FAILURE_MESSAGE
+                                ? error
+                                : new Error(RESOURCE_FAILURE_MESSAGE),
+                        ),
+                    ),
             );
 
             // Interruption aborts the signal, then drains writes and releases the lock
@@ -143,17 +151,25 @@ async function recordFailureAsync(failure: Worker.JobFailure) {
         if (failure.name === "DeployResource") {
             if (!deployment || !["queued", "running"].includes(deployment.status)) return;
             const cause = Cause.squash(failure.cause);
+            const timedOut = Cause.isTimeoutError(cause);
 
-            const reason = Cause.isTimeoutError(cause)
+            const reason = timedOut
                 ? cause.message
                 : (deployment.error ?? RESOURCE_FAILURE_MESSAGE);
 
-            await appendDeploymentLog(
-                db,
-                deployment.id,
-                failure.willRetry ? "Resource deployment attempt failed; retry scheduled." : reason,
-                { level: "error", event: failure.willRetry ? "retry" : "failed" },
-            );
+            // The attempt already logged its own reason; only timeouts are new here.
+            const text = failure.willRetry
+                ? `Attempt ${failure.attempt} of ${failure.attemptsMax} failed; retrying.`
+                : timedOut
+                  ? reason
+                  : failure.attempt > 1
+                    ? `Deployment failed after ${failure.attempt} attempts.`
+                    : "Deployment failed.";
+
+            await appendDeploymentLog(db, deployment.id, text, {
+                level: "error",
+                event: failure.willRetry ? "retry" : "failed",
+            });
             await setDeploymentStatus(
                 db,
                 deployment.id,

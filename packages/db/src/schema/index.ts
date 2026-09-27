@@ -4,7 +4,8 @@ import { organization } from "./auth";
 export type MonitoringStorage = { type: "volume" | "bind"; source: string };
 
 export type ClusterInitializationConfiguration = {
-    machineId: string;
+    /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
+    machine: string;
     greptimeStorage: MonitoringStorage;
     alloyStorage: MonitoringStorage;
     retentionDays: number;
@@ -197,7 +198,6 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
         .notNull()
         .unique()
         .references(() => resources.id, { onDelete: "cascade" }),
-    machineId: t.text("machine_id").notNull(),
     encryptedPassword: t.text("encrypted_password").notNull(),
 });
 
@@ -222,6 +222,7 @@ export const deployments = t.pgTable(
         jobId: t.text("job_id").notNull().unique(),
         configuration: t.jsonb("configuration").$type<ClusterInitializationConfiguration>(),
         error: t.text("error"),
+        progress: t.smallint("progress").notNull().default(0),
         createdAt: t
             .timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -267,6 +268,8 @@ export const resourceDeploymentInputs = t.pgTable("resource_deployment_inputs", 
         .references(() => deployments.id, { onDelete: "cascade" }),
     spec: t.text("spec").notNull(),
     prefix: t.text("prefix").notNull(),
+    env: t.text("env").notNull().default(""),
+    recreate: t.boolean("recreate").notNull().default(false),
 });
 
 export * from "./auth";

@@ -176,7 +176,10 @@ export function createInitializeClusterHandler(
                 }),
             );
 
-            const target = machines.items.find((machine) => machine.id === config.machineId);
+            // Legacy configurations may hold an ID; Uncloud resolves either the same way.
+            const target = machines.items.find(
+                (machine) => machine.name === config.machine || machine.id === config.machine,
+            );
 
             if (!target) {
                 throw new Error("The selected monitoring machine is unavailable.");
@@ -229,10 +232,11 @@ export function createInitializeClusterHandler(
             );
             await log("Waiting for GreptimeDB to become healthy…");
 
+            // Uncloud reports container placement by machine ID.
             const greptime = await waitForService(
                 uc,
                 GREPTIME_SERVICE,
-                [state.machineId],
+                [target.id],
                 bounded(signal, 90_000),
                 true,
             );
@@ -247,6 +251,7 @@ export function createInitializeClusterHandler(
             );
             await log("Deploying Alloy collectors…");
             await deployMonitoring(uc, compose, bounded(signal, 10 * 60_000), undefined, log);
+            // Alloy labels telemetry with UNCLOUD_MACHINE_ID, so readiness compares IDs.
             const expectedMachines = machines.items.map((machine) => machine.id);
             await log(`Waiting for Alloy collectors on ${expectedMachines.length} machine(s)…`);
             await waitForService(

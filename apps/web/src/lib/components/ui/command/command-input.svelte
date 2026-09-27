@@ -28,16 +28,20 @@
   }: Props = $props();
 
   const clearPropsClass = $derived(clearProps?.class);
+
   const clearPropsRest = $derived.by(() => {
     if (!clearProps) return {};
     const { class: _, ...rest } = clearProps;
+
     return rest as Omit<NonNullable<typeof clearProps>, 'class'>;
   });
 
   const triggerPropsClass = $derived(triggerProps?.class);
+
   const triggerPropsRest = $derived.by(() => {
     if (!triggerProps) return {};
     const { class: _, ...rest } = triggerProps;
+
     return rest as Omit<NonNullable<typeof triggerProps>, 'class'>;
   });
 </script>

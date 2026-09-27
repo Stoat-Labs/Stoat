@@ -148,6 +148,41 @@
       "when": 1789994366572,
       "tag": "0020_resource_draft_spec",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790355187125,
+      "tag": "0021_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790367572992,
+      "tag": "0022_deployment_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790368491417,
+      "tag": "0023_resource_deployment_env",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790402764660,
+      "tag": "0024_resource_deployment_recreate",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790431765920,
+      "tag": "0025_monitoring_machine_name",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "deployments" ADD COLUMN "progress" smallint DEFAULT 0 NOT NULL;

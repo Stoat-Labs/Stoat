@@ -34,6 +34,7 @@ export const link = new RPCLink({
         return window.location.origin;
     },
     url: "/rpc",
+    plugins: [],
     fetch(url, options) {
         return fetch(url, {
             ...options,

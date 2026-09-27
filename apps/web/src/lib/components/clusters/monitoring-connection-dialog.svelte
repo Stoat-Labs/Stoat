@@ -32,9 +32,7 @@
         }),
     );
 
-    const connection = $derived(connectionQuery.data);
-
-    const configured = $derived(connection?.configured === true ? connection : null);
+    const configured = $derived(connectionQuery.data?.configured === true ? connectionQuery.data : null);
 </script>
 
 <Dialog bind:open>

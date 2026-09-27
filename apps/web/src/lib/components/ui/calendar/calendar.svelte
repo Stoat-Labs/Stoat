@@ -8,11 +8,13 @@
   import type * as CalendarPrimitiveTypes from './internal';
 
   export type CalendarMode = 'single' | 'multiple' | 'range';
+
   export type { DateRange };
 
   type CalendarSingleOrMultipleProps = WithoutChildrenOrChild<
     RenameTypeToMode<CalendarPrimitiveTypes.RootProps>
   >;
+
   type CalendarRangeProps = WithoutChildrenOrChild<RangeCalendarPrimitiveTypes.RootProps> & {
     mode: 'range';
   };
@@ -68,7 +70,9 @@
 
   const monthFormat = $derived.by(() => {
     if (monthFormatProp) return monthFormatProp;
+
     if (captionLayout.startsWith('dropdown')) return 'short';
+
     return 'long';
   });
 
@@ -84,6 +88,7 @@
   // (this component's own state), but share an identical external prop
   // shape, so they can be swapped in as plain component references.
   const CellComponent = $derived(mode === 'range' ? RangeCalendarCell : Calendar.Cell);
+
   const DayComponent = $derived(mode === 'range' ? RangeCalendarDay : Calendar.Day);
 </script>
 

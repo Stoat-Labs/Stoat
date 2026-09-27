@@ -4,7 +4,12 @@ import { resources } from "@stoat/db/schema/index";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
 
-import { organizationAdminProcedure, organizationProcedure, resourceMiddleware } from "../..";
+import {
+    organizationAdminProcedure,
+    organizationProcedure,
+    requireAuth,
+    resourceMiddleware,
+} from "../..";
 import { formatComposeFile } from "../../compose";
 import { listGitFiles, pushGitFile, readGitFile, validateGitPath } from "../../git";
 import { getGitConnection, gitFilePath, gitMessage, gitRevision, gitText } from "../connections";
@@ -91,13 +96,7 @@ export async function lockedComposeResource(
     const [resource] = await db
         .select()
         .from(resources)
-        .where(
-            and(
-                eq(resources.id, resourceId),
-                eq(resources.projectId, projectId),
-                eq(resources.type, "compose"),
-            ),
-        )
+        .where(and(eq(resources.id, resourceId), eq(resources.projectId, projectId)))
         .for("update");
 
     if (!resource) throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
@@ -111,9 +110,6 @@ function assertComposeSnapshot(
     input: v.InferOutput<typeof resourceEditSchema>,
 ) {
     const { expectedSpec, expectedSource } = input;
-
-    if (resource.type !== "compose")
-        throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
 
     if (resource.draftSpec !== expectedSpec) {
         throw new ORPCError("CONFLICT", {
@@ -213,6 +209,7 @@ export const resourceGitRouter = {
             }),
         ),
     pushGitSource: organizationAdminProcedure
+        .use(requireAuth)
         .input(
             v.object({
                 ...resourceEditInput,

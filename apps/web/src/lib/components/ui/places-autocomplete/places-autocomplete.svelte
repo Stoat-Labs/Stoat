@@ -50,13 +50,16 @@
   }: Props = $props();
 
   let internalValue = $state(defaultValue);
+
   const isControlled = $derived(value !== undefined);
+
   const inputValue = $derived(isControlled ? (value ?? '') : internalValue);
 
   function setInputValue(nextValue: string) {
     if (!isControlled) {
       internalValue = nextValue;
     }
+
     value = nextValue;
     onValueChange?.(nextValue);
   }

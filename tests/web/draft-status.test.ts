@@ -1,10 +1,10 @@
-import { setHeaderActions } from "$lib/components/sidebar/header-actions";
-import { orpc } from "$lib/orpc";
+import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/header-actions";
+import { orpc } from "../../apps/web/src/lib/orpc";
 import { QueryClient, setQueryClientContext } from "@tanstack/svelte-query";
 import { setContext } from "svelte";
 import { render } from "svelte/server";
 import { expect, it } from "vite-plus/test";
-import ResourcePage from "./+page.svelte";
+import ResourcePage from "../../apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+page.svelte";
 
 it("restores the saved-draft message from loaded data without a successful save mutation", () => {
     const input = { projectId: "project", resourceId: "resource" };
@@ -18,15 +18,17 @@ it("restores the saved-draft message from loaded data without a successful save 
         [null, null, false],
     ] as const) {
         const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-        cache.setQueryData(orpc.projects.listProjects.queryKey(), [{
-            id: input.projectId,
-            name: "Project",
-            description: null,
-            clusterId: "cluster",
-            resourceCount: 1,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-        }]);
+        cache.setQueryData(orpc.projects.listProjects.queryKey(), [
+            {
+                id: input.projectId,
+                name: "Project",
+                description: null,
+                clusterId: "cluster",
+                resourceCount: 1,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        ]);
         cache.setQueryData(orpc.resources.getResource.queryKey({ input }), {
             id: input.resourceId,
             projectId: input.projectId,
@@ -57,8 +59,13 @@ it("restores the saved-draft message from loaded data without a successful save 
         try {
             const { body } = render(PageWithContext);
             expect(body).toContain("Docker Compose");
-            expect(body.includes("Draft saved. Not deployed.")).toBe(hasDraft);
-            expect(cache.getMutationCache().getAll().every((mutation) => mutation.state.status === "idle")).toBe(true);
+            expect(body.includes("Draft saved.")).toBe(hasDraft);
+            expect(
+                cache
+                    .getMutationCache()
+                    .getAll()
+                    .every((mutation) => mutation.state.status === "idle"),
+            ).toBe(true);
         } finally {
             cache.clear();
         }

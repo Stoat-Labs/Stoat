@@ -1,8 +1,20 @@
 import { expect, it } from "vite-plus/test";
-import { classifyLog, logActivity, logBucketIndex, selectedLogServices, type DisplayLog } from "./resource-logs";
+import {
+    classifyLog,
+    logActivity,
+    logBucketIndex,
+    logEntryKey,
+    selectedLogServices,
+    stripLogPrefix,
+    type DisplayLog,
+} from "../../apps/web/src/lib/resource-logs";
 
 it("preserves name-based log selections across replacement, disappearance and rediscovery", () => {
-    const original = [{ id: "old-web", name: "web" }, { id: "worker", name: "worker" }];
+    const original = [
+        { id: "old-web", name: "web" },
+        { id: "worker", name: "worker" },
+    ];
+
     const selection = ["web"];
     expect(selectedLogServices(original, selection)).toEqual([original[0]]);
     expect(selectedLogServices([original[1]!], selection)).toEqual([]);
@@ -13,9 +25,28 @@ it("preserves name-based log selections across replacement, disappearance and re
     expect(selection).toEqual(["web"]);
     expect(original[0]?.id).toBe("old-web");
 
-    const many = Array.from({ length: 25 }, (_, index) => ({ id: String(index), name: `service-${index}` }));
+    const many = Array.from({ length: 25 }, (_, index) => ({
+        id: String(index),
+        name: `service-${index}`,
+    }));
+
     expect(selectedLogServices(many, null)).toEqual(many.slice(0, 20));
     expect(selectedLogServices(many, ["service-24"])).toEqual([many[24]]);
+});
+
+it("uses a stable entry key when a log buffer is rebuilt", () => {
+    const log = {
+        timestamp: "2026-09-25T12:00:00.000Z",
+        serviceId: "api",
+        serviceName: "api",
+        message: "request failed",
+        machine: "machine-1",
+        container: "container-1",
+        stream: "stderr",
+    };
+
+    expect(logEntryKey({ ...log })).toBe(logEntryKey({ ...log }));
+    expect(logEntryKey({ ...log, message: "request succeeded" })).not.toBe(logEntryKey(log));
 });
 
 it("classifies explicit levels and HTTP outcomes without inventing successes", () => {
@@ -83,15 +114,27 @@ it("uses the same fixed bucket boundaries for chart counts and selected logs", (
     const start = Date.parse("2026-09-21T08:00:00Z");
     const end = start + 24_000;
 
-    const entries: DisplayLog[] = [-1, 0, 999, 1000, 1000, 1999, 23_000, 24_000, 24_001].map((offset, id) => ({
-        id, time: start + offset, level: "other", timestamp: new Date(start + offset).toISOString(),
-        serviceId: "web", serviceName: "web", message: "line", machine: null, container: null, stream: null,
-    }));
+    const entries: DisplayLog[] = [-1, 0, 999, 1000, 1000, 1999, 23_000, 24_000, 24_001].map(
+        (offset, id) => ({
+            id,
+            time: start + offset,
+            level: "other",
+            timestamp: new Date(start + offset).toISOString(),
+            serviceId: "web",
+            serviceName: "web",
+            message: "line",
+            machine: null,
+            container: null,
+            stream: null,
+        }),
+    );
 
     const activity = logActivity(entries, start, end);
 
     for (const [index, bucket] of activity.buckets.entries())
-        expect(entries.filter((log) => logBucketIndex(log.time, start, end) === index)).toHaveLength(bucket.total);
+        expect(
+            entries.filter((log) => logBucketIndex(log.time, start, end) === index),
+        ).toHaveLength(bucket.total);
 
     expect(logBucketIndex(start + 1000, start, end)).toBe(1);
     expect(logBucketIndex(end, start, end)).toBe(23);
@@ -101,4 +144,16 @@ it("uses the same fixed bucket boundaries for chart counts and selected logs", (
     // New live output outside the captured domain cannot move the selected interval.
     expect(logBucketIndex(start + 1000, start, end + 24_000)).toBe(0);
     expect(logBucketIndex(start + 1000, start, end)).toBe(1);
+});
+
+it("strips duplicated timestamps, thread IDs and levels from messages", () => {
+    const mariadb = "2026-09-25  9:50:11 71649 [Warning] Aborted connection 71649";
+    expect(classifyLog(mariadb)).toBe("warning");
+    expect(stripLogPrefix(mariadb)).toBe("Aborted connection 71649");
+    expect(stripLogPrefix("2026-09-25T10:00:00.123Z INFO: started")).toBe("started");
+    expect(stripLogPrefix("[error] boom")).toBe("boom");
+    expect(stripLogPrefix("2026-09-25 10:00:00 200 requests")).toBe("200 requests");
+    expect(stripLogPrefix("Error connecting")).toBe("Error connecting");
+    expect(stripLogPrefix("    at foo()")).toBe("    at foo()");
+    expect(stripLogPrefix('{"level":"warn"}')).toBe('{"level":"warn"}');
 });

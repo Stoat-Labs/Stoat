@@ -20,6 +20,7 @@
     import Eye from "@lucide/svelte/icons/eye";
     import EyeOff from "@lucide/svelte/icons/eye-off";
     import { createMutation, createQuery } from "@tanstack/svelte-query";
+    import { parseAsBoolean, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { watch } from "runed";
     import { z } from "zod";
@@ -28,9 +29,13 @@
 
     const resourceId = $derived(page.params.resourceId ?? "");
 
-    const projectsQuery = createQuery(() => orpc.projects.listProjects.queryOptions());
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({ input: { projectId }, enabled: projectId.length > 0 }),
+    );
 
-    const project = $derived((projectsQuery.data ?? []).find((p) => p.id === projectId));
+    const project = $derived(projectQuery.data);
+
+    const readOnly = $derived(project?.isInternal === true);
 
     const resourceQuery = createQuery(() =>
         orpc.resources.getResource.queryOptions({
@@ -38,8 +43,6 @@
             enabled: projectId.length > 0 && resourceId.length > 0,
         }),
     );
-
-    const resource = $derived(resourceQuery.data);
 
 
     const envSchema = z.object({ env: z.string().catch("") }).catch({ env: "" });
@@ -50,23 +53,23 @@
 
     let savedEnv = $state("");
 
-    let showVariables = $state(false);
+    const showVariables = useQueryState("showVariables", parseAsBoolean.withDefault(false).withOptions({ shallow: true, scroll: false }));
 
-    const variablesVisible = $derived(showVariables && loadedResourceId === resourceId);
+    const variablesVisible = $derived(showVariables.current && loadedResourceId === resourceId);
 
     const isDirty = $derived(env !== savedEnv);
 
     watch(() => resourceId, () => {
-        showVariables = false;
+        showVariables.current = false;
     });
 
     $effect(() => {
-        const current = resource;
+        const current = resourceQuery.data;
 
         if (!current) return;
         untrack(() => {
             if (loadedResourceId !== current.id) {
-                showVariables = false;
+                showVariables.current = false;
                 loadedResourceId = current.id;
                 env = envSchema.parse(current.settings).env;
                 savedEnv = env;
@@ -104,10 +107,10 @@
 
 </script>
 
-<svelte:head><title>Variables / {resource?.name ?? "Resource"} / Stoat</title></svelte:head>
+<svelte:head><title>Variables / {resourceQuery.data?.name ?? "Resource"} / Stoat</title></svelte:head>
 
 <div class="variables-page flex h-[calc(100dvh-7rem)] min-h-112 min-w-0 w-full flex-col gap-3 py-3 xl:h-auto xl:min-h-0 xl:flex-1">
-    {#if projectsQuery.isPending || resourceQuery.isPending}
+    {#if projectQuery.isPending || resourceQuery.isPending}
         <Skeleton loading loading-label="Loading resource variables" class="flex min-h-0 flex-1 flex-col">
             <div class="flex min-h-0 flex-1 flex-col gap-3">
                     <Frame class="min-h-0 min-w-0 w-full flex-1">
@@ -126,11 +129,11 @@
                     </Frame>
             </div>
         </Skeleton>
-    {:else if projectsQuery.isError}
+    {:else if projectQuery.isError}
         <div class="space-y-4">
             <Alert variant="error">
                 <AlertDescription>
-                    Unable to load project: {projectsQuery.error.message}
+                    Unable to load project: {projectQuery.error.message}
                 </AlertDescription>
             </Alert>
             <Button variant="outline" size="sm" href="/projects">
@@ -168,7 +171,7 @@
                 Back to {project.name}
             </Button>
         </div>
-    {:else if !resource}
+    {:else if !resourceQuery.data}
         <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -216,7 +219,7 @@
                             aria-expanded={variablesVisible}
                             aria-controls="env-editor"
                             disabled={loadedResourceId !== resourceId}
-                            onclick={() => (showVariables = !showVariables)}
+                            onclick={() => (showVariables.current = !showVariables.current)}
                         >
                             {#if variablesVisible}
                                 <EyeOff class="size-4" aria-hidden="true" />
@@ -226,18 +229,20 @@
                                 Show values
                             {/if}
                         </Button>
+                        {#if !readOnly}
                         <Button
                             size="sm"
                             onclick={saveVariables}
                             loading={saveMutation.isPending}
                             disabled={!isDirty || saveMutation.isPending || loadedResourceId !== resourceId}
                         >{saveMutation.isPending ? "Saving..." : "Save"}</Button>
+                        {/if}
                         </div>
                     </FrameHeader>
                     <FramePanel id="env-editor" class="flex min-h-0 min-w-0 flex-1 overflow-hidden p-0">
                         {#if loadedResourceId === resourceId}
                                 <div class="env-editor-canvas min-h-0 flex-1 bg-code dark:bg-black/20">
-                                    {#key loadedResourceId}<CodeEditor bind:value={env} language="env" label="Environment variables (.env)" hideEnvValues={!variablesVisible} />{/key}
+                                    {#key loadedResourceId}<CodeEditor bind:value={env} language="env" label="Environment variables (.env)" hideEnvValues={!variablesVisible} {readOnly} />{/key}
                                 </div>
                         {/if}
                     </FramePanel>

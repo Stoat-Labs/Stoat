@@ -18,6 +18,7 @@
   }: Props = $props();
 
   const chipsRefCtx = getComboboxChipsRefCtx();
+
   $effect(() => {
     if (chipsRefCtx) chipsRefCtx.current = ref;
   });

@@ -3,7 +3,15 @@ import { encodeComposeFile, UcApiError, type UcClient } from "@stoat/uncloud";
 import { Predicate } from "effect";
 import { parse } from "yaml";
 
-export class DeploymentError extends Error {}
+export class DeploymentError extends Error {
+    constructor(
+        message: string,
+        // False when the sidecar rejected the input itself, so a retry cannot succeed.
+        readonly retryable = true,
+    ) {
+        super(message);
+    }
+}
 
 export type DeploymentLogger = (
     text: string,
@@ -18,11 +26,16 @@ export async function deployCompose(
     onLog: DeploymentLogger,
     services?: string[],
     credentials: string[] = [],
+    onProgress: (percent: number) => Promise<void> = async () => {},
+    recreate = false,
 ) {
     const values = new Set<string>();
 
     function add(value: string) {
         if (!value) return;
+
+        // Uncloud unescapes `$$`, so logs contain the literal value.
+        if (value.includes("$$")) add(value.replaceAll("$$", "$"));
         values.add(stripVTControlCharacters(value));
 
         if (value.trim()) values.add(stripVTControlCharacters(value.trim()));
@@ -83,6 +96,17 @@ export async function deployCompose(
 
     values.delete("");
 
+    // Service names are already public in logs, and a value like "/" is no secret.
+    const serviceNames =
+        Predicate.isObject(config) && Predicate.isObject(config.services)
+            ? Object.keys(config.services)
+            : [];
+
+    for (const value of values) {
+        if (!/[\p{L}\p{N}]/u.test(value) || serviceNames.some((name) => name.includes(value)))
+            values.delete(value);
+    }
+
     const secrets = new RegExp(
         [...values]
             .sort((a, b) => b.length - a.length)
@@ -101,11 +125,24 @@ export async function deployCompose(
     const log: DeploymentLogger = (text, level, event) => onLog(redact(text), level, event);
     let complete = false;
     let failure: string | undefined;
+    // ponytail: progress = finished progress ids / plan operations. Uncloud ids don't map
+    // 1:1 to operations, so it's capped at 95% until "complete"; weight by operation if it jumps.
+    let operationCount = 0;
+    const finished = new Set<string>();
+    let reported = 0;
+
+    const report = async (percent: number) => {
+        percent = Math.round(percent);
+
+        if (percent <= reported) return;
+        reported = percent;
+        await onProgress(percent);
+    };
 
     try {
         for await (const event of uc.stream.deployCompose(
             encodeComposeFile(compose),
-            { services, skipHealth: false },
+            { services, skipHealth: false, ...(recreate && { recreate }) },
             { signal },
         )) {
             signal.throwIfAborted();
@@ -140,6 +177,8 @@ export async function deployCompose(
                         if (detail) await log(detail, "info", "plan");
                     }
 
+                    operationCount = operations.length;
+                    await report(10);
                     break;
                 }
 
@@ -175,6 +214,16 @@ export async function deployCompose(
                     // Error progress can precede a more useful terminal error; drain the stream.
                     if (phase === "error")
                         failure = detail || "Uncloud reported deployment failure.";
+
+                    if (phase === "done" && Predicate.isString(event.id)) {
+                        finished.add(event.id);
+                        await report(
+                            10 +
+                                (85 * Math.min(finished.size, operationCount)) /
+                                    Math.max(operationCount, 1),
+                        );
+                    }
+
                     break;
                 }
 
@@ -209,7 +258,14 @@ export async function deployCompose(
         );
 
         await onLog(reason, "error", "error");
-        throw new DeploymentError(reason);
+
+        const rejected =
+            error instanceof UcApiError &&
+            error.status >= 400 &&
+            error.status < 500 &&
+            ![408, 429].includes(error.status);
+
+        throw new DeploymentError(reason, !rejected);
     }
 
     signal.throwIfAborted();

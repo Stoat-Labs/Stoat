@@ -1,0 +1,6 @@
+{
+    "name": "Jellyfin",
+    "description": "Free media server for streaming your movies, shows, and music to any device.",
+    "type": "compose",
+    "tags": ["media"]
+}

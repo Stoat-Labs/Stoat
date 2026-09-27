@@ -54,8 +54,8 @@ export function renderMonitoringCompose(
         ["GREPTIME_PASSWORD", password],
         ["GREPTIME_URL", greptimeUrl],
         ["GREPTIME_DB", MONITORING_DATABASE],
-        ["GREPTIME_MACHINE", config.machineId],
-        ["GREPTIME_MACHINE_ID", config.machineId],
+        ["GREPTIME_MACHINE", config.machine],
+        ["MONITORING_MACHINE", config.machine],
         ["CLUSTER_ID", clusterId],
         ["RETENTION_DAYS", String(config.retentionDays)],
     ]);
@@ -75,7 +75,8 @@ export function renderMonitoringCompose(
     compose.name = "stoat-monitoring";
     compose.volumes ??= {};
 
-    greptime["x-machines"] = [config.machineId];
+    // Uncloud placement matches a machine by name or ID.
+    greptime["x-machines"] = [config.machine];
 
     for (const [service, storage, target, key] of [
         [greptime, config.greptimeStorage, "/greptimedb_data", "greptime_data"],

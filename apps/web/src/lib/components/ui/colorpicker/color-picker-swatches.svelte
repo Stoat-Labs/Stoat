@@ -15,6 +15,7 @@
 
   function addSwatch() {
     const hex = ctx.colorValue.toHexString();
+
     if (!swatches.some((s) => hueyColor(s).toHexString() === hex)) {
       swatches = [...swatches, hex];
     }

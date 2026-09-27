@@ -22,11 +22,17 @@
   }
 
   let scrubEl = $state<HTMLSpanElement | null>(null);
+
   let isScrubbing = $state(false);
+
   let usingPointerLock = $state(false);
+
   let lastX = 0;
+
   let showCursor = $state(false);
+
   let cursorX = $state(0);
+
   let cursorY = $state(0);
 
   const supportsPointerLock =
@@ -58,7 +64,9 @@
       const h = window.innerHeight;
       cursorX = (((cursorX + e.movementX) % w) + w) % w;
       cursorY = (((cursorY + e.movementY) % h) + h) % h;
+
       if (e.movementX !== 0) ctx.applyDelta(e.movementX * ctx.step);
+
       return;
     }
 
@@ -66,14 +74,17 @@
     cursorY = e.clientY;
     const delta = e.clientX - lastX;
     lastX = e.clientX;
+
     if (delta !== 0) ctx.applyDelta(delta * ctx.step);
   }
 
   function handlePointerUp(e: PointerEvent) {
     isScrubbing = false;
     showCursor = false;
+
     if (usingPointerLock) {
       usingPointerLock = false;
+
       if (document.pointerLockElement === scrubEl) document.exitPointerLock();
     } else {
       scrubEl?.releasePointerCapture(e.pointerId);
@@ -91,8 +102,10 @@
 
   $effect(() => {
     document.addEventListener('pointerlockchange', handlePointerLockChange);
+
     return () => {
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
+
       if (document.pointerLockElement === scrubEl) document.exitPointerLock();
     };
   });

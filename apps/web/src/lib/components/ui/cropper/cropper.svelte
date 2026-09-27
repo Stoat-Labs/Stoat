@@ -68,6 +68,7 @@ Example:
   setCropperContext(cropper);
 
   let containerEl: HTMLDivElement | null = $state(null);
+
   let hasWarned = false;
 
   $effect(() => {
@@ -77,6 +78,7 @@ Example:
         hasWarned = true;
       }
     }, 100);
+
     return () => clearTimeout(timeout);
   });
 </script>

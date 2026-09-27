@@ -20,6 +20,7 @@
   import { Combobox as ComboboxPrimitive } from '@shardsui/svelte/combobox';
 
   type ComboboxItemDef = { label: string; value: string };
+
   type DefaultValue = string | { label?: string; value: string };
 
   let {
@@ -46,6 +47,7 @@
   }
 
   let chipsRef = $state<HTMLElement | null>(null);
+
   setComboboxChipsRefCtx({
     get current() {
       return chipsRef;

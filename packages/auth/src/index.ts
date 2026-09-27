@@ -1,3 +1,4 @@
+import { apiKey } from "@better-auth/api-key";
 import type { Database } from "@stoat/db";
 import * as schema from "@stoat/db/schema/auth";
 import { betterAuth } from "better-auth";
@@ -10,6 +11,9 @@ export type AuthConfig = {
     BETTER_AUTH_URL: string;
     BETTER_AUTH_SECRET: string;
 };
+
+// Named so tsc emits a reference instead of inlining the plugin's huge type (TS7056).
+interface ApiKeyPlugin extends ReturnType<typeof apiKey> {}
 
 export function createAuth(env: AuthConfig, database: Database) {
     return betterAuth({
@@ -37,6 +41,15 @@ export function createAuth(env: AuthConfig, database: Database) {
         emailAndPassword: { enabled: true },
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
-        plugins: [organization(), admin()],
+        plugins: [
+            organization(),
+            admin(),
+            // Org-owned keys, sent as `x-api-key`. Only org owners can manage them by default.
+            apiKey({
+                references: "organization",
+                defaultPrefix: "stoat_",
+                rateLimit: { enabled: false },
+            }) as ApiKeyPlugin,
+        ],
     });
 }

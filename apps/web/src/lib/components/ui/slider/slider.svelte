@@ -26,6 +26,7 @@
   } = $props();
 
   let tooltipOpen = $state(false);
+
   let thumbRefs = $state<Record<number, HTMLElement | null>>(
     Object.fromEntries(
       Array.from({ length: Array.isArray(value) ? value.length : 1 }, (_, i) => [i, null])
@@ -50,6 +51,7 @@
   // an entry before its first render.
   $effect.pre(() => {
     const count = Array.isArray(value) ? value.length : 1;
+
     for (let i = 0; i < count; i++) {
       if (!(i in thumbRefs)) thumbRefs[i] = null;
     }

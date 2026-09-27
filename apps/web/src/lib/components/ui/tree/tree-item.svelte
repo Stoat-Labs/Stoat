@@ -26,6 +26,7 @@
 
   const itemProps = $derived.by(() => {
     const props = typeof item.getProps === 'function' ? item.getProps() : {};
+
     return props;
   });
 

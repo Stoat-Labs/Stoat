@@ -10,6 +10,11 @@ import { organizationAdminProcedure, organizationProcedure, uncloudMiddleware } 
 
 const clusterInput = v.object({ clusterId: v.pipe(v.string(), v.uuid()) });
 
+/** Saved configurations may predate names and still hold a machine ID; show the name. */
+export function machineName(machines: { id: string; name: string }[], nameOrId: string) {
+    return machines.find((machine) => machine.id === nameOrId)?.name ?? nameOrId;
+}
+
 const storageInput = v.pipe(
     v.object({
         type: v.picklist(["volume", "bind"]),
@@ -30,7 +35,7 @@ const storageInput = v.pipe(
 
 export const initializationConfigurationInput = v.pipe(
     v.object({
-        machineId: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+        machine: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
         greptimeStorage: storageInput,
         alloyStorage: storageInput,
         retentionDays: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(365)),
@@ -66,14 +71,19 @@ export const initializationRouter = {
                 unwrap(uc.GET("/api/v1/volumes", { signal: AbortSignal.timeout(15_000) })),
             ]);
 
+            const configuration = cluster?.configuration ?? null;
+
             return {
-                machines: machines.items.map(({ id, name, state }) => ({ id, name, state })),
-                volumes: volumes.items.flatMap(({ machineId, machineName, volume }) => {
+                machines: machines.items.map(({ name, state }) => ({ name, state })),
+                volumes: volumes.items.flatMap(({ machineName, volume }) => {
                     const name = volume.Name ?? volume.name;
 
-                    return v.is(v.string(), name) ? [{ machineId, machineName, name }] : [];
+                    return v.is(v.string(), name) ? [{ machineName, name }] : [];
                 }),
-                configuration: cluster?.configuration ?? null,
+                configuration: configuration && {
+                    ...configuration,
+                    machine: machineName(machines.items, configuration.machine),
+                },
             };
         }),
     initializeCluster: organizationAdminProcedure
@@ -92,7 +102,7 @@ export const initializationRouter = {
                 }),
             );
 
-            if (!machines.items.some((machine) => machine.id === input.configuration.machineId)) {
+            if (!machines.items.some((machine) => machine.name === input.configuration.machine)) {
                 throw new ORPCError("BAD_REQUEST", {
                     message: "Choose an available machine from this cluster.",
                 });

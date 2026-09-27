@@ -56,8 +56,11 @@
   }>('map');
 
   let marker: MapLibreGL.Marker | null = $state(null);
+
   let markerElement: HTMLDivElement | null = $state(null);
+
   let isReady = $state(false);
+
   let isDragging = $state(false);
 
   // Provide marker context for child components
@@ -80,6 +83,7 @@
     // Validate coordinates (untracked — position updates are handled by a separate effect)
     const lng = untrack(() => longitude);
     const lat = untrack(() => latitude);
+
     if (
       typeof lng !== 'number' ||
       typeof lat !== 'number' ||
@@ -101,6 +105,7 @@
     const initialRotation = untrack(() => rotation);
     const initialPitchAlignment = untrack(() => pitchAlignment);
     const initialRotationAlignment = untrack(() => rotationAlignment);
+
     const markerOptions: MarkerOptions = {
       element: container,
       draggable: initialDraggable,
@@ -108,8 +113,11 @@
     };
 
     if (initialOffset !== undefined) markerOptions.offset = initialOffset;
+
     if (initialRotation !== undefined) markerOptions.rotation = initialRotation;
+
     if (initialPitchAlignment !== undefined) markerOptions.pitchAlignment = initialPitchAlignment;
+
     if (initialRotationAlignment !== undefined) {
       markerOptions.rotationAlignment = initialRotationAlignment;
     }
@@ -121,6 +129,7 @@
 
     const handleClick = (e: MouseEvent) => onclick?.(e);
     const handleMouseEnter = (e: MouseEvent) => onmouseenter?.(e);
+
     const handleMouseLeave = (e: MouseEvent) => {
       if (!isDragging) onmouseleave?.(e);
     };
@@ -135,10 +144,12 @@
       const lngLat = markerInstance.getLngLat();
       ondragstart?.({ lng: lngLat.lng, lat: lngLat.lat });
     };
+
     const handleDrag = () => {
       const lngLat = markerInstance.getLngLat();
       ondrag?.({ lng: lngLat.lng, lat: lngLat.lat });
     };
+
     const handleDragEnd = () => {
       isDragging = false;
       const lngLat = markerInstance.getLngLat();
@@ -191,9 +202,11 @@
 
     const currentOffset = marker.getOffset();
     const nextOffset = offset ?? [0, 0];
+
     const [nextOffsetX, nextOffsetY] = Array.isArray(nextOffset)
       ? nextOffset
       : [nextOffset.x, nextOffset.y];
+
     if (currentOffset.x !== nextOffsetX || currentOffset.y !== nextOffsetY) {
       marker.setOffset(nextOffset);
     }
@@ -201,9 +214,11 @@
     if (marker.getRotation() !== (rotation ?? 0)) {
       marker.setRotation(rotation ?? 0);
     }
+
     if (marker.getRotationAlignment() !== (rotationAlignment ?? 'auto')) {
       marker.setRotationAlignment(rotationAlignment ?? 'auto');
     }
+
     if (marker.getPitchAlignment() !== (pitchAlignment ?? 'auto')) {
       marker.setPitchAlignment(pitchAlignment ?? 'auto');
     }

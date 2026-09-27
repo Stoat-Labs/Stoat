@@ -6,6 +6,7 @@
   type Props = WithElementRef<HTMLAttributes<HTMLDivElement>> & {
     step: number;
   };
+
   let { children, class: className, ref = $bindable(null), step, ...restProps }: Props = $props();
 
   const { activeStep } = useTimeline();

@@ -1,9 +1,10 @@
 <script lang="ts">
+    import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import ClusterConnectionsFlow from "$lib/components/clusters/cluster-connections-flow.svelte";
-    import DeploymentDialog from "$lib/components/clusters/deployment-dialog.svelte";
     import InitializeClusterDialog from "$lib/components/clusters/initialize-cluster-dialog.svelte";
     import MonitoringConnectionDialog from "$lib/components/clusters/monitoring-connection-dialog.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription, AlertTitle } from "$lib/components/ui/alert";
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
@@ -14,6 +15,7 @@
         CardPanel,
         CardTitle,
     } from "$lib/components/ui/card";
+    import { Frame, FrameDescription, FrameHeader, FrameTitle } from "$lib/components/ui/frame";
     import {
         Empty,
         EmptyContent,
@@ -46,6 +48,8 @@
     import { onDestroy } from "svelte";
 
     let mounted = true;
+
+    useHeaderActions(clusterActions);
 
     onDestroy(() => {
         mounted = false;
@@ -162,21 +166,49 @@
 
     function openDeployment(deploymentId: string, originatingClusterId: string) {
         if (!mounted || clusterId !== originatingClusterId) return;
-        void dialogs.set({ dialog: "deployment", deployment: deploymentId });
+        void goto(`/deployments/${deploymentId}`);
     }
 </script>
 
 <svelte:head><title>{cluster?.name ?? "Cluster"} / Stoat</title></svelte:head>
 
+{#snippet clusterActions()}
+    {#if cluster}
+        <div class="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="outline" size="sm" href={`/observability?clusters=${cluster.id}`}>Observability</Button>
+            {#if canInitialize}
+                <Button size="sm" onclick={() => void dialogs.set({ dialog: "initialize", deployment: null })}>
+                    Initialize monitoring
+                </Button>
+            {:else if cluster.canInitialize && initializationStatus === "failed"}
+                <Button
+                    size="sm"
+                    loading={retryMutationState.isPending}
+                    disabled={retryMutationState.isPending}
+                    onclick={retryInitialization}
+                >
+                    Retry initialization
+                </Button>
+            {/if}
+            <Badge
+                size="lg"
+                variant={diagnostics === null ? "error" : isHealthy ? "success" : "warning"}
+            >
+                {#if isHealthy}
+                    <CircleCheck aria-hidden="true" />
+                {:else}
+                    <CircleAlert aria-hidden="true" />
+                {/if}
+                {statusLabel}
+            </Badge>
+        </div>
+    {/if}
+{/snippet}
+
 <div class="w-full space-y-6 py-6">
     {#if clusterQuery.isPending}
         <Skeleton loading loading-label="Loading cluster">
             <div class="space-y-6">
-                <div class="space-y-1">
-                    <p class="text-sm text-muted-foreground">Cluster</p>
-                    <h1 class="text-2xl font-semibold">Cluster overview</h1>
-                    <p class="text-sm text-muted-foreground">Health, machines, and monitoring status.</p>
-                </div>
                 <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {#each ["Health", "Machines", "Connections", "Deployments"] as label (label)}
                         <Card class="rounded-xl">
@@ -234,128 +266,6 @@
             </EmptyContent>
         </Empty>
     {:else}
-        <div class="flex flex-wrap items-center justify-between gap-4">
-            <div class="flex min-w-0 items-start gap-3">
-                <Button variant="ghost" size="icon-sm" href="/clusters" aria-label="Back to clusters">
-                    <ArrowLeft class="size-4" aria-hidden="true" />
-                </Button>
-                <div class="min-w-0">
-                    <h1 class="truncate text-2xl font-semibold">{cluster.name}</h1>
-                    <!-- <p class="mt-1 text-sm text-muted-foreground">
-                        Updated {formatDate(cluster.updatedAt)}
-                    </p> -->
-                </div>
-            </div>
-            <div class="flex flex-wrap items-center justify-end gap-2">
-                {#if canInitialize}
-                    <Button size="sm" onclick={() => void dialogs.set({ dialog: "initialize", deployment: null })}>
-                        Initialize monitoring
-                    </Button>
-                {:else if cluster.canInitialize && initializationStatus === "failed"}
-                    <Button
-                        size="sm"
-                        loading={retryMutationState.isPending}
-                        disabled={retryMutationState.isPending}
-                        onclick={retryInitialization}
-                    >
-                        Retry initialization
-                    </Button>
-                {/if}
-                <Badge
-                    size="lg"
-                    variant={diagnostics === null ? "error" : isHealthy ? "success" : "warning"}
-                >
-                    {#if diagnostics === null}
-                        <CircleAlert aria-hidden="true" />
-                    {:else if isHealthy}
-                        <CircleCheck aria-hidden="true" />
-                    {:else}
-                        <CircleAlert aria-hidden="true" />
-                    {/if}
-                    {statusLabel}
-                </Badge>
-            </div>
-        </div>
-
-        <Card>
-            <CardHeader class="p-4 sm:p-5">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <CardTitle>Monitoring stack</CardTitle>
-                        <CardDescription class="mt-1">
-                            Internal-only metrics and logs for this cluster.
-                        </CardDescription>
-                    </div>
-                    <Badge variant={initializationStatusVariant}>
-                        {initializationStatusLabel}
-                    </Badge>
-                </div>
-            </CardHeader>
-            <CardPanel class="space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
-                {#if initializationStatus === "uninitialized"}
-                    <p class="text-sm text-muted-foreground">
-                        Initialize the monitoring stack to collect cluster health, metrics, and logs.
-                        The stack stays on the internal Uncloud network.
-                    </p>
-                {:else if initializationInProgress}
-                    <Alert variant="warning">
-                        <CircleAlert aria-hidden="true" />
-                        <AlertTitle>Monitoring initialization is in progress</AlertTitle>
-                        <AlertDescription>
-                            Stoat is deploying the internal services. This page checks for updates automatically.
-                        </AlertDescription>
-                    </Alert>
-                {:else if initializationStatus === "failed"}
-                    <div class="space-y-3">
-                        <Alert variant="error">
-                            <CircleAlert aria-hidden="true" />
-                            <AlertTitle>Monitoring initialization failed</AlertTitle>
-                            <AlertDescription class="break-words">
-                                {cluster.initializationError ?? "The initialization worker did not provide an error message."}
-                            </AlertDescription>
-                        </Alert>
-                        {#if retryErrorMessage}
-                            <Alert variant="error">
-                                <AlertDescription>{retryErrorMessage}</AlertDescription>
-                            </Alert>
-                        {/if}
-                        {#if cluster.canInitialize}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                loading={retryMutationState.isPending}
-                                disabled={retryMutationState.isPending}
-                                onclick={retryInitialization}
-                            >
-                                Retry initialization
-                            </Button>
-                        {/if}
-                    </div>
-                {:else if initializationStatus === "ready"}
-                    <Alert variant="success">
-                        <CircleCheck aria-hidden="true" />
-                        <AlertTitle>Monitoring is ready</AlertTitle>
-                        <AlertDescription>
-                            Services are available to the cluster over internal DNS.
-                            {#if cluster.initializedAt}
-                                Initialized {formatDate(cluster.initializedAt)}.
-                            {/if}
-                        </AlertDescription>
-                    </Alert>
-                {/if}
-                {#if canViewMonitoring}
-                    <div class="flex flex-wrap items-center gap-2 pt-1">
-                        <Button variant="outline" size="sm" onclick={() => void dialogs.set({ dialog: "monitoring", deployment: null })}>
-                            Connection details
-                        </Button>
-                        <Button variant="link" size="sm" href="/deployments" class="px-0">
-                            View all deployments
-                        </Button>
-                    </div>
-                {/if}
-            </CardPanel>
-        </Card>
-
         {#if diagnostics}
             <div class="grid overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 xl:grid-cols-4">
                 <div class="bg-card p-4">
@@ -407,19 +317,16 @@
             {/if}
 
             <div class="grid gap-6 xl:grid-cols-[minmax(0,2fr)]">
-                <Card class="min-w-0">
-                    <CardHeader class="px-4 pt-4">
-                        <div class="flex items-start justify-between gap-3">
-                            <div>
-                                <CardTitle>Machines</CardTitle>
-                                <CardDescription class="mt-1">
-                                    Members reported by the Uncloud control plane.
-                                </CardDescription>
-                            </div>
-                            <Badge variant="secondary">{machines.length}</Badge>
+                <Frame class="min-w-0">
+                    <FrameHeader class="flex-row items-start justify-between gap-3 px-2.5 py-3">
+                        <div>
+                            <FrameTitle>Machines</FrameTitle>
+                            <FrameDescription>
+                                Members reported by the Uncloud control plane.
+                            </FrameDescription>
                         </div>
-                    </CardHeader>
-                    <CardPanel class="p-0">
+                        <Badge variant="secondary">{machines.length}</Badge>
+                    </FrameHeader>
                         {#if machines.length === 0}
                             <Empty class="p-8 md:py-8">
                                 <EmptyHeader>
@@ -429,7 +336,7 @@
                                 </EmptyHeader>
                             </Empty>
                         {:else}
-                            <Table variant="default">
+                            <Table variant="card">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Machine</TableHead>
@@ -438,7 +345,7 @@
                                         <TableHead class="text-right">WireGuard</TableHead>
                                     </TableRow>
                                 </TableHeader>
-                                <TableBody class="">
+                                <TableBody>
                                     {#each machines as machine (machine.id)}
                                         <TableRow>
                                             <TableCell class="min-w-48">
@@ -449,7 +356,6 @@
                                                     />
                                                     <span class="min-w-0">
                                                         <span class="block truncate font-medium">{machine.name}</span>
-                                                        <code class="mt-0.5 block truncate text-xs text-muted-foreground">{machine.id}</code>
                                                         {#if machine.error}
                                                             <span class="mt-1 block text-xs text-destructive-foreground">{machine.error}</span>
                                                         {/if}
@@ -484,8 +390,7 @@
                                 </TableBody>
                             </Table>
                         {/if}
-                    </CardPanel>
-                </Card>
+                </Frame>
             </div>
 
             <Card>
@@ -513,6 +418,82 @@
                     {/if}
                 </CardPanel>
             </Card>
+            <Card>
+            <CardHeader class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <CardTitle class="text-base">Monitoring stack</CardTitle>
+                        <Badge variant={initializationStatusVariant}>
+                            {initializationStatusLabel}
+                        </Badge>
+                    </div>
+                    <CardDescription class="mt-1">
+                        Metrics and logs on the internal network.
+                    </CardDescription>
+                    {#if initializationStatus === "ready" && cluster.initializedAt}
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            Initialized {formatDate(cluster.initializedAt)}
+                        </p>
+                    {/if}
+                </div>
+                {#if canViewMonitoring}
+                    <div class="flex shrink-0 flex-wrap items-center gap-2">
+                        <Button variant="ghost" size="sm" onclick={() => void dialogs.set({ dialog: "monitoring", deployment: null })}>
+                            Connection details
+                        </Button>
+                        {#if cluster.internalProjectId}
+                            <Button variant="outline" size="sm" href={`/projects/${cluster.internalProjectId}`}>
+                                Open {cluster.name}-internal
+                            </Button>
+                        {/if}
+                    </div>
+                {/if}
+            </CardHeader>
+            {#if initializationStatus !== "ready"}
+            <CardPanel class="space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
+                {#if initializationStatus === "uninitialized"}
+                    <p class="text-sm text-muted-foreground">
+                        Initialize the monitoring stack to collect cluster health, metrics, and logs.
+                        The stack stays on the internal Uncloud network.
+                    </p>
+                {:else if initializationInProgress}
+                    <Alert variant="warning">
+                        <CircleAlert aria-hidden="true" />
+                        <AlertTitle>Monitoring initialization is in progress</AlertTitle>
+                        <AlertDescription>
+                            Stoat is deploying the internal services. This page checks for updates automatically.
+                        </AlertDescription>
+                    </Alert>
+                {:else if initializationStatus === "failed"}
+                    <div class="space-y-3">
+                        <Alert variant="error">
+                            <CircleAlert aria-hidden="true" />
+                            <AlertTitle>Monitoring initialization failed</AlertTitle>
+                            <AlertDescription class="break-words">
+                                {cluster.initializationError ?? "The initialization worker did not provide an error message."}
+                            </AlertDescription>
+                        </Alert>
+                        {#if retryErrorMessage}
+                            <Alert variant="error">
+                                <AlertDescription>{retryErrorMessage}</AlertDescription>
+                            </Alert>
+                        {/if}
+                        {#if cluster.canInitialize}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                loading={retryMutationState.isPending}
+                                disabled={retryMutationState.isPending}
+                                onclick={retryInitialization}
+                            >
+                                Retry initialization
+                            </Button>
+                        {/if}
+                    </div>
+                {/if}
+            </CardPanel>
+            {/if}
+        </Card>
         {:else}
             <Alert variant="error">
                 <CircleAlert aria-hidden="true" />
@@ -536,17 +517,6 @@
     }
     {clusterId}
     onInitialized={openDeployment}
-/>
-<DeploymentDialog
-    bind:open={
-        () => dialogs.dialog.current === "deployment" && dialogs.deployment.current !== null,
-        (open) => {
-            if (!open && dialogs.dialog.current === "deployment") {
-                void dialogs.set({ dialog: null, deployment: null });
-            }
-        }
-    }
-    deploymentId={dialogs.deployment.current}
 />
 <MonitoringConnectionDialog
     bind:open={

@@ -10,9 +10,12 @@ import { getBitsConfig } from './bits-config';
 export function resolveLocaleProp(getProp: () => string | undefined) {
   return boxWith(() => {
     const propValue = getProp();
+
     if (propValue !== undefined) return propValue;
     const option = getBitsConfig().defaultLocale.current;
+
     if (option !== undefined) return option;
+
     return 'en';
   });
 }

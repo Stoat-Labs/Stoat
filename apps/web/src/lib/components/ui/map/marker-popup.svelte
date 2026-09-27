@@ -41,7 +41,9 @@
   }>('marker');
 
   let popup: MapLibreGL.Popup | null = null;
+
   let wrapperElement: HTMLDivElement | null = $state(null);
+
   let shouldStayOpen = $state(false);
 
   // Create popup when marker is ready
@@ -62,8 +64,11 @@
     };
 
     if (anchor !== undefined) popupOptions.anchor = anchor;
+
     if (closeOnClick !== undefined) popupOptions.closeOnClick = closeOnClick;
+
     if (closeOnMove !== undefined) popupOptions.closeOnMove = closeOnMove;
+
     if (focusAfterOpen !== undefined) popupOptions.focusAfterOpen = focusAfterOpen;
 
     // If marker is draggable, preserve popup state during movement
@@ -87,6 +92,7 @@
     // Prevent popup from closing during drag
     $effect(() => {
       const isDragging = markerCtx.isDragging?.();
+
       if (isDragging && popupInstance.isOpen()) {
         shouldStayOpen = true;
       }
@@ -95,12 +101,14 @@
     // Reopen popup after drag if it was open
     $effect(() => {
       const isDragging = markerCtx.isDragging?.();
+
       if (!isDragging && shouldStayOpen && !popupInstance.isOpen()) {
         // Small delay to ensure popup has finished closing
         setTimeout(() => {
           if (!popupInstance.isOpen()) {
             marker.togglePopup();
           }
+
           shouldStayOpen = false;
         }, 10);
       }

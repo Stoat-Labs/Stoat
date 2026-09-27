@@ -48,7 +48,9 @@
     if (placeholder !== undefined) return;
     placeholder = defaultPlaceholder;
   }
+
   handleDefaultPlaceholder();
+
   watch.pre(
     () => placeholder,
     () => {
@@ -60,7 +62,9 @@
     if (value !== undefined) return;
     value = type === 'single' ? undefined : [];
   }
+
   handleDefaultValue();
+
   watch.pre(
     () => value,
     () => {

@@ -45,7 +45,16 @@ Access-token connections work without OAuth app registration. Generic Git has no
 **Optional legacy global configuration:** existing deployments may still provide `GIT_OAUTH_PROVIDERS` on the web server as a JSON array. These global applications appear alongside organization-scoped UI applications; this variable is not required for UI setup. Never expose client secrets through public environment variables:
 
 ```json
-[{"id":"github","name":"GitHub","provider":"github","serverUrl":"https://github.com","clientId":"your-client-id","clientSecret":"your-client-secret"}]
+[
+    {
+        "id": "github",
+        "name": "GitHub",
+        "provider": "github",
+        "serverUrl": "https://github.com",
+        "clientId": "your-client-id",
+        "clientSecret": "your-client-secret"
+    }
+]
 ```
 
 Legacy entries can also use provider `forgejo` and their server URL. Register the callback URL shown in the UI (`${BETTER_AUTH_URL}/git/oauth/callback`) with each provider. Only changes to this optional environment configuration require a web-server restart.
@@ -80,4 +89,4 @@ Further test priorities are stale/cancelled initialization-worker attempts, auth
 
 ## Credits
 
-Kudos to the creators, maintainers and contributors of Coolify and Dokploy, these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being more of a "docker harness". ♥️
+Kudos to the creators, maintainers and contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being more of a "docker harness". But none the less the deployment software that sits in the middle of the simplicity of docker and complexity of kubernetes, [Uncloud](https://uncloud.run/). ♥️

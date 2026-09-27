@@ -35,6 +35,7 @@
   function handleChange(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const v = (parse ?? parseFloat)(input.value);
+
     if (v !== undefined && !Number.isNaN(v)) {
       ctx?.setValue(v);
     }

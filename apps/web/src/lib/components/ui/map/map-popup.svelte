@@ -48,6 +48,7 @@
     }>('marker') || {};
 
   let popup: MapLibreGL.Popup | null = null;
+
   let wrapperElement: HTMLDivElement | null = $state(null);
 
   // Create popup when map is ready
@@ -83,8 +84,11 @@
     }
 
     if (anchor !== undefined) popupOptions.anchor = anchor;
+
     if (closeOnClick !== undefined) popupOptions.closeOnClick = closeOnClick;
+
     if (closeOnMove !== undefined) popupOptions.closeOnMove = closeOnMove;
+
     if (focusAfterOpen !== undefined) popupOptions.focusAfterOpen = focusAfterOpen;
 
     // Create popup
@@ -121,6 +125,7 @@
       if (popupInstance.isOpen()) {
         popupInstance.remove();
       }
+
       popup = null;
     };
   });
@@ -128,6 +133,7 @@
   // Update position when coordinates change
   $effect(() => {
     if (!popup) return;
+
     if (
       typeof longitude !== 'number' ||
       typeof latitude !== 'number' ||
@@ -138,9 +144,11 @@
     }
 
     const current = popup.getLngLat();
+
     if (!current || current.lng !== longitude || current.lat !== latitude) {
       popup.setLngLat([longitude, latitude]);
     }
+
     popup.setOffset(offset ?? 16);
     popup.setMaxWidth(maxWidth ?? 'none');
   });

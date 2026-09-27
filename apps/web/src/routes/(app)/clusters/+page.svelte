@@ -1,5 +1,6 @@
 <script lang="ts">
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
     import {
         AlertDialog,
@@ -30,7 +31,7 @@
     const limit = listPageSize;
 
     const list = useQueryStates(
-        { q: parseAsString.withDefault(""), page: pageParser, dialog: parseAsString },
+        { q: parseAsString.withDefault(""), page: pageParser, dialog: parseAsString, clusterId: parseAsString },
         { shallow: true, scroll: false },
     );
 
@@ -38,9 +39,9 @@
 
     const searchPending = $derived(list.q.current !== debounced.current);
 
-    const page = $derived(list.page.current);
-
     let ready = $state(false);
+
+    useHeaderActions(clusterActions);
 
     onMount(() => {
         ready = true;
@@ -50,7 +51,7 @@
 
     const clustersQuery = createQuery(() =>
         orpc.cluster.listClusters.queryOptions({
-            input: { q: debounced.current || undefined, limit, offset: (page - 1) * limit },
+            input: { q: debounced.current || undefined, limit, offset: (list.page.current - 1) * limit },
             enabled: !searchPending,
         }),
     );
@@ -63,7 +64,7 @@
 
     // Do not clamp a restored URL against missing data or the previous search's count.
     $effect(() => {
-        if (clustersQuery.isSuccess && !clustersQuery.isFetching && !searchPending && page > totalPages) {
+        if (clustersQuery.isSuccess && !clustersQuery.isFetching && !searchPending && list.page.current > totalPages) {
             void list.set({ page: totalPages });
         }
     });
@@ -71,14 +72,14 @@
     const meta = $derived(
         total === 0
             ? "0 of 0"
-            : `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} of ${total}`,
+            : `${(list.page.current - 1) * limit + 1}–${Math.min(list.page.current * limit, total)} of ${total}`,
     );
 
     type ClusterItem = { id: string; name: string; projectCount: number };
 
-    let clusterToDelete = $state<ClusterItem | null>(null);
+    const clusterToDelete = $derived(items.find((cluster) => cluster.id === list.clusterId.current) ?? null);
 
-    let deleteOpen = $state(false);
+    const deleteOpen = $derived(list.dialog.current === "delete-cluster" && Boolean(clusterToDelete));
 
     const deleteMutationState = createMutation(() =>
         orpc.cluster.deleteCluster.mutationOptions({
@@ -91,8 +92,7 @@
                         queryKey: orpc.projects.key(),
                     }),
                 ]);
-                deleteOpen = false;
-                clusterToDelete = null;
+                void list.set({ dialog: null, clusterId: null });
             },
         }),
     );
@@ -115,8 +115,7 @@
 
     function askDelete(cluster: ClusterItem) {
         deleteMutationState.reset();
-        clusterToDelete = cluster;
-        deleteOpen = true;
+        void list.set({ dialog: "delete-cluster", clusterId: cluster.id });
     }
 
     function confirmDelete() {
@@ -131,31 +130,27 @@
 
 <svelte:head><title>Clusters / Stoat</title></svelte:head>
 
-<div class="w-full space-y-6 py-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-            <h1 class="text-2xl font-semibold">Clusters</h1>
-            <p class="mt-1 text-sm text-muted-foreground">Clusters in your active organization.</p>
-        </div>
-        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <InputGroup class="w-full sm:w-64">
-                <InputGroupInput
-                    type="search"
-                    placeholder="Search clusters…"
-                    aria-label="Search clusters"
-                    bind:value={() => list.q.current, (q) => { void list.set({ q, page: 1 }); }}
-                />
-                <InputGroupAddon align="inline-start">
-                    <Search aria-hidden="true" />
-                </InputGroupAddon>
-            </InputGroup>
-            <Button size="sm" disabled={!ready} onclick={() => void list.set({ dialog: "create-cluster" })}>
-                <Plus class="size-4" aria-hidden="true" />
-                Create cluster
-            </Button>
-        </div>
+{#snippet clusterActions()}
+    <div class="flex items-center gap-2">
+        <InputGroup class="w-40 sm:w-64">
+            <InputGroupInput
+                type="search"
+                placeholder="Search clusters…"
+                aria-label="Search clusters"
+                bind:value={() => list.q.current, (q) => { void list.set({ q, page: 1 }); }}
+            />
+            <InputGroupAddon align="inline-start">
+                <Search aria-hidden="true" />
+            </InputGroupAddon>
+        </InputGroup>
+        <Button size="sm" disabled={!ready} onclick={() => void list.set({ dialog: "create-cluster" })}>
+            <Plus class="size-4" aria-hidden="true" />
+            Create cluster
+        </Button>
     </div>
+{/snippet}
 
+<div class="w-full space-y-6 py-6">
     {#if clustersQuery.isError}
         <Alert variant="error">
             <AlertDescription>
@@ -174,7 +169,7 @@
             emptyDescription={debounced.current
                 ? "No clusters match your search."
                 : "Create your first cluster to get started."}
-            bind:page={() => page, (page) => { void list.set({ page }, { history: "push" }); }}
+            bind:page={() => list.page.current, (page) => { void list.set({ page }, { history: "push" }); }}
             {totalPages}
         >
             {#snippet header()}
@@ -256,7 +251,9 @@
     }
 />
 
-<AlertDialog bind:open={deleteOpen}>
+<AlertDialog
+    bind:open={() => deleteOpen, (open) => { if (!open) void list.set({ dialog: null, clusterId: null }); }}
+>
     <AlertDialogContent>
         <AlertDialogHeader>
             <AlertDialogTitle>Delete cluster?</AlertDialogTitle>
@@ -277,7 +274,7 @@
                 variant="outline"
                 disabled={deleteMutationState.isPending}
                 onclick={() => {
-                    deleteOpen = false;
+                    void list.set({ dialog: null, clusterId: null });
                 }}
             >
                 Cancel

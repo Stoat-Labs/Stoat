@@ -36,16 +36,21 @@
   function getDocumentTheme(): 'light' | 'dark' | null {
     if (typeof document === 'undefined') return null;
     const root = document.documentElement;
+
     if (root.classList.contains('dark')) return 'dark';
+
     if (root.classList.contains('light')) return 'light';
     const dataTheme = root.dataset.theme;
+
     if (dataTheme === 'dark' || dataTheme === 'light') return dataTheme;
+
     return null;
   }
 
   // Get system preference
   function getSystemTheme(): 'light' | 'dark' {
     if (typeof window === 'undefined') return 'light';
+
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
@@ -133,21 +138,32 @@
   }: Props = $props();
 
   let mapContainer: HTMLDivElement;
+
   let isMounted = $state(false);
+
   let isLoaded = $state(false);
+
   let isStyleLoaded = $state(false);
+
   let isInteracting = $state(false);
+
   let initialStyleApplied = false;
+
   let initialCenterZoomApplied = false;
+
   let pendingStyle = $state<MapStyleOption | null>(null);
+
   let styleSwapInFlight = false;
+
   let appliedStyleKey: string | null = null;
+
   let internalUpdate = false;
 
   const isControlled = $derived(viewport !== undefined && onviewportchange !== undefined);
 
   function getViewport(mapInstance: MapLibreGL.Map): MapViewport {
     const c = mapInstance.getCenter();
+
     return {
       center: [c.lng, c.lat],
       zoom: mapInstance.getZoom(),
@@ -168,6 +184,7 @@
   const resolvedTheme = $derived(resolveMapTheme({ explicitTheme, ambientTheme: tailwindTheme }));
 
   const currentStyle = $derived(resolvedTheme === 'light' ? mapStyles.light : mapStyles.dark);
+
   const currentStyleKey = $derived(
     typeof currentStyle === 'string' ? currentStyle : (JSON.stringify(currentStyle) ?? '')
   );
@@ -212,6 +229,7 @@
           tailwindTheme = e.matches ? 'dark' : 'light';
         }
       };
+
       mediaQuery.addEventListener('change', handleSystemChange);
     }
 
@@ -229,6 +247,7 @@
       pitch: viewport?.pitch ?? 0,
       ...options
     });
+
     appliedStyleKey = currentStyleKey;
 
     const styleLoadHandler = () => {
@@ -265,9 +284,11 @@
 
     return () => {
       observer?.disconnect();
+
       if (mediaQuery && handleSystemChange) {
         mediaQuery.removeEventListener('change', handleSystemChange);
       }
+
       mapInstance.off('load', loadHandler);
       mapInstance.off('style.load', styleLoadHandler);
       mapInstance.off('move', handleMove);
@@ -281,9 +302,11 @@
   // Sync controlled viewport to map
   $effect(() => {
     if (!map || !isControlled || !viewport) return;
+
     if (map.isMoving()) return;
 
     const current = getViewport(map);
+
     const next = {
       center: viewport.center ?? current.center,
       zoom: viewport.zoom ?? current.zoom,
@@ -323,6 +346,7 @@
 
   $effect(() => {
     const style = pendingStyle;
+
     if (!map || !style) return;
 
     pendingStyle = null;

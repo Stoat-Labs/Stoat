@@ -26,6 +26,7 @@
   }
 
   const DEFAULT_CLUSTER_COLORS: [string, string, string] = ['#3b82f6', '#1d4ed8', '#1e3a8a'];
+
   const DEFAULT_CLUSTER_THRESHOLDS: [number, number] = [100, 750];
 
   let {
@@ -45,9 +46,13 @@
   }>('map');
 
   const id = crypto.randomUUID();
+
   const sourceId = $derived(`cluster-source-${id}`);
+
   const clusterLayerId = $derived(`clusters-${id}`);
+
   const clusterCountLayerId = $derived(`cluster-count-${id}`);
+
   const unclusteredLayerId = $derived(`unclustered-point-${id}`);
 
   // Add source and layers when map is ready
@@ -136,8 +141,11 @@
     return () => {
       try {
         if (map.getLayer(clusterCountLayerId)) map.removeLayer(clusterCountLayerId);
+
         if (map.getLayer(unclusteredLayerId)) map.removeLayer(unclusteredLayerId);
+
         if (map.getLayer(clusterLayerId)) map.removeLayer(clusterLayerId);
+
         if (map.getSource(sourceId)) map.removeSource(sourceId);
       } catch {
         // ignore
@@ -153,6 +161,7 @@
     if (!loaded || !map || typeof data === 'string') return;
 
     const source = map.getSource(sourceId) as MapLibreGL.GeoJSONSource | undefined;
+
     if (source) {
       source.setData(data);
     }
@@ -209,6 +218,7 @@
       const features = map.queryRenderedFeatures(e.point, {
         layers: [clusterLayerId]
       });
+
       if (!features.length) return;
 
       const feature = features[0];
@@ -238,6 +248,7 @@
       if (!onpointclick || !e.features?.length) return;
 
       const feature = e.features[0];
+
       const coordinates = (feature.geometry as GeoJSON.Point).coordinates.slice() as [
         number,
         number
@@ -255,14 +266,17 @@
     const handleMouseEnterCluster = () => {
       map.getCanvas().style.cursor = 'pointer';
     };
+
     const handleMouseLeaveCluster = () => {
       map.getCanvas().style.cursor = '';
     };
+
     const handleMouseEnterPoint = () => {
       if (onpointclick) {
         map.getCanvas().style.cursor = 'pointer';
       }
     };
+
     const handleMouseLeavePoint = () => {
       map.getCanvas().style.cursor = '';
     };

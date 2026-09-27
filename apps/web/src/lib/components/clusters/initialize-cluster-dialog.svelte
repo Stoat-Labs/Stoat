@@ -52,7 +52,7 @@
 
     let step = $state<Step>(1);
 
-    let machineId = $state("");
+    let machine = $state("");
 
     let greptimeStorageType = $state<StorageType>("volume");
 
@@ -77,16 +77,14 @@
         }),
     );
 
-    const options = $derived(optionsQuery.data);
+    const machines = $derived(optionsQuery.data?.machines ?? []);
 
-    const machines = $derived(options?.machines ?? []);
+    const volumes = $derived(optionsQuery.data?.volumes ?? []);
 
-    const volumes = $derived(options?.volumes ?? []);
-
-    const selectedMachine = $derived(machines.find((machine) => machine.id === machineId));
+    const selectedMachine = $derived(machines.find((item) => item.name === machine));
 
     const selectedMachineVolumes = $derived(
-        volumes.filter((volume) => volume.machineId === machineId),
+        volumes.filter((volume) => volume.machineName === machine),
     );
 
     const initializeMutationState = createMutation(() =>
@@ -134,7 +132,7 @@
             if (!isOpen || !data || hydratedForOpen) return;
             const current = data;
             const saved = current.configuration;
-            machineId = saved?.machineId ?? current.machines[0]?.id ?? "";
+            machine = saved?.machine ?? current.machines[0]?.name ?? "";
             greptimeStorageType = saved?.greptimeStorage.type ?? "volume";
             greptimeVolumeName =
                 saved?.greptimeStorage.type === "volume"
@@ -160,7 +158,7 @@
 
     function resetForm() {
         step = 1;
-        machineId = "";
+        machine = "";
         greptimeStorageType = "volume";
         greptimeVolumeName = "stoat-monitoring-greptime";
         greptimeBindPath = "/srv/stoat/monitoring/greptimedb";
@@ -243,7 +241,7 @@
     );
 
     const stepIsValid = $derived.by(() => {
-        if (step === 1) return Boolean(machineId);
+        if (step === 1) return Boolean(machine);
 
         if (step === 2) {
             return Boolean(
@@ -254,7 +252,7 @@
             );
         }
 
-        return Boolean(machineId && !greptimeStorageError && !alloyStorageError && storageSourcesAreDifferent && retentionIsValid);
+        return Boolean(machine && !greptimeStorageError && !alloyStorageError && storageSourcesAreDifferent && retentionIsValid);
     });
 
     const canSubmit = $derived(
@@ -283,7 +281,7 @@
         initializeMutationState.mutate({
             clusterId,
             configuration: {
-                machineId,
+                machine,
                 greptimeStorage: {
                     type: greptimeStorageType,
                     source: storageSource(greptimeStorageType, greptimeVolumeName, greptimeBindPath),
@@ -377,17 +375,17 @@
                         <div class="space-y-5">
                             <Field>
                                 <Label for="initialization-machine" required>Deployment machine</Label>
-                                <Select bind:value={machineId} items={machines.map((machine) => ({ label: machine.name, value: machine.id }))}>
+                                <Select bind:value={machine} items={machines.map((item) => ({ label: item.name, value: item.name }))}>
                                     <SelectTrigger id="initialization-machine" aria-label="Select deployment machine">
                                         <SelectValue placeholder="Select a machine" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {#each machines as machine (machine.id)}
-                                            <SelectItem value={machine.id} label={machine.name}>
+                                        {#each machines as item (item.name)}
+                                            <SelectItem value={item.name} label={item.name}>
                                                 <span class="flex min-w-0 items-center gap-2">
                                                     <Server class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                                    <span class="truncate">{machine.name}</span>
-                                                    <span class="text-xs text-muted-foreground">{machine.state}</span>
+                                                    <span class="truncate">{item.name}</span>
+                                                    <span class="text-xs text-muted-foreground">{item.state}</span>
                                                 </span>
                                             </SelectItem>
                                         {/each}
@@ -564,7 +562,7 @@
                             </Field>
 
                             <datalist id="initialization-volumes">
-                                {#each selectedMachineVolumes as volume (volume.machineId + volume.name)}
+                                {#each selectedMachineVolumes as volume (volume.machineName + volume.name)}
                                     <option value={volume.name}>{volume.machineName}</option>
                                 {/each}
                             </datalist>
@@ -591,7 +589,7 @@
                                 <CardPanel class="p-0">
                                     <div class="flex items-start justify-between gap-4 p-3">
                                         <span class="text-sm text-muted-foreground">GreptimeDB machine</span>
-                                        <span class="text-right text-sm font-medium">{selectedMachine?.name ?? machineId}</span>
+                                        <span class="text-right text-sm font-medium">{selectedMachine?.name ?? machine}</span>
                                     </div>
                                     <Separator />
                                     <div class="flex items-start justify-between gap-4 p-3">

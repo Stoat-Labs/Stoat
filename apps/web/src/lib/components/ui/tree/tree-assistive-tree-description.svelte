@@ -21,14 +21,17 @@
     hotkeys: HotkeysConfig<T>
   ) {
     const itemNames = dnd?.draggedItems?.map((item) => item.getItemName()).join(', ') ?? '';
+
     const position = !dnd?.dragTarget
       ? 'None'
       : 'childIndex' in dnd.dragTarget
         ? `${dnd.dragTarget.childIndex} of ${dnd.dragTarget.item.getChildren().length} in ${dnd.dragTarget.item.getItemName()}`
         : `in ${dnd.dragTarget.item.getItemName()}`;
+
     const navGuide =
       `Press ${hotkeys.dragUp.hotkey} and ${hotkeys.dragDown.hotkey} to move up or down, ` +
       `${hotkeys.completeDrag.hotkey} to drop, ${hotkeys.cancelDrag.hotkey} to abort.`;
+
     switch (assistiveState) {
       case AssistiveDndState.Aborted:
         return `Drag cancelled. Press ${hotkeys.startDrag.hotkey} to move selected items`;

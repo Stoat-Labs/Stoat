@@ -6,6 +6,7 @@ import {
     rewriteComposeHostname,
     unformatComposeFile,
 } from "../../packages/api/src/compose";
+import { ComposeVariableError, interpolateCompose } from "../../packages/workflows/src/compose";
 
 describe("formatComposeFile", () => {
     it("prefixes compose service names with the given prefix", () => {
@@ -2034,5 +2035,95 @@ volumes:
         expect(raw).toContain("web:\n        condition: service_started");
         expect(raw).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
         expect(raw).not.toContain("a1b2c3d4-e5f6a7b8-");
+    });
+});
+
+describe("interpolateCompose", () => {
+    it("resolves compose-spec variables from the resource .env", () => {
+        const out = interpolateCompose(
+            `services:
+  web:
+    image: \${IMAGE:-nginx}
+    environment:
+      - KEY=\${KEY:?Variable is not set or empty}
+      - URL=\${URL:-\${PROTO:-https}://\${HOST:?missing}/doc}
+      - PASS=$PASS
+      - LITERAL=$$HOME
+      - ALT=\${KEY:+set}
+      - EMPTY=\${UNSET}
+    x-caddy: |
+      \${HOST} {
+        reverse_proxy web
+      }
+`,
+            "# comment\nKEY=abc\nHOST=example.com\nPASS=p$$w\n",
+        );
+
+        expect(out).toContain("image: nginx");
+        expect(out).toContain("KEY=abc");
+        expect(out).toContain("URL=https://example.com/doc");
+        expect(out).toContain("PASS=p$$w");
+        expect(out).toContain("LITERAL=$$HOME");
+        expect(out).toContain("ALT=set");
+        expect(out).toContain("EMPTY=\n");
+        expect(out).toContain("example.com {");
+        expect(out).not.toContain("${");
+    });
+
+    it("expands .env values that reference earlier variables", () => {
+        const out = interpolateCompose(
+            "services:\n  a:\n    image: x\n    volumes:\n      - ${VOL:-/opt}:/data\n    environment:\n      - USER=${USER2}\n",
+            "BASE=/mnt/p$$w\nVOL=$BASE/seafile-data\nEMAIL=a@b.c\nUSER2=${EMAIL}\n",
+        );
+
+        expect(out).toContain("- /mnt/p$$w/seafile-data:/data");
+        expect(out).toContain("USER=a@b.c");
+    });
+
+    it("exposes each service's deployed name as <SERVICE>_SERVICE_NAME", () => {
+        const compose =
+            "services:\n  jellyfin:\n    image: x\n    environment:\n      SELF: ${JELLYFIN_SERVICE_NAME}\n      URL: http://${MY_DB_SERVICE_NAME}.internal\n      FROM_ENV: ${LINK}\n  my-db:\n    image: y\n";
+
+        const env = "LINK=${JELLYFIN_SERVICE_NAME}:8096\n";
+
+        const prefixed = interpolateCompose(compose, env, "a1b2c3d4-e5f6a7b8");
+
+        expect(prefixed).toContain("SELF: a1b2c3d4-e5f6a7b8-jellyfin");
+        expect(prefixed).toContain("URL: http://a1b2c3d4-e5f6a7b8-my-db.internal");
+        expect(prefixed).toContain("FROM_ENV: a1b2c3d4-e5f6a7b8-jellyfin:8096");
+        expect(formatComposeFile(prefixed, "a1b2c3d4-e5f6a7b8").yaml).toContain(
+            "SELF: a1b2c3d4-e5f6a7b8-jellyfin\n",
+        );
+        expect(interpolateCompose(compose, env)).toContain("SELF: jellyfin");
+        expect(interpolateCompose(compose, "JELLYFIN_SERVICE_NAME=custom\n")).toContain(
+            "SELF: custom",
+        );
+    });
+
+    it("exposes STOAT_DOMAIN, STOAT_PREFIX, and <SERVICE>_INTERNAL_HOST", () => {
+        const compose =
+            "services:\n  web:\n    image: x\n    x-ports:\n      - ${HOST:-web.${STOAT_DOMAIN}}:80/https\n    environment:\n      DB: ${MY_DB_INTERNAL_HOST}:5432\n      PREFIX: p-${STOAT_PREFIX}\n  my-db:\n    image: y\n";
+
+        const out = interpolateCompose(compose, "", "a1b2c3d4-e5f6a7b8", "abc.uncld.dev");
+
+        expect(out).toContain("- web.abc.uncld.dev:80/https");
+        expect(out).toContain("DB: a1b2c3d4-e5f6a7b8-my-db.internal:5432");
+        expect(out).toContain("PREFIX: p-a1b2c3d4-e5f6a7b8");
+
+        const bare = interpolateCompose(compose, "");
+
+        expect(bare).toContain("- web.:80/https");
+        expect(bare).toContain("DB: my-db.internal:5432");
+        expect(bare).toContain("PREFIX: p-\n");
+    });
+
+    it("fails on missing required variables without leaking values", () => {
+        expect(() =>
+            interpolateCompose("services:\n  a:\n    image: ${X:?need X}\n", "Y=secret"),
+        ).toThrow(
+            new ComposeVariableError(
+                "Required variable X is missing a value: need X. Set it in the resource's Variables.",
+            ),
+        );
     });
 });

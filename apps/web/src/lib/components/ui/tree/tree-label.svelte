@@ -18,6 +18,7 @@
   }: TreeItemLabelProps<T> = $props();
 
   const ctx = useTreeContext<T>();
+
   const item = propItem || ctx.currentItem;
 
   if (!item) {

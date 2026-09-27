@@ -17,6 +17,7 @@
   let { ref = $bindable(null), class: className, size, children, ...restProps }: Props = $props();
 
   const tabsListSize = getTabsListSize();
+
   const resolvedSize = $derived(size ?? tabsListSize());
 </script>
 

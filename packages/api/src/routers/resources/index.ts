@@ -1,25 +1,49 @@
 import { ORPCError } from "@orpc/server";
 import {
+    clusterMonitoring,
     clusters,
     deployments,
     deploymentLogs,
     projects,
     resources,
     resourceDeploymentInputs,
+    type DeploymentStatus,
 } from "@stoat/db/schema/index";
-import { unwrap } from "@stoat/uncloud";
+import { ucClient, unwrap } from "@stoat/uncloud";
+import {
+    GREPTIME_SERVICE,
+    ALLOY_SERVICE,
+    GREPTIME_USERNAME,
+    MONITORING_DATABASE,
+} from "@stoat/workflows/monitoring-compose";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
+import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { parseEnv } from "node:util";
 import * as v from "valibot";
 
 import {
+    isOrganizationAdmin,
     organizationAdminProcedure,
     organizationProcedure,
     resourceMiddleware,
+    resourceReadMiddleware,
     uncloudMiddleware,
 } from "../..";
-import { formatComposeFile, resourceComposePrefix } from "../../compose";
+import {
+    formatComposeFile,
+    postgresService,
+    resourceComposePrefix,
+    resourceEnv,
+} from "../../compose";
+import {
+    expandSecrets,
+    fillVariables,
+    requiredVariables,
+    summarizeVersion,
+    templates,
+} from "../../templates";
 import {
     gitSourceInput,
     loadGitCompose,
@@ -28,7 +52,8 @@ import {
     resourceGitRouter,
 } from "./git";
 import { gitText } from "../connections";
-import { resourceLogsRouter } from "./logs";
+import { machineName } from "../cluster/initialization";
+import { isMonitoringResource, resourceLogsRouter } from "./logs";
 
 export const resourcesRouter = {
     ...resourceGitRouter,
@@ -38,6 +63,7 @@ export const resourcesRouter = {
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
+                recreate: v.optional(v.boolean(), false),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -51,7 +77,6 @@ export const resourcesRouter = {
                         and(
                             eq(resources.id, input.resourceId),
                             eq(projects.id, input.projectId),
-                            eq(resources.type, "compose"),
                             sql`${projects.isInternal} is not true`,
                             eq(clusters.organizationId, organizationId),
                         ),
@@ -109,9 +134,13 @@ export const resourcesRouter = {
                     name: "DeployResource",
                     status: "queued",
                 });
-                await tx
-                    .insert(resourceDeploymentInputs)
-                    .values({ deploymentId, spec: resource.draftSpec, prefix });
+                await tx.insert(resourceDeploymentInputs).values({
+                    deploymentId,
+                    spec: resource.draftSpec,
+                    prefix,
+                    env: resourceEnv(resource),
+                    recreate: input.recreate,
+                });
                 await tx.insert(deploymentLogs).values({
                     deploymentId,
                     text: "Resource deployment queued. Saved Compose snapshot captured.",
@@ -178,7 +207,6 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
-                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
@@ -221,7 +249,6 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
-                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
@@ -271,7 +298,6 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
-                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
@@ -286,7 +312,7 @@ export const resourcesRouter = {
 
     listResources: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId }, input }) => {
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
             const [project] = await db
                 .select({ id: projects.id })
                 .from(projects)
@@ -294,7 +320,9 @@ export const resourcesRouter = {
                 .where(
                     and(
                         eq(projects.id, input.projectId),
-                        sql`${projects.isInternal} is not true`,
+                        isOrganizationAdmin(organizationRole)
+                            ? undefined
+                            : sql`${projects.isInternal} is not true`,
                         eq(clusters.organizationId, organizationId),
                     ),
                 )
@@ -304,6 +332,26 @@ export const resourcesRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Project not found." });
             }
 
+            const latest = db
+                .selectDistinctOn([deployments.resourceId], {
+                    resourceId: deployments.resourceId,
+                    id: deployments.id,
+                    status: deployments.status,
+                    progress: deployments.progress,
+                    createdAt: deployments.createdAt,
+                    finishedAt: deployments.finishedAt,
+                })
+                .from(deployments)
+                .innerJoin(resources, eq(deployments.resourceId, resources.id))
+                .where(
+                    and(
+                        eq(deployments.name, "DeployResource"),
+                        eq(resources.projectId, input.projectId),
+                    ),
+                )
+                .orderBy(deployments.resourceId, desc(deployments.createdAt))
+                .as("latest");
+
             return db
                 .select({
                     id: resources.id,
@@ -312,10 +360,17 @@ export const resourcesRouter = {
                     icon: resources.icon,
                     type: resources.type,
                     projectId: resources.projectId,
+                    gitBranch: sql<string | null>`${resources.gitSource}->>'branch'`,
                     createdAt: resources.createdAt,
                     updatedAt: resources.updatedAt,
+                    deploymentId: latest.id,
+                    deploymentStatus: sql<DeploymentStatus | null>`${latest.status}`,
+                    deploymentProgress: latest.progress,
+                    deploymentCreatedAt: latest.createdAt,
+                    deploymentFinishedAt: latest.finishedAt,
                 })
                 .from(resources)
+                .leftJoin(latest, eq(latest.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
         }),
@@ -328,11 +383,60 @@ export const resourcesRouter = {
                 description: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
                 type: v.optional(v.picklist(["compose"]), "compose"),
                 git: v.optional(gitSourceInput),
+                template: v.optional(
+                    v.object({
+                        appId: v.string(),
+                        version: v.string(),
+                        variables: v.optional(
+                            v.record(
+                                v.string(),
+                                v.pipe(
+                                    v.string(),
+                                    v.trim(),
+                                    v.regex(/^[^\r\n]*$/u, "Variables must be a single line."),
+                                    v.check(
+                                        (value) => !["'", '"', "`"].every((q) => value.includes(q)),
+                                        "Variables can't mix all three quote characters.",
+                                    ),
+                                    v.maxLength(4096),
+                                ),
+                            ),
+                            {},
+                        ),
+                    }),
+                ),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
+            const template = templates.find((t) => t.appId === input.template?.appId);
+            const version = input.template && template?.versions[input.template.version];
+
+            if (input.template && !version) {
+                throw new ORPCError("NOT_FOUND", { message: "Template not found." });
+            }
+
+            const missing = version
+                ? requiredVariables(version.env).filter((key) => !input.template?.variables[key])
+                : [];
+
+            if (missing.length > 0) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Set the required variables: ${missing.join(", ")}.`,
+                });
+            }
+
+            if (input.template && input.git) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Choose either a template or a Git source.",
+                });
+            }
+
             const [project] = await db
-                .select({ id: projects.id })
+                .select({
+                    id: projects.id,
+                    sidecarUrl: clusters.sidecarUrl,
+                    sidecarToken: clusters.sidecarToken,
+                })
                 .from(projects)
                 .innerJoin(clusters, eq(projects.clusterId, clusters.id))
                 .where(
@@ -348,6 +452,23 @@ export const resourcesRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Project not found." });
             }
 
+            const domain =
+                version && /\{\{\s*DNS\s*\}\}/iu.test(version.compose + version.env)
+                    ? await unwrap(
+                          ucClient(project.sidecarUrl, { token: project.sidecarToken }).GET(
+                              "/api/v1/cluster/domain",
+                          ),
+                      ).then(
+                          ({ domain }) => domain,
+                          () => {
+                              throw new ORPCError("BAD_REQUEST", {
+                                  message:
+                                      "This template needs the cluster's reserved domain, which is unavailable.",
+                              });
+                          },
+                      )
+                    : undefined;
+
             const description = input.description?.trim() ? input.description.trim() : null;
             const source = input.git ? await loadGitCompose(db, organizationId, input.git) : {};
 
@@ -358,12 +479,85 @@ export const resourcesRouter = {
                     id: randomUUID(),
                     name: input.name.trim(),
                     description,
-                    type: input.type ?? "compose",
+                    type: template?.type ?? input.type ?? "compose",
                     projectId: project.id,
+                    ...(template &&
+                        version && {
+                            icon: template.logo,
+                            draftSpec: expandSecrets(version.compose, domain),
+                            settings: {
+                                prefixNames: true,
+                                env: fillVariables(
+                                    expandSecrets(version.env, domain),
+                                    input.template?.variables ?? {},
+                                ),
+                            },
+                        }),
                 })
                 .returning();
 
             return resource;
+        }),
+
+    listTemplates: organizationProcedure.handler(() =>
+        templates.map(({ versions, ...template }) => ({
+            ...template,
+            versions: Object.entries(versions)
+                .map(([version, files]) => ({ version, ...summarizeVersion(files) }))
+                // Integer-like keys ("18") lose insertion order, so sort newest first here.
+                .toSorted((a, b) =>
+                    b.version.localeCompare(a.version, undefined, { numeric: true }),
+                ),
+        })),
+    ),
+
+    getConnection: organizationProcedure
+        .input(
+            v.object({
+                clusterId: v.pipe(v.string(), v.uuid()),
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .use(uncloudMiddleware)
+        .use(resourceReadMiddleware)
+        .handler(async ({ context: { resource, uc } }) => {
+            if (resource.type !== "postgresql" || !resource.draftSpec) return null;
+
+            let service;
+
+            try {
+                service = postgresService(resource.draftSpec);
+            } catch {
+                return null;
+            }
+
+            if (!service) return null;
+
+            const env = parseEnv(resourceEnv(resource));
+
+            const url = (host: string, port: number) =>
+                `postgresql://${encodeURIComponent(env.POSTGRES_USER ?? "postgres")}:${encodeURIComponent(env.POSTGRES_PASSWORD ?? "")}@${host}:${port}/${encodeURIComponent(env.POSTGRES_DB ?? env.POSTGRES_USER ?? "postgres")}`;
+
+            const prefix = resourceComposePrefix(resource);
+            const internal = url(`${prefix ? `${prefix}-` : ""}${service.name}.internal`, 5432);
+
+            if (!service.published) return { internal, external: null };
+
+            let host = service.published.host;
+
+            if (!host) {
+                const { data } = await uc.GET("/api/v1/machines", {
+                    signal: AbortSignal.timeout(15_000),
+                });
+
+                const machines = data?.items ?? [];
+
+                host =
+                    machines.find((machine) => machine.publicIp)?.publicIp ?? machines[0]?.hostname;
+            }
+
+            return { internal, external: host ? url(host, service.published.port) : null };
         }),
 
     getResource: organizationProcedure
@@ -373,8 +567,70 @@ export const resourcesRouter = {
                 resourceId: v.pipe(v.string(), v.uuid()),
             }),
         )
-        .use(resourceMiddleware)
-        .handler(({ context: { resource } }) => resource),
+        .use(resourceReadMiddleware)
+        .handler(async ({ context: { db, resource } }) => {
+            const [monitoring] = await db
+                .select({
+                    clusterId: clusterMonitoring.clusterId,
+                    encryptedPassword: clusterMonitoring.encryptedPassword,
+                    configuration: clusters.initializationConfiguration,
+                    initializedAt: clusters.initializedAt,
+                    sidecarUrl: clusters.sidecarUrl,
+                    sidecarToken: clusters.sidecarToken,
+                })
+                .from(clusterMonitoring)
+                .innerJoin(clusters, eq(clusters.id, clusterMonitoring.clusterId))
+                .where(eq(clusterMonitoring.resourceId, resource.id))
+                .limit(1);
+
+            if (!monitoring) return resource;
+
+            // Monitoring values are injected at deploy time and never stored as resource env.
+            // Only admins reach this branch: internal resources are admin-only reads.
+            let password = "";
+
+            try {
+                password = decryptMonitoringPassword(
+                    monitoring.encryptedPassword,
+                    process.env.BETTER_AUTH_SECRET ?? "",
+                    monitoring.clusterId,
+                );
+            } catch {
+                password = "";
+            }
+
+            const saved = monitoring.configuration?.machine ?? "";
+
+            // Pre-rename configurations stored an ID; show its current name when reachable.
+            const machine = await unwrap(
+                ucClient(monitoring.sidecarUrl, { token: monitoring.sidecarToken }).GET(
+                    "/api/v1/machines",
+                    { signal: AbortSignal.timeout(5_000) },
+                ),
+            ).then(
+                ({ items }) => machineName(items, saved),
+                () => saved,
+            );
+
+            const env = [
+                ["GREPTIME_URL", `http://${GREPTIME_SERVICE}.internal:4006`],
+                ["GREPTIME_DB", MONITORING_DATABASE],
+                ["GREPTIME_USERNAME", GREPTIME_USERNAME],
+                ["GREPTIME_PASSWORD", password],
+                ["GREPTIME_MACHINE", machine],
+                ["CLUSTER_ID", monitoring.clusterId],
+                ["RETENTION_DAYS", String(monitoring.configuration?.retentionDays ?? "")],
+            ]
+                .map(([key, value]) => `${key}=${value}`)
+                .join("\n");
+
+            // The initialized stack is the deployed template; expose it so views treat it as deployed.
+            return {
+                ...resource,
+                spec: monitoring.initializedAt ? resource.draftSpec : resource.spec,
+                settings: { ...monitoring.configuration, machine, env: `${env}\n` },
+            };
+        }),
     getContainers: organizationProcedure
         .input(
             v.object({
@@ -384,47 +640,51 @@ export const resourcesRouter = {
             }),
         )
         .use(uncloudMiddleware)
-        .use(resourceMiddleware)
+        .use(resourceReadMiddleware)
         .handler(async ({ context: { db, resource, uc } }) => {
-            if (!resource.spec) {
-                throw new ORPCError("NOT_FOUND", {
-                    message: "Resource has no deployed compose spec.",
-                });
-            }
+            let serviceNames: string[] = [GREPTIME_SERVICE, ALLOY_SERVICE];
 
-            const [snapshot] = await db
-                .select({
-                    spec: resourceDeploymentInputs.spec,
-                    prefix: resourceDeploymentInputs.prefix,
-                })
-                .from(deployments)
-                .innerJoin(
-                    resourceDeploymentInputs,
-                    eq(resourceDeploymentInputs.deploymentId, deployments.id),
-                )
-                .where(
-                    and(
-                        eq(deployments.resourceId, resource.id),
-                        eq(deployments.name, "DeployResource"),
-                        eq(deployments.status, "ready"),
-                    ),
-                )
-                .orderBy(desc(deployments.finishedAt), desc(deployments.createdAt))
-                .limit(1);
+            if (!(await isMonitoringResource(db, resource.id))) {
+                if (!resource.spec) {
+                    throw new ORPCError("NOT_FOUND", {
+                        message: "Resource has no deployed compose spec.",
+                    });
+                }
 
-            const prefix = snapshot?.prefix ?? resourceComposePrefix(resource);
-            let formatted;
+                const [snapshot] = await db
+                    .select({
+                        spec: resourceDeploymentInputs.spec,
+                        prefix: resourceDeploymentInputs.prefix,
+                    })
+                    .from(deployments)
+                    .innerJoin(
+                        resourceDeploymentInputs,
+                        eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                    )
+                    .where(
+                        and(
+                            eq(deployments.resourceId, resource.id),
+                            eq(deployments.name, "DeployResource"),
+                            eq(deployments.status, "ready"),
+                        ),
+                    )
+                    .orderBy(desc(deployments.finishedAt), desc(deployments.createdAt))
+                    .limit(1);
 
-            try {
-                formatted = formatComposeFile(snapshot?.spec ?? resource.spec, prefix);
-            } catch (error) {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: error instanceof Error ? error.message : "Invalid compose spec.",
-                });
+                try {
+                    serviceNames = formatComposeFile(
+                        snapshot?.spec ?? resource.spec,
+                        snapshot?.prefix ?? resourceComposePrefix(resource),
+                    ).serviceNames;
+                } catch (error) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: error instanceof Error ? error.message : "Invalid compose spec.",
+                    });
+                }
             }
 
             const containers = await Promise.all(
-                formatted.serviceNames.map(async (id) => {
+                serviceNames.map(async (id) => {
                     const result = await uc.GET("/api/v1/services/{id}", {
                         params: { path: { id } },
                     });
@@ -446,7 +706,7 @@ export const resourcesRouter = {
                 resourceId: v.pipe(v.string(), v.uuid()),
             }),
         )
-        .use(resourceMiddleware)
+        .use(resourceReadMiddleware)
         .handler(({ context: { resource } }) => {
             if (!resource.draftSpec) {
                 throw new ORPCError("NOT_FOUND", { message: "Resource has no compose draft." });

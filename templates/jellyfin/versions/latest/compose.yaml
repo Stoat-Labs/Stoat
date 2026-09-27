@@ -1,0 +1,19 @@
+services:
+    jellyfin:
+        # LinuxServer image: PUID/PGID let Jellyfin read host media with the right ownership.
+        image: lscr.io/linuxserver/jellyfin:latest
+        restart: unless-stopped
+        x-ports:
+            - ${JELLYFIN_HOST}:8096/https
+        environment:
+            PUID: ${MEDIA_UID}
+            PGID: ${MEDIA_GID}
+            TZ: ${TZ}
+            JELLYFIN_PublishedServerUrl: https://${JELLYFIN_HOST}
+        volumes:
+            - jellyfin_config:/config
+            - jellyfin_media:/media
+
+volumes:
+    jellyfin_config:
+    jellyfin_media:

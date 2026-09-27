@@ -17,7 +17,9 @@
   } = $props();
 
   const ctx = getToggleGroupCtx();
+
   const resolvedSize = $derived(ctx.size || size);
+
   const resolvedVariant = $derived(ctx.variant || variant);
 </script>
 

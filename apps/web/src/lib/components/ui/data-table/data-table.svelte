@@ -18,6 +18,7 @@
 	} from "$lib/components/ui/table";
 	import { Skeleton } from "$lib/components/ui/skeleton";
 	import DataPagination from "./data-pagination.svelte";
+	import { Frame, FrameFooter, FrameHeader, FrameTitle } from "$lib/components/ui/frame";
 
 	interface Props {
 		title: string;
@@ -63,16 +64,14 @@
 	const showEmpty = $derived(!loading && isEmpty);
 </script>
 
-<div class="overflow-hidden rounded-xl border bg-card shadow-sm">
-	<div
-		class="flex min-h-12 items-center gap-2 border-b bg-muted/20 px-4 py-3 text-sm font-medium text-muted-foreground"
-	>
-		<h2 class="min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
+<Frame class="w-full">
+	<FrameHeader class="flex-row items-center justify-between gap-2 px-2.5 py-3">
+		<FrameTitle class="min-w-0 truncate"><h2>{title}</h2></FrameTitle>
 		{#if meta}
-			<span class="shrink-0 font-normal">{meta}</span>
+			<span class="shrink-0 text-sm text-muted-foreground">{meta}</span>
 		{/if}
-	</div>
-	<Table>
+	</FrameHeader>
+	<Table variant="card">
 		<TableHeader>
 			{@render header()}
 		</TableHeader>
@@ -120,5 +119,9 @@
 			{/if}
 		</TableBody>
 	</Table>
-	<DataPagination bind:page {totalPages} />
-</div>
+	{#if totalPages > 1}
+		<FrameFooter class="p-2">
+			<DataPagination bind:page {totalPages} />
+		</FrameFooter>
+	{/if}
+</Frame>

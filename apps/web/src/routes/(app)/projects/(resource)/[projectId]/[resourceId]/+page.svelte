@@ -1,13 +1,15 @@
 <script lang="ts">
-    import { beforeNavigate } from "$app/navigation";
+    import { beforeNavigate, goto } from "$app/navigation";
     import { page } from "$app/state";
-    import DeploymentDialog from "$lib/components/clusters/deployment-dialog.svelte";
+    import ConnectionField from "$lib/components/clusters/connection-field.svelte";
     import CodeEditor from "$lib/components/code-editor.svelte";
     import PreviewComposeDialog from "$lib/components/projects/preview-compose-dialog.svelte";
-    import { getHeaderActions } from "$lib/components/sidebar/header-actions";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
     import { Badge } from "$lib/components/ui/badge";
-    import { Button } from "$lib/components/ui/button";
+    import { Button, buttonVariants } from "$lib/components/ui/button";
+    import { ButtonGroup, ButtonGroupSeparator } from "$lib/components/ui/group";
+    import { Menu, MenuItem, MenuPopup, MenuTrigger } from "$lib/components/ui/menu";
     import {
         Empty,
         EmptyContent,
@@ -24,28 +26,26 @@
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Box from "@lucide/svelte/icons/box";
     import Boxes from "@lucide/svelte/icons/boxes";
+    import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Container from "@lucide/svelte/icons/container";
+    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
     import { createMutation, createQuery } from "@tanstack/svelte-query";
     import { Match } from "effect";
-    import { onDestroy, onMount, untrack } from "svelte";
+    import { onDestroy, untrack } from "svelte";
 
-    const headerActions = getHeaderActions();
-
-    onMount(() => {
-        headerActions.content = deployAction;
-
-        return () => {
-            if (headerActions.content === deployAction) headerActions.content = undefined;
-        };
-    });
+    useHeaderActions(deployAction);
 
     const projectId = $derived(page.params.projectId ?? "");
 
     const resourceId = $derived(page.params.resourceId ?? "");
 
-    const projectsQuery = createQuery(() => orpc.projects.listProjects.queryOptions());
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({ input: { projectId }, enabled: projectId.length > 0 }),
+    );
 
-    const project = $derived((projectsQuery.data ?? []).find((p) => p.id === projectId));
+    const project = $derived(projectQuery.data);
+
+    const readOnly = $derived(project?.isInternal === true);
 
     const clusterId = $derived(project?.clusterId ?? "");
 
@@ -64,7 +64,10 @@
 
     let deploymentId = $state<string | null>(null);
 
-    let deploymentOpen = $state(false);
+    // Navigate once the mutation settles; the unsaved-changes guard blocks while busy.
+    $effect(() => {
+        if (deploymentId && !deployMutation.isPending) void goto(`/projects/${projectId}/${resourceId}/deployments/${deploymentId}`);
+    });
 
     const containersQuery = createQuery(() =>
         orpc.resources.getContainers.queryOptions({
@@ -74,6 +77,14 @@
     );
 
     const containers = $derived(containersQuery.data ?? []);
+
+    const connectionQuery = createQuery(() =>
+        orpc.resources.getConnection.queryOptions({
+            input: { projectId, resourceId, clusterId },
+            queryKey: [...orpc.resources.getConnection.queryKey({ input: { projectId, resourceId, clusterId } }), resource?.updatedAt],
+            enabled: resource?.type === "postgresql" && clusterId.length > 0,
+        }),
+    );
 
 
     let compose = $state("");
@@ -121,7 +132,6 @@
             saveMutation.reset();
             deployMutation.reset();
             deploymentId = null;
-            deploymentOpen = false;
         });
     });
 
@@ -179,7 +189,6 @@
 
                 if (!active || projectId !== input.projectId || resourceId !== input.resourceId) return;
                 deploymentId = deployment.id;
-                deploymentOpen = true;
             },
         }),
     );
@@ -202,9 +211,9 @@
         !formattedComposeQuery.isFetching && formattedComposeQuery.data.serviceCount > 0,
     );
 
-    function deploySavedDraft() {
+    function deploySavedDraft(recreate = false) {
         if (!canDeploy) return;
-        deployMutation.mutate({ projectId, resourceId });
+        deployMutation.mutate({ projectId, resourceId, recreate });
     }
 
     function saveCompose() {
@@ -270,24 +279,40 @@
 <svelte:head><title>{resource?.name ?? "Resource"} / Stoat</title></svelte:head>
 
 {#snippet deployAction()}
-    <Button
-        onclick={deploySavedDraft}
-        loading={deployMutation.isPending}
-        disabled={!canDeploy}
-        title={hasUndeployedChanges ? "Saved draft has undeployed changes" : "Deploy"}
-    >
-        <span class="inline-flex items-baseline gap-0.5">
-            Deploy
-            {#if hasUndeployedChanges}
-                <span class="inline-block origin-center text-md leading-none text-orange-500 scale-125" aria-hidden="true">*</span>
-                <span class="sr-only">(undeployed changes)</span>
-            {/if}
-        </span>
-    </Button>
+    {#if !readOnly}
+    <ButtonGroup>
+        <Button
+            onclick={() => deploySavedDraft()}
+            loading={deployMutation.isPending}
+            disabled={!canDeploy}
+            title={hasUndeployedChanges ? "Saved draft has undeployed changes" : "Deploy"}
+        >
+            <span class="inline-flex items-baseline gap-0.5">
+                Deploy
+                {#if hasUndeployedChanges}
+                    <span class="inline-block origin-center text-md leading-none text-orange-500 scale-125" aria-hidden="true">*</span>
+                    <span class="sr-only">(undeployed changes)</span>
+                {/if}
+            </span>
+        </Button>
+        <ButtonGroupSeparator />
+        <Menu>
+            <MenuTrigger class={buttonVariants({ size: "icon" })} disabled={!canDeploy} aria-label="More deploy options">
+                <ChevronDown aria-hidden="true" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+                <MenuItem onclick={() => deploySavedDraft(true)}>
+                    <RefreshCw aria-hidden="true" />
+                    Recreate
+                </MenuItem>
+            </MenuPopup>
+        </Menu>
+    </ButtonGroup>
+    {/if}
 {/snippet}
 
 <div class="flex w-full flex-col gap-6 py-6 xl:min-h-0 xl:flex-1 xl:pb-0">
-    {#if projectsQuery.isPending || resourceQuery.isPending}
+    {#if projectQuery.isPending || resourceQuery.isPending}
         <Skeleton loading loading-label="Loading resource">
             <div class="space-y-6">
                 <div class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0">
@@ -325,11 +350,11 @@
                 </div>
             </div>
         </Skeleton>
-    {:else if projectsQuery.isError}
+    {:else if projectQuery.isError}
         <div class="space-y-4">
             <Alert variant="error">
                 <AlertDescription>
-                    Unable to load project: {projectsQuery.error.message}
+                    Unable to load project: {projectQuery.error.message}
                 </AlertDescription>
             </Alert>
             <Button variant="outline" size="sm" href="/projects">
@@ -386,6 +411,22 @@
             </EmptyContent>
         </Empty>
     {:else}
+        {#if connectionQuery.data}
+            <Frame class="min-w-0" role="region" aria-labelledby="connection-heading">
+                <FrameHeader>
+                    <FrameTitle class="text-base"><h2 id="connection-heading">Connection</h2></FrameTitle>
+                    <FrameDescription class="mt-1">
+                        Built from the POSTGRES_* variables. Publish a TCP port in the Compose file to connect from outside the cluster.
+                    </FrameDescription>
+                </FrameHeader>
+                <FramePanel class="grid gap-4 lg:grid-cols-2">
+                    <ConnectionField label="Internal URL" value={connectionQuery.data.internal} secret />
+                    {#if connectionQuery.data.external}
+                        <ConnectionField label="External URL" value={connectionQuery.data.external} secret />
+                    {/if}
+                </FramePanel>
+            </Frame>
+        {/if}
         <div class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0">
             <Frame class="w-full min-w-0 xl:col-span-1 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid" role="region" aria-labelledby="containers-heading">
                 <FrameHeader class="shrink-0">
@@ -498,17 +539,21 @@
                             {:else if isDirty}
                                 <p class="text-muted-foreground">Unsaved changes</p>
                             {:else if hasUndeployedChanges}
-                                <p class="text-muted-foreground">Draft saved. Not deployed.</p>
+                                <p class="text-muted-foreground">Draft saved.</p>
                             {/if}
                         </div>
                         <PreviewComposeDialog {projectId} {resourceId} />
-                        <Button
-                            onclick={saveCompose}
-                            loading={saveMutation.isPending}
-                            disabled={!isDirty || busy}
-                        >
-                            {saveMutation.isPending ? "Saving..." : "Save draft"}
-                        </Button>
+                        {#if readOnly}
+                            <Badge variant="secondary">System-managed</Badge>
+                        {:else}
+                            <Button
+                                onclick={saveCompose}
+                                loading={saveMutation.isPending}
+                                disabled={!isDirty || busy}
+                            >
+                                {saveMutation.isPending ? "Saving..." : "Save draft"}
+                            </Button>
+                        {/if}
                         {#if deployMutation.isError}
                             <Alert variant="error" class="w-full">
                                 <AlertDescription>Unable to deploy: {deployMutation.error.message}</AlertDescription>
@@ -525,7 +570,7 @@
                 >
                     <div class="compose-editor-canvas">
                         {#key resource.id}
-                            <CodeEditor bind:value={compose} readOnly={busy || loadedResourceId !== resource.id} />
+                            <CodeEditor bind:value={compose} readOnly={readOnly || busy || loadedResourceId !== resource.id} />
                         {/key}
                     </div>
                 </FramePanel>
@@ -534,7 +579,6 @@
     {/if}
 </div>
 
-<DeploymentDialog bind:open={deploymentOpen} {deploymentId} />
 
 <style>
     @media (min-width: 80rem) {

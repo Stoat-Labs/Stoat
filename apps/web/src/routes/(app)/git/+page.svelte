@@ -3,6 +3,7 @@
     import { page } from "$app/state";
     import ConnectionDialog from "$lib/components/connections/connection-dialog.svelte";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Field } from "$lib/components/ui/field";
@@ -22,6 +23,8 @@
     let active = true;
 
     let leaving = false;
+
+    useHeaderActions(gitActions);
 
     const connectionsQuery = createQuery(() => orpc.connections.list.queryOptions());
 
@@ -146,11 +149,12 @@
 
 <svelte:head><title>Git / Stoat</title></svelte:head>
 
+{#snippet gitActions()}
+    {#if canManage}<Button size="sm" {disabled} onclick={() => changeDialog("add-connection")}>Add connection</Button>{/if}
+{/snippet}
+
 <div class="w-full min-w-0 space-y-6 py-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0"><h1 class="text-2xl font-semibold">Git</h1><p class="mt-1 text-sm text-muted-foreground">Connect Git server accounts and choose their repositories when configuring resources.</p></div>
-        {#if canManage}<Button {disabled} onclick={() => changeDialog("add-connection")}>Add connection</Button>{/if}
-    </div>
+    <p class="text-sm text-muted-foreground">Connect Git server accounts and choose their repositories when configuring resources.</p>
     {#if connectionsQuery.isError}
         <Alert variant="error"><AlertDescription>Unable to load account connections: {connectionsQuery.error.message}</AlertDescription></Alert>
         <Button variant="outline" disabled={disabled || connectionsQuery.isFetching} onclick={() => connectionsQuery.refetch()}>Retry</Button>

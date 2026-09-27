@@ -59,3 +59,69 @@ secrets:
     ).rejects.toThrow(expected);
     expect(logs).toEqual([expected]);
 });
+
+it("reports monotonic progress from plan operations", async () => {
+    const events = [
+        {
+            type: "plan",
+            operations: [
+                { action: "run", resource: "a" },
+                { action: "run", resource: "b" },
+            ],
+        },
+        { type: "progress", id: "a", phase: "done" },
+        { type: "progress", id: "a", phase: "done" },
+        { type: "progress", id: "b", phase: "done" },
+        { type: "progress", id: "extra", phase: "done" },
+        { type: "complete" },
+    ];
+
+    const uc = ucClient("http://sidecar.test", {
+        fetch: async () =>
+            new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+                headers: { "content-type": "text/event-stream" },
+            }),
+    });
+
+    const progress: number[] = [];
+
+    await deployCompose(
+        uc,
+        "services:\n  web:\n    image: nginx\n",
+        new AbortController().signal,
+        async () => {},
+        undefined,
+        [],
+        async (percent) => {
+            progress.push(percent);
+        },
+    );
+    expect(progress).toEqual([10, 53, 95]);
+});
+
+it("does not mask service names or values without letters or digits", async () => {
+    const error = 'service "seafile-ai" refers to undefined volume /opt/seafile-data';
+
+    const uc = ucClient("http://sidecar.test", {
+        fetch: async () =>
+            new Response(`data: ${JSON.stringify({ type: "error", error })}\n\n`, {
+                headers: { "content-type": "text/event-stream" },
+            }),
+    });
+
+    const logs: string[] = [];
+
+    await expect(
+        deployCompose(
+            uc,
+            "services:\n  seafile-ai:\n    image: x\n    environment: [DB_USER=seafile, ROOT=/, PASS=data]\n",
+            new AbortController().signal,
+            async (text) => {
+                logs.push(text);
+            },
+        ),
+    ).rejects.toThrow();
+    expect(logs).toEqual([
+        'service "seafile-ai" refers to undefined volume /opt/seafile-[REDACTED]',
+    ]);
+});

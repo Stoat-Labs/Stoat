@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/client";
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { subscribeToStream } from "./deployment-stream";
+import { subscribeToStream } from "../../apps/web/src/lib/deployment-stream";
 
 afterEach(() => vi.useRealTimers());
 

@@ -43,6 +43,7 @@
     if (node.defaultChecked) {
       checkedNodes.add(node.id);
     }
+
     node.children?.forEach(initializeCheckedNodes);
   })(tree);
 
@@ -52,6 +53,7 @@
     }
 
     const childrenChecked = node.children.map(isChecked);
+
     if (childrenChecked.every((status) => status === true)) {
       return true;
     }
@@ -63,6 +65,7 @@
     if (!node.children?.length) return false;
 
     const childrenChecked = node.children.map(isChecked);
+
     return childrenChecked.some(Boolean) && !childrenChecked.every(Boolean);
   }
 
@@ -73,6 +76,7 @@
       } else {
         checkedNodes.delete(n.id);
       }
+
       n.children?.forEach((child) => {
         toggleNode(child, check);
       });

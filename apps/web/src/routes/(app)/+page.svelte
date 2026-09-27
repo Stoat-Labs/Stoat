@@ -2,6 +2,7 @@
     import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
     import ProjectOverviewCard from "$lib/components/home/project-overview-card.svelte";
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import { Alert, AlertDescription } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
@@ -55,6 +56,8 @@
 
     let now = $state(Date.now());
 
+    useHeaderActions(homeActions);
+
     onMount(() => {
         ready = true;
         const clock = setInterval(() => (now = Date.now()), 30_000);
@@ -81,31 +84,27 @@
 
 <svelte:head><title>Home / Stoat</title></svelte:head>
 
-<div class="w-full space-y-6 py-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-            <h1 class="text-2xl font-semibold">Projects</h1>
-            <p class="mt-1 text-sm text-muted-foreground">Overview of your active organization.</p>
-        </div>
-        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <InputGroup class="w-full sm:w-64">
-                <InputGroupInput
-                    type="search"
-                    placeholder="Search projects…"
-                    aria-label="Search projects"
-                    bind:value={() => params.q.current, (q) => { void params.set({ q: q || null }); }}
-                />
-                <InputGroupAddon align="inline-start">
-                    <Search aria-hidden="true" />
-                </InputGroupAddon>
-            </InputGroup>
-            <Button size="sm" disabled={!ready} onclick={openCreate}>
-                <Plus class="size-4" aria-hidden="true" />
-                Create project
-            </Button>
-        </div>
+{#snippet homeActions()}
+    <div class="flex items-center gap-2">
+        <InputGroup class="w-40 sm:w-64">
+            <InputGroupInput
+                type="search"
+                placeholder="Search projects…"
+                aria-label="Search projects"
+                bind:value={() => params.q.current, (q) => { void params.set({ q: q || null }); }}
+            />
+            <InputGroupAddon align="inline-start">
+                <Search aria-hidden="true" />
+            </InputGroupAddon>
+        </InputGroup>
+        <Button size="sm" disabled={!ready} onclick={openCreate}>
+            <Plus class="size-4" aria-hidden="true" />
+            Create project
+        </Button>
     </div>
+{/snippet}
 
+<div class="w-full space-y-6 py-6">
     {#if projectsQuery.isPending}
         <Skeleton loading count={3} count-gap={12} loading-label="Loading projects">
             <div class="rounded-2xl border p-4">

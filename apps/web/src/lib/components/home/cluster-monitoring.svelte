@@ -28,6 +28,7 @@
 
     function percent(usage: Usage): number | null {
         if (!usage || usage.total <= 0) return null;
+
         return Math.min(100, Math.max(0, (usage.used / usage.total) * 100));
     }
 
@@ -36,10 +37,12 @@
         const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
         let v = Math.max(0, value);
         let i = 0;
+
         while (v >= 1024 && i < units.length - 1) {
             v /= 1024;
             i += 1;
         }
+
         return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
     }
 

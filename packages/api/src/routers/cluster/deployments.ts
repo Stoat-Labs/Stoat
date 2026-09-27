@@ -7,7 +7,7 @@ import {
     watchDeployment,
     watchDeploymentChanges,
 } from "@stoat/db/deployments";
-import { clusters, deployments } from "@stoat/db/schema/index";
+import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
 import { cancelDeploymentJob } from "@stoat/workflows/runtime";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
@@ -159,16 +159,20 @@ export const deploymentsRouter = {
                     ),
                     offset: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
                     resourceId: v.optional(v.pipe(v.string(), v.uuid())),
+                    projectId: v.optional(v.pipe(v.string(), v.uuid())),
                 }),
             ),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
-            const conditions = [eq(clusters.organizationId, organizationId)];
 
-            if (input?.status) conditions.push(eq(deployments.status, input.status));
-            const where = and(...conditions);
+            const where = and(
+                eq(clusters.organizationId, organizationId),
+                input?.status ? eq(deployments.status, input.status) : undefined,
+                input?.resourceId ? eq(deployments.resourceId, input.resourceId) : undefined,
+                input?.projectId ? eq(resources.projectId, input.projectId) : undefined,
+            );
 
             const items = await db
                 .select({
@@ -180,9 +184,15 @@ export const deploymentsRouter = {
                     createdAt: deployments.createdAt,
                     updatedAt: deployments.updatedAt,
                     finishedAt: deployments.finishedAt,
+                    resourceId: deployments.resourceId,
+                    resourceName: resources.name,
+                    projectId: projects.id,
+                    projectName: projects.name,
                 })
                 .from(deployments)
                 .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                .leftJoin(resources, eq(deployments.resourceId, resources.id))
+                .leftJoin(projects, eq(resources.projectId, projects.id))
                 .where(where)
                 .orderBy(desc(deployments.createdAt))
                 .limit(limit)
@@ -192,6 +202,7 @@ export const deploymentsRouter = {
                 .select({ count: sql<number>`count(*)::int` })
                 .from(deployments)
                 .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                .leftJoin(resources, eq(deployments.resourceId, resources.id))
                 .where(where);
 
             return { items, total: row?.count ?? 0 };

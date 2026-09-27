@@ -14,12 +14,14 @@ catalog:
     "@orpc/server": 2.0.0-beta.35
     "@orpc/client": 2.0.0-beta.35
     "@orpc/openapi": 2.0.0-beta.35
+    "@orpc/node": 2.0.0-beta.35
     "@orpc/zod": 2.0.0-beta.35
     "@orpc/valibot": 2.0.0-beta.35
     "@orpc/tanstack-query": 2.0.0-beta.35
     valibot: ^1.5.0
     yaml: ^2.9.0
     better-auth: 1.7.3
+    "@better-auth/api-key": 1.7.3
     "@orpc/experimental-effect": "beta"
     effect: "beta"
     vite: npm:@voidzero-dev/vite-plus-core@0.3.1

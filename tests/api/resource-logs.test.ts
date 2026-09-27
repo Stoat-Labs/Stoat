@@ -298,6 +298,11 @@ describe("resource logs backend", () => {
                 );
                 const id = decodeURIComponent(url.pathname.split("/")[4]!);
 
+                if (url.pathname.endsWith("/api/v1/machines"))
+                    return Response.json({
+                        items: [{ id: "machine", name: "machine-one", state: "Up" }],
+                    });
+
                 if (url.pathname.endsWith("/logs")) {
                     expect(url.searchParams.get("follow")).toBe("true");
                     expect(url.searchParams.get("tail")).toBe("100");
@@ -342,7 +347,12 @@ describe("resource logs backend", () => {
                           name: id,
                           containers: (replicas.get(serviceId) ?? []).map((id) => ({
                               machineId: "machine",
-                              container: { Id: id, Name: containerNames.get(id), Config: { Env: ["PRIVATE=secret"] }, State: { Running: true } },
+                              container: {
+                                  Id: id,
+                                  Name: containerNames.get(id),
+                                  Config: { Env: ["PRIVATE=secret"] },
+                                  State: { Running: true },
+                              },
                           })),
                           hookContainers: [],
                           mode: "replicated",
@@ -527,9 +537,20 @@ describe("resource logs backend", () => {
             expect((await stream.next()).value).toMatchObject({ state: "connected" });
             expect(inspected).toEqual(["web"]);
             send("web-id", log());
-            expect((await stream.next()).value).toMatchObject({ logs: [{ container: "web-db-actual-name", serviceName: "web" }] });
-            send("web-id", { ...log(), metadata: { serviceId: "web-id", machineId: "another-machine", containerId: "container" } });
-            expect((await stream.next()).value).toMatchObject({ logs: [{ container: "container" }] });
+            expect((await stream.next()).value).toMatchObject({
+                logs: [{ container: "web-db-actual-name", serviceName: "web" }],
+            });
+            send("web-id", {
+                ...log(),
+                metadata: {
+                    serviceId: "web-id",
+                    machineId: "another-machine",
+                    containerId: "container",
+                },
+            });
+            expect((await stream.next()).value).toMatchObject({
+                logs: [{ container: "container" }],
+            });
         } finally {
             await stream.return(undefined);
         }
@@ -538,14 +559,17 @@ describe("resource logs backend", () => {
     it.each(["disabled", "ready", "initializing", "missing monitoring", "missing retention"])(
         "discovers sanitized services and opens logs with one inspection per service, history %s",
         async (history) => {
-            await deployment("ready", `services:
+            await deployment(
+                "ready",
+                `services:
   web: { image: nginx }
   worker: { image: nginx }
   missing: { image: nginx }
   ${GREPTIME_SERVICE}: { image: private }
   ${ALLOY_SERVICE}: { image: private }
   stoat-monitoring-private: { image: private }
-`);
+`,
+            );
 
             for (const name of [GREPTIME_SERVICE, ALLOY_SERVICE, "stoat-monitoring-private"])
                 current.set(name, `${name}-id`);
@@ -556,23 +580,34 @@ describe("resource logs backend", () => {
             if (history !== "disabled") await enableHistory();
 
             if (history === "initializing")
-                await db.update(clusters).set({ initializedAt: null }).where(eq(clusters.id, clusterId));
+                await db
+                    .update(clusters)
+                    .set({ initializedAt: null })
+                    .where(eq(clusters.id, clusterId));
 
             if (history === "missing monitoring") await db.delete(clusterMonitoring);
 
             if (history === "missing retention")
-                await db.update(clusters).set({ initializationConfiguration: null }).where(eq(clusters.id, clusterId));
+                await db
+                    .update(clusters)
+                    .set({ initializationConfiguration: null })
+                    .where(eq(clusters.id, clusterId));
             const stream = await call(resourcesRouter.streamLogs, input, { context });
 
             try {
                 const metadata = (await stream.next()).value;
                 expect(metadata).toEqual({
                     type: "services",
-                    services: [{ id: "web-id", name: "web" }, { id: "worker-id", name: "worker" }],
+                    services: [
+                        { id: "web-id", name: "web" },
+                        { id: "worker-id", name: "worker" },
+                    ],
                     historyAvailable: history === "ready" || history === "missing retention",
                     retentionDays: history === "ready" ? 14 : null,
                 });
-                expect(JSON.stringify(metadata)).not.toMatch(/PRIVATE|secret|password|sidecar|encrypted|containers|Config|Env/u);
+                expect(JSON.stringify(metadata)).not.toMatch(
+                    /PRIVATE|secret|password|sidecar|encrypted|containers|Config|Env/u,
+                );
                 expect(openedStreams).toEqual([]);
                 expect([(await stream.next()).value, (await stream.next()).value]).toEqual(
                     expect.arrayContaining([
@@ -584,7 +619,9 @@ describe("resource logs backend", () => {
                 send("web-id", log());
                 expect((await stream.next()).value).toMatchObject({
                     type: "logs",
-                    logs: [{ serviceId: "web-id", serviceName: "web", container: "web-actual-name" }],
+                    logs: [
+                        { serviceId: "web-id", serviceName: "web", container: "web-actual-name" },
+                    ],
                 });
                 const pending = stream.next();
                 const returned = stream.return(undefined);
@@ -599,25 +636,51 @@ describe("resource logs backend", () => {
     );
 
     it("resolves selected names to the latest IDs at startup without opening other services", async () => {
-        await deployment("ready", "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n");
+        await deployment(
+            "ready",
+            "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n",
+        );
         expect((await call(resourcesRouter.listLogServices, input, { context })).services).toEqual([
-            { id: "web-id", name: "web" }, { id: "worker-id", name: "worker" },
+            { id: "web-id", name: "web" },
+            { id: "worker-id", name: "worker" },
         ]);
-        const stream = await call(resourcesRouter.streamLogs, { ...input, serviceNames: ["web"] }, { context });
+
+        const stream = await call(
+            resourcesRouter.streamLogs,
+            { ...input, serviceNames: ["web"] },
+            { context },
+        );
+
         current.set("web", "recreated-id");
         inspected.length = 0;
 
         try {
             expect((await stream.next()).value).toEqual({
                 type: "services",
-                services: [{ id: "recreated-id", name: "web" }, { id: "worker-id", name: "worker" }],
+                services: [
+                    { id: "recreated-id", name: "web" },
+                    { id: "worker-id", name: "worker" },
+                ],
                 historyAvailable: false,
                 retentionDays: null,
             });
             expect(openedStreams).toEqual([]);
-            expect((await stream.next()).value).toEqual({ type: "status", serviceId: "recreated-id", state: "connected" });
+            expect((await stream.next()).value).toEqual({
+                type: "status",
+                serviceId: "recreated-id",
+                state: "connected",
+            });
             send("recreated-id", log("selected replacement", "recreated-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "recreated-id", serviceName: "web", message: "selected replacement" }] });
+            expect((await stream.next()).value).toMatchObject({
+                type: "logs",
+                logs: [
+                    {
+                        serviceId: "recreated-id",
+                        serviceName: "web",
+                        message: "selected replacement",
+                    },
+                ],
+            });
             expect(inspected).toEqual(["web", "worker"]);
             expect(openedStreams).toEqual(["recreated-id"]);
         } finally {
@@ -627,60 +690,77 @@ describe("resource logs backend", () => {
         expect(cancelled).toEqual(new Set(["recreated-id"]));
     });
 
-    it.each(["all", "one"])("opens no tails while %s selected names are missing, then resolves restored names on retry", async (missing) => {
-        await deployment("ready", "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n");
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    it.each(["all", "one"])(
+        "opens no tails while %s selected names are missing, then resolves restored names on retry",
+        async (missing) => {
+            await deployment(
+                "ready",
+                "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n",
+            );
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
 
-        if (missing === "all") current.clear();
-        else current.delete("web");
-        const selected = { ...input, serviceNames: ["web", "worker"] };
-        const stream = await call(resourcesRouter.streamLogs, selected, { context });
+            if (missing === "all") current.clear();
+            else current.delete("web");
+            const selected = { ...input, serviceNames: ["web", "worker"] };
+            const stream = await call(resourcesRouter.streamLogs, selected, { context });
 
-        try {
-            expect((await stream.next()).value).toEqual({
-                type: "services",
-                services: missing === "all" ? [] : [{ id: "worker-id", name: "worker" }],
-                historyAvailable: false,
-                retentionDays: null,
-            });
-            expect(await stream.next()).toEqual({ done: true, value: undefined });
-            expect(openedStreams).toEqual([]);
-            expect(cancelled.size).toBe(0);
+            try {
+                expect((await stream.next()).value).toEqual({
+                    type: "services",
+                    services: missing === "all" ? [] : [{ id: "worker-id", name: "worker" }],
+                    historyAvailable: false,
+                    retentionDays: null,
+                });
+                expect(await stream.next()).toEqual({ done: true, value: undefined });
+                expect(openedStreams).toEqual([]);
+                expect(cancelled.size).toBe(0);
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                await stream.return(undefined);
+            }
+
+            current.set("web", "restored-id");
+            current.set("worker", "worker-id");
+            const retry = await call(resourcesRouter.streamLogs, selected, { context });
+
+            try {
+                expect((await retry.next()).value).toEqual({
+                    type: "services",
+                    services: [
+                        { id: "restored-id", name: "web" },
+                        { id: "worker-id", name: "worker" },
+                    ],
+                    historyAvailable: false,
+                    retentionDays: null,
+                });
+                expect(openedStreams).toEqual([]);
+                expect([(await retry.next()).value, (await retry.next()).value]).toEqual(
+                    expect.arrayContaining([
+                        { type: "status", serviceId: "restored-id", state: "connected" },
+                        { type: "status", serviceId: "worker-id", state: "connected" },
+                    ]),
+                );
+                send("restored-id", log("restored selection", "restored-id"));
+                expect((await retry.next()).value).toMatchObject({
+                    type: "logs",
+                    logs: [{ serviceId: "restored-id", message: "restored selection" }],
+                });
+                expect(openedStreams).toEqual(["restored-id", "worker-id"]);
+            } finally {
+                await retry.return(undefined);
+            }
+
+            expect(cancelled).toEqual(new Set(["restored-id", "worker-id"]));
             expect(vi.getTimerCount()).toBe(0);
-        } finally {
-            await stream.return(undefined);
-        }
-
-        current.set("web", "restored-id");
-        current.set("worker", "worker-id");
-        const retry = await call(resourcesRouter.streamLogs, selected, { context });
-
-        try {
-            expect((await retry.next()).value).toEqual({
-                type: "services",
-                services: [{ id: "restored-id", name: "web" }, { id: "worker-id", name: "worker" }],
-                historyAvailable: false,
-                retentionDays: null,
-            });
-            expect(openedStreams).toEqual([]);
-            expect([(await retry.next()).value, (await retry.next()).value]).toEqual(expect.arrayContaining([
-                { type: "status", serviceId: "restored-id", state: "connected" },
-                { type: "status", serviceId: "worker-id", state: "connected" },
-            ]));
-            send("restored-id", log("restored selection", "restored-id"));
-            expect((await retry.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "restored-id", message: "restored selection" }] });
-            expect(openedStreams).toEqual(["restored-id", "worker-id"]);
-        } finally {
-            await retry.return(undefined);
-        }
-
-        expect(cancelled).toEqual(new Set(["restored-id", "worker-id"]));
-        expect(vi.getTimerCount()).toBe(0);
-    });
+        },
+    );
 
     it("includes all discovered identities in metadata but streams only the first 20 services", async () => {
         const names = Array.from({ length: 23 }, (_, index) => `service-${index}`);
-        await deployment("ready", `services:\n${names.map((name) => `  ${name}: { image: nginx }`).join("\n")}\n`);
+        await deployment(
+            "ready",
+            `services:\n${names.map((name) => `  ${name}: { image: nginx }`).join("\n")}\n`,
+        );
 
         for (const name of names) current.set(name, `${name}-id`);
         const stream = await call(resourcesRouter.streamLogs, input, { context });
@@ -695,9 +775,15 @@ describe("resource logs backend", () => {
             const statuses: ResourceLogEvent[] = [];
 
             for (let i = 0; i < 20; i++) statuses.push((await stream.next()).value!);
-            expect(statuses).toEqual(expect.arrayContaining(names.slice(0, 20).map((name) => ({
-                type: "status", serviceId: `${name}-id`, state: "connected",
-            }))));
+            expect(statuses).toEqual(
+                expect.arrayContaining(
+                    names.slice(0, 20).map((name) => ({
+                        type: "status",
+                        serviceId: `${name}-id`,
+                        state: "connected",
+                    })),
+                ),
+            );
             expect(inspected).toEqual(names);
             expect(openedStreams).toEqual(names.slice(0, 20).map((name) => `${name}-id`));
         } finally {
@@ -707,45 +793,57 @@ describe("resource logs backend", () => {
         expect(cancelled).toEqual(new Set(names.slice(0, 20).map((name) => `${name}-id`)));
     });
 
-    it.each(["queued", "ready"])("emits empty services and ends cleanly for %s deployments without current services", async (status) => {
-        await deployment(status);
-        current.clear();
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await call(resourcesRouter.streamLogs, input, { context });
+    it.each(["queued", "ready"])(
+        "emits empty services and ends cleanly for %s deployments without current services",
+        async (status) => {
+            await deployment(status);
+            current.clear();
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const stream = await call(resourcesRouter.streamLogs, input, { context });
 
-        try {
-            expect((await stream.next()).value).toEqual({
-                type: "services", services: [], historyAvailable: false, retentionDays: null,
-            });
-            expect(await stream.next()).toEqual({ done: true, value: undefined });
-            expect(inspected).toEqual(status === "ready" ? ["web"] : []);
-            expect(openedStreams).toEqual([]);
-            expect(vi.getTimerCount()).toBe(0);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
+            try {
+                expect((await stream.next()).value).toEqual({
+                    type: "services",
+                    services: [],
+                    historyAvailable: false,
+                    retentionDays: null,
+                });
+                expect(await stream.next()).toEqual({ done: true, value: undefined });
+                expect(inspected).toEqual(status === "ready" ? ["web"] : []);
+                expect(openedStreams).toEqual([]);
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                await stream.return(undefined);
+            }
+        },
+    );
 
     it("inspects services concurrently with an eight-request ceiling", async () => {
         const names = Array.from({ length: 17 }, (_, index) => `service-${index}`);
-        await deployment("ready", `services:\n${names.map((name) => `  ${name}: { image: nginx }`).join("\n")}\n`);
+        await deployment(
+            "ready",
+            `services:\n${names.map((name) => `  ${name}: { image: nginx }`).join("\n")}\n`,
+        );
 
         for (const name of names) current.set(name, `${name}-id`);
         const original = globalThis.fetch;
         let active = 0;
         let maximum = 0;
-        vi.stubGlobal("fetch", vi.fn(async (...args: Parameters<typeof fetch>) => {
-            active++;
-            maximum = Math.max(maximum, active);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (...args: Parameters<typeof fetch>) => {
+                active++;
+                maximum = Math.max(maximum, active);
 
-            try {
-                await new Promise((resolve) => setTimeout(resolve, 10));
+                try {
+                    await new Promise((resolve) => setTimeout(resolve, 10));
 
-                return await original(...args);
-            } finally {
-                active--;
-            }
-        }));
+                    return await original(...args);
+                } finally {
+                    active--;
+                }
+            }),
+        );
         const result = await call(resourcesRouter.listLogServices, input, { context });
         expect(result.services.map((service) => service.name)).toEqual(names);
         expect(maximum).toBe(8);
@@ -781,9 +879,12 @@ describe("resource logs backend", () => {
             ),
         ).rejects.toMatchObject({ code: "NOT_FOUND" });
         await db.update(projects).set({ isInternal: true }).where(eq(projects.id, projectId));
+        // Owners/admins may read internal projects; members may not.
+        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'logger'`);
         await expect(
             call(resourcesRouter.listLogServices, input, { context }),
         ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'logger'`);
         await db.update(projects).set({ isInternal: false }).where(eq(projects.id, projectId));
         const foreign = randomUUID();
         await db.$client.query(
@@ -825,27 +926,38 @@ describe("resource logs backend", () => {
         expect(openedStreams).toEqual([]);
     });
 
-    it.each(["worker", GREPTIME_SERVICE, ALLOY_SERVICE, "stoat-monitoring-private"])("opens no logs when selected name %s is outside the resource log scope", async (name) => {
-        await deployment("ready", `services:\n  web: { image: nginx }\n  ${GREPTIME_SERVICE}: { image: private }\n  ${ALLOY_SERVICE}: { image: private }\n  stoat-monitoring-private: { image: private }\n`);
-        current.set(name, "excluded-id");
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await call(resourcesRouter.streamLogs, { ...input, serviceNames: ["web", name] }, { context });
+    it.each(["worker", GREPTIME_SERVICE, ALLOY_SERVICE, "stoat-monitoring-private"])(
+        "opens no logs when selected name %s is outside the resource log scope",
+        async (name) => {
+            await deployment(
+                "ready",
+                `services:\n  web: { image: nginx }\n  ${GREPTIME_SERVICE}: { image: private }\n  ${ALLOY_SERVICE}: { image: private }\n  stoat-monitoring-private: { image: private }\n`,
+            );
+            current.set(name, "excluded-id");
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
 
-        try {
-            expect((await stream.next()).value).toEqual({
-                type: "services",
-                services: [{ id: "web-id", name: "web" }],
-                historyAvailable: false,
-                retentionDays: null,
-            });
-            expect(await stream.next()).toEqual({ done: true, value: undefined });
-            expect(inspected).toEqual(["web"]);
-            expect(openedStreams).toEqual([]);
-            expect(vi.getTimerCount()).toBe(0);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
+            const stream = await call(
+                resourcesRouter.streamLogs,
+                { ...input, serviceNames: ["web", name] },
+                { context },
+            );
+
+            try {
+                expect((await stream.next()).value).toEqual({
+                    type: "services",
+                    services: [{ id: "web-id", name: "web" }],
+                    historyAvailable: false,
+                    retentionDays: null,
+                });
+                expect(await stream.next()).toEqual({ done: true, value: undefined });
+                expect(inspected).toEqual(["web"]);
+                expect(openedStreams).toEqual([]);
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                await stream.return(undefined);
+            }
+        },
+    );
 
     it("still requires a service selection for historical search", async () => {
         await expect(
@@ -1030,14 +1142,20 @@ describe("resource logs backend", () => {
                     expect((await stream.next()).value).toMatchObject({ type: "services" });
 
                 if (phase === "live")
-                    expect((await stream.next()).value).toEqual({ type: "status", serviceId: "web-id", state: "connected" });
+                    expect((await stream.next()).value).toEqual({
+                        type: "status",
+                        serviceId: "web-id",
+                        state: "connected",
+                    });
                 await db.$client.query(`DELETE FROM member WHERE user_id = 'logger'`);
 
                 if (phase !== "before discovery") {
                     const transaction = vi.spyOn(db, "transaction");
                     await vi.advanceTimersByTimeAsync(15_000);
                     expect(transaction).toHaveBeenCalledTimes(1);
-                    await expect(transaction.mock.results[0]!.value).rejects.toMatchObject({ code: "FORBIDDEN" });
+                    await expect(transaction.mock.results[0]!.value).rejects.toMatchObject({
+                        code: "FORBIDDEN",
+                    });
                 }
 
                 await expect(stream.next()).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -1058,20 +1176,31 @@ describe("resource logs backend", () => {
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
             const entered = Promise.withResolvers<void>();
             const original = globalThis.fetch;
-            vi.stubGlobal("fetch", vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                const response = await original(request, options);
-                await new Promise<void>((resolve) => {
-                    options!.signal!.addEventListener("abort", () => resolve(), { once: true });
-                    entered.resolve();
-                });
+            vi.stubGlobal(
+                "fetch",
+                vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
+                    const response = await original(request, options);
+                    await new Promise<void>((resolve) => {
+                        options!.signal!.addEventListener("abort", () => resolve(), { once: true });
+                        entered.resolve();
+                    });
 
-                return response;
-            }));
+                    return response;
+                }),
+            );
             const controller = new AbortController();
-            const stream = await call(resourcesRouter.streamLogs, input, { context, signal: controller.signal });
+
+            const stream = await call(resourcesRouter.streamLogs, input, {
+                context,
+                signal: controller.signal,
+            });
 
             try {
-                const pending = stream.next().then((result) => result, (error) => error);
+                const pending = stream.next().then(
+                    (result) => result,
+                    (error) => error,
+                );
+
                 await entered.promise;
 
                 if (stop === "revocation") {
@@ -1079,9 +1208,11 @@ describe("resource logs backend", () => {
                     await vi.advanceTimersByTimeAsync(15_000);
                 } else if (stop === "return") await stream.return(undefined);
                 else controller.abort();
-                expect(await pending).toMatchObject(stop === "revocation"
-                    ? { code: "FORBIDDEN" }
-                    : { done: true, value: undefined });
+                expect(await pending).toMatchObject(
+                    stop === "revocation"
+                        ? { code: "FORBIDDEN" }
+                        : { done: true, value: undefined },
+                );
                 expect(inspected).toEqual(["web"]);
                 expect(openedStreams).toEqual([]);
                 expect(vi.getTimerCount()).toBe(0);
@@ -1243,156 +1374,244 @@ describe("resource logs backend", () => {
         await expect.poll(() => db.$client.idleCount).toBe(db.$client.totalCount);
     });
 
-    it.each(["web", "all"])("recovers %s inspection failures without reconnecting healthy services", async (failed) => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await openBoth();
-        const names = failed === "all" ? ["web", "worker"] : ["web"];
+    it.each(["web", "all"])(
+        "recovers %s inspection failures without reconnecting healthy services",
+        async (failed) => {
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const stream = await openBoth();
+            const names = failed === "all" ? ["web", "worker"] : ["web"];
 
-        try {
-            for (const name of names) inspectionFailures.add(name);
-            const pending = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            const events = [(await pending).value];
+            try {
+                for (const name of names) inspectionFailures.add(name);
+                const pending = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                const events = [(await pending).value];
 
-            for (let index = 1; index < names.length; index++) events.push((await stream.next()).value);
-            expect(events).toEqual(expect.arrayContaining(names.map((name) => ({
-                type: "status", serviceId: `${name}-id`, state: "reconnecting",
-                message: "Service could not be inspected. Retrying automatically.",
-            }))));
-            expect(cancelled).toEqual(new Set(names.map((name) => `${name}-id`)));
+                for (let index = 1; index < names.length; index++)
+                    events.push((await stream.next()).value);
+                expect(events).toEqual(
+                    expect.arrayContaining(
+                        names.map((name) => ({
+                            type: "status",
+                            serviceId: `${name}-id`,
+                            state: "reconnecting",
+                            message: "Service could not be inspected. Retrying automatically.",
+                        })),
+                    ),
+                );
+                expect(cancelled).toEqual(new Set(names.map((name) => `${name}-id`)));
 
-            // A prolonged outage must neither end the subscription nor reopen unchecked tails.
-            const retry = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await retry).value).toMatchObject({ type: "status", state: "reconnecting" });
+                // A prolonged outage must neither end the subscription nor reopen unchecked tails.
+                const retry = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await retry).value).toMatchObject({
+                    type: "status",
+                    state: "reconnecting",
+                });
 
-            for (let index = 1; index < names.length; index++) await stream.next();
-            expect(openedStreams).toHaveLength(2);
-            inspectionFailures.clear();
-            const recovered = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            const replay = [(await recovered).value];
+                for (let index = 1; index < names.length; index++) await stream.next();
+                expect(openedStreams).toHaveLength(2);
+                inspectionFailures.clear();
+                const recovered = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                const replay = [(await recovered).value];
 
-            for (let index = 1; index < names.length * 2; index++) replay.push((await stream.next()).value);
+                for (let index = 1; index < names.length * 2; index++)
+                    replay.push((await stream.next()).value);
 
-            for (const name of names) {
-                const serviceId = `${name}-id`;
-                expect(replay.filter((event) => event && "serviceId" in event && event.serviceId === serviceId)).toEqual([
-                    { type: "reset", serviceId },
-                    { type: "status", serviceId, state: "connected" },
-                ]);
-                send(serviceId, log("recovered", serviceId));
-                expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId, message: "recovered" }] });
+                for (const name of names) {
+                    const serviceId = `${name}-id`;
+                    expect(
+                        replay.filter(
+                            (event) =>
+                                event && "serviceId" in event && event.serviceId === serviceId,
+                        ),
+                    ).toEqual([
+                        { type: "reset", serviceId },
+                        { type: "status", serviceId, state: "connected" },
+                    ]);
+                    send(serviceId, log("recovered", serviceId));
+                    expect((await stream.next()).value).toMatchObject({
+                        type: "logs",
+                        logs: [{ serviceId, message: "recovered" }],
+                    });
+                }
+
+                expect(openedStreams.filter((id) => id === "worker-id")).toHaveLength(
+                    failed === "all" ? 2 : 1,
+                );
+            } finally {
+                await stream.return(undefined);
             }
+        },
+    );
 
-            expect(openedStreams.filter((id) => id === "worker-id")).toHaveLength(failed === "all" ? 2 : 1);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
+    it.each(["close", "read failure", "open failure"])(
+        "reopens after %s with unchanged replicas",
+        async (failure) => {
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const original = openStream;
+            let failing = failure === "open failure";
+            openStream = async (id, signal) =>
+                failing && id === "web-id"
+                    ? Response.json({ error: "private failure" }, { status: 502 })
+                    : original(id, signal);
+            await deployment(
+                "ready",
+                "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n",
+            );
 
-    it.each(["close", "read failure", "open failure"])("reopens after %s with unchanged replicas", async (failure) => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const original = openStream;
-        let failing = failure === "open failure";
-        openStream = async (id, signal) => failing && id === "web-id"
-            ? Response.json({ error: "private failure" }, { status: 502 })
-            : original(id, signal);
-        await deployment("ready", "services:\n  web: { image: nginx }\n  worker: { image: nginx }\n");
-        const stream = await call(resourcesRouter.streamLogs, { ...input, serviceIds: ["web-id", "worker-id"] }, { context });
+            const stream = await call(
+                resourcesRouter.streamLogs,
+                { ...input, serviceIds: ["web-id", "worker-id"] },
+                { context },
+            );
 
-        try {
-            const initial = [(await stream.next()).value, (await stream.next()).value];
+            try {
+                const initial = [(await stream.next()).value, (await stream.next()).value];
 
-            if (failure === "open failure") {
-                expect(initial).toContainEqual(expect.objectContaining({ type: "status", serviceId: "web-id", state: "reconnecting" }));
-                failing = false;
-            } else {
-                if (failure === "close") streams.get("web-id")!.close();
-                else streams.get("web-id")!.error(new Error("private socket failure"));
-                expect((await stream.next()).value).toMatchObject({ type: "status", serviceId: "web-id", state: "reconnecting" });
+                if (failure === "open failure") {
+                    expect(initial).toContainEqual(
+                        expect.objectContaining({
+                            type: "status",
+                            serviceId: "web-id",
+                            state: "reconnecting",
+                        }),
+                    );
+                    failing = false;
+                } else {
+                    if (failure === "close") streams.get("web-id")!.close();
+                    else streams.get("web-id")!.error(new Error("private socket failure"));
+                    expect((await stream.next()).value).toMatchObject({
+                        type: "status",
+                        serviceId: "web-id",
+                        state: "reconnecting",
+                    });
+                }
+
+                const reset = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await reset).value).toEqual({ type: "reset", serviceId: "web-id" });
+                expect((await stream.next()).value).toEqual({
+                    type: "status",
+                    serviceId: "web-id",
+                    state: "connected",
+                });
+                send("web-id", log("resumed"));
+                expect((await stream.next()).value).toMatchObject({
+                    type: "logs",
+                    logs: [{ message: "resumed" }],
+                });
+                expect(openedStreams.filter((id) => id === "web-id")).toHaveLength(2);
+                expect(openedStreams.filter((id) => id === "worker-id")).toHaveLength(1);
+            } finally {
+                await stream.return(undefined);
             }
+        },
+    );
 
-            const reset = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await reset).value).toEqual({ type: "reset", serviceId: "web-id" });
-            expect((await stream.next()).value).toEqual({ type: "status", serviceId: "web-id", state: "connected" });
-            send("web-id", log("resumed"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ message: "resumed" }] });
-            expect(openedStreams.filter((id) => id === "web-id")).toHaveLength(2);
-            expect(openedStreams.filter((id) => id === "worker-id")).toHaveLength(1);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
+    it.each(["recover", "invalid"])(
+        "handles %s inspections while reconnecting status is backpressured",
+        async (result) => {
+            await deployment();
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const stream = await call(resourcesRouter.streamLogs, selection, { context });
 
-    it.each(["recover", "invalid"])("handles %s inspections while reconnecting status is backpressured", async (result) => {
-        await deployment();
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await call(resourcesRouter.streamLogs, selection, { context });
+            try {
+                await stream.next();
+                inspectionFailures.add("web");
+                const interrupted = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await interrupted).value).toMatchObject({ state: "reconnecting" });
+                inspectionFailures.clear();
 
-        try {
-            await stream.next();
-            inspectionFailures.add("web");
-            const interrupted = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await interrupted).value).toMatchObject({ state: "reconnecting" });
-            inspectionFailures.clear();
+                if (result === "invalid") {
+                    const original = globalThis.fetch;
+                    vi.stubGlobal(
+                        "fetch",
+                        vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
+                            await original(request, options);
 
-            if (result === "invalid") {
-                const original = globalThis.fetch;
-                vi.stubGlobal("fetch", vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                    await original(request, options);
+                            return Response.json({
+                                id: "web-id",
+                                name: "web",
+                                containers: "invalid",
+                            });
+                        }),
+                    );
+                }
 
-                    return Response.json({ id: "web-id", name: "web", containers: "invalid" });
-                }));
+                // Do not ask for another event until the next inspection has finished.
+                await vi.advanceTimersByTimeAsync(15_000);
+                await expect.poll(() => inspected.length).toBe(3);
+
+                if (result === "invalid") {
+                    expect((await stream.next()).value).toMatchObject({
+                        type: "status",
+                        serviceId: "web-id",
+                        state: "error",
+                    });
+                    expect((await stream.next()).done).toBe(true);
+                    expect(openedStreams).toEqual(["web-id"]);
+                } else {
+                    expect((await stream.next()).value).toEqual({
+                        type: "reset",
+                        serviceId: "web-id",
+                    });
+                    expect((await stream.next()).value).toEqual({
+                        type: "status",
+                        serviceId: "web-id",
+                        state: "connected",
+                    });
+                    expect(openedStreams).toEqual(["web-id", "web-id"]);
+                }
+            } finally {
+                await stream.return(undefined);
             }
+        },
+    );
 
-            // Do not ask for another event until the next inspection has finished.
-            await vi.advanceTimersByTimeAsync(15_000);
-            await expect.poll(() => inspected.length).toBe(3);
+    it.each(["return", "disconnect", "revocation"])(
+        "cancels inspection retries on %s",
+        async (stop) => {
+            await deployment();
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const controller = new AbortController();
 
-            if (result === "invalid") {
-                expect((await stream.next()).value).toMatchObject({ type: "status", serviceId: "web-id", state: "error" });
-                expect((await stream.next()).done).toBe(true);
+            const stream = await call(resourcesRouter.streamLogs, selection, {
+                context,
+                signal: controller.signal,
+            });
+
+            try {
+                await stream.next();
+                inspectionFailures.add("web");
+                const interrupted = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await interrupted).value).toMatchObject({ state: "reconnecting" });
+
+                const pending = stream.next().then(
+                    (result) => result,
+                    (error) => error,
+                );
+
+                inspectionFailures.clear();
+
+                if (stop === "return") await stream.return(undefined);
+                else if (stop === "disconnect") controller.abort();
+                else await db.$client.query(`DELETE FROM session WHERE id = 'log-session'`);
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect(await pending).toMatchObject(
+                    stop === "revocation" ? { code: "FORBIDDEN" } : { done: true },
+                );
                 expect(openedStreams).toEqual(["web-id"]);
-            } else {
-                expect((await stream.next()).value).toEqual({ type: "reset", serviceId: "web-id" });
-                expect((await stream.next()).value).toEqual({ type: "status", serviceId: "web-id", state: "connected" });
-                expect(openedStreams).toEqual(["web-id", "web-id"]);
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                controller.abort();
+                await stream.return(undefined);
             }
-        } finally {
-            await stream.return(undefined);
-        }
-    });
-
-    it.each(["return", "disconnect", "revocation"])("cancels inspection retries on %s", async (stop) => {
-        await deployment();
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const controller = new AbortController();
-        const stream = await call(resourcesRouter.streamLogs, selection, { context, signal: controller.signal });
-
-        try {
-            await stream.next();
-            inspectionFailures.add("web");
-            const interrupted = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await interrupted).value).toMatchObject({ state: "reconnecting" });
-            const pending = stream.next().then((result) => result, (error) => error);
-            inspectionFailures.clear();
-
-            if (stop === "return") await stream.return(undefined);
-            else if (stop === "disconnect") controller.abort();
-            else await db.$client.query(`DELETE FROM session WHERE id = 'log-session'`);
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect(await pending).toMatchObject(stop === "revocation" ? { code: "FORBIDDEN" } : { done: true });
-            expect(openedStreams).toEqual(["web-id"]);
-            expect(vi.getTimerCount()).toBe(0);
-        } finally {
-            controller.abort();
-            await stream.return(undefined);
-        }
-    });
+        },
+    );
 
     it("restarts only changed replicas, emits reset before replay, and ignores inspection ordering", async () => {
         vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -1449,175 +1668,274 @@ describe("resource logs backend", () => {
         }
     });
 
-    it.each(["empty", "populated"])("follows repeated authorized replacements with %s replicas and rejects old-ID logs", async (containers) => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    it.each(["empty", "populated"])(
+        "follows repeated authorized replacements with %s replicas and rejects old-ID logs",
+        async (containers) => {
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
 
-        for (const id of ["web-id", "recreated-id", "latest-id"])
-            replicas.set(id, containers === "empty" ? [] : ["container"]);
-        const stream = await openBoth();
+            for (const id of ["web-id", "recreated-id", "latest-id"])
+                replicas.set(id, containers === "empty" ? [] : ["container"]);
+            const stream = await openBoth();
 
-        try {
-            let previous = "web-id";
+            try {
+                let previous = "web-id";
 
-            for (const id of ["recreated-id", "latest-id"]) {
-                const pending = stream.next();
-                current.set("web", id);
-                await vi.advanceTimersByTimeAsync(15_000);
-                const reset = (await pending).value;
-                expect(reset).toEqual({ type: "reset", serviceId: previous, replacement: { id, name: "web" } });
-                expect(JSON.stringify(reset)).not.toMatch(/PRIVATE|secret|containers|Config|Env/u);
-                expect(cancelled.has(previous)).toBe(true);
-                expect(openedStreams).not.toContain(id);
-                expect((await stream.next()).value).toEqual({ type: "status", serviceId: id, state: "connected" });
-                send(id, log("replacement log", id));
-                expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: id, serviceName: "web", message: "replacement log" }] });
-                previous = id;
-            }
-
-            send("latest-id", log("stale attribution", "recreated-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "status", serviceId: "latest-id", state: "error" });
-            send("worker-id", log("healthy", "worker-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "worker-id", message: "healthy" }] });
-            inspected.length = 0;
-            await vi.advanceTimersByTimeAsync(15_000);
-            await expect.poll(() => inspected).toEqual(["worker"]);
-            expect(openedStreams).toEqual(["web-id", "worker-id", "recreated-id", "latest-id"]);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
-
-    it.each(["deployment", "imported spec", "imported settings"])("denies replacement outside the fresh %s scope", async (scope) => {
-        if (scope === "deployment") await deployment();
-        else await db.update(resources).set({
-            spec: "services:\n  web: { image: nginx }\n",
-            settings: { prefixNames: false },
-        }).where(eq(resources.id, resourceId));
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await call(resourcesRouter.streamLogs, selection, { context });
-
-        try {
-            expect((await stream.next()).value).toEqual({ type: "status", serviceId: "web-id", state: "connected" });
-
-            if (scope === "deployment") await deployment("ready", "services:\n  worker: { image: nginx }\n");
-            else if (scope === "imported spec")
-                await db.update(resources).set({ spec: "services:\n  worker: { image: nginx }\n" }).where(eq(resources.id, resourceId));
-            else {
-                await db.update(resources).set({ settings: { prefixNames: true } }).where(eq(resources.id, resourceId));
-                current.set(`${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`, "prefixed-id");
-            }
-
-            inspected.length = 0;
-            const pending = stream.next();
-            current.set("web", "recreated-id");
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await pending).value).toEqual({
-                type: "status", serviceId: "web-id", state: "error",
-                message: "Service is no longer in this resource or its inspection was invalid.",
-            });
-            expect((await stream.next()).done).toBe(true);
-            expect(inspected).toEqual(["web", scope === "imported settings" ? `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web` : "worker"]);
-            expect(openedStreams).toEqual(["web-id"]);
-            expect(cancelled).toEqual(new Set(["web-id"]));
-            expect(vi.getTimerCount()).toBe(0);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
-
-    it.each([503, 404])("retries a transient %i rediscovery failure without reopening an unchecked replacement", async (status) => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const stream = await openBoth();
-        const original = globalThis.fetch;
-        let inspections = 0;
-        vi.stubGlobal("fetch", vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-            const response = await original(request, options);
-
-            // The first web inspection detects the new ID; the second rechecks deployed scope.
-            if (new URL(String(request)).pathname.endsWith("/services/web") && ++inspections === 2)
-                return Response.json({ error: "private rediscovery failure" }, { status });
-
-            return response;
-        }));
-
-        try {
-            current.set("web", "recreated-id");
-            const interrupted = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await interrupted).value).toEqual({
-                type: "status", serviceId: "web-id", state: "reconnecting",
-                message: "Service could not be inspected. Retrying automatically.",
-            });
-            expect(inspections).toBe(2);
-            expect(openedStreams).toEqual(["web-id", "worker-id"]);
-            expect(cancelled).toEqual(new Set(["web-id"]));
-            send("worker-id", log("healthy", "worker-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "worker-id", message: "healthy" }] });
-            const retry = stream.next();
-            await vi.advanceTimersByTimeAsync(15_000);
-            expect((await retry).value).toEqual({ type: "reset", serviceId: "web-id", replacement: { id: "recreated-id", name: "web" } });
-            expect((await stream.next()).value).toEqual({ type: "status", serviceId: "recreated-id", state: "connected" });
-            send("recreated-id", log("recovered", "recreated-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "recreated-id", message: "recovered" }] });
-            expect(inspections).toBe(4);
-            expect(openedStreams).toEqual(["web-id", "worker-id", "recreated-id"]);
-        } finally {
-            await stream.return(undefined);
-        }
-    });
-
-    it.each(["return", "disconnect", "revocation"])("stops on %s while rediscovery is delayed and ignores late success", async (stop) => {
-        await deployment();
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-        const controller = new AbortController();
-        const stream = await call(resourcesRouter.streamLogs, selection, { context, signal: controller.signal });
-        const entered = Promise.withResolvers<AbortSignal>();
-        const waiting = Promise.withResolvers<void>();
-        const original = globalThis.fetch;
-        let inspections = 0;
-
-        try {
-            await stream.next();
-            vi.stubGlobal("fetch", vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                const response = await original(request, options);
-
-                if (new URL(String(request)).pathname.endsWith("/services/web") && ++inspections === 2) {
-                    entered.resolve(options!.signal!);
-                    await waiting.promise;
+                for (const id of ["recreated-id", "latest-id"]) {
+                    const pending = stream.next();
+                    current.set("web", id);
+                    await vi.advanceTimersByTimeAsync(15_000);
+                    const reset = (await pending).value;
+                    expect(reset).toEqual({
+                        type: "reset",
+                        serviceId: previous,
+                        replacement: { id, name: "web" },
+                    });
+                    expect(JSON.stringify(reset)).not.toMatch(
+                        /PRIVATE|secret|containers|Config|Env/u,
+                    );
+                    expect(cancelled.has(previous)).toBe(true);
+                    expect(openedStreams).not.toContain(id);
+                    expect((await stream.next()).value).toEqual({
+                        type: "status",
+                        serviceId: id,
+                        state: "connected",
+                    });
+                    send(id, log("replacement log", id));
+                    expect((await stream.next()).value).toMatchObject({
+                        type: "logs",
+                        logs: [{ serviceId: id, serviceName: "web", message: "replacement log" }],
+                    });
+                    previous = id;
                 }
 
-                return response;
-            }));
-            current.set("web", "recreated-id");
-            const pending = stream.next().then((result) => result, (error) => error);
-            await vi.advanceTimersByTimeAsync(15_000);
-            const signal = await entered.promise;
-            const transaction = vi.spyOn(db, "transaction");
-            await vi.advanceTimersByTimeAsync(15_000);
-            await expect.poll(() => transaction.mock.results.length).toBe(1);
-            await transaction.mock.results[0]!.value;
-            expect(inspections).toBe(2);
-            expect(openedStreams).toEqual(["web-id"]);
-
-            if (stop === "revocation") {
-                await db.$client.query(`DELETE FROM session WHERE id = 'log-session'`);
+                send("latest-id", log("stale attribution", "recreated-id"));
+                expect((await stream.next()).value).toMatchObject({
+                    type: "status",
+                    serviceId: "latest-id",
+                    state: "error",
+                });
+                send("worker-id", log("healthy", "worker-id"));
+                expect((await stream.next()).value).toMatchObject({
+                    type: "logs",
+                    logs: [{ serviceId: "worker-id", message: "healthy" }],
+                });
+                inspected.length = 0;
                 await vi.advanceTimersByTimeAsync(15_000);
-            } else if (stop === "return") await stream.return(undefined);
-            else controller.abort();
-            expect(await pending).toMatchObject(stop === "revocation" ? { code: "FORBIDDEN" } : { done: true, value: undefined });
-            expect(signal.aborted).toBe(true);
-            expect(cancelled).toEqual(new Set(["web-id"]));
-            expect(vi.getTimerCount()).toBe(0);
-            waiting.resolve();
-            await vi.advanceTimersByTimeAsync(0);
-            expect((await stream.next()).done).toBe(true);
-            expect(openedStreams).toEqual(["web-id"]);
-        } finally {
-            waiting.resolve();
-            controller.abort();
-            await stream.return(undefined);
-        }
-    });
+                await expect.poll(() => inspected).toEqual(["worker"]);
+                expect(openedStreams).toEqual(["web-id", "worker-id", "recreated-id", "latest-id"]);
+            } finally {
+                await stream.return(undefined);
+            }
+        },
+    );
+
+    it.each(["deployment", "imported spec", "imported settings"])(
+        "denies replacement outside the fresh %s scope",
+        async (scope) => {
+            if (scope === "deployment") await deployment();
+            else
+                await db
+                    .update(resources)
+                    .set({
+                        spec: "services:\n  web: { image: nginx }\n",
+                        settings: { prefixNames: false },
+                    })
+                    .where(eq(resources.id, resourceId));
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const stream = await call(resourcesRouter.streamLogs, selection, { context });
+
+            try {
+                expect((await stream.next()).value).toEqual({
+                    type: "status",
+                    serviceId: "web-id",
+                    state: "connected",
+                });
+
+                if (scope === "deployment")
+                    await deployment("ready", "services:\n  worker: { image: nginx }\n");
+                else if (scope === "imported spec")
+                    await db
+                        .update(resources)
+                        .set({ spec: "services:\n  worker: { image: nginx }\n" })
+                        .where(eq(resources.id, resourceId));
+                else {
+                    await db
+                        .update(resources)
+                        .set({ settings: { prefixNames: true } })
+                        .where(eq(resources.id, resourceId));
+                    current.set(
+                        `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`,
+                        "prefixed-id",
+                    );
+                }
+
+                inspected.length = 0;
+                const pending = stream.next();
+                current.set("web", "recreated-id");
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await pending).value).toEqual({
+                    type: "status",
+                    serviceId: "web-id",
+                    state: "error",
+                    message: "Service is no longer in this resource or its inspection was invalid.",
+                });
+                expect((await stream.next()).done).toBe(true);
+                expect(inspected).toEqual([
+                    "web",
+                    scope === "imported settings"
+                        ? `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`
+                        : "worker",
+                ]);
+                expect(openedStreams).toEqual(["web-id"]);
+                expect(cancelled).toEqual(new Set(["web-id"]));
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                await stream.return(undefined);
+            }
+        },
+    );
+
+    it.each([503, 404])(
+        "retries a transient %i rediscovery failure without reopening an unchecked replacement",
+        async (status) => {
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const stream = await openBoth();
+            const original = globalThis.fetch;
+            let inspections = 0;
+            vi.stubGlobal(
+                "fetch",
+                vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
+                    const response = await original(request, options);
+
+                    // The first web inspection detects the new ID; the second rechecks deployed scope.
+                    if (
+                        new URL(String(request)).pathname.endsWith("/services/web") &&
+                        ++inspections === 2
+                    )
+                        return Response.json({ error: "private rediscovery failure" }, { status });
+
+                    return response;
+                }),
+            );
+
+            try {
+                current.set("web", "recreated-id");
+                const interrupted = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await interrupted).value).toEqual({
+                    type: "status",
+                    serviceId: "web-id",
+                    state: "reconnecting",
+                    message: "Service could not be inspected. Retrying automatically.",
+                });
+                expect(inspections).toBe(2);
+                expect(openedStreams).toEqual(["web-id", "worker-id"]);
+                expect(cancelled).toEqual(new Set(["web-id"]));
+                send("worker-id", log("healthy", "worker-id"));
+                expect((await stream.next()).value).toMatchObject({
+                    type: "logs",
+                    logs: [{ serviceId: "worker-id", message: "healthy" }],
+                });
+                const retry = stream.next();
+                await vi.advanceTimersByTimeAsync(15_000);
+                expect((await retry).value).toEqual({
+                    type: "reset",
+                    serviceId: "web-id",
+                    replacement: { id: "recreated-id", name: "web" },
+                });
+                expect((await stream.next()).value).toEqual({
+                    type: "status",
+                    serviceId: "recreated-id",
+                    state: "connected",
+                });
+                send("recreated-id", log("recovered", "recreated-id"));
+                expect((await stream.next()).value).toMatchObject({
+                    type: "logs",
+                    logs: [{ serviceId: "recreated-id", message: "recovered" }],
+                });
+                expect(inspections).toBe(4);
+                expect(openedStreams).toEqual(["web-id", "worker-id", "recreated-id"]);
+            } finally {
+                await stream.return(undefined);
+            }
+        },
+    );
+
+    it.each(["return", "disconnect", "revocation"])(
+        "stops on %s while rediscovery is delayed and ignores late success",
+        async (stop) => {
+            await deployment();
+            vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+            const controller = new AbortController();
+
+            const stream = await call(resourcesRouter.streamLogs, selection, {
+                context,
+                signal: controller.signal,
+            });
+
+            const entered = Promise.withResolvers<AbortSignal>();
+            const waiting = Promise.withResolvers<void>();
+            const original = globalThis.fetch;
+            let inspections = 0;
+
+            try {
+                await stream.next();
+                vi.stubGlobal(
+                    "fetch",
+                    vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
+                        const response = await original(request, options);
+
+                        if (
+                            new URL(String(request)).pathname.endsWith("/services/web") &&
+                            ++inspections === 2
+                        ) {
+                            entered.resolve(options!.signal!);
+                            await waiting.promise;
+                        }
+
+                        return response;
+                    }),
+                );
+                current.set("web", "recreated-id");
+
+                const pending = stream.next().then(
+                    (result) => result,
+                    (error) => error,
+                );
+
+                await vi.advanceTimersByTimeAsync(15_000);
+                const signal = await entered.promise;
+                const transaction = vi.spyOn(db, "transaction");
+                await vi.advanceTimersByTimeAsync(15_000);
+                await expect.poll(() => transaction.mock.results.length).toBe(1);
+                await transaction.mock.results[0]!.value;
+                expect(inspections).toBe(2);
+                expect(openedStreams).toEqual(["web-id"]);
+
+                if (stop === "revocation") {
+                    await db.$client.query(`DELETE FROM session WHERE id = 'log-session'`);
+                    await vi.advanceTimersByTimeAsync(15_000);
+                } else if (stop === "return") await stream.return(undefined);
+                else controller.abort();
+                expect(await pending).toMatchObject(
+                    stop === "revocation"
+                        ? { code: "FORBIDDEN" }
+                        : { done: true, value: undefined },
+                );
+                expect(signal.aborted).toBe(true);
+                expect(cancelled).toEqual(new Set(["web-id"]));
+                expect(vi.getTimerCount()).toBe(0);
+                waiting.resolve();
+                await vi.advanceTimersByTimeAsync(0);
+                expect((await stream.next()).done).toBe(true);
+                expect(openedStreams).toEqual(["web-id"]);
+            } finally {
+                waiting.resolve();
+                controller.abort();
+                await stream.return(undefined);
+            }
+        },
+    );
 
     it("coalesces A-to-B-to-C replacement under backpressure into an old-to-latest reset", async () => {
         await deployment();
@@ -1627,7 +1945,10 @@ describe("resource logs backend", () => {
         try {
             await stream.next();
             send("web-id", log("before replacement"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "web-id" }] });
+            expect((await stream.next()).value).toMatchObject({
+                type: "logs",
+                logs: [{ serviceId: "web-id" }],
+            });
             current.set("web", "recreated-id");
             await vi.advanceTimersByTimeAsync(15_000);
             await expect.poll(() => cancelled.has("web-id")).toBe(true);
@@ -1636,10 +1957,21 @@ describe("resource logs backend", () => {
             await expect.poll(() => inspected.length).toBe(5);
             await vi.advanceTimersByTimeAsync(0);
             expect(openedStreams).toEqual(["web-id"]);
-            expect((await stream.next()).value).toEqual({ type: "reset", serviceId: "web-id", replacement: { id: "latest-id", name: "web" } });
-            expect((await stream.next()).value).toEqual({ type: "status", serviceId: "latest-id", state: "connected" });
+            expect((await stream.next()).value).toEqual({
+                type: "reset",
+                serviceId: "web-id",
+                replacement: { id: "latest-id", name: "web" },
+            });
+            expect((await stream.next()).value).toEqual({
+                type: "status",
+                serviceId: "latest-id",
+                state: "connected",
+            });
             send("latest-id", log("latest log", "latest-id"));
-            expect((await stream.next()).value).toMatchObject({ type: "logs", logs: [{ serviceId: "latest-id", serviceName: "web", message: "latest log" }] });
+            expect((await stream.next()).value).toMatchObject({
+                type: "logs",
+                logs: [{ serviceId: "latest-id", serviceName: "web", message: "latest log" }],
+            });
             expect(openedStreams).toEqual(["web-id", "latest-id"]);
         } finally {
             await stream.return(undefined);
@@ -1685,7 +2017,11 @@ describe("resource logs backend", () => {
             send("web-id", { ...log(), stream: "heartbeat" });
             send("web-id", { ...log(), error: "private-sidecar-secret" });
             const error = (await stream.next()).value;
-            expect(error).toMatchObject({ type: "status", serviceId: "web-id", state: "reconnecting" });
+            expect(error).toMatchObject({
+                type: "status",
+                serviceId: "web-id",
+                state: "reconnecting",
+            });
             expect(JSON.stringify(error)).not.toContain("private-sidecar-secret");
             send("worker-id", log("healthy", "worker-id"));
             expect((await stream.next()).value).toMatchObject({

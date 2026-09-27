@@ -19,6 +19,7 @@
   };
 
   type MapArcLinePaint = NonNullable<MapLibreGL.LineLayerSpecification['paint']>;
+
   type MapArcLineLayout = NonNullable<MapLibreGL.LineLayerSpecification['layout']>;
 
   export type MapArcProps<T extends MapArcDatum = MapArcDatum> = {
@@ -83,12 +84,17 @@
   };
 
   const ARC_HIT_MIN_WIDTH = 12;
+
   const ARC_HIT_PADDING = 6;
 
   let autoId = $state(Math.random().toString(36).slice(2));
+
   const id = $derived(propId ?? autoId);
+
   const sourceId = $derived(`arc-source-${id}`);
+
   const layerId = $derived(`arc-layer-${id}`);
+
   const hitLayerId = $derived(`arc-hit-layer-${id}`);
 
   const mapCtx = useMap();
@@ -120,6 +126,7 @@
 
     const points: [number, number][] = [];
     const segments = Math.max(2, Math.floor(samples));
+
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
       const inv = 1 - t;
@@ -127,6 +134,7 @@
       const y = inv * inv * y0 + 2 * inv * t * cy + t * t * y2;
       points.push([x, y]);
     }
+
     return points;
   }
 
@@ -136,6 +144,7 @@
   ): NonNullable<MapLibreGL.LineLayerSpecification['paint']> {
     if (!hover) return base;
     const merged: Record<string, unknown> = { ...base };
+
     for (const [key, hoverValue] of Object.entries(hover)) {
       if (hoverValue === undefined) continue;
       const baseValue = merged[key];
@@ -144,6 +153,7 @@
           ? hoverValue
           : ['case', ['boolean', ['feature-state', 'hover'], false], hoverValue, baseValue];
     }
+
     return merged as NonNullable<MapLibreGL.LineLayerSpecification['paint']>;
   }
 
@@ -151,6 +161,7 @@
     type: 'FeatureCollection',
     features: data.map((arc) => {
       const { from, to, id: arcId, ...properties } = arc;
+
       return {
         id: typeof arcId === 'number' ? arcId : undefined,
         type: 'Feature' as const,
@@ -164,10 +175,13 @@
   }));
 
   const mergedPaint = $derived(mergeArcPaint({ ...DEFAULT_PAINT, ...paint }, hoverPaint));
+
   const mergedLayout = $derived({ ...DEFAULT_LAYOUT, ...layout });
+
   const hitWidth = $derived(() => {
     const w = paint?.['line-width'] ?? DEFAULT_PAINT['line-width'];
     const base = typeof w === 'number' ? w : ARC_HIT_MIN_WIDTH;
+
     return Math.max((base as number) + ARC_HIT_PADDING, ARC_HIT_MIN_WIDTH);
   });
 
@@ -180,6 +194,7 @@
   $effect(() => {
     const map = mapCtx.map;
     const isLoaded = mapCtx.isLoaded;
+
     if (!map || !isLoaded) return;
 
     const currentSourceId = sourceId;
@@ -229,10 +244,14 @@
         map.setFeatureState({ source: currentSourceId, id: hoveredArcId }, { hover: false });
         hoveredArcId = null;
       }
+
       map.getCanvas().style.cursor = '';
+
       try {
         if (map.getLayer(currentHitLayerId)) map.removeLayer(currentHitLayerId);
+
         if (map.getLayer(currentLayerId)) map.removeLayer(currentLayerId);
+
         if (map.getSource(currentSourceId)) map.removeSource(currentSourceId);
       } catch {
         // ignore
@@ -244,8 +263,10 @@
   $effect(() => {
     const map = mapCtx.map;
     const isLoaded = mapCtx.isLoaded;
+
     if (!map || !isLoaded) return;
     const source = map.getSource(sourceId) as MapLibreGL.GeoJSONSource | undefined;
+
     if (source) source.setData(geoJSON);
   });
 
@@ -253,7 +274,9 @@
   $effect(() => {
     const map = mapCtx.map;
     const isLoaded = mapCtx.isLoaded;
+
     if (!map || !isLoaded) return;
+
     if (map.getLayer(layerId)) {
       for (const [key, value] of Object.entries(mergedPaint)) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -266,6 +289,7 @@
   $effect(() => {
     const map = mapCtx.map;
     const isLoaded = mapCtx.isLoaded;
+
     if (!map || !isLoaded || !interactive) return;
 
     const targetLayer = hitLayerId;
@@ -273,10 +297,13 @@
     const handleClick = (e: MapLibreGL.MapMouseEvent) => {
       if (!onclick) return;
       const features = map.queryRenderedFeatures(e.point, { layers: [targetLayer] });
+
       if (!features.length) return;
       const arcId = features[0].properties?._arc_id;
+
       if (!arcId) return;
       const arc = getArcById(arcId);
+
       if (!arc) return;
       onclick({ arc, longitude: e.lngLat.lng, latitude: e.lngLat.lat, originalEvent: e });
     };
@@ -299,12 +326,14 @@
 
         if (onhover) {
           const arc = getArcById(arcId);
+
           if (arc) {
             onhover({ arc, longitude: e.lngLat.lng, latitude: e.lngLat.lat, originalEvent: e });
           }
         }
       } else {
         map.getCanvas().style.cursor = '';
+
         if (onhover) onhover(null);
       }
     };
@@ -314,7 +343,9 @@
         map.setFeatureState({ source: sourceId, id: hoveredArcId }, { hover: false });
         hoveredArcId = null;
       }
+
       map.getCanvas().style.cursor = '';
+
       if (onhover) onhover(null);
     };
 

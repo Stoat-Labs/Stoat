@@ -23,6 +23,7 @@
   }>('marker');
 
   let wrapperElement: HTMLDivElement | null = $state(null);
+
   let tooltip: MapLibreGL.Popup | null = null;
 
   // Create tooltip popup when marker is ready
@@ -51,6 +52,7 @@
     const popupInstance = new MapLibreGL.Popup(popupOptions)
       .setMaxWidth('none')
       .setDOMContent(container);
+
     tooltip = popupInstance;
 
     // Move content to popup container

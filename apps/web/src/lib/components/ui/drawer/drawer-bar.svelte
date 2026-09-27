@@ -15,7 +15,9 @@
   } = $props();
 
   const ctx = getContext<{ position: () => DrawerPosition } | undefined>('drawer-position');
+
   const position = $derived(positionProp ?? ctx?.position() ?? 'bottom');
+
   const horizontal = $derived(position === 'left' || position === 'right');
 </script>
 

@@ -4,6 +4,7 @@
 import YAML, { isAlias, isMap, isNode, isScalar, isSeq } from "yaml";
 import type { Node, YAMLMap } from "yaml";
 import { Predicate } from "effect";
+import { parseEnv } from "node:util";
 
 export interface FormattedCompose {
     serviceCount: number;
@@ -550,6 +551,136 @@ function transformComposeNames(compose: string, rename: Rename): FormattedCompos
 
 export function formatComposeFile(compose: string, prefix?: string): FormattedCompose {
     return transformComposeNames(compose, (name) => prefixName(name, prefix));
+}
+
+export const resourceEnv = (resource: { settings: unknown }): string =>
+    Predicate.isObject(resource.settings) && Predicate.isString(resource.settings.env)
+        ? resource.settings.env
+        : "";
+
+export class ComposeVariableError extends Error {}
+
+const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*/u;
+
+/**
+ * Compose-spec interpolation of `$VAR`, `${VAR}`, and `${VAR[:]-|?|+...}` in YAML values.
+ * Output keeps `$` escaped as `$$`, so Uncloud's own interpolation pass is a no-op
+ * and never falls back to the sidecar's process environment.
+ * Built-ins, each overridable by a same-named user variable:
+ * `<SERVICE>_SERVICE_NAME` / `<SERVICE>_INTERNAL_HOST` (deployed name, prefixed when
+ * `prefix` is set), `STOAT_PREFIX`, and `STOAT_DOMAIN` when the cluster domain is known.
+ */
+export function interpolateCompose(
+    compose: string,
+    envText: string,
+    prefix?: string,
+    domain?: string,
+): string {
+    const env: Record<string, string> = {};
+    const doc = YAML.parseDocument(compose);
+
+    if (doc.errors.length > 0) throw new Error("Invalid compose YAML");
+
+    env.STOAT_PREFIX = prefix ?? "";
+
+    if (domain) env.STOAT_DOMAIN = domain;
+
+    const services = doc.get("services", true);
+
+    if (isMap(services))
+        for (const { key } of services.items)
+            if (isScalar(key) && Predicate.isString(key.value)) {
+                const variable = key.value.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
+                const name = prefixName(key.value, prefix);
+
+                env[`${variable}_SERVICE_NAME`] = name;
+                env[`${variable}_INTERNAL_HOST`] = `${name}.internal`;
+            }
+
+    const expand = (text: string): string => {
+        let out = "";
+
+        for (let i = 0; i < text.length;) {
+            const char = text[i]!;
+
+            if (char !== "$") {
+                out += char;
+                i++;
+                continue;
+            }
+
+            const next = text[i + 1];
+
+            if (next === "$") {
+                out += "$$";
+                i += 2;
+                continue;
+            }
+
+            if (next !== "{") {
+                const name = VARIABLE.exec(text.slice(i + 1))?.[0];
+
+                out += name ? (env[name] ?? "").replaceAll("$", "$$$$") : "$$";
+                i += 1 + (name?.length ?? 0);
+                continue;
+            }
+
+            // Find the matching brace; nested `${...}` may appear in defaults.
+            let depth = 1;
+            let end = i + 2;
+
+            for (; end < text.length && depth > 0; end++) {
+                if (text[end] === "$" && text[end + 1] === "$") end++;
+                else if (text[end] === "$" && text[end + 1] === "{") {
+                    depth++;
+                    end++;
+                } else if (text[end] === "}") depth--;
+            }
+
+            if (depth > 0) throw new ComposeVariableError(`Invalid interpolation format: ${text}`);
+
+            const body = text.slice(i + 2, end - 1);
+            const name = VARIABLE.exec(body)?.[0];
+
+            if (!name) throw new ComposeVariableError(`Invalid interpolation format: ${text}`);
+
+            const rest = body.slice(name.length);
+            const colon = rest.startsWith(":");
+            const op = rest[colon ? 1 : 0];
+            const arg = rest.slice(colon ? 2 : 1);
+            const value = env[name];
+            const present = colon ? !!value : value !== undefined;
+            const escaped = (value ?? "").replaceAll("$", "$$$$");
+
+            if (rest === "") out += escaped;
+            else if (op === "-") out += present ? escaped : expand(arg);
+            else if (op === "+") out += present ? expand(arg) : "";
+            else if (op === "?") {
+                if (!present)
+                    throw new ComposeVariableError(
+                        `Required variable ${name} is missing a value${arg ? `: ${arg}` : ""}. Set it in the resource's Variables.`,
+                    );
+                out += escaped;
+            } else throw new ComposeVariableError(`Invalid interpolation format: ${text}`);
+
+            i = end;
+        }
+
+        return out;
+    };
+
+    // Like Compose, .env values may reference variables defined above them.
+    // ponytail: parseEnv drops quotes, so single-quoted values expand too; Compose keeps them literal.
+    for (const [name, value] of Object.entries(parseEnv(envText)))
+        env[name] = expand(value ?? "").replaceAll("$$", "$");
+
+    YAML.visit(doc, {
+        Scalar(key, node) {
+            if (key !== "key" && Predicate.isString(node.value)) node.value = expand(node.value);
+        },
+    });
+
+    return doc.toString();
 }
 
 /** Undo only the transformations made by formatComposeFile; keep user YAML intact. */

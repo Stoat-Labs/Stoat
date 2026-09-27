@@ -4,10 +4,11 @@ import { ucClient, unwrap } from "@stoat/uncloud";
 import { and, asc, eq, ilike, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { organizationProcedure, uncloudMiddleware } from "../..";
+import { isOrganizationAdmin, organizationProcedure, uncloudMiddleware } from "../..";
 import { deploymentsRouter } from "./deployments";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
+import { observabilityRouter } from "./observability";
 
 const clusterInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
@@ -28,6 +29,7 @@ export const clusterRouter = {
     ...deploymentsRouter,
     ...monitoringRouter,
     ...metricsRouter,
+    ...observabilityRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(
@@ -141,11 +143,27 @@ export const clusterRouter = {
             const { sidecarUrl, sidecarToken, ...item } = cluster;
             const diagnostics = await getClusterDiagnostics(sidecarUrl, sidecarToken);
 
-            const canInitialize = organizationRole
-                .split(",")
-                .some((role) => role.trim() === "owner" || role.trim() === "admin");
+            const canInitialize = isOrganizationAdmin(organizationRole);
 
-            return { ...item, diagnostics, canInitialize };
+            const [internalProject] = canInitialize
+                ? await db
+                      .select({ id: projects.id })
+                      .from(projects)
+                      .where(
+                          and(
+                              eq(projects.clusterId, cluster.id),
+                              sql`${projects.isInternal} is true`,
+                          ),
+                      )
+                      .limit(1)
+                : [];
+
+            return {
+                ...item,
+                diagnostics,
+                canInitialize,
+                internalProjectId: internalProject?.id ?? null,
+            };
         }),
 
     createCluster: organizationProcedure

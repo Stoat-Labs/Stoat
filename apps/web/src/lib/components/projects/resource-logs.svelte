@@ -9,26 +9,61 @@
     import { Label } from "$lib/components/ui/label";
     import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "$lib/components/ui/popover";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "$lib/components/ui/tooltip";
+    import LogViewer from "$lib/components/log-viewer.svelte";
     import { subscribeToStream } from "$lib/deployment-stream";
     import { client, orpc, queryClient } from "$lib/orpc";
-    import { classifyLog, logActivity, logBucketIndex, selectedLogServices, type DisplayLog, type LogLevel } from "$lib/resource-logs";
-    import ArrowDown from "@lucide/svelte/icons/arrow-down";
-    import Check from "@lucide/svelte/icons/check";
+    import { classifyLog, logEntryKey, selectedLogServices, type DisplayLog, type LogBucket } from "$lib/resource-logs";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Copy from "@lucide/svelte/icons/copy";
     import Pause from "@lucide/svelte/icons/pause";
     import Play from "@lucide/svelte/icons/play";
     import RefreshCw from "@lucide/svelte/icons/refresh-cw";
     import Search from "@lucide/svelte/icons/search";
-    import WrapText from "@lucide/svelte/icons/wrap-text";
     import type { ResourceLog } from "@stoat/api/routers/resources/logs";
     import { createQuery } from "@tanstack/svelte-query";
-    import { onDestroy, onMount, tick, untrack } from "svelte";
+    import { createParser, parseAsArrayOf, parseAsBoolean, parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs-svelte";
+    import { onDestroy, onMount, untrack } from "svelte";
 
     let { projectId, resourceId, active = true }: { projectId: string; resourceId: string; active?: boolean } = $props();
 
+    type ViewLog = DisplayLog & { key: string };
+
+    const bucketParser = createParser<LogBucket>({
+        parse(value) {
+            const parts = value.split(":").map(Number);
+
+            if (parts.length !== 3) return null;
+            const [index, domainStart, domainEnd] = parts;
+
+            if (!Number.isInteger(index) || index! < 0 || index! > 23 || !Number.isSafeInteger(domainStart) || !Number.isSafeInteger(domainEnd) || domainEnd! <= domainStart!) return null;
+
+            return { index: index!, domainStart: domainStart!, domainEnd: domainEnd! };
+        },
+        serialize: ({ index, domainStart, domainEnd }) => `${index}:${domainStart}:${domainEnd}`,
+    });
+
+    const view = useQueryStates({
+        logServices: parseAsArrayOf(parseAsString),
+        logServiceSearch: parseAsString.withDefault(""),
+        logMode: parseAsStringLiteral(["live", "search"]).withDefault("live"),
+        logPaused: parseAsBoolean.withDefault(false),
+        logText: parseAsString.withDefault(""),
+        logLevel: parseAsStringLiteral(["error", "warning", "success", "other"]),
+        logBucket: bucketParser,
+        logWrap: parseAsBoolean.withDefault(false),
+        logClean: parseAsBoolean.withDefault(true),
+        logFollowing: parseAsBoolean.withDefault(true),
+        logScroll: parseAsInteger.withDefault(0).withOptions({ throttleMs: 200 }),
+        logEntry: parseAsString,
+        logRange: parseAsStringLiteral(["15m", "1h", "24h", "custom"]).withDefault("15m"),
+        logStart: parseAsString.withDefault(""),
+        logEnd: parseAsString.withDefault(""),
+    }, { shallow: true, scroll: false, history: "replace" });
+
     let ready = $state(false);
+
+    const selection = $derived(view.logServices.current?.slice(0, 20) ?? null);
+
+    const paused = $derived(view.logPaused.current);
 
     const resourceQuery = createQuery(() => orpc.resources.getResource.queryOptions({
         input: { projectId, resourceId }, enabled: ready && active,
@@ -36,14 +71,24 @@
 
     const servicesQuery = createQuery(() => orpc.resources.listLogServices.queryOptions({
         // Live connections populate discovery; keep the same cache for the service picker.
-        input: { projectId, resourceId }, enabled: false, retry: false,
+        input: { projectId, resourceId }, enabled: ready && active && (selection?.length === 0 || view.logPaused.current), retry: false,
     }));
 
     const services = $derived(servicesQuery.data?.services ?? []);
 
-    const loading = $derived(resourceQuery.isPending || servicesQuery.isPending);
+    // Shares the resource page's cached queries; machines without current containers fall back to their id.
+    const projectQuery = createQuery(() => orpc.projects.getProject.queryOptions({ input: { projectId }, enabled: active && projectId.length > 0 }));
 
-    let selection = $state<string[] | null>(null);
+    const clusterId = $derived(projectQuery.data?.clusterId ?? "");
+
+    const containersQuery = createQuery(() => orpc.resources.getContainers.queryOptions({
+        input: { projectId, resourceId, clusterId },
+        enabled: active && clusterId.length > 0 && Boolean(resourceQuery.data?.spec?.trim()),
+    }));
+
+    const machineNames = $derived(new Map((containersQuery.data ?? []).filter((item) => item.machineName).map((item) => [item.machineId, item.machineName])));
+
+    const loading = $derived(resourceQuery.isPending || servicesQuery.isPending);
 
     const selectedServices = $derived(selectedLogServices(services, selection));
 
@@ -55,33 +100,15 @@
 
     const streamScopeKey = $derived(`${projectId}/${resourceId}/${selection === null ? "all" : selection.join(",")}`);
 
-    let serviceSearch = $state("");
-
-    const visibleServices = $derived(services.filter((service) => service.name.toLowerCase().includes(serviceSearch.toLowerCase())));
-
-    let mode = $state<"live" | "search">("live");
-
-    let paused = $state(false);
+    const visibleServices = $derived(services.filter((service) => service.name.toLowerCase().includes(view.logServiceSearch.current.toLowerCase())));
 
     let attempt = $state(0);
 
-    let text = $state("");
-
-    let levelFilter = $state<LogLevel | null>(null);
-
-    let activeBucket = $state<number | null>(null);
-
-    let selectedBucket = $state<{ index: number; domainStart: number; domainEnd: number } | null>(null);
-
-    let wrap = $state(false);
-
-    let following = $state(true);
-
     let viewport = $state<HTMLDivElement>();
 
-    let liveLogs = $state.raw<DisplayLog[]>([]);
+    let liveLogs = $state.raw<ViewLog[]>([]);
 
-    let historyLogs = $state.raw<DisplayLog[]>([]);
+    let historyLogs = $state.raw<ViewLog[]>([]);
 
     let discarded = $state(0);
 
@@ -91,19 +118,11 @@
 
     let serviceStates = $state<{ id: string; state: "connecting" | "connected" | "reconnecting" | "error"; message?: string }[]>([]);
 
-    let copiedId = $state<number | null>(null);
-
-    let expandedLogId = $state<number | null>(null);
-
-    let copyError = $state("");
-
     let nextId = 0;
 
-    let preset = $state("15m");
+    const start = $derived(dateInput(view.logStart.current));
 
-    let start = $state("");
-
-    let end = $state("");
+    const end = $derived(dateInput(view.logEnd.current));
 
     let timezone = $state("Local time");
 
@@ -121,35 +140,23 @@
 
     let submitted = $state<{ start: string; end: string; query: string; serviceIds: string[] } | null>(null);
 
-    const series: { key: LogLevel; label: string; color: string; foreground: string }[] = [
-        { key: "error", label: "Errors", color: "bg-destructive", foreground: "text-destructive-foreground" },
-        { key: "warning", label: "Warnings", color: "bg-warning", foreground: "text-warning-foreground" },
-        { key: "success", label: "Success", color: "bg-success", foreground: "text-success-foreground" },
-        { key: "other", label: "Info", color: "bg-muted-foreground/40", foreground: "text-muted-foreground" },
-    ];
+    let restoreSearch = true;
 
-    const logs = $derived(mode === "live" ? liveLogs : historyLogs);
+    let previousStreamScope: string | null = null;
 
-    const matchedLogs = $derived(mode === "live" && text ? logs.filter((log) => log.message.toLowerCase().includes(text.toLowerCase())) : logs);
+    let previousSearchScope: string | null = null;
 
-    const visibleLogs = $derived(levelFilter || selectedBucket ? matchedLogs.filter((log) =>
-        (!levelFilter || log.level === levelFilter) &&
-        (!selectedBucket || logBucketIndex(log.time, selectedBucket.domainStart, selectedBucket.domainEnd) === selectedBucket.index),
-    ) : matchedLogs);
+    const logs = $derived(view.logMode.current === "live" ? liveLogs : historyLogs);
 
-    const chartStart = $derived(selectedBucket?.domainStart ?? (mode === "search" && submitted ? Date.parse(submitted.start) : (logs[0]?.time ?? 0)));
+    const liveFilter = $derived(view.logMode.current === "live" ? view.logText.current.toLowerCase() : "");
 
-    const chartEnd = $derived(selectedBucket?.domainEnd ?? (mode === "search" && submitted ? Date.parse(submitted.end) : Math.max(chartStart + 1000, logs.at(-1)?.time ?? 0)));
-
-    const activity = $derived(logActivity(matchedLogs, chartStart, chartEnd));
-
-    const selectedRange = $derived(selectedBucket ? activity.buckets[selectedBucket.index] : null);
+    const matchedLogs = $derived(liveFilter ? logs.filter((log) => log.message.toLowerCase().includes(liveFilter)) : logs);
 
     const connected = $derived(serviceStates.filter((service) => service.state === "connected").length);
 
     const failures = $derived(serviceStates.filter((service) => service.state === "error" || service.state === "reconnecting"));
 
-    const status = $derived(paused ? "Paused" : reconnecting ? "Reconnecting" : streamError ? "Disconnected" : failures.length ? connected > 0 ? "Partial stream" : failures.some((service) => service.state === "reconnecting") ? "Reconnecting" : "Disconnected" : connected === selectedIds.length && connected > 0 ? "Live" : "Connecting");
+    const status = $derived(view.logPaused.current ? "Paused" : reconnecting ? "Reconnecting" : streamError ? "Disconnected" : failures.length ? connected > 0 ? "Partial stream" : failures.some((service) => service.state === "reconnecting") ? "Reconnecting" : "Disconnected" : connected === selectedIds.length && connected > 0 ? "Live" : "Connecting");
 
     const searchSummary = $derived(submitted ? `${time(submitted.start, true)} to ${time(submitted.end, true)}${submitted.query ? ` / "${submitted.query}"` : ""}` : "Search within the configured retention period.");
 
@@ -157,8 +164,20 @@
         return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
     }
 
+    function dateInput(value: string) {
+        const time = Date.parse(value);
+
+        return Number.isFinite(time) ? localDate(new Date(time)) : "";
+    }
+
+    function setDateInput(key: "logStart" | "logEnd", value: string) {
+        const time = Date.parse(value);
+        void view.set({ [key]: Number.isFinite(time) ? new Date(time).toISOString() : "" });
+    }
+
     function chooseRange(value: string) {
-        preset = value;
+
+        view.logRange.current = value as typeof view.logRange.current;
 
         if (value === "custom") return;
         const now = new Date();
@@ -167,35 +186,19 @@
         if (value === "1h") duration = 3_600_000;
 
         if (value === "24h") duration = 86_400_000;
-        start = localDate(new Date(now.getTime() - duration));
-        end = localDate(now);
+        void view.set({ logStart: new Date(now.getTime() - duration).toISOString(), logEnd: now.toISOString() });
     }
 
     function selectService(name: string, checked: boolean) {
         const names = selection ?? selectedServices.map((service) => service.name);
-        selection = checked ? [...names, name] : names.filter((selected) => selected !== name);
-    }
-
-    async function selectBucket(index: number | null) {
-        if (index !== null && !activity.buckets[index]?.total) return;
-
-        // Capture the domain rather than following a bar whose boundaries shift with live output.
-        selectedBucket = index === null || selectedBucket?.index === index
-            ? null
-            : { index, domainStart: chartStart, domainEnd: chartEnd };
-        activeBucket = index;
-        expandedLogId = null;
-        following = selectedBucket === null;
-        await tick();
-
-        if (selectedBucket && viewport) viewport.scrollTop = 0;
+        view.logServices.current = checked ? [...names, name] : names.filter((selected) => selected !== name);
     }
 
     function decorate(entries: ResourceLog[]) {
-        return entries.map((entry) => ({ ...entry, id: nextId++, time: Date.parse(entry.timestamp), level: classifyLog(entry.message) }));
+        return entries.map((entry) => ({ ...entry, id: nextId++, key: logEntryKey(entry), time: Date.parse(entry.timestamp), level: classifyLog(entry.message) }));
     }
 
-    function resetSearch() {
+    function resetSearch(clearBucket = true) {
         searchController?.abort();
         searchController = undefined;
         pending = false;
@@ -204,44 +207,57 @@
         searchError = "";
         searched = false;
         submitted = null;
-        selectedBucket = null;
+
+        if (clearBucket) view.logBucket.current = null;
     }
 
     onMount(() => {
         ready = true;
-        // Initialize local dates only in the browser, never in shared SSR state.
+        // Show the viewer's local timezone without persisting a browser-specific label.
         timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        chooseRange("15m");
     });
 
     $effect.pre(() => {
-        void streamScopeKey;
+        const scope = streamScopeKey;
+
+        if (previousStreamScope !== null && previousStreamScope !== scope) view.logEntry.current = null;
+        previousStreamScope = scope;
         liveLogs = [];
         discarded = 0;
         streamError = "";
         reconnecting = false;
         serviceStates = [];
-        copiedId = null;
-        expandedLogId = null;
-        copyError = "";
-        activeBucket = null;
     });
 
     $effect.pre(() => {
-        void scopeKey;
-        untrack(resetSearch);
+        const scope = scopeKey;
+        const changed = previousSearchScope !== null && previousSearchScope !== scope;
+
+        if (servicesQuery.data) previousSearchScope = scope;
+        untrack(() => resetSearch(changed));
+    });
+
+    $effect(() => {
+        if (ready && active && view.logMode.current === "search" && view.logRange.current !== "custom" && (!start || !end)) chooseRange(view.logRange.current);
+    });
+
+    $effect(() => {
+        if (!restoreSearch || !ready || !active || view.logMode.current !== "search" || !servicesQuery.data || !selectedIds.length || !start || !end) return;
+        restoreSearch = false;
+        void search(false, undefined, true);
     });
 
     $effect(() => {
         // Track selection intent, not IDs that can change during a deployment.
-        const names = selection === null ? null : [...selection];
+        // Key on the string: nuqs re-derives every key (e.g. logScroll), which would otherwise reopen the stream.
+        void streamScopeKey;
+        const names = untrack(() => selection === null ? null : [...selection]);
         const scope = { projectId, resourceId };
         const servicesKey = orpc.resources.listLogServices.queryKey({ input: scope });
         void attempt;
 
         if (!ready || paused || names?.length === 0) return;
 
-        following = true;
         reconnecting = false;
         let incoming: ResourceLog[] = [];
         let overflow = false;
@@ -260,8 +276,7 @@
             let bytes = combined.reduce((sum, log) => sum + log.message.length * 2 + 512, 0);
             let remove = 0;
 
-            // ponytail: keep a 2,000-line / 4 MiB tail; use virtualization for larger client buffers.
-            while (combined.length - remove > 2000 || bytes > 4 * 1024 * 1024) {
+            while (combined.length - remove > 1000000 || bytes > 100 * 1024 * 1024) {
                 bytes -= combined[remove]!.message.length * 2 + 512;
                 remove++;
             }
@@ -358,41 +373,34 @@
         };
     });
 
-    $effect(() => {
-        if (!visibleLogs.length) return;
-
-        if (active && following && !selectedBucket && mode === "live" && viewport) viewport.scrollTop = viewport.scrollHeight;
-    });
-
-    $effect(() => {
-        if (activeBucket !== null && !activity.buckets[activeBucket]?.total) activeBucket = null;
-    });
-
     function togglePause() {
-        if (!paused) flushLive();
-        paused = !paused;
+        if (!view.logPaused.current) flushLive();
+        view.logPaused.current = !view.logPaused.current;
     }
 
     function reconnect() {
-        paused = false;
+        view.logPaused.current = false;
         attempt++;
         reconnecting = false;
     }
 
     function changeMode(value: "live" | "search") {
-        if (mode === value) return;
+        if (view.logMode.current === value) return;
+        restoreSearch = false;
         resetSearch();
-        mode = value;
-        levelFilter = null;
-        activeBucket = null;
-        text = "";
+        view.logMode.current = value;
+        view.logLevel.current = null;
+        view.logFollowing.current = true;
+        view.logScroll.current = 0;
+        view.logEntry.current = null;
+        view.logText.current = "";
 
-        if (value === "search") chooseRange(preset);
+        if (value === "search") chooseRange(view.logRange.current);
     }
 
-    async function search(older = false) {
-        if (mode !== "search" || pending || !selectedIds.length || (older && (!submitted || !nextCursor))) return;
-        const range = older && submitted ? submitted : { start, end, query: text, serviceIds: [...selectedIds] };
+    async function search(older = false, dates?: { start: string; end: string }, preserveView = false) {
+        if (view.logMode.current !== "search" || pending || !selectedIds.length || (older && (!submitted || !nextCursor))) return;
+        const range = older && submitted ? submitted : { start: dates?.start ?? start, end: dates?.end ?? end, query: view.logText.current, serviceIds: [...selectedIds] };
         const from = Date.parse(range.start);
         const until = Date.parse(range.end);
 
@@ -406,29 +414,36 @@
         const controller = new AbortController();
         searchController = controller;
         const searchScope = scopeKey;
-        const isCurrent = () => searchController === controller && !controller.signal.aborted && mode === "search" && scopeKey === searchScope;
+        const isCurrent = () => searchController === controller && !controller.signal.aborted && view.logMode.current === "search" && scopeKey === searchScope;
         pending = true;
         searchError = "";
 
         try {
-            const dates = { ...range, start: new Date(from).toISOString(), end: new Date(until).toISOString() };
+            const normalized = { ...range, start: new Date(from).toISOString(), end: new Date(until).toISOString() };
 
             if (!older) {
-                selectedBucket = null;
-                submitted = dates;
+                if (dates) void view.set({ logStart: normalized.start, logEnd: normalized.end });
+
+                if (!preserveView) {
+                    view.logBucket.current = null;
+                    view.logEntry.current = null;
+                    view.logScroll.current = 0;
+                }
+
+                submitted = normalized;
                 historyLogs = [];
                 nextCursor = null;
                 searched = false;
             }
 
-            const result = await client.resources.searchLogs({ projectId, resourceId, ...dates, cursor: older ? nextCursor ?? undefined : undefined }, { signal: controller.signal });
+            const result = await client.resources.searchLogs({ projectId, resourceId, ...normalized, cursor: older ? nextCursor ?? undefined : undefined }, { signal: controller.signal });
 
             if (!isCurrent()) return;
             historyLogs = [...historyLogs, ...decorate(result.logs)];
             nextCursor = result.nextCursor;
             searched = true;
 
-            if (!older && viewport) viewport.scrollTop = 0;
+            if (!older && !preserveView && viewport) viewport.scrollTop = 0;
         } catch (error) {
             if (isCurrent()) searchError = error instanceof Error ? error.message : "Unable to search logs.";
         } finally {
@@ -439,15 +454,15 @@
     function submitSearch(event: SubmitEvent) {
         event.preventDefault();
 
-        if (preset !== "custom") chooseRange(preset);
+        if (view.logRange.current !== "custom") {
+            const duration = view.logRange.current === "24h" ? 86_400_000 : view.logRange.current === "1h" ? 3_600_000 : 900_000;
+            const now = new Date();
+            void search(false, { start: localDate(new Date(now.getTime() - duration)), end: localDate(now) });
+
+            return;
+        }
+
         void search();
-    }
-
-    async function copy(log: DisplayLog) {
-        copyError = "";
-
-        try { await navigator.clipboard.writeText(log.message); copiedId = log.id; }
-        catch { copyError = "Unable to copy. Select the message text to copy it manually."; }
     }
 
     function time(value: string | number, full = false) {
@@ -474,12 +489,12 @@
     </Empty>
 {:else}
     <Skeleton {loading} loading-label="Loading logs" class="flex min-h-0 min-w-0 flex-1 flex-col" background-color="color-mix(in oklab, var(--foreground) 8%, transparent)" shimmer-color="color-mix(in oklab, var(--foreground) 6%, transparent)">
-    <Frame inert={loading} class="min-h-0 min-w-0 flex-1 overflow-hidden {mode === 'search' && preset === 'custom' ? 'max-xl:min-h-192' : ''}">
+    <Frame inert={loading} class="min-h-0 min-w-0 flex-1 overflow-hidden {view.logMode.current === 'search' && view.logRange.current === 'custom' ? 'max-xl:min-h-192' : ''}">
         <FrameHeader class="shrink-0 gap-3 px-3 py-2">
             <div class="flex flex-wrap items-center gap-2">
                 <div class="flex items-center gap-1 rounded-lg bg-background/60 p-0.5" role="group" aria-label="Log source">
-                    <Button variant={mode === "live" ? "outline" : "ghost"} size="sm" aria-pressed={mode === "live"} onclick={() => changeMode("live")}>Live</Button>
-                    <Button variant={mode === "search" ? "outline" : "ghost"} size="sm" aria-pressed={mode === "search"} onclick={() => changeMode("search")}>Search</Button>
+                    <Button variant={view.logMode.current === "live" ? "outline" : "ghost"} size="sm" aria-pressed={view.logMode.current === "live"} onclick={() => changeMode("live")}>Live</Button>
+                    <Button variant={view.logMode.current === "search" ? "outline" : "ghost"} size="sm" aria-pressed={view.logMode.current === "search"} onclick={() => changeMode("search")}>Search</Button>
                 </div>
                 <Popover>
                     <PopoverTrigger class={buttonVariants({ variant: "outline", size: "sm" })}>
@@ -487,10 +502,10 @@
                     </PopoverTrigger>
                     <PopoverPopup align="start" class="w-80 max-w-[calc(100vw-2rem)]">
                         <PopoverTitle class="mb-2 text-sm font-medium">Services</PopoverTitle>
-                        <Input size="sm" type="search" aria-label="Find a service" placeholder="Find a service..." bind:value={serviceSearch} />
+                        <Input size="sm" type="search" aria-label="Find a service" placeholder="Find a service..." bind:value={() => view.logServiceSearch.current, (value) => view.logServiceSearch.current = value} />
                         <div class="my-2 flex items-center justify-between text-xs text-muted-foreground">
                             <span>Select up to 20</span>
-                            <Button variant="ghost" size="xs" onclick={() => selection = (selection?.length ?? selectedIds.length) ? [] : services.slice(0, 20).map((service) => service.name)}>{(selection?.length ?? selectedIds.length) ? "Clear" : "Select all"}</Button>
+                            <Button variant="ghost" size="xs" onclick={() => view.logServices.current = (selection?.length ?? selectedIds.length) ? [] : services.slice(0, 20).map((service) => service.name)}>{(selection?.length ?? selectedIds.length) ? "Clear" : "Select all"}</Button>
                         </div>
                         <div class="max-h-64 space-y-1 overflow-y-auto">
                             {#each visibleServices as service (service.id)}
@@ -504,30 +519,30 @@
                     </PopoverPopup>
                 </Popover>
                 <span data-shimmer-ignore class="min-w-16 flex-1 whitespace-nowrap text-xs text-muted-foreground"></span>
-                {#if mode === "live" && (loading || selectedIds.length)}
+                {#if view.logMode.current === "live" && (loading || selectedIds.length)}
                     <span role="status"><Badge variant={status === "Live" ? "success" : failures.length || streamError ? "warning" : "secondary"}>{status}</Badge></span>
                     <Button variant="outline" size="sm" onclick={togglePause}>
-                        {#if paused}<Play class="size-3.5" aria-hidden="true" />Resume{:else}<Pause class="size-3.5" aria-hidden="true" />Pause{/if}
+                        {#if view.logPaused.current}<Play class="size-3.5" aria-hidden="true" />Resume{:else}<Pause class="size-3.5" aria-hidden="true" />Pause{/if}
                     </Button>
                     <Button variant="ghost" size="icon-sm" aria-label="Reconnect live logs" title="Refresh services and reload recent tail" disabled={servicesQuery.isFetching} onclick={reconnect}><RefreshCw class="size-3.5" aria-hidden="true" /></Button>
                 {/if}
             </div>
-            {#if mode === "live"}
-                <Input size="sm" type="search" aria-label="Filter loaded logs" placeholder="Filter loaded logs..." bind:value={text} />
+            {#if view.logMode.current === "live"}
+                <Input size="sm" type="search" aria-label="Filter loaded logs" placeholder="Filter loaded logs..." bind:value={() => view.logText.current, (value) => view.logText.current = value} />
             {:else if servicesQuery.data?.historyAvailable}
                 <form class="flex flex-col gap-2" onsubmit={submitSearch}>
                     <div class="flex flex-wrap items-center gap-2">
-                        <div class="min-w-40 flex-1"><Input size="sm" type="search" aria-label="Search log messages" placeholder="Search messages (literal text)..." bind:value={text} maxlength={512} /></div>
+                        <div class="min-w-40 flex-1"><Input size="sm" type="search" aria-label="Search log messages" placeholder="Search messages (literal text)..." bind:value={() => view.logText.current, (value) => view.logText.current = value} maxlength={512} /></div>
                         <label class="sr-only" for="log-range">Time range</label>
-                        <select id="log-range" class="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7" value={preset} onchange={(event) => chooseRange(event.currentTarget.value)}>
+                        <select id="log-range" class="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7" value={view.logRange.current} onchange={(event) => chooseRange(event.currentTarget.value)}>
                             <option value="15m">Last 15 minutes</option><option value="1h">Last hour</option><option value="24h">Last 24 hours</option><option value="custom">Custom range</option>
                         </select>
                         <Button size="sm" type="submit" loading={pending} disabled={pending || !selectedIds.length}><Search class="size-3.5" aria-hidden="true" />Search</Button>
                     </div>
-                    {#if preset === "custom"}
+                    {#if view.logRange.current === "custom"}
                         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <div class="space-y-1"><Label for="log-start" class="text-xs">From</Label><Input id="log-start" size="sm" type="datetime-local" step="1" bind:value={start} required /></div>
-                            <div class="space-y-1"><Label for="log-end" class="text-xs">Until</Label><Input id="log-end" size="sm" type="datetime-local" step="1" bind:value={end} required /></div>
+                            <div class="space-y-1"><Label for="log-start" class="text-xs">From</Label><Input id="log-start" size="sm" type="datetime-local" step="1" bind:value={() => start, (value) => setDateInput("logStart", value)} required /></div>
+                            <div class="space-y-1"><Label for="log-end" class="text-xs">Until</Label><Input id="log-end" size="sm" type="datetime-local" step="1" bind:value={() => end, (value) => setDateInput("logEnd", value)} required /></div>
                         </div>
                     {/if}
                     <p class="text-xs text-muted-foreground">{timezone}. {servicesQuery.data.retentionDays ? `Up to ${servicesQuery.data.retentionDays} days retained.` : "Within configured retention."} Current service IDs only.</p>
@@ -535,153 +550,61 @@
             {/if}
         </FrameHeader>
 
-        {#if mode === "search" && !servicesQuery.data?.historyAvailable}
+        {#if view.logMode.current === "search" && !servicesQuery.data?.historyAvailable}
             <FramePanel class="flex min-h-0 flex-1 items-center justify-center">
                 <Empty><EmptyHeader><EmptyTitle>Historical logs unavailable</EmptyTitle><EmptyDescription>Initialize cluster monitoring to store and search logs in GreptimeDB. Live logs are still available.</EmptyDescription></EmptyHeader><Button variant="outline" size="sm" onclick={() => changeMode("live")}>View live logs</Button></Empty>
             </FramePanel>
         {:else}
             <FramePanel class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0">
-                <section class="shrink-0 border-b px-3 py-2 sm:px-4" aria-label="Log activity">
-                    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                        <p class="text-xs font-medium">Activity <span class="ml-1 font-normal text-muted-foreground">Loaded lines only</span></p>
-                        <div class="flex flex-wrap gap-1" role="group" aria-label="Filter by log classification">
-                            {#each series as item (item.key)}
-                                <Button variant={levelFilter === item.key ? "secondary" : "ghost"} size="xs" class="gap-1.5 text-xs" aria-pressed={levelFilter === item.key} onclick={() => levelFilter = levelFilter === item.key ? null : item.key}>
-                                    <span class="size-2 rounded-xs {item.color}" aria-hidden="true"></span><span class={item.foreground}>{item.label}</span><span class="font-mono tabular-nums">{activity.counts[item.key]}</span>
-                                </Button>
-                            {/each}
-                        </div>
-                    </div>
-                    <TooltipProvider delay={100}>
-                        <div class="relative mt-2 flex h-16 gap-1 border-b border-border sm:h-20" role="group" aria-label="Log activity by time. Hover for counts; select a bar to filter logs.">
-                            {#each activity.buckets as bucket, index (index)}
-                                {#if loading}
-                                    <span class="min-w-0 flex-1 self-end rounded-t-sm" style:height={`${20 + (index * 17) % 65}%`}></span>
-                                {:else if bucket.total > 0}
-                                <Tooltip
-                                    triggerId={`log-bucket-${index}`}
-                                    bind:open={() => activeBucket === index, (open) => { if (open) activeBucket = index; else if (activeBucket === index) activeBucket = null; }}
-                                    disabled={!matchedLogs.length}
-                                >
-                                    <TooltipTrigger
-                                        id={`log-bucket-${index}`}
-                                        type="button"
-                                        closeOnClick={false}
-                                        disabled={!matchedLogs.length}
-                                        class="flex h-full min-w-0 flex-1 cursor-pointer flex-col-reverse justify-start rounded-t-sm outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 aria-pressed:ring-1 aria-pressed:ring-foreground/70 {selectedBucket && selectedBucket.index !== index ? 'opacity-40' : ''}"
-                                        aria-label="Show logs from {time(bucket.start)} to {time(bucket.end)}: {bucket.total} lines, {bucket.error} errors, {bucket.warning} warnings, {bucket.success} successes, {bucket.other} info"
-                                        aria-pressed={selectedBucket?.index === index}
-                                        aria-describedby={activeBucket === index && matchedLogs.length ? `log-bucket-tooltip-${index}` : undefined}
-                                        onclick={() => selectBucket(index)}
-                                    >
-                                        {#each series as item (item.key)}
-                                            <span class="w-full min-w-0 shrink-0 {item.color}" style:height={`${bucket[item.key] / activity.maximum * 100}%`}></span>
-                                        {/each}
-                                    </TooltipTrigger>
-                                    <TooltipPopup id={`log-bucket-tooltip-${index}`} role="tooltip" side="top" sideOffset={8} class="w-60 max-w-[calc(100vw-2rem)] text-left">
-                                        <div class="space-y-2 py-1.5">
-                                            <div class="space-y-0.5 border-b pb-2">
-                                                <p class="font-medium">{new Date(bucket.start).toLocaleDateString()} / {timezone}</p>
-                                                <p class="font-mono text-[11px] text-muted-foreground">{time(bucket.start)} - {time(bucket.end)}</p>
-                                            </div>
-                                            <dl class="space-y-1">
-                                                {#each series as item (item.key)}
-                                                    <div class="flex items-center justify-between gap-4"><dt class={item.foreground}>{item.label}</dt><dd class="font-mono tabular-nums">{bucket[item.key].toLocaleString()}</dd></div>
-                                                {/each}
-                                                <div class="flex items-center justify-between gap-4 border-t pt-1.5 font-medium"><dt>Total</dt><dd class="font-mono tabular-nums">{bucket.total.toLocaleString()}</dd></div>
-                                            </dl>
-                                        </div>
-                                    </TooltipPopup>
-                                </Tooltip>
-                                {:else}
-                                    <span class="min-w-0 flex-1" aria-hidden="true"></span>
-                                {/if}
-                            {/each}
-                            {#if !loading && !matchedLogs.length}<span class="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">{pending ? "Searching..." : "No activity loaded"}</span>{/if}
-                        </div>
-                    </TooltipProvider>
-                    <div class="mt-1 flex justify-between text-[11px] tabular-nums text-muted-foreground">
-                        <span>{loading ? "00:00:00.000" : logs.length || submitted ? time(chartStart) : ""}</span>
-                        <span title="Classification uses explicit log levels and HTTP status codes. Informational and unclassified lines are shown as INFO.">Explicit levels / HTTP status</span>
-                        <span>{loading ? "00:00:00.000" : logs.length || submitted ? time(chartEnd) : ""}</span>
-                    </div>
-                </section>
-
-                {#if streamError && mode === "live"}
-                    <Alert variant={reconnecting ? "warning" : "error"} class="m-2 shrink-0 px-3 py-2"><AlertDescription>{streamError} {#if reconnecting}Retrying with a fresh recent tail.{/if}</AlertDescription></Alert>
-                {/if}
-                {#if mode === "live" && failures.length}
-                    <div class="shrink-0 border-b px-3 py-2 text-xs text-warning-foreground" role="status">
-                        {#each failures as failure (failure.id)}<p>{services.find((service) => service.id === failure.id)?.name}: {failure.message ?? "Stream unavailable. Reconnect to retry."}</p>{/each}
-                    </div>
-                {/if}
-                {#if searchError || copyError}<Alert variant="error" class="m-2 shrink-0 px-3 py-2"><AlertDescription>{searchError || copyError}</AlertDescription></Alert>{/if}
-
-                <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
-                    <p class="text-xs text-muted-foreground">{visibleLogs.length.toLocaleString()} lines{#if levelFilter} / {series.find((item) => item.key === levelFilter)?.label}{/if}{#if mode === "search" && searched}<span class="ml-2">Newest first</span>{/if}</p>
-                    {#if selectedRange}
-                        <p class="min-w-0 text-xs text-muted-foreground" role="status" title="{time(selectedRange.start, true)} to {time(selectedRange.end, true)}. The selected range stays fixed while logs arrive.">
-                            {time(selectedRange.start)} - {time(selectedRange.end)}
-                        </p>
+                <LogViewer
+                    logs={matchedLogs}
+                    {loading}
+                    {pending}
+                    follow={view.logMode.current === "live"}
+                    start={view.logMode.current === "search" && submitted ? Date.parse(submitted.start) : undefined}
+                    end={view.logMode.current === "search" && submitted ? Date.parse(submitted.end) : undefined}
+                    highlight={view.logMode.current === "live" ? view.logText.current : ""}
+                    note={view.logMode.current === "search" && searched ? "Newest first" : ""}
+                    source={(log) => log.container ?? "Unknown container"}
+                    bind:viewport
+                    bind:level={() => view.logLevel.current, (value) => view.logLevel.current = value}
+                    bind:bucket={() => view.logBucket.current, (value) => view.logBucket.current = value}
+                    bind:wrap={() => view.logWrap.current, (value) => view.logWrap.current = value}
+                    bind:clean={() => view.logClean.current, (value) => view.logClean.current = value}
+                    bind:following={() => view.logFollowing.current, (value) => view.logFollowing.current = value}
+                    bind:scroll={() => view.logScroll.current, (value) => view.logScroll.current = value}
+                    bind:entry={() => view.logEntry.current, (value) => view.logEntry.current = value}
+                >
+                    {#if streamError && view.logMode.current === "live"}
+                        <Alert variant={reconnecting ? "warning" : "error"} class="m-2 shrink-0 px-3 py-2"><AlertDescription>{streamError} {#if reconnecting}Retrying with a fresh recent tail.{/if}</AlertDescription></Alert>
                     {/if}
-                    <div class="flex items-center gap-1">
-                        {#if selectedBucket}<Button variant="outline" size="xs" onclick={() => selectBucket(null)}>Show all times</Button>{/if}
-                        {#if levelFilter}<Button variant="ghost" size="xs" onclick={() => levelFilter = null}>Clear level filter</Button>{/if}
-                        {#if mode === "live" && !following && !selectedBucket}<Button variant="ghost" size="xs" onclick={() => following = true}><ArrowDown class="size-3" aria-hidden="true" />Jump to latest</Button>{/if}
-                        <Button variant={wrap ? "secondary" : "ghost"} size="icon-xs" aria-label="Wrap log lines" title="Wrap lines" aria-pressed={wrap} onclick={() => wrap = !wrap}><WrapText class="size-3.5" aria-hidden="true" /></Button>
-                    </div>
-                </div>
-
-                <!-- svelte-ignore a11y_no_noninteractive_tabindex (The named scroll region must support keyboard scrolling.) -->
-                <div bind:this={viewport} class="min-h-0 min-w-0 flex-1 overflow-auto bg-code p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:bg-black/20" tabindex="0" role="region" aria-label="Log output" aria-busy={pending} onscroll={() => { if (viewport && mode === "live" && !selectedBucket) following = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 40; }}>
-                    {#if loading}
-                        <div class="flex h-full min-h-0 flex-col" aria-hidden="true">
-                            {#each Array(16) as _, index (index)}
-                                <div class="log-row log-placeholder min-h-0 basis-[38px] grid-rows-2 items-center px-1.5 font-mono text-xs md:basis-5 md:grid-rows-1">
-                                    <span class="h-3/5 max-h-3 w-[11ch] rounded-xs"></span>
-                                    <span class="h-3/5 max-h-3 w-[5ch] rounded-xs"></span>
-                                    <span class="h-3/5 max-h-3 w-3/4 rounded-xs"></span>
-                                    <span class="log-message h-3/5 max-h-3 rounded-xs" style:width={`${35 + (index * 19) % 60}%`}></span>
-                                </div>
-                            {/each}
+                    {#if view.logMode.current === "live" && failures.length}
+                        <div class="shrink-0 border-b px-3 py-2 text-xs text-warning-foreground" role="status">
+                            {#each failures as failure (failure.id)}<p>{services.find((service) => service.id === failure.id)?.name}: {failure.message ?? "Stream unavailable. Reconnect to retry."}</p>{/each}
                         </div>
-                    {:else if !selectedIds.length}
-                        <Empty class="h-full"><EmptyHeader><EmptyTitle>Select a service</EmptyTitle><EmptyDescription>Choose one or more services to view their logs.</EmptyDescription></EmptyHeader></Empty>
-                    {:else if mode === "search" && !searched && !pending}
-                        <Empty class="h-full"><EmptyHeader><EmptyTitle>Search stored logs</EmptyTitle><EmptyDescription>Choose a time range and search. Leave the message field empty to see all logs.</EmptyDescription></EmptyHeader></Empty>
-                    {:else if !visibleLogs.length}
-                        <Empty class="h-full"><EmptyHeader><EmptyTitle>{pending ? "Searching logs..." : selectedBucket ? "No matching logs in this time range" : matchedLogs.length && levelFilter ? "No lines at this level" : mode === "live" ? "Waiting for logs" : "No matching logs"}</EmptyTitle><EmptyDescription>{selectedBucket ? "Choose another bar, clear the level filter, or show all times to see more loaded logs." : mode === "live" ? "New output from selected services appears here." : "Try a wider time range, different services, or a shorter search."}</EmptyDescription></EmptyHeader></Empty>
-                    {:else}
-                        {#each visibleLogs as log (log.id)}
-                            <details class="group rounded-md open:bg-muted/50" name="resource-log" bind:open={() => expandedLogId === log.id, (open) => { if (open) expandedLogId = log.id; else if (expandedLogId === log.id) expandedLogId = null; }}>
-                                <summary class="log-row cursor-pointer list-none rounded-sm px-1.5 py-px font-mono text-xs leading-[18px] outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring pointer-coarse:min-h-6" class:nowrap={!wrap}>
-                                    <time datetime={log.timestamp} class="whitespace-nowrap text-muted-foreground" title={log.timestamp}>{time(log.timestamp)}</time>
-                                    <Badge size="sm" variant={log.level === "other" ? "secondary" : log.level} class="mt-px w-full h-4 justify-self-start self-start font-mono text-[10px] uppercase tracking-normal">{log.level === "other" ? "INFO" : log.level}</Badge>
-                                    <span class="min-w-0 truncate text-muted-foreground" title={log.container ?? "Container not recorded"}>{log.container ?? "Unknown container"}</span>
-                                    <span class="log-message min-w-0 whitespace-pre-wrap wrap-anywhere">{log.message}</span>
-                                </summary>
-                                {#if expandedLogId === log.id}
-                                <div class="space-y-2 border-t border-border px-3 py-2">
-                                    <div class="flex flex-wrap items-start justify-between gap-2">
-                                        <dl class="grid min-w-0 gap-x-4 gap-y-1 text-xs sm:grid-cols-2 [&_dt]:mr-1">
-                                            <div><dt class="inline text-muted-foreground">Time </dt><dd class="inline font-mono wrap-anywhere">{log.timestamp}</dd></div>
-                                            <div><dt class="inline text-muted-foreground">Service </dt><dd class="inline font-mono wrap-anywhere">{log.serviceName}</dd></div>
-                                            <div><dt class="inline text-muted-foreground">Machine </dt><dd class="inline font-mono wrap-anywhere">{log.machine ?? "Not recorded"}</dd></div>
-                                            <div><dt class="inline text-muted-foreground">Container </dt><dd class="inline font-mono wrap-anywhere">{log.container ?? "Not recorded"}</dd></div>
-                                            <div><dt class="inline text-muted-foreground">Stream </dt><dd class="inline font-mono">{log.stream ?? "Not recorded"}</dd></div>
-                                        </dl>
-                                        <Button variant="outline" size="xs" onclick={() => copy(log)}>{#if copiedId === log.id}<Check class="size-3" aria-hidden="true" />Copied{:else}<Copy class="size-3" aria-hidden="true" />Copy{/if}</Button>
-                                    </div>
-                                    <pre class="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5 wrap-anywhere">{log.message}</pre>
-                                </div>
-                                {/if}
-                            </details>
-                        {/each}
                     {/if}
-                </div>
+                    {#if searchError}<Alert variant="error" class="m-2 shrink-0 px-3 py-2"><AlertDescription>{searchError}</AlertDescription></Alert>{/if}
+
+                    {#snippet details(log)}
+                        <div><dt class="inline text-muted-foreground">Service </dt><dd class="inline font-mono wrap-anywhere">{log.serviceName}</dd></div>
+                        <div><dt class="inline text-muted-foreground">Machine </dt><dd class="inline font-mono wrap-anywhere">{log.machine ? (machineNames.get(log.machine) ?? log.machine) : "Not recorded"}</dd></div>
+                        <div><dt class="inline text-muted-foreground">Container </dt><dd class="inline font-mono wrap-anywhere">{log.container ?? "Not recorded"}</dd></div>
+                        <div><dt class="inline text-muted-foreground">Stream </dt><dd class="inline font-mono">{log.stream ?? "Not recorded"}</dd></div>
+                    {/snippet}
+
+                    {#snippet empty()}
+                        {#if !selectedIds.length}
+                            <Empty class="h-full"><EmptyHeader><EmptyTitle>Select a service</EmptyTitle><EmptyDescription>Choose one or more services to view their logs.</EmptyDescription></EmptyHeader></Empty>
+                        {:else if view.logMode.current === "search" && !searched && !pending}
+                            <Empty class="h-full"><EmptyHeader><EmptyTitle>Search stored logs</EmptyTitle><EmptyDescription>Choose a time range and search. Leave the message field empty to see all logs.</EmptyDescription></EmptyHeader></Empty>
+                        {:else}
+                            <Empty class="h-full"><EmptyHeader><EmptyTitle>{pending ? "Searching logs..." : view.logMode.current === "live" ? "Waiting for logs" : "No matching logs"}</EmptyTitle><EmptyDescription>{view.logMode.current === "live" ? "New output from selected services appears here." : "Try a wider time range, different services, or a shorter search."}</EmptyDescription></EmptyHeader></Empty>
+                        {/if}
+                    {/snippet}
+                </LogViewer>
 
                 <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
-                    {#if mode === "live"}
+                    {#if view.logMode.current === "live"}
                         <span>{timezone}</span>
                     {:else}
                         <p class="min-w-0 flex-1 truncate" title={searchSummary}>{searchSummary}</p>
@@ -696,19 +619,3 @@
 {/if}
 </div>
 {/if}
-
-<style>
-    details:not([open]):has(> .nowrap) { content-visibility: auto; contain-intrinsic-block-size: auto 38px; }
-    .log-row { display: grid; grid-template-columns: 12ch 7ch minmax(0, 1fr); column-gap: 0.5rem; }
-    .log-message { grid-column: 1 / -1; }
-    .nowrap .log-message { max-height: 18px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
-    summary::-webkit-details-marker { display: none; }
-    @media (max-width: 767px) {
-        .log-placeholder:nth-child(n + 9) { display: none; }
-    }
-    @media (min-width: 768px) {
-        details:not([open]):has(> .nowrap) { contain-intrinsic-block-size: auto 20px; }
-        .log-row { grid-template-columns: 12ch 7ch 22ch minmax(0, 1fr); }
-        .log-message { grid-column: auto; }
-    }
-</style>

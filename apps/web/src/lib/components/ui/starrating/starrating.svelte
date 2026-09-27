@@ -17,6 +17,7 @@
   });
 
   export type StarRatingSize = VariantProps<typeof starRatingVariants>['size'];
+
   export type StarRatingState = 'empty' | 'full' | 'half';
 </script>
 
@@ -62,7 +63,9 @@
   let hoverValue = $state<number | null>(null);
 
   const step = $derived(allowHalf ? 0.5 : 1);
+
   const displayValue = $derived(hoverValue ?? value);
+
   const interactive = $derived(!disabled && !readonly);
 
   function clamp(next: number): number {
@@ -75,8 +78,11 @@
 
   function starState(index: number): StarRatingState {
     const percent = fillPercent(index);
+
     if (percent >= 100) return 'full';
+
     if (percent > 0) return 'half';
+
     return 'empty';
   }
 
@@ -88,6 +94,7 @@
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     const fraction = (event.clientX - rect.left) / rect.width;
+
     return fraction <= 0.5 ? index - 0.5 : index;
   }
 
@@ -107,6 +114,7 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (!interactive) return;
+
     switch (event.key) {
       case 'ArrowRight':
       case 'ArrowUp':

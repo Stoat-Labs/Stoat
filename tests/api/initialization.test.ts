@@ -53,7 +53,7 @@ describe("cluster initialization API (PostgreSQL)", () => {
     let organizationId: string;
 
     const config = {
-        machineId: "machine-1",
+        machine: "First",
         greptimeStorage: { type: "volume" as const, source: "stoat-monitoring-greptime" },
         alloyStorage: { type: "volume" as const, source: "stoat-monitoring-alloy" },
         retentionDays: 14,
@@ -164,12 +164,19 @@ describe("cluster initialization API (PostgreSQL)", () => {
         expect(
             (await call(clusterRouter.getCluster, { clusterId }, { context })).projectCount,
         ).toBe(0);
-        await expect(
-            call(resourcesRouter.listResources, { projectId }, { context }),
-        ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        // Owners/admins may read internal projects by ID but never create resources in them.
         await expect(
             call(resourcesRouter.createResource, { projectId, name: "Injected" }, { context }),
         ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'initializer'`);
+
+        try {
+            await expect(
+                call(resourcesRouter.listResources, { projectId }, { context }),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        } finally {
+            await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
+        }
     });
 
     it("records an InitializeCluster deployment with logs for every request", async () => {
@@ -326,7 +333,6 @@ describe("cluster initialization API (PostgreSQL)", () => {
             clusterId,
             projectId,
             resourceId,
-            machineId: "machine-1",
             encryptedPassword: encryptMonitoringPassword("greptime-pw", secret, clusterId),
         });
         const previous = process.env.BETTER_AUTH_SECRET;
@@ -540,7 +546,6 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 clusterId,
                 projectId,
                 resourceId,
-                machineId: "machine-1",
                 encryptedPassword: encryptMonitoringPassword(
                     "private-monitoring-password",
                     secret,
@@ -611,7 +616,7 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 clusterRouter.initializeCluster,
                 {
                     clusterId: added.id!,
-                    configuration: { ...config, machineId: "other-cluster-machine" },
+                    configuration: { ...config, machine: "other-cluster-machine" },
                 },
                 { context },
             ),

@@ -5,6 +5,7 @@
   import type { PinInputRootProps } from '../types';
 
   const noop = () => {};
+
   const uid = $props.id();
 
   let {
@@ -58,7 +59,9 @@
   });
 
   const mergedInputProps = $derived(mergeProps(restProps, rootState.inputProps));
+
   const mergedRootProps = $derived(mergeProps(rootState.rootProps, { class: containerClass }));
+
   const mergedInputWrapperProps = $derived(mergeProps(rootState.inputWrapperProps, {}));
 </script>
 
