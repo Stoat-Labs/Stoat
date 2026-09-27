@@ -1,4 +1,6 @@
 <div align="center">
+  <img src="apps/web/static/stoat.png" alt="Stoat Logo" width="120" height="120">
+
   <h1 align="center">Stoat</h1>
 
   <p align="center">

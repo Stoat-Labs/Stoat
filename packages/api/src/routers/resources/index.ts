@@ -207,6 +207,7 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
+                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
@@ -249,6 +250,7 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
+                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
@@ -298,6 +300,7 @@ export const resourcesRouter = {
                     and(
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
+                        eq(resources.type, "compose"),
                         sql`${resources.projectId} in (${authorizedProjects})`,
                     ),
                 )
