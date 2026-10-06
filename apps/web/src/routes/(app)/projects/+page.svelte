@@ -2,7 +2,10 @@
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Empty,
@@ -20,11 +23,16 @@
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import { onMount } from "svelte";
 
-    const projectsQuery = createQuery(() => orpc.projects.listProjects.queryOptions());
+    const projectsQuery = createQuery(() =>
+        orpc.projects.listProjects.queryOptions(),
+    );
 
     const projects = $derived(projectsQuery.data ?? []);
 
-    const dialog = useQueryState("dialog", parseAsString.withOptions({ shallow: true, scroll: false }));
+    const dialog = useQueryState(
+        "dialog",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
+    );
 
     let ready = $state(false);
 
@@ -33,27 +41,39 @@
     onMount(() => {
         ready = true;
 
-        return () => { ready = false; };
+        return () => {
+            ready = false;
+        };
     });
 </script>
 
 <svelte:head><title>Projects / Stoat</title></svelte:head>
 
 {#snippet createProjectAction()}
-    <Button size="sm" disabled={!ready} onclick={() => void dialog.set("create-project")}>
+    <Button
+        size="sm"
+        disabled={!ready}
+        onclick={() => void dialog.set("create-project")}
+    >
         <Plus class="size-4" aria-hidden="true" />
         Create project
     </Button>
 {/snippet}
 
-<div class="w-full space-y-6 py-6">
+<div class="w-full space-y-6 pt-6">
     {#if projectsQuery.isPending}
-        <Skeleton loading count={2} count-gap={12} loading-label="Loading projects">
-            <ProjectCard
-                name="Project workspace"
-                description="Project resources and environments"
-                resourceCount={3}
-            />
+        <Skeleton loading loading-label="Loading projects">
+            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {#each { length: 3 }, index (index)}
+                    <li>
+                        <ProjectCard
+                            name="Project workspace"
+                            description="Project resources and environments"
+                            resourceCount={3}
+                        />
+                    </li>
+                {/each}
+            </ul>
         </Skeleton>
     {:else if projectsQuery.isError}
         <Alert variant="error">
@@ -68,10 +88,16 @@
                     <FolderOpen aria-hidden="true" />
                 </EmptyMedia>
                 <EmptyTitle>No projects yet</EmptyTitle>
-                <EmptyDescription>Create your first project to get started.</EmptyDescription>
+                <EmptyDescription>
+                    Create your first project to get started.
+                </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-                <Button size="sm" disabled={!ready} onclick={() => void dialog.set("create-project")}>
+                <Button
+                    size="sm"
+                    disabled={!ready}
+                    onclick={() => void dialog.set("create-project")}
+                >
                     <Plus class="size-4" aria-hidden="true" />
                     Create project
                 </Button>
@@ -99,7 +125,8 @@
     bind:open={
         () => dialog.current === "create-project",
         (open) => {
-            if (ready && !open && dialog.current === "create-project") void dialog.set(null);
+            if (ready && !open && dialog.current === "create-project")
+                void dialog.set(null);
         }
     }
 />

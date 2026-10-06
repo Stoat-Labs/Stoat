@@ -1,36 +1,38 @@
 <script lang="ts">
-  import { boxWith, mergeProps } from 'svelte-toolbelt';
-  import { CalendarPrevButtonState } from '../calendar-state.svelte';
-  import { createId } from '../ids';
-  import type { CalendarPrevButtonProps } from '../types';
+    import { boxWith, mergeProps } from "svelte-toolbelt";
+    import { CalendarPrevButtonState } from "../calendar-state.svelte";
+    import { createId } from "../ids";
+    import type { CalendarPrevButtonProps } from "../types";
 
-  const uid = $props.id();
+    const uid = $props.id();
 
-  let {
-    children,
-    child,
-    id = createId(uid),
-    ref = $bindable(null),
-    // for safari
-    tabindex = 0,
-    ...restProps
-  }: CalendarPrevButtonProps = $props();
+    let {
+        children,
+        child,
+        id = createId(uid),
+        ref = $bindable(null),
+        // for safari
+        tabindex = 0,
+        ...restProps
+    }: CalendarPrevButtonProps = $props();
 
-  const prevButtonState = CalendarPrevButtonState.create({
-    id: boxWith(() => id!),
-    ref: boxWith(
-      () => ref,
-      (v) => (ref = v)
-    )
-  });
+    const prevButtonState = CalendarPrevButtonState.create({
+        id: boxWith(() => id!),
+        ref: boxWith(
+            () => ref,
+            (v) => (ref = v),
+        ),
+    });
 
-  const mergedProps = $derived(mergeProps(restProps, prevButtonState.props, { tabindex }));
+    const mergedProps = $derived(
+        mergeProps(restProps, prevButtonState.props, { tabindex }),
+    );
 </script>
 
 {#if child}
-  {@render child({ props: mergedProps })}
+    {@render child({ props: mergedProps })}
 {:else}
-  <button {...mergedProps}>
-    {@render children?.()}
-  </button>
+    <button {...mergedProps}>
+        {@render children?.()}
+    </button>
 {/if}

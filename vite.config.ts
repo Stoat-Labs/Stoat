@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
     test: {
-        include: ["tests/{api,uncloud,workflows}/**/*.test.ts"],
+        include: ["tests/{api,uncloud,workflows,cache}/**/*.test.ts"],
         globalSetup: ["./tests/global-setup.ts"],
         setupFiles: ["./tests/setup.ts"],
     },
@@ -28,6 +28,8 @@ export default defineConfig({
             "packages/db/dist/**",
             "packages/api/dist/**",
             "packages/auth/dist/**",
+            "packages/cache/dist/**",
+            "packages/s3/dist/**",
             "packages/uncloud/dist/**",
             "packages/workflows/dist/**",
             "packages/uncloud/src/generated/**",
@@ -89,6 +91,8 @@ export default defineConfig({
             "packages/db/dist/**",
             "packages/api/dist/**",
             "packages/auth/dist/**",
+            "packages/cache/dist/**",
+            "packages/s3/dist/**",
             "packages/uncloud/dist/**",
             "packages/workflows/dist/**",
             "packages/uncloud/src/generated/**",
@@ -97,6 +101,12 @@ export default defineConfig({
         semi: true,
         tabWidth: 4,
         useTabs: false,
+        overrides: [
+            {
+                files: ["**/*.svelte"],
+                options: { svelte: true, printWidth: 70, htmlWhitespaceSensitivity: "ignore" },
+            },
+        ],
         sortPackageJson: true,
     },
     staged: {

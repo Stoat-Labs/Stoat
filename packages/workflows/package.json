@@ -19,6 +19,7 @@
     "dependencies": {
         "@effect/sql-pg": "4.0.0-rc.116",
         "@stoat/db": "workspace:*",
+        "@stoat/s3": "workspace:*",
         "@stoat/uncloud": "workspace:*",
         "drizzle-orm": "1.0.0-rc.5-5935859",
         "effect": "4.0.0-rc.116",

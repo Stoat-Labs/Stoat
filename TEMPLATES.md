@@ -13,7 +13,7 @@ templates/
         .env
 ```
 
-Stoat lists every valid app under this directory in the **New resource → From template** dialog. Templates are bundled into the app at build time, so rebuild after adding or changing one.
+Stoat lists every valid app under this directory on the **New resource** page (`/projects/<projectId>/create`). Apps tagged `database` appear under **Databases**; everything else appears under **Templates**. Templates are bundled into the app at build time, so rebuild after adding or changing one.
 
 ## Layout
 
@@ -46,7 +46,7 @@ Apps with a missing or invalid manifest, or with no version folders, are skipped
 | `description` | yes      | Short summary under the name. Long text is truncated in the picker                                                                   |
 | `type`        | yes      | Stored on the created service. Use `compose` for a generic app. Use `postgresql` to get the connection URL panel on the service page |
 | `icon`        | no       | [SVGL](https://svgl.app) slug, without `.svg` (for example `postgresql`). Used when `logo.svg` / `logo.png` is missing               |
-| `tags`        | no       | Category pills on the template card (`database`, `cache`, `proxy`, …)                                                                |
+| `tags`        | no       | Category pills on the template card (`database`, `cache`, `proxy`, …). `database` moves the app into the Databases group             |
 
 ## Logo
 

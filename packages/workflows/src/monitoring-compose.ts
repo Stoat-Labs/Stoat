@@ -10,6 +10,10 @@ export const MONITORING_DATABASE = "monitoring";
 
 export const GREPTIME_USERNAME = "stoat";
 
+export const DEFAULT_GREPTIME_VOLUME = "stoat-monitoring-greptime";
+
+export const DEFAULT_ALLOY_VOLUME = "stoat-monitoring-alloy";
+
 type ComposeService = {
     environment?: Record<string, string>;
     volumes?: Array<
@@ -46,6 +50,7 @@ export function renderMonitoringCompose(
     config: ClusterInitializationConfiguration,
     password: string,
     clusterId: string,
+    sidecarToken: string,
 ) {
     const greptimeUrl = `http://${GREPTIME_SERVICE}.internal:4006`;
 
@@ -58,6 +63,7 @@ export function renderMonitoringCompose(
         ["MONITORING_MACHINE", config.machine],
         ["CLUSTER_ID", clusterId],
         ["RETENTION_DAYS", String(config.retentionDays)],
+        ["SIDECAR_TOKEN", sidecarToken],
     ]);
 
     const substituted = template.replace(
@@ -78,9 +84,19 @@ export function renderMonitoringCompose(
     // Uncloud placement matches a machine by name or ID.
     greptime["x-machines"] = [config.machine];
 
+    const greptimeStorage = config.greptimeStorage ?? {
+        type: "volume" as const,
+        source: DEFAULT_GREPTIME_VOLUME,
+    };
+
+    const alloyStorage = config.alloyStorage ?? {
+        type: "volume" as const,
+        source: DEFAULT_ALLOY_VOLUME,
+    };
+
     for (const [service, storage, target, key] of [
-        [greptime, config.greptimeStorage, "/greptimedb_data", "greptime_data"],
-        [alloy, config.alloyStorage, "/var/lib/alloy/data", "alloy_data"],
+        [greptime, greptimeStorage, "/greptimedb_data", "greptime_data"],
+        [alloy, alloyStorage, "/var/lib/alloy/data", "alloy_data"],
     ] as const) {
         service.volumes = [
             mount(storage, target, key, compose),
@@ -114,6 +130,7 @@ export function renderMonitoringCompose(
         GREPTIME_DB: MONITORING_DATABASE,
         GREPTIME_USERNAME,
         GREPTIME_PASSWORD: password,
+        SIDECAR_TOKEN: sidecarToken,
         CUSTOMER_ID: clusterId,
     };
     delete alloy.environment.UNCLOUD_MACHINE_ID;

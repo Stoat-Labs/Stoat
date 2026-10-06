@@ -1,0 +1,35 @@
+{
+    "name": "@stoat/s3",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./providers": {
+            "types": "./src/providers/index.ts",
+            "default": "./src/providers/index.ts"
+        },
+        "./*": {
+            "types": "./src/*.ts",
+            "default": "./src/*.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc -b",
+        "check-types": "tsc -b"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.1146.0",
+        "@aws-sdk/s3-request-presigner": "^3.1146.0",
+        "@smithy/node-http-handler": "^4.12.1",
+        "@smithy/signature-v4": "^5.7.4",
+        "@smithy/types": "^4.19.0",
+        "valibot": "catalog:"
+    },
+    "devDependencies": {
+        "@stoat/config": "workspace:*",
+        "typescript": "catalog:"
+    }
+}

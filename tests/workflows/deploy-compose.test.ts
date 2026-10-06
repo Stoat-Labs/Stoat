@@ -125,3 +125,33 @@ it("does not mask service names or values without letters or digits", async () =
         'service "seafile-ai" refers to undefined volume /opt/seafile-[REDACTED]',
     ]);
 });
+
+it("masks only the given credentials when the environment is public", async () => {
+    const error = "stoat-monitoring-alloy failed to reach monitoring with hunter2";
+
+    const uc = ucClient("http://sidecar.test", {
+        fetch: async () =>
+            new Response(`data: ${JSON.stringify({ type: "error", error })}\n\n`, {
+                headers: { "content-type": "text/event-stream" },
+            }),
+    });
+
+    const logs: string[] = [];
+
+    await expect(
+        deployCompose(
+            uc,
+            "services:\n  alloy:\n    image: x\n    environment: [GREPTIME_USERNAME=stoat, GREPTIME_DB=monitoring, GREPTIME_PASSWORD=hunter2]\n",
+            new AbortController().signal,
+            async (text) => {
+                logs.push(text);
+            },
+            undefined,
+            ["hunter2"],
+            undefined,
+            false,
+            false,
+        ),
+    ).rejects.toThrow();
+    expect(logs).toEqual(["stoat-monitoring-alloy failed to reach monitoring with [REDACTED]"]);
+});

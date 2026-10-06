@@ -12,6 +12,7 @@ COPY packages/api/package.json packages/api/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/db/package.json packages/db/package.json
+COPY packages/s3/package.json packages/s3/package.json
 COPY packages/uncloud/package.json packages/uncloud/package.json
 COPY packages/workflows/package.json packages/workflows/package.json
 COPY patches ./patches

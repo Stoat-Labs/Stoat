@@ -135,12 +135,11 @@ describe("resource deployment API", () => {
 
             expect(snapshot).toEqual({
                 deploymentId: result.id,
-                spec: draftSpec,
                 prefix: `${projectId.slice(0, 8)}-${input.resourceId.slice(0, 8)}`,
                 env: "",
                 recreate: false,
             });
-            expect(deployment).not.toHaveProperty("spec");
+            expect(deployment).toMatchObject({ spec: draftSpec });
         },
     );
 

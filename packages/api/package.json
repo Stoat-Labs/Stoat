@@ -18,7 +18,9 @@
     "dependencies": {
         "@orpc/server": "catalog:",
         "@stoat/auth": "workspace:*",
+        "@stoat/cache": "workspace:*",
         "@stoat/db": "workspace:*",
+        "@stoat/s3": "workspace:*",
         "@stoat/uncloud": "workspace:*",
         "@stoat/workflows": "workspace:*",
         "drizzle-orm": "^0.45.2",

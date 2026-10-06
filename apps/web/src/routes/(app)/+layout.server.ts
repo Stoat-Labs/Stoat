@@ -18,7 +18,12 @@ export const load = async ({ request }) => {
     }
 
     return {
-        user: { name: session.user.name, email: session.user.email, image: session.user.image },
+        user: {
+            name: session.user.name,
+            email: session.user.email,
+            image: session.user.image,
+            role: session.user.role ?? null,
+        },
         organizations,
         activeOrganizationId,
     };

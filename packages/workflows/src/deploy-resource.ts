@@ -77,14 +77,15 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
             });
 
-            if (!input || !cluster) throw new Error(RESOURCE_FAILURE_MESSAGE);
+            if (!input || !cluster || !deployment.spec) throw new Error(RESOURCE_FAILURE_MESSAGE);
+            const deployedSpec = deployment.spec;
             signal.throwIfAborted();
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
             // Only ask the sidecar when STOAT_DOMAIN is actually referenced.
             let domain: string | undefined;
 
-            if (/STOAT_DOMAIN/u.test(input.spec + input.env)) {
+            if (/STOAT_DOMAIN/u.test(deployedSpec + input.env)) {
                 step = "Loading the cluster domain.";
                 ({ domain } = await unwrap(uc.GET("/api/v1/cluster/domain")));
             }
@@ -94,7 +95,12 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             let spec: string;
 
             try {
-                spec = interpolateCompose(input.spec, input.env, input.prefix ?? undefined, domain);
+                spec = interpolateCompose(
+                    deployedSpec,
+                    input.env,
+                    input.prefix ?? undefined,
+                    domain,
+                );
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;
                 await log(error.message, "error", "attempt-failed");
@@ -147,7 +153,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 INSERT INTO deployment_logs (deployment_id, text, metadata, created_at)
                 SELECT $1, 'Resource deployment is ready.', '{"level":"info","event":"ready"}'::jsonb, now()
                 FROM published`,
-                [deploymentId, input.spec],
+                [deploymentId, deployedSpec],
             );
         } finally {
             try {

@@ -3,17 +3,28 @@ import {
     metricNames,
     type ClusterObservability,
     type MetricName,
+    type MachineMetricName,
     type MetricPoint,
     type MetricSeries,
     type ObservabilityContainer,
     type ObservabilityService,
 } from "@stoat/api/observability";
 
-export type ClusterData = ClusterObservability & { id: string; name: string };
+export type ClusterData = ClusterObservability & {
+    id: string;
+    name: string;
+    totals?: Partial<Record<MachineMetricName, MetricSeries[]>>;
+};
 
 export type Loaded<T> = { data: T | undefined; error: Error | null; isPending: boolean };
 
-export type MetricResult = { start: number; end: number; step: number; series: MetricSeries[] };
+export type MetricResult = {
+    start: number;
+    end: number;
+    step: number;
+    series: MetricSeries[];
+    totals?: MetricSeries[];
+};
 
 /** Merge the per-procedure queries of one cluster into the shape the charts consume, so each chart fills in as its metric arrives. */
 export function assembleCluster(
@@ -21,7 +32,7 @@ export function assembleCluster(
     machines: Loaded<ClusterObservability["machines"]>,
     services: Loaded<ObservabilityService[]>,
     metrics: Loaded<MetricResult>[],
-    names: readonly MetricName[] = metricNames,
+    names: readonly MachineMetricName[] = metricNames,
 ): ClusterData {
     const loaded = metrics.flatMap((query) => (query.data ? [query.data] : []));
 
@@ -38,6 +49,7 @@ export function assembleCluster(
         machines: machines.data ?? [],
         services: services.data ?? [],
         metrics: {},
+        totals: {},
         unavailable: [
             ...(machines.error ? ["Machine inventory"] : []),
             ...(services.error ? ["Service inventory"] : []),
@@ -47,8 +59,10 @@ export function assembleCluster(
     names.forEach((name, index) => {
         const query = metrics[index];
 
-        if (query?.data) result.metrics[name] = query.data.series;
-        else if (query?.error) result.unavailable.push(name);
+        if (query?.data) {
+            result.metrics[name] = query.data.series;
+            result.totals![name] = query.data.totals;
+        } else if (query?.error) result.unavailable.push(name);
     });
 
     if (uninitialized) result.reason = "uninitialized";
@@ -158,10 +172,60 @@ export function sumPoints(series: (MetricPoint[] | undefined)[]): MetricPoint[] 
     return [...totals].sort(([a], [b]) => a - b).map(([time, value]) => ({ time, value }));
 }
 
+/**
+ * Linearly bridge short interior runs of missing samples so sparse series (p95 latency,
+ * error rate on bursty traffic) still draw a line through the samples that exist. Leading
+ * and trailing gaps stay gaps, and longer outages are preserved instead of papered over.
+ */
+export function bridgeGaps(points: MetricPoint[], maxGapMs = 5 * 60 * 1000): MetricPoint[] {
+    const filled = points.map((point) => ({ ...point }));
+    let anchor = -1;
+
+    for (let index = 0; index < filled.length; index++) {
+        const point = filled[index];
+
+        if (!point || point.value === null) continue;
+
+        const previous = anchor >= 0 ? filled[anchor] : undefined;
+
+        if (previous && previous.value !== null) {
+            const span = point.time - previous.time;
+
+            if (index - anchor > 1 && span > 0 && span <= maxGapMs) {
+                const from = previous.value;
+
+                for (let gap = anchor + 1; gap < index; gap++) {
+                    const missing = filled[gap];
+
+                    if (missing)
+                        missing.value =
+                            from + ((point.value - from) * (missing.time - previous.time)) / span;
+                }
+            }
+        }
+
+        anchor = index;
+    }
+
+    return filled;
+}
+
 /** Combined points of every series matching the machine, service and container ("" for host metrics; undefined matches any). */
+export function metricTotals(
+    cluster: ClusterObservability,
+    name: MachineMetricName,
+    machineId?: string,
+) {
+    return sumPoints(
+        (cluster.totals?.[name] ?? []).flatMap((series) =>
+            machineId === undefined || series.machineId === machineId ? [series.points] : [],
+        ),
+    );
+}
+
 export function metric(
     cluster: ClusterObservability,
-    name: MetricName,
+    name: MachineMetricName,
     machineId?: string,
     serviceId = "",
     container?: string,
@@ -219,7 +283,7 @@ export function machineList(clusters: ClusterData[]): MachineData[] {
     });
 }
 
-export function chartSeries(machines: MachineData[], name: MetricName): ChartSeries[] {
+export function chartSeries(machines: MachineData[], name: MachineMetricName): ChartSeries[] {
     return machines.map((machine) => ({
         key: `${machine.key}:${name}`,
         machineKey: machine.key,
@@ -232,8 +296,8 @@ export function chartSeries(machines: MachineData[], name: MetricName): ChartSer
 
 export function chartSeriesRatio(
     machines: MachineData[],
-    numerator: MetricName,
-    denominator: MetricName,
+    numerator: MachineMetricName,
+    denominator: MachineMetricName,
 ): ChartSeries[] {
     return machines.map((machine) => {
         const total = new Map(
@@ -258,6 +322,66 @@ export function chartSeriesRatio(
             }),
         };
     });
+}
+
+/** Keep mount identities for charts and match capacity to the same filesystem, never another disk. */
+export function filesystemRows(machines: MachineData[]) {
+    return machines
+        .flatMap((machine) =>
+            (machine.cluster.metrics.filesystemTotal ?? []).flatMap((capacity) => {
+                if (capacity.machineId !== machine.id || !capacity.mountpoint) return [];
+
+                const used = machine.cluster.metrics.filesystemUsed?.find(
+                    (series) =>
+                        series.machineId === machine.id &&
+                        series.device === capacity.device &&
+                        series.mountpoint === capacity.mountpoint &&
+                        series.fstype === capacity.fstype,
+                );
+
+                const totals = new Map(capacity.points.map((point) => [point.time, point.value]));
+
+                const points = (
+                    used?.points ?? capacity.points.map((point) => ({ ...point, value: null }))
+                ).map((point) => {
+                    const total = totals.get(point.time);
+
+                    return {
+                        time: point.time,
+                        value: point.value !== null && total ? (100 * point.value) / total : null,
+                    };
+                });
+
+                const at = (samples: MetricPoint[] | undefined) =>
+                    current(samples, machine.cluster.end, machine.cluster.step);
+
+                return [
+                    {
+                        // LayerChart treats brackets and dots in keys as nested property paths.
+                        key: encodeURIComponent(
+                            JSON.stringify([
+                                machine.key,
+                                capacity.device,
+                                capacity.mountpoint,
+                                capacity.fstype,
+                            ]),
+                        ).replaceAll(".", "%2E"),
+                        machineKey: machine.key,
+                        label: `${machine.cluster.name} / ${machine.name} · ${capacity.mountpoint}`,
+                        color: machine.color,
+                        device: capacity.device ?? "",
+                        mountpoint: capacity.mountpoint,
+                        fstype: capacity.fstype ?? "",
+                        used: at(used?.points),
+                        total: at(capacity.points),
+                        percent: at(points),
+                        points,
+                    },
+                ];
+            }),
+        )
+        .sort((a, b) => a.label.localeCompare(b.label) || a.device.localeCompare(b.device))
+        .map((row, index) => ({ ...row, color: `var(--chart-${(index % 5) + 1})` }));
 }
 
 /** The busiest `limit` services by `rank`, so chart palettes stay distinguishable. */

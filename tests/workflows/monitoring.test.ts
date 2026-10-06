@@ -80,7 +80,9 @@ it.each(["", "not JSON", '{"output":['])("rejects malformed SQL JSON: %j", (resp
 });
 
 it("renders the bundled monitoring template with isolated storage and private services", () => {
-    const compose = parse(renderMonitoringCompose(template, config, "password", "cluster-1"));
+    const compose = parse(
+        renderMonitoringCompose(template, config, "password", "cluster-1", "sidecar-token"),
+    );
 
     expect(Object.keys(compose.services)).toEqual([GREPTIME_SERVICE, ALLOY_SERVICE]);
     expect(compose.name).toBe("stoat-monitoring");
@@ -91,6 +93,10 @@ it("renders the bundled monitoring template with isolated storage and private se
         bind: { create_host_path: false },
     });
     expect(compose.services[ALLOY_SERVICE].environment.GREPTIME_PASSWORD).toBe("password");
+    expect(compose.services[ALLOY_SERVICE].environment.SIDECAR_TOKEN).toBe("sidecar-token");
+    // Uncloud cluster metrics come from the local sidecar's proxy endpoint.
+    expect(compose.configs.alloy_config.content).toContain('"/ucinternal/metrics"');
+    expect(compose.configs.alloy_config.content).toContain(".m.sidecar.internal:80");
     // Docker's overlayfs handler cannot collect any container metrics without this socket.
     expect(compose.configs.alloy_config.content).toContain(
         'containerd_host = "/rootfs/run/containerd/containerd.sock"',
@@ -100,6 +106,7 @@ it("renders the bundled monitoring template with isolated storage and private se
         source: "/",
         target: "/rootfs",
         read_only: true,
+        bind: { propagation: "rslave" },
     });
 
     for (const service of Object.values(compose.services)) {
@@ -118,7 +125,13 @@ describe.each([GREPTIME_SERVICE, ALLOY_SERVICE])("%s template guards", (serviceN
                 : ["4006:4006"];
 
         expect(() =>
-            renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+            renderMonitoringCompose(
+                stringify(input),
+                config,
+                "password",
+                "cluster-1",
+                "sidecar-token",
+            ),
         ).toThrow("Monitoring services must not publish host ports or ingress routes.");
     });
 
@@ -127,7 +140,13 @@ describe.each([GREPTIME_SERVICE, ALLOY_SERVICE])("%s template guards", (serviceN
         delete input.services[serviceName];
 
         expect(() =>
-            renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+            renderMonitoringCompose(
+                stringify(input),
+                config,
+                "password",
+                "cluster-1",
+                "sidecar-token",
+            ),
         ).toThrow("Monitoring template is missing required services.");
     });
 });
@@ -150,7 +169,10 @@ it.each([
         },
     };
 
-    const compose = parse(renderMonitoringCompose(template, settings, "password", "cluster-1"));
+    const compose = parse(
+        renderMonitoringCompose(template, settings, "password", "cluster-1", "sidecar-token"),
+    );
+
     const volumes: Record<string, { name: string }> = {};
 
     for (const [serviceName, storage, key, target] of [
@@ -200,7 +222,7 @@ it.each([
     input.services[ALLOY_SERVICE].volumes = [...unrelated, dataMount];
 
     const compose = parse(
-        renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+        renderMonitoringCompose(stringify(input), config, "password", "cluster-1", "sidecar-token"),
     );
 
     expect(compose.services[ALLOY_SERVICE].volumes).toEqual([
@@ -231,7 +253,7 @@ it.each([
     input.services[GREPTIME_SERVICE].volumes = [unrelated, dataMount];
 
     const compose = parse(
-        renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+        renderMonitoringCompose(stringify(input), config, "password", "cluster-1", "sidecar-token"),
     );
 
     expect(compose.services[GREPTIME_SERVICE].volumes).toEqual([
@@ -246,7 +268,7 @@ it("preserves Alloy mounts whose targets only share the data path prefix", () =>
     input.services[ALLOY_SERVICE].volumes.push(unrelated);
 
     const compose = parse(
-        renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+        renderMonitoringCompose(stringify(input), config, "password", "cluster-1", "sidecar-token"),
     );
 
     expect(compose.services[ALLOY_SERVICE].volumes).toContain(unrelated);
@@ -261,7 +283,7 @@ it.each([
     input.services[ALLOY_SERVICE].volumes.push(extraMount);
 
     const compose = parse(
-        renderMonitoringCompose(stringify(input), config, "password", "cluster-1"),
+        renderMonitoringCompose(stringify(input), config, "password", "cluster-1", "sidecar-token"),
     );
 
     expect(compose.services[ALLOY_SERVICE].volumes).toContainEqual(extraMount);
@@ -282,6 +304,7 @@ it("keeps managed volume definitions still referenced by other mounts in bind mo
             },
             "password",
             "cluster-1",
+            "sidecar-token",
         ),
     );
 
@@ -307,6 +330,7 @@ it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identit
             { ...config, retentionDays: 30 },
             "password",
             "cluster-1",
+            "sidecar-token",
         ),
     );
 
@@ -327,6 +351,7 @@ it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identit
         GREPTIME_DB: "monitoring",
         GREPTIME_USERNAME: "stoat",
         GREPTIME_PASSWORD: "password",
+        SIDECAR_TOKEN: "sidecar-token",
         EXTRA_SETTING: "preserved",
     });
     expect(String(alloy.environment.RETENTION_DAYS)).toBe("30");

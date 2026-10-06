@@ -17,6 +17,7 @@ import {
     type ObservabilityRange,
 } from "../../packages/api/src/observability";
 import { observabilityRouter } from "../../packages/api/src/routers/cluster/observability";
+import { metricsRouter } from "../../packages/api/src/routers/cluster/metrics";
 
 const exec = promisify(execFile);
 
@@ -134,16 +135,23 @@ beforeAll(async () => {
 
     for (const name of [...gauges.keys(), ...counters]) {
         await sql(
-            `CREATE TABLE monitoring."${name}" (customer_id STRING, machine_id STRING, cpu STRING, "mode" STRING, device STRING, mountpoint STRING, container_label_uncloud_service_id STRING, "name" STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,machine_id,cpu,"mode",device,mountpoint,container_label_uncloud_service_id,"name"))`,
+            `CREATE TABLE monitoring."${name}" (customer_id STRING, machine_id STRING, cpu STRING, "mode" STRING, device STRING, mountpoint STRING, fstype STRING, container_label_uncloud_service_id STRING, "name" STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,machine_id,cpu,"mode",device,mountpoint,fstype,container_label_uncloud_service_id,"name"))`,
         );
         const values: string[] = [];
 
         for (let index = 0; index <= 8; index++) {
             const timestamp = new Date((end - 120 + index * 15) * 1000).toISOString();
 
-            const add = (value: number, cpu = "", mode = "", device = "eth0") =>
+            const add = (
+                value: number,
+                cpu = "",
+                mode = "",
+                device = "eth0",
+                mountpoint = "/",
+                fstype = "ext4",
+            ) =>
                 values.push(
-                    `('${clusterId}','machine-1','${cpu}','${mode}','${device}','/','${name.startsWith("container") ? "web-id" : ""}','${name.startsWith("container") ? "web-1" : ""}',${value},'${timestamp}')`,
+                    `('${clusterId}','machine-1','${cpu}','${mode}','${device}','${mountpoint}','${fstype}','${name.startsWith("container") ? "web-id" : ""}','${name.startsWith("container") ? "web-1" : ""}',${value},'${timestamp}')`,
                 );
 
             if (name === "node_cpu_seconds_total") {
@@ -152,6 +160,21 @@ beforeAll(async () => {
                     add(index * 3, cpu, "user");
                     add(index * 2, cpu, "guest");
                 }
+            } else if (name.startsWith("node_filesystem")) {
+                add(gauges.get(name)!, "", "", "/dev/vda1");
+
+                for (const mount of ["/data", "/data-bind"])
+                    add(name.endsWith("size_bytes") ? 200 : 10, "", "", "/dev/vdb1", mount, "xfs");
+                add(name.endsWith("size_bytes") ? 1000 : 0, "", "", "tmpfs", "/run", "tmpfs");
+                add(name.endsWith("size_bytes") ? 500 : 10, "", "", "/dev/vda2", "/boot", "ext4");
+                add(
+                    name.endsWith("size_bytes") ? 100 : 5,
+                    "",
+                    "",
+                    "/dev/vda3",
+                    "/boot/efi",
+                    "vfat",
+                );
             } else if (gauges.has(name)) add(gauges.get(name)!);
             else if (name === "container_cpu_usage_seconds_total") add(index * 18);
             else {
@@ -336,7 +359,19 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     expect(result.metrics.cpu?.[0]?.points.at(-1)?.value).toBeCloseTo(40);
     expect(result.metrics.serviceCpu?.[0]?.points.at(-1)?.value).toBeCloseTo(120);
     expect(result.metrics.memory?.[0]?.points.at(-1)?.value).toBe(768);
-    expect(result.metrics.disk?.[0]?.points.at(-1)?.value).toBe(80);
+    expect(result.metrics.disk?.[0]?.points.at(-1)?.value).toBe(270);
+    expect(result.metrics.diskTotal?.[0]?.points.at(-1)?.value).toBe(300);
+    expect(result.metrics.filesystemTotal).toHaveLength(3);
+    expect(
+        result.metrics.filesystemTotal?.some((series) => series.mountpoint?.startsWith("/boot")),
+    ).toBe(false);
+    expect(
+        result.metrics.filesystemUsed?.find((series) => series.mountpoint === "/data"),
+    ).toMatchObject({
+        device: "/dev/vdb1",
+        fstype: "xfs",
+        points: expect.arrayContaining([{ time: end * 1000, value: 190 }]),
+    });
     expect(result.metrics.networkIn?.[0]?.points.at(-1)?.value).toBeCloseTo(1000);
     expect(result.step).toBe(15);
     expect(result.end).toBe(end);
@@ -376,6 +411,14 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     await expect(metric("cpu", range)).resolves.toEqual(metrics[0]);
     expect(fetch.mock.calls).toHaveLength(uncached);
 
+    await expect(
+        call(metricsRouter.getClusterMetrics, { clusterId }, { context }),
+    ).resolves.toMatchObject({
+        available: true,
+        machines: 1,
+        disk: { used: 270, total: 300 },
+    });
+
     const week = await metric("cpu", "7d");
     expect(week.end - week.start).toBeGreaterThanOrEqual(604800);
     expect(week.series[0]?.points.length).toBeLessThanOrEqual(121);
@@ -405,7 +448,10 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(fetch.mock.calls).toHaveLength(before);
 
-    const http = (name: "httpRequests" | "httpErrors" | "httpLatency", serviceIds = ["web-id"]) =>
+    const http = (
+        name: "httpRequests" | "httpErrors" | "httpLatency" | "httpLatencyP50" | "httpLatencyP99",
+        serviceIds = ["web-id"],
+    ) =>
         call(
             observabilityRouter.getObservabilityMetric,
             { clusterId, name, range, serviceIds },
@@ -419,6 +465,13 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     expect(requests.series[0]?.points.at(-1)?.value).toBeCloseTo(2);
     expect((await http("httpErrors")).series[0]?.points.at(-1)?.value).toBeCloseTo(0.5);
     expect((await http("httpLatency")).series[0]?.points.at(-1)?.value).toBeGreaterThan(0);
+    const p50 = (await http("httpLatencyP50")).series[0]?.points.at(-1)?.value;
+    const p95 = (await http("httpLatency")).series[0]?.points.at(-1)?.value;
+    const p99 = (await http("httpLatencyP99")).series[0]?.points.at(-1)?.value;
+    expect(p50).toBeGreaterThan(0);
+    expect(p99).toBeGreaterThan(0);
+    expect(Number(p50)).toBeLessThanOrEqual(Number(p95));
+    expect(Number(p95)).toBeLessThanOrEqual(Number(p99));
     await expect(http("httpRequests", ["other-id"])).resolves.toMatchObject({
         status: "no-routes",
         series: [],

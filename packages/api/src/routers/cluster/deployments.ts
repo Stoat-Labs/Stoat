@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { cache, currentWindow, swr } from "@stoat/cache";
 import type { Database } from "@stoat/db";
 import {
     cancelDeployment as cancelDeploymentRow,
@@ -16,6 +17,10 @@ import { cancellableStream } from "../../stream";
 
 function canInitializeRole(role: string) {
     return role.split(",").some((part) => part.trim() === "owner" || part.trim() === "admin");
+}
+
+function isTerminalStatus(status: string) {
+    return status === "ready" || status === "failed" || status === "cancelled";
 }
 
 async function requireOrgCluster(db: Database, organizationId: string, clusterId: string) {
@@ -98,10 +103,26 @@ export const deploymentsRouter = {
     getDeployment: organizationProcedure
         .input(v.object({ deploymentId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+            const key = `deployment:${input.deploymentId}`;
+
+            // Terminal deployments are immutable, so a cached copy stays valid.
+            // canCancel depends on the caller's role and is recomputed per request.
+
+            const cached =
+                await cache.getItem<Awaited<ReturnType<typeof getDeploymentWithLogs>>>(key);
+
+            if (cached && isTerminalStatus(cached.status)) {
+                await requireOrgCluster(db, organizationId, cached.clusterId);
+
+                return { ...cached, canCancel: canInitializeRole(organizationRole) };
+            }
+
             const deployment = await getDeploymentWithLogs(db, input.deploymentId);
 
             if (!deployment) throw new ORPCError("NOT_FOUND", { message: "Deployment not found." });
             await requireOrgCluster(db, organizationId, deployment.clusterId);
+
+            if (isTerminalStatus(deployment.status)) await cache.setItem(key, deployment);
 
             return { ...deployment, canCancel: canInitializeRole(organizationRole) };
         }),
@@ -166,45 +187,58 @@ export const deploymentsRouter = {
         .handler(async ({ context: { db, organizationId }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
+            const status = input?.status ?? "all";
+            const resourceId = input?.resourceId ?? "";
+            const projectId = input?.projectId ?? "";
 
-            const where = and(
-                eq(clusters.organizationId, organizationId),
-                input?.status ? eq(deployments.status, input.status) : undefined,
-                input?.resourceId ? eq(deployments.resourceId, input.resourceId) : undefined,
-                input?.projectId ? eq(resources.projectId, input.projectId) : undefined,
+            // New deployments expire the 15s window on their own; no manual bust needed.
+            return swr(
+                `deployments:list:${organizationId}:${status}:${limit}:${offset}:${resourceId}:${projectId}`,
+                currentWindow(),
+                async () => {
+                    const where = and(
+                        eq(clusters.organizationId, organizationId),
+                        input?.status ? eq(deployments.status, input.status) : undefined,
+                        input?.resourceId
+                            ? eq(deployments.resourceId, input.resourceId)
+                            : undefined,
+                        input?.projectId ? eq(resources.projectId, input.projectId) : undefined,
+                    );
+
+                    const items = await db
+                        .select({
+                            id: deployments.id,
+                            clusterId: deployments.clusterId,
+                            clusterName: clusters.name,
+                            name: deployments.name,
+                            status: deployments.status,
+                            spec: deployments.spec,
+                            createdAt: deployments.createdAt,
+                            updatedAt: deployments.updatedAt,
+                            finishedAt: deployments.finishedAt,
+                            resourceId: deployments.resourceId,
+                            resourceName: resources.name,
+                            projectId: projects.id,
+                            projectName: projects.name,
+                        })
+                        .from(deployments)
+                        .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                        .leftJoin(resources, eq(deployments.resourceId, resources.id))
+                        .leftJoin(projects, eq(resources.projectId, projects.id))
+                        .where(where)
+                        .orderBy(desc(deployments.createdAt))
+                        .limit(limit)
+                        .offset(offset);
+
+                    const [row] = await db
+                        .select({ count: sql<number>`count(*)::int` })
+                        .from(deployments)
+                        .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                        .leftJoin(resources, eq(deployments.resourceId, resources.id))
+                        .where(where);
+
+                    return { items, total: row?.count ?? 0 };
+                },
             );
-
-            const items = await db
-                .select({
-                    id: deployments.id,
-                    clusterId: deployments.clusterId,
-                    clusterName: clusters.name,
-                    name: deployments.name,
-                    status: deployments.status,
-                    createdAt: deployments.createdAt,
-                    updatedAt: deployments.updatedAt,
-                    finishedAt: deployments.finishedAt,
-                    resourceId: deployments.resourceId,
-                    resourceName: resources.name,
-                    projectId: projects.id,
-                    projectName: projects.name,
-                })
-                .from(deployments)
-                .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
-                .leftJoin(resources, eq(deployments.resourceId, resources.id))
-                .leftJoin(projects, eq(resources.projectId, projects.id))
-                .where(where)
-                .orderBy(desc(deployments.createdAt))
-                .limit(limit)
-                .offset(offset);
-
-            const [row] = await db
-                .select({ count: sql<number>`count(*)::int` })
-                .from(deployments)
-                .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
-                .leftJoin(resources, eq(deployments.resourceId, resources.id))
-                .where(where);
-
-            return { items, total: row?.count ?? 0 };
         }),
 };

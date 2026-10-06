@@ -209,10 +209,10 @@ describe("resource deployment worker", () => {
         await db.transaction(async (tx) => {
             await tx
                 .insert(deployments)
-                .values({ id, jobId: id, clusterId, resourceId, name: "DeployResource" });
+                .values({ id, jobId: id, clusterId, resourceId, name: "DeployResource", spec });
             await tx
                 .insert(resourceDeploymentInputs)
-                .values({ deploymentId: id, spec, prefix: "project-resource" });
+                .values({ deploymentId: id, prefix: "project-resource" });
         });
 
         return id;
@@ -600,9 +600,9 @@ describe("resource deployment worker", () => {
     it("does not send invalid private Compose input to the sidecar", async () => {
         const id = await snapshot();
         await db
-            .update(resourceDeploymentInputs)
+            .update(deployments)
             .set({ spec: `services: [${secret}` })
-            .where(eq(resourceDeploymentInputs.deploymentId, id));
+            .where(eq(deployments.id, id));
         const count = requestCount;
         await Effect.runPromise(
             DeployResource.enqueue({ deploymentId: id }, { attempts: 1 }).pipe(

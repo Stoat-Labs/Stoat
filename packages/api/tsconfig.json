@@ -10,7 +10,13 @@
     "include": ["src/**/*.ts"],
     "references": [
         {
+            "path": "../cache"
+        },
+        {
             "path": "../db"
+        },
+        {
+            "path": "../s3"
         },
         {
             "path": "../auth"

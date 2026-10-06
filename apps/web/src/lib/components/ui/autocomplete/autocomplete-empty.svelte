@@ -1,19 +1,29 @@
 <script lang="ts">
-  import { Autocomplete as AutocompletePrimitive } from '@shardsui/svelte/autocomplete';
-  import type { ComponentProps, Snippet } from 'svelte';
-  import { cn } from '$lib/utils';
+    import { Autocomplete as AutocompletePrimitive } from "@shardsui/svelte/autocomplete";
+    import type { ComponentProps, Snippet } from "svelte";
+    import { cn } from "$lib/utils";
 
-  type Props = Omit<ComponentProps<typeof AutocompletePrimitive.Empty>, 'children'> & {
-    children?: Snippet;
-  };
+    type Props = Omit<
+        ComponentProps<typeof AutocompletePrimitive.Empty>,
+        "children"
+    > & {
+        children?: Snippet;
+    };
 
-  let { class: className, children, ...restProps }: Props = $props();
+    let {
+        class: className,
+        children,
+        ...restProps
+    }: Props = $props();
 </script>
 
 <AutocompletePrimitive.Empty
-  class={cn('not-empty:p-2 text-center text-base text-muted-foreground sm:text-sm', className)}
-  data-slot="autocomplete-empty"
-  {...restProps}
+    class={cn(
+        "not-empty:p-2 text-center text-base text-muted-foreground sm:text-sm",
+        className,
+    )}
+    data-slot="autocomplete-empty"
+    {...restProps}
 >
-  {@render children?.()}
+    {@render children?.()}
 </AutocompletePrimitive.Empty>

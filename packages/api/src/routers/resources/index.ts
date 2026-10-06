@@ -7,6 +7,7 @@ import {
     projects,
     resources,
     resourceDeploymentInputs,
+    s3Buckets,
     type DeploymentStatus,
 } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
@@ -133,10 +134,10 @@ export const resourcesRouter = {
                     resourceId: resource.id,
                     name: "DeployResource",
                     status: "queued",
+                    spec: resource.draftSpec,
                 });
                 await tx.insert(resourceDeploymentInputs).values({
                     deploymentId,
-                    spec: resource.draftSpec,
                     prefix,
                     env: resourceEnv(resource),
                     recreate: input.recreate,
@@ -371,9 +372,11 @@ export const resourcesRouter = {
                     deploymentProgress: latest.progress,
                     deploymentCreatedAt: latest.createdAt,
                     deploymentFinishedAt: latest.finishedAt,
+                    bucketStatus: s3Buckets.status,
                 })
                 .from(resources)
                 .leftJoin(latest, eq(latest.resourceId, resources.id))
+                .leftJoin(s3Buckets, eq(s3Buckets.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
         }),
@@ -648,19 +651,19 @@ export const resourcesRouter = {
             let serviceNames: string[] = [GREPTIME_SERVICE, ALLOY_SERVICE];
 
             if (!(await isMonitoringResource(db, resource.id))) {
-                if (!resource.spec) {
+                if (!resource.spec && !resource.draftSpec) {
                     throw new ORPCError("NOT_FOUND", {
-                        message: "Resource has no deployed compose spec.",
+                        message: "Resource has no compose spec.",
                     });
                 }
 
                 const [snapshot] = await db
                     .select({
-                        spec: resourceDeploymentInputs.spec,
+                        spec: deployments.spec,
                         prefix: resourceDeploymentInputs.prefix,
                     })
                     .from(deployments)
-                    .innerJoin(
+                    .leftJoin(
                         resourceDeploymentInputs,
                         eq(resourceDeploymentInputs.deploymentId, deployments.id),
                     )
@@ -676,7 +679,8 @@ export const resourcesRouter = {
 
                 try {
                     serviceNames = formatComposeFile(
-                        snapshot?.spec ?? resource.spec,
+                        snapshot?.spec ??
+                            (resource.spec?.trim() ? resource.spec : resource.draftSpec!),
                         snapshot?.prefix ?? resourceComposePrefix(resource),
                     ).serviceNames;
                 } catch (error) {

@@ -1,25 +1,22 @@
 name: stoat
 
-# for my personal cluster for now, blacksmith suspended me and i had to appeal
+# for my personal cluster testing, blacksmith suspended me and i had to appeal, update: i got unsuspended
 
 services:
     stoat:
         build:
             context: .
             dockerfile: apps/web/Dockerfile
-            # Use the host resolver; DNS fails on the local Docker bridge.
             network: host
-        image: stoat:dev
+        image: stoat-dev
         x-ports:
             - "${APP_URL:-stoat.example.com}:3001/https"
         env_file: .env
         environment:
-            # Configure APP_URL as the hostname; the app receives its full URL.
             APP_URL: https://${APP_URL:-stoat.example.com}
             DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
+            REDIS_URL: ${REDIS_URL:-redis://dragonfly.internal:6379}
         x-pre_deploy:
-            # pnpm 12 auto-installs before running scripts, but the deployed
-            # package has no workspace catalog. Use the bundled CLI directly.
             command:
                 [
                     "node",
@@ -60,12 +57,18 @@ services:
             timeout: 5s
             retries: 5
         restart: unless-stopped
+    stoat-cache:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+        container_name: stoat-cache
+        volumes:
+            - stoat_cache_data:/data
+        restart: unless-stopped
     sidecar:
         build:
             context: apps/sidecar
             dockerfile: Dockerfile
             network: host
-        image: stoat-sidecar:dev
+        image: stoat-sidecar
         # Uncloud does not propagate Compose group_add. The sidecar needs
         # root-equivalent access to the host's Uncloud control socket.
         user: root
@@ -93,3 +96,4 @@ services:
 
 volumes:
     stoat_db_data:
+    stoat_cache_data:

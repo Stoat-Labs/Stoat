@@ -1,34 +1,36 @@
 <script lang="ts">
-  import { boxWith, mergeProps } from 'svelte-toolbelt';
-  import { CalendarGridBodyState } from '../calendar-state.svelte';
-  import { createId } from '../ids';
-  import type { CalendarGridBodyProps } from '../types';
+    import { boxWith, mergeProps } from "svelte-toolbelt";
+    import { CalendarGridBodyState } from "../calendar-state.svelte";
+    import { createId } from "../ids";
+    import type { CalendarGridBodyProps } from "../types";
 
-  const uid = $props.id();
+    const uid = $props.id();
 
-  let {
-    children,
-    child,
-    ref = $bindable(null),
-    id = createId(uid),
-    ...restProps
-  }: CalendarGridBodyProps = $props();
+    let {
+        children,
+        child,
+        ref = $bindable(null),
+        id = createId(uid),
+        ...restProps
+    }: CalendarGridBodyProps = $props();
 
-  const gridBodyState = CalendarGridBodyState.create({
-    id: boxWith(() => id!),
-    ref: boxWith(
-      () => ref,
-      (v) => (ref = v)
-    )
-  });
+    const gridBodyState = CalendarGridBodyState.create({
+        id: boxWith(() => id!),
+        ref: boxWith(
+            () => ref,
+            (v) => (ref = v),
+        ),
+    });
 
-  const mergedProps = $derived(mergeProps(restProps, gridBodyState.props));
+    const mergedProps = $derived(
+        mergeProps(restProps, gridBodyState.props),
+    );
 </script>
 
 {#if child}
-  {@render child({ props: mergedProps })}
+    {@render child({ props: mergedProps })}
 {:else}
-  <tbody {...mergedProps}>
-    {@render children?.()}
-  </tbody>
+    <tbody {...mergedProps}>
+        {@render children?.()}
+    </tbody>
 {/if}

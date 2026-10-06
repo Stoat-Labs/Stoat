@@ -1,32 +1,35 @@
 <script lang="ts">
-  import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { type ButtonVariant, buttonVariants } from '$lib/components/ui/button';
-  import { cn } from '$lib/utils';
-  import * as CalendarPrimitive from './internal';
+    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import {
+        type ButtonVariant,
+        buttonVariants,
+    } from "$lib/components/ui/button";
+    import { cn } from "$lib/utils";
+    import * as CalendarPrimitive from "./internal";
 
-  let {
-    ref = $bindable(null),
-    class: className,
-    children,
-    variant = 'ghost',
-    ...restProps
-  }: CalendarPrimitive.NextButtonProps & {
-    variant?: ButtonVariant;
-  } = $props();
+    let {
+        ref = $bindable(null),
+        class: className,
+        children,
+        variant = "ghost",
+        ...restProps
+    }: CalendarPrimitive.NextButtonProps & {
+        variant?: ButtonVariant;
+    } = $props();
 </script>
 
 <CalendarPrimitive.NextButton
-  bind:ref
-  class={cn(
-    buttonVariants({ variant }),
-    'size-(--cell-size) bg-transparent p-0 select-none disabled:opacity-50 rtl:rotate-180',
-    className
-  )}
-  {...restProps}
+    bind:ref
+    class={cn(
+        buttonVariants({ variant }),
+        "size-(--cell-size) bg-transparent p-0 select-none disabled:opacity-50 rtl:rotate-180",
+        className,
+    )}
+    {...restProps}
 >
-  {#if children}
-    {@render children?.()}
-  {:else}
-    <ChevronRight class="size-4" />
-  {/if}
+    {#if children}
+        {@render children?.()}
+    {:else}
+        <ChevronRight class="size-4" />
+    {/if}
 </CalendarPrimitive.NextButton>

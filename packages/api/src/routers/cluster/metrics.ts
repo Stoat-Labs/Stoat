@@ -7,6 +7,7 @@ import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
 import { organizationProcedure } from "../..";
+import { excludedFilesystemMounts, excludedFilesystemTypes } from "../../observability";
 
 export type Usage = { used: number; total: number } | null;
 
@@ -120,18 +121,20 @@ export const metricsRouter = {
                                 WHERE ${recent("a")}
                                 GROUP BY a.machine_id
                             )`),
-                        query(`SELECT sum(s - f), sum(s), count(*)
+                        query(`SELECT sum(s - f), sum(s), count(DISTINCT machine_id)
                             FROM (
-                                SELECT f.machine_id, avg(f.greptime_value) AS f, avg(s.greptime_value) AS s
-                                FROM ${db}.node_filesystem_free_bytes f
+                                SELECT f.machine_id, f.device, f.fstype, avg(f.greptime_value) AS f, avg(s.greptime_value) AS s
+                                FROM ${db}.node_filesystem_avail_bytes f
                                 JOIN ${db}.node_filesystem_size_bytes s
                                     ON f.machine_id = s.machine_id
                                     AND f.customer_id = s.customer_id
                                     AND f.mountpoint = s.mountpoint
                                     AND f.device = s.device
+                                    AND f.fstype = s.fstype
                                     AND f.greptime_timestamp = s.greptime_timestamp
-                                WHERE ${recent("f")} AND f.mountpoint = '/'
-                                GROUP BY f.machine_id
+                                WHERE ${recent("f")} AND NOT regexp_like(f.fstype, '${excludedFilesystemTypes}')
+                                    AND NOT regexp_like(f.mountpoint, '${excludedFilesystemMounts}')
+                                GROUP BY f.machine_id, f.device, f.fstype
                             )`),
                     ]);
 

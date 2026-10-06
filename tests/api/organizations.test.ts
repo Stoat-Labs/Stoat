@@ -9,6 +9,7 @@ import { createAuth } from "../../packages/auth/src";
 import { call } from "@orpc/server";
 import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { listUserOrganizations } from "@stoat/db/organizations";
+import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
 
 describe("organization authentication (PostgreSQL)", () => {
     const databaseName = `stoat_auth_test_${randomUUID().replaceAll("-", "")}`;
@@ -158,6 +159,48 @@ describe("organization authentication (PostgreSQL)", () => {
             await admin.$client.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
             await admin.$client.end();
         }
+    });
+
+    it("blocks signup immediately when disabled, preserves login, and can reopen signup", async () => {
+        expect(await getSignupsEnabled(db)).toBe(true);
+        await signup("signup-setting-existing@example.com");
+        await setSignupsEnabled(db, false);
+
+        try {
+            expect(await getSignupsEnabled(db)).toBe(false);
+
+            const blocked = await request("/sign-up/email", {
+                name: "Blocked",
+                email: "signup-setting-blocked@example.com",
+                password,
+            });
+
+            expect(blocked.status).toBe(403);
+            expect(await blocked.json()).toMatchObject({ message: "User signups are disabled." });
+            expect(
+                (
+                    await db.$client.query('SELECT id FROM "user" WHERE email = $1', [
+                        "signup-setting-blocked@example.com",
+                    ])
+                ).rows,
+            ).toHaveLength(0);
+
+            const login = await request("/sign-in/email", {
+                email: "signup-setting-existing@example.com",
+                password,
+            });
+
+            expect(login.status).toBe(200);
+        } finally {
+            await setSignupsEnabled(db, true);
+        }
+
+        await signup("signup-setting-blocked@example.com");
+        // Keep the legacy migration assertions below independent of these users.
+        await db.$client.query(
+            `DELETE FROM organization WHERE id IN (SELECT organization_id FROM member WHERE user_id IN (SELECT id FROM "user" WHERE email LIKE 'signup-setting-%'))`,
+        );
+        await db.$client.query(`DELETE FROM "user" WHERE email LIKE 'signup-setting-%'`);
     });
 
     it("backfills distinct owned organizations for same-name users without memberships", async () => {

@@ -1,5 +1,8 @@
 <script lang="ts">
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Dialog,
@@ -21,7 +24,14 @@
     let {
         open = $bindable(false),
         project,
-    }: { open?: boolean; project: { id: string; name: string; description: string | null } } = $props();
+    }: {
+        open?: boolean;
+        project: {
+            id: string;
+            name: string;
+            description: string | null;
+        };
+    } = $props();
 
     let name = $state("");
 
@@ -40,7 +50,9 @@
     const mutation = createMutation(() =>
         orpc.projects.updateProject.mutationOptions({
             onSuccess: async () => {
-                await queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.projects.key(),
+                });
                 open = false;
             },
         }),
@@ -62,17 +74,30 @@
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Edit Project</DialogTitle>
-            <DialogDescription>Update the project's name and description.</DialogDescription>
+            <DialogDescription>
+                Update the project's name and description.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             {#if mutation.error}
                 <Alert variant="error" class="mb-4">
-                    <AlertDescription>{mutation.error.message || "Unable to update project."}</AlertDescription>
+                    <AlertDescription>
+                        {mutation.error.message ||
+                            "Unable to update project."}
+                    </AlertDescription>
                 </Alert>
             {/if}
-            <form id="edit-project-form" method="POST" onsubmit={submit} class="space-y-4" aria-busy={mutation.isPending}>
+            <form
+                id="edit-project-form"
+                method="POST"
+                onsubmit={submit}
+                class="space-y-4"
+                aria-busy={mutation.isPending}
+            >
                 <Field>
-                    <Label for="edit-project-name" required>Name</Label>
+                    <Label for="edit-project-name" required>
+                        Name
+                    </Label>
                     <Input
                         id="edit-project-name"
                         bind:value={name}
@@ -82,7 +107,9 @@
                     />
                 </Field>
                 <Field>
-                    <Label for="edit-project-description">Description</Label>
+                    <Label for="edit-project-description">
+                        Description
+                    </Label>
                     <Textarea
                         id="edit-project-description"
                         bind:value={description}
@@ -95,7 +122,11 @@
             </form>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" disabled={mutation.isPending} onclick={() => (open = false)}>
+            <Button
+                variant="outline"
+                disabled={mutation.isPending}
+                onclick={() => (open = false)}
+            >
                 Cancel
             </Button>
             <Button

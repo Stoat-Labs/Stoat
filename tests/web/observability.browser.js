@@ -112,3 +112,59 @@ async function checkCharts() {
 }
 
 checkCharts().then(console.info);
+
+// Run after the three service charts have loaded; watches one complete polling interval.
+async function checkServiceChartRefresh() {
+    const titles = ["CPU by service", "Memory by service", "Network by service"];
+
+    const panels = titles.map((title) =>
+        [...document.querySelectorAll('[data-slot="frame"]')].find((frame) =>
+            [...frame.querySelectorAll('[data-slot="frame-title"]')].some(
+                (heading) => heading.textContent.trim() === title,
+            ),
+        ),
+    );
+
+    const charts = panels.map((panel) => panel?.querySelector('[data-slot="chart"]'));
+
+    if (charts.some((chart) => !chart)) throw new Error("Wait for all service charts to load");
+
+    const heights = panels.map(
+        (panel) => panel.querySelector('[data-slot="frame-panel"]').getBoundingClientRect().height,
+    );
+    if (Math.max(...heights) - Math.min(...heights) > 1)
+        throw new Error("Service chart panels must have equal heights");
+
+    for (const panel of panels) {
+        const legend = panel.querySelector('[aria-label$=" legend"]');
+        if (getComputedStyle(legend).display !== "grid")
+            throw new Error("Service legends must use aligned rows instead of wrapping");
+
+        for (const button of legend.querySelectorAll("button")) {
+            const label = button.querySelector(".truncate");
+            if (getComputedStyle(label).whiteSpace !== "nowrap" || !button.title)
+                throw new Error("Legend names must stay on one line with full names available");
+        }
+    }
+
+    await new Promise((resolve, reject) => {
+        const observer = new MutationObserver(() => {
+            if (charts.some((chart) => !chart.isConnected)) {
+                clearTimeout(timeout);
+                observer.disconnect();
+                reject(new Error("A service chart disappeared during refresh"));
+            }
+        });
+
+        const timeout = setTimeout(() => {
+            observer.disconnect();
+            resolve();
+        }, 35_000);
+
+        for (const panel of panels) observer.observe(panel, { childList: true, subtree: true });
+    });
+
+    return "Service charts stayed mounted throughout live refresh";
+}
+
+checkServiceChartRefresh().then(console.info);

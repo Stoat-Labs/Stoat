@@ -1,15 +1,23 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import type { HTMLAttributes } from 'svelte/elements';
-  import { cn } from '$lib/utils';
+    import type { Snippet } from "svelte";
+    import type { HTMLAttributes } from "svelte/elements";
+    import { cn } from "$lib/utils";
 
-  interface Props extends HTMLAttributes<HTMLTableSectionElement> {
-    children?: Snippet;
-  }
+    interface Props extends HTMLAttributes<HTMLTableSectionElement> {
+        children?: Snippet;
+    }
 
-  let { class: className, children, ...restProps }: Props = $props();
+    let {
+        class: className,
+        children,
+        ...restProps
+    }: Props = $props();
 </script>
 
-<thead class={cn('[&_tr]:border-b', className)} data-slot="table-header" {...restProps}>
-  {@render children?.()}
+<thead
+    class={cn("[&_tr]:border-b", className)}
+    data-slot="table-header"
+    {...restProps}
+>
+    {@render children?.()}
 </thead>

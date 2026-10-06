@@ -1,38 +1,40 @@
 <script lang="ts">
-  import { boxWith, mergeProps } from 'svelte-toolbelt';
-  import { CalendarCellState } from '../calendar-state.svelte';
-  import { createId } from '../ids';
-  import type { CalendarCellProps } from '../types';
+    import { boxWith, mergeProps } from "svelte-toolbelt";
+    import { CalendarCellState } from "../calendar-state.svelte";
+    import { createId } from "../ids";
+    import type { CalendarCellProps } from "../types";
 
-  const uid = $props.id();
+    const uid = $props.id();
 
-  let {
-    children,
-    child,
-    ref = $bindable(null),
-    id = createId(uid),
-    date,
-    month,
-    ...restProps
-  }: CalendarCellProps = $props();
+    let {
+        children,
+        child,
+        ref = $bindable(null),
+        id = createId(uid),
+        date,
+        month,
+        ...restProps
+    }: CalendarCellProps = $props();
 
-  const cellState = CalendarCellState.create({
-    id: boxWith(() => id!),
-    ref: boxWith(
-      () => ref,
-      (v) => (ref = v)
-    ),
-    date: boxWith(() => date),
-    month: boxWith(() => month)
-  });
+    const cellState = CalendarCellState.create({
+        id: boxWith(() => id!),
+        ref: boxWith(
+            () => ref,
+            (v) => (ref = v),
+        ),
+        date: boxWith(() => date),
+        month: boxWith(() => month),
+    });
 
-  const mergedProps = $derived(mergeProps(restProps, cellState.props));
+    const mergedProps = $derived(
+        mergeProps(restProps, cellState.props),
+    );
 </script>
 
 {#if child}
-  {@render child({ props: mergedProps, ...cellState.snippetProps })}
+    {@render child({ props: mergedProps, ...cellState.snippetProps })}
 {:else}
-  <td {...mergedProps}>
-    {@render children?.(cellState.snippetProps)}
-  </td>
+    <td {...mergedProps}>
+        {@render children?.(cellState.snippetProps)}
+    </td>
 {/if}

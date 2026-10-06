@@ -74,6 +74,7 @@ services:
             GREPTIME_DB: "${GREPTIME_DB:-monitoring}"
             GREPTIME_USERNAME: "${GREPTIME_USERNAME:?rendered by InitializeCluster}"
             GREPTIME_PASSWORD: "${GREPTIME_PASSWORD:?rendered by InitializeCluster}"
+            SIDECAR_TOKEN: "${SIDECAR_TOKEN:?rendered by InitializeCluster}"
             RETENTION_DAYS: "${RETENTION_DAYS:-14}"
 
         volumes:
@@ -92,6 +93,9 @@ services:
               source: /
               target: /rootfs
               read_only: true
+              # Receive host mounts added after Alloy starts, without propagating mounts back.
+              bind:
+                  propagation: rslave
             - type: bind
               source: /sys
               target: /sys
@@ -155,10 +159,23 @@ configs:
               procfs_path    = "/rootfs/proc"
               sysfs_path     = "/sys"
               udev_data_path = "/rootfs/run/udev/data"
+
+              // /proc/net resolves through /proc/self, i.e. Alloy's container namespace.
+              disable_collectors = ["netdev"]
+            }
+
+            // Uncloud has no host networking, so read interface counters from host
+            // PID 1's network namespace instead of Alloy's own container interfaces.
+            prometheus.exporter.unix "host_network" {
+              procfs_path    = "/rootfs/proc/1"
+              set_collectors = ["netdev"]
             }
 
             prometheus.scrape "host" {
-              targets         = prometheus.exporter.unix.host.targets
+              targets         = array.concat(
+                prometheus.exporter.unix.host.targets,
+                prometheus.exporter.unix.host_network.targets,
+              )
               scrape_interval = "15s"
 
               forward_to = [
@@ -194,6 +211,28 @@ configs:
             prometheus.scrape "containers" {
               targets         = prometheus.exporter.cadvisor.docker.targets
               scrape_interval = "15s"
+
+              forward_to = [
+                prometheus.remote_write.greptime.receiver,
+              ]
+            }
+
+
+            // ----------------------------------------------------
+            // Uncloud cluster metrics (via local sidecar)
+            // ----------------------------------------------------
+
+            // The sidecar runs globally and proxies the local Uncloud daemon's
+            // Prometheus endpoint at /ucinternal/metrics using its own
+            // UNCLOUD_MACHINE_ID. <machine-id>.m.sidecar.internal resolves to
+            // the sidecar on this machine only, so the machine_id external
+            // label stays correct; plain sidecar.internal would round-robin
+            // across machines and mislabel every sample.
+            prometheus.scrape "uncloud" {
+              targets         = [{"__address__" = sys.env("UNCLOUD_MACHINE_ID") + ".m.sidecar.internal:80"}]
+              metrics_path    = "/ucinternal/metrics"
+              scrape_interval = "15s"
+              bearer_token    = sys.env("SIDECAR_TOKEN")
 
               forward_to = [
                 prometheus.remote_write.greptime.receiver,

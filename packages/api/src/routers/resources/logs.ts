@@ -225,15 +225,20 @@ async function deployedServices(
         // candidates are metadata only, not up to 101 copies of a 4 MiB spec.
         const [snapshot] = await db
             .select({
-                spec: resourceDeploymentInputs.spec,
+                spec: deployments.spec,
                 prefix: resourceDeploymentInputs.prefix,
             })
-            .from(resourceDeploymentInputs)
-            .where(eq(resourceDeploymentInputs.deploymentId, candidate.id));
+            .from(deployments)
+            .leftJoin(
+                resourceDeploymentInputs,
+                eq(resourceDeploymentInputs.deploymentId, deployments.id),
+            )
+            .where(eq(deployments.id, candidate.id));
 
-        if (!snapshot) throw new Error("Deployment snapshot is unavailable.");
+        if (!snapshot?.spec) throw new Error("Deployment snapshot is unavailable.");
 
-        for (const name of formatComposeFile(snapshot.spec, snapshot.prefix).serviceNames)
+        for (const name of formatComposeFile(snapshot.spec, snapshot.prefix ?? undefined)
+            .serviceNames)
             names.add(name);
 
         if (candidate.status === "ready") break;

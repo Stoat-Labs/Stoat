@@ -7,12 +7,16 @@ import { clusterRouter } from "./cluster";
 import { projectsRouter } from "./projects";
 import { resourcesRouter } from "./resources";
 import { connectionsRouter } from "./connections";
+import { bucketsRouter } from "./buckets";
+import { s3Router } from "./s3";
 
 export const appRouter = {
     cluster: clusterRouter,
     projects: projectsRouter,
     resources: resourcesRouter,
     connections: connectionsRouter,
+    s3: s3Router,
+    buckets: bucketsRouter,
     healthCheck: publicProcedure.handler(() => {
         return "OK";
     }),

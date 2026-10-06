@@ -1,5 +1,9 @@
 <script lang="ts">
-    import { Alert, AlertAction, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertAction,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Dialog,
@@ -16,9 +20,15 @@
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
 
-    let { projectId, resourceId }: { projectId: string; resourceId: string } = $props();
+    let {
+        projectId,
+        resourceId,
+    }: { projectId: string; resourceId: string } = $props();
 
-    const dialog = useQueryState("dialog", parseAsString.withOptions({ shallow: true, scroll: false }));
+    const dialog = useQueryState(
+        "dialog",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
+    );
 
     const composeQuery = createQuery(() =>
         orpc.resources.getFormattedCompose.queryOptions({
@@ -30,13 +40,19 @@
     );
 </script>
 
-<Button variant="secondary" onclick={() => void dialog.set("preview-compose")}>Preview compose</Button>
+<Button
+    variant="secondary"
+    onclick={() => void dialog.set("preview-compose")}
+>
+    Preview compose
+</Button>
 
 <Dialog
     bind:open={
         () => dialog.current === "preview-compose",
         (open) => {
-            if (!open && dialog.current === "preview-compose") void dialog.set(null);
+            if (!open && dialog.current === "preview-compose")
+                void dialog.set(null);
         }
     }
 >
@@ -44,22 +60,33 @@
         <DialogHeader>
             <DialogTitle>Final Compose</DialogTitle>
             <DialogDescription>
-                Read-only formatted Compose from the saved configuration. Unsaved changes are not included.
+                Read-only formatted Compose from the saved
+                configuration. Unsaved changes are not included.
             </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             {#if composeQuery.isFetching || composeQuery.isPending}
-                <div class="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground" role="status">
+                <div
+                    class="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"
+                    role="status"
+                >
                     <Spinner class="size-4" aria-hidden="true" />
                     Loading compose...
                 </div>
             {:else if composeQuery.isError}
                 <Alert variant="error">
                     <AlertDescription>
-                        Unable to preview compose: {composeQuery.error.message}
+                        Unable to preview compose: {composeQuery.error
+                            .message}
                     </AlertDescription>
                     <AlertAction>
-                        <Button variant="outline" size="sm" onclick={() => composeQuery.refetch()}>Retry</Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onclick={() => composeQuery.refetch()}
+                        >
+                            Retry
+                        </Button>
                     </AlertAction>
                 </Alert>
             {:else if composeQuery.data}
@@ -74,9 +101,15 @@
             {/if}
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" onclick={() => {
-                if (dialog.current === "preview-compose") void dialog.set(null);
-            }}>Close</Button>
+            <Button
+                variant="outline"
+                onclick={() => {
+                    if (dialog.current === "preview-compose")
+                        void dialog.set(null);
+                }}
+            >
+                Close
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>

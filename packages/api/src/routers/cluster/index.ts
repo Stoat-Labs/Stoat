@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, projects } from "@stoat/db/schema/index";
+import { clusters, projects, resources, s3Buckets } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
 import { and, asc, eq, ilike, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,9 @@ const clusterInput = v.object({
 async function getClusterDiagnostics(sidecarUrl: string, sidecarToken: string) {
     try {
         return await unwrap(
-            ucClient(sidecarUrl, { token: sidecarToken }).GET("/api/v1/cluster/diagnostics"),
+            ucClient(sidecarUrl, { token: sidecarToken }).GET("/api/v1/cluster/diagnostics", {
+                signal: AbortSignal.timeout(10_000),
+            }),
         );
     } catch {
         return null;
@@ -35,6 +37,7 @@ export const clusterRouter = {
             v.optional(
                 v.object({
                     q: v.optional(v.string()),
+                    includeDiagnostics: v.optional(v.boolean(), true),
                     limit: v.optional(
                         v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
                     ),
@@ -90,7 +93,10 @@ export const clusterRouter = {
 
             const itemsWithDiagnostics = await Promise.all(
                 items.map(async ({ sidecarUrl, sidecarToken, ...item }) => {
-                    const diagnostics = await getClusterDiagnostics(sidecarUrl, sidecarToken);
+                    const diagnostics =
+                        input?.includeDiagnostics === false
+                            ? null
+                            : await getClusterDiagnostics(sidecarUrl, sidecarToken);
 
                     return { ...item, diagnostics };
                 }),
@@ -110,6 +116,7 @@ export const clusterRouter = {
                     initializedAt: clusters.initializedAt,
                     initializationStatus: clusters.initializationStatus,
                     initializationError: clusters.initializationError,
+                    initializationConfiguration: clusters.initializationConfiguration,
                     createdAt: clusters.createdAt,
                     updatedAt: clusters.updatedAt,
                     sidecarUrl: clusters.sidecarUrl,
@@ -129,6 +136,7 @@ export const clusterRouter = {
                     clusters.name,
                     clusters.organizationId,
                     clusters.initializedAt,
+                    clusters.initializationConfiguration,
                     clusters.createdAt,
                     clusters.updatedAt,
                     clusters.sidecarUrl,
@@ -140,7 +148,7 @@ export const clusterRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
             }
 
-            const { sidecarUrl, sidecarToken, ...item } = cluster;
+            const { sidecarUrl, sidecarToken, initializationConfiguration, ...item } = cluster;
             const diagnostics = await getClusterDiagnostics(sidecarUrl, sidecarToken);
 
             const canInitialize = isOrganizationAdmin(organizationRole);
@@ -160,6 +168,7 @@ export const clusterRouter = {
 
             return {
                 ...item,
+                retentionDays: initializationConfiguration?.retentionDays ?? null,
                 diagnostics,
                 canInitialize,
                 internalProjectId: internalProject?.id ?? null,
@@ -225,6 +234,21 @@ export const clusterRouter = {
                 });
             }
 
+            const [bucket] = await db
+                .select({ resourceId: s3Buckets.resourceId })
+                .from(s3Buckets)
+                .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
+                .innerJoin(projects, eq(resources.projectId, projects.id))
+                .where(eq(projects.clusterId, cluster.id))
+                .limit(1);
+
+            // Cascading would drop bucket rows and leave their provider keys unrevoked.
+            if (bucket) {
+                throw new ORPCError("CONFLICT", {
+                    message: "Delete the S3 buckets in this cluster's projects first.",
+                });
+            }
+
             await db
                 .delete(clusters)
                 .where(
@@ -239,5 +263,14 @@ export const clusterRouter = {
     healthz: organizationProcedure
         .input(clusterInput)
         .use(uncloudMiddleware)
-        .handler(({ context: { uc } }) => unwrap(uc.GET("/api/v1/cluster/diagnostics"))),
+        .handler(({ context: { uc }, signal }) =>
+            unwrap(
+                uc.GET("/api/v1/cluster/diagnostics", {
+                    signal: AbortSignal.any([
+                        ...(signal ? [signal] : []),
+                        AbortSignal.timeout(10_000),
+                    ]),
+                }),
+            ),
+        ),
 };

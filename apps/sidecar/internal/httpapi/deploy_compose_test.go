@@ -108,6 +108,14 @@ func TestDeployComposeRedactsResolvedValuesAtEmission(t *testing.T) {
 	}.ToMappingWithEquals()}}})
 	assert.Equal(t, "[REDACTED]", serviceRedact("x"))
 	assert.Equal(t, "[REDACTED]", serviceRedact("colored-secret"))
+
+	publicMonitoring := newDeployRedactor(&types.Project{Services: types.Services{"alloy": {Environment: types.Mapping{
+		"GREPTIME_USERNAME": "stoat", "GREPTIME_DB": "monitoring", "CUSTOMER_ID": "cluster-id",
+		"STOAT_MONITORING_CLUSTER_ID": "cluster-id", "SIDECAR_TOKEN": "private-token",
+	}.ToMappingWithEquals()}}})
+	assert.Equal(t, "stoat-monitoring-alloy cluster-id [REDACTED]", publicMonitoring(
+		"stoat-monitoring-alloy cluster-id private-token",
+	))
 }
 
 func TestDeployComposeRedactorIgnoresIncidentalProcessEnvironment(t *testing.T) {

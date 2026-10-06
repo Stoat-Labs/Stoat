@@ -23,12 +23,17 @@ export { readSqlRows } from "./greptime";
 import { appendDeploymentLog } from "@stoat/db/deployments";
 import { deployCompose } from "./deploy-compose";
 
-export type DeployLogFn = (text: string) => Promise<void>;
+export type DeployLogFn = (
+    text: string,
+    level?: "info" | "debug" | "error",
+    event?: string,
+) => Promise<void>;
 
 export async function deployMonitoring(
     uc: UcClient,
     compose: string,
     signal: AbortSignal,
+    credentials: string[],
     services?: string[],
     onLog?: DeployLogFn,
 ) {
@@ -36,10 +41,14 @@ export async function deployMonitoring(
         uc,
         compose,
         signal,
-        async (text) => {
-            await onLog?.(text);
+        async (text, level, event) => {
+            await onLog?.(text, level, event);
         },
         services,
+        credentials,
+        undefined,
+        false,
+        false,
     );
 }
 
@@ -133,11 +142,11 @@ export function createInitializeClusterHandler(
 
     // Best-effort narrative for the deployment detail view. Failures here must
     // never fail the deployment itself.
-    const log: DeployLogFn = async (text: string) => {
+    const log: DeployLogFn = async (text, level, event) => {
         if (!opts?.deploymentId) return;
 
         try {
-            await appendDeploymentLog(db, opts.deploymentId, text);
+            await appendDeploymentLog(db, opts.deploymentId, text, { level, event });
         } catch {
             /* ignore */
         }
@@ -221,12 +230,20 @@ export function createInitializeClusterHandler(
                 await log("Stored monitoring credentials were unreadable; issued fresh ones.");
             }
 
-            const compose = renderMonitoringCompose(template, config, password, clusterId);
+            const compose = renderMonitoringCompose(
+                template,
+                config,
+                password,
+                clusterId,
+                cluster.sidecarToken,
+            );
+
             await log("Deploying GreptimeDB…");
             await deployMonitoring(
                 uc,
                 compose,
                 bounded(signal, 10 * 60_000),
+                [password, cluster.sidecarToken],
                 [GREPTIME_SERVICE],
                 log,
             );
@@ -249,8 +266,25 @@ export function createInitializeClusterHandler(
                 `CREATE DATABASE IF NOT EXISTS ${MONITORING_DATABASE} WITH (ttl = '${config.retentionDays}d')`,
                 bounded(signal, 60_000),
             );
+            // CREATE IF NOT EXISTS leaves an existing database untouched, so
+            // enforce the configured retention on every run. This is what makes
+            // retention changes apply when initialization is re-run.
+            await sql(
+                uc,
+                greptime,
+                password,
+                `ALTER DATABASE ${MONITORING_DATABASE} SET 'ttl'='${config.retentionDays}d'`,
+                bounded(signal, 60_000),
+            );
             await log("Deploying Alloy collectors…");
-            await deployMonitoring(uc, compose, bounded(signal, 10 * 60_000), undefined, log);
+            await deployMonitoring(
+                uc,
+                compose,
+                bounded(signal, 10 * 60_000),
+                [password, cluster.sidecarToken],
+                undefined,
+                log,
+            );
             // Alloy labels telemetry with UNCLOUD_MACHINE_ID, so readiness compares IDs.
             const expectedMachines = machines.items.map((machine) => machine.id);
             await log(`Waiting for Alloy collectors on ${expectedMachines.length} machine(s)…`);
@@ -317,7 +351,7 @@ export function createInitializeClusterHandler(
             signal.throwIfAborted();
             // Intentionally redact underlying database, Compose and HTTP errors.
             throw new Error(
-                "Cluster monitoring initialization failed. Check the selected machine, storage paths, and sidecar connectivity, then retry.",
+                "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.",
             );
         } finally {
             try {

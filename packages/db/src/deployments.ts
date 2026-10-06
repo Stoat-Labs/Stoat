@@ -22,6 +22,7 @@ export async function createDeployment(
         name: string;
         jobId: string;
         resourceId?: string | null;
+        spec?: string | null;
         configuration?: ClusterInitializationConfiguration | null;
     },
 ) {
@@ -34,6 +35,7 @@ export async function createDeployment(
             status: "queued",
             jobId: input.jobId,
             resourceId: input.resourceId ?? null,
+            spec: input.spec ?? null,
             configuration: input.configuration ?? null,
         })
         .returning();

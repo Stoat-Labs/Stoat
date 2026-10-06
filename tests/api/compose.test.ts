@@ -501,8 +501,12 @@ describe("rewriteComposeHostname", () => {
 
     it("rewrites exact whole values and URL hosts", () => {
         expect(rewriteComposeHostname("db", names, rename)).toBe("p-db");
+        expect(rewriteComposeHostname("db.internal", names, rename)).toBe("p-db.internal");
         expect(rewriteComposeHostname("postgres://u:p@db:5432/app", names, rename)).toBe(
             "postgres://u:p@p-db:5432/app",
+        );
+        expect(rewriteComposeHostname("http://cache.internal:3000/x", names, rename)).toBe(
+            "http://p-cache.internal:3000/x",
         );
         expect(rewriteComposeHostname("http://cache:3000/x?y=db#z", names, rename)).toBe(
             "http://p-cache:3000/x?y=db#z",
@@ -510,15 +514,32 @@ describe("rewriteComposeHostname", () => {
     });
 
     it("ignores substrings, external hosts, and userinfo matches", () => {
+        expect(rewriteComposeHostname("mydb.internal", names, rename)).toBe("mydb.internal");
         expect(rewriteComposeHostname("mydb", names, rename)).toBe("mydb");
         expect(rewriteComposeHostname("hello-db", names, rename)).toBe("hello-db");
+        expect(rewriteComposeHostname("https://db.internal.example.com", names, rename)).toBe(
+            "https://db.internal.example.com",
+        );
         expect(rewriteComposeHostname("https://db.example.com", names, rename)).toBe(
             "https://db.example.com",
+        );
+        expect(rewriteComposeHostname("http://[::1]:8080", names, rename)).toBe(
+            "http://[::1]:8080",
         );
         expect(rewriteComposeHostname("postgres://db:pw@external:5432/app", names, rename)).toBe(
             "postgres://db:pw@external:5432/app",
         );
         expect(rewriteComposeHostname("not a url", names, rename)).toBe("not a url");
+    });
+
+    it("preserves internal suffixes and URL syntax around service hosts", () => {
+        expect(
+            rewriteComposeHostname(
+                "postgres://user:pass@db.internal:5432/app?target=cache.internal#db.internal",
+                names,
+                rename,
+            ),
+        ).toBe("postgres://user:pass@p-db.internal:5432/app?target=cache.internal#db.internal");
     });
 });
 

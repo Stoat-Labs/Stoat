@@ -1,4 +1,5 @@
-import type { Parser } from "nuqs-svelte";
+import { createParser, type Parser } from "nuqs-svelte";
+import type { LogBucket } from "./resource-logs";
 
 export const listPageSize = 25;
 
@@ -25,3 +26,29 @@ export const deploymentIdParser = {
     },
     serialize: String,
 } satisfies Parser<string>;
+
+export const logBucketParser = createParser<LogBucket>({
+    parse(value) {
+        const parts = value.split(":").map(Number);
+
+        if (parts.length !== 3) return null;
+        const [index, domainStart, domainEnd] = parts;
+
+        if (
+            !Number.isInteger(index) ||
+            index! < 0 ||
+            index! > 23 ||
+            !Number.isSafeInteger(domainStart) ||
+            !Number.isSafeInteger(domainEnd) ||
+            domainEnd! <= domainStart!
+        )
+            return null;
+
+        return {
+            index: index!,
+            domainStart: domainStart!,
+            domainEnd: domainEnd!,
+        };
+    },
+    serialize: ({ index, domainStart, domainEnd }) => `${index}:${domainStart}:${domainEnd}`,
+});

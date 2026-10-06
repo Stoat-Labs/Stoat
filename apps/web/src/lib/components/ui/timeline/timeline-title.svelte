@@ -1,20 +1,20 @@
 <script lang="ts">
-  import type { HTMLAttributes } from 'svelte/elements';
-  import { cn, type WithElementRef } from '$lib/utils';
+    import type { HTMLAttributes } from "svelte/elements";
+    import { cn, type WithElementRef } from "$lib/utils";
 
-  let {
-    children,
-    class: className,
-    ref = $bindable(null),
-    ...restProps
-  }: WithElementRef<HTMLAttributes<HTMLHeadingElement>> = $props();
+    let {
+        children,
+        class: className,
+        ref = $bindable(null),
+        ...restProps
+    }: WithElementRef<HTMLAttributes<HTMLHeadingElement>> = $props();
 </script>
 
 <h3
-  bind:this={ref}
-  data-slot="timeline-title"
-  class={cn('text-sm font-medium', className)}
-  {...restProps}
+    bind:this={ref}
+    data-slot="timeline-title"
+    class={cn("text-sm font-medium", className)}
+    {...restProps}
 >
-  {@render children?.()}
+    {@render children?.()}
 </h3>

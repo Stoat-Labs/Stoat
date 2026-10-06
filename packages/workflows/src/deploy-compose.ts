@@ -28,6 +28,8 @@ export async function deployCompose(
     credentials: string[] = [],
     onProgress: (percent: number) => Promise<void> = async () => {},
     recreate = false,
+    // Platform-owned stacks pass their real secrets as `credentials`; their other environment values are public names.
+    maskEnvironment = true,
 ) {
     const values = new Set<string>();
 
@@ -58,7 +60,7 @@ export async function deployCompose(
     for (const value of credentials) add(value);
     const config: unknown = parse(compose, { merge: true, maxAliasCount: 100 });
 
-    if (Predicate.isObject(config) && Predicate.isObject(config.services)) {
+    if (maskEnvironment && Predicate.isObject(config) && Predicate.isObject(config.services)) {
         for (const service of Object.values(config.services)) {
             if (!Predicate.isObject(service)) continue;
 

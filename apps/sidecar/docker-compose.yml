@@ -14,17 +14,14 @@ services:
             # exposing a privileged API.
             SIDECAR_TOKEN: ${SIDECAR_TOKEN:?set SIDECAR_TOKEN to a random secret, e.g. openssl rand -hex 32}
         volumes:
-            # Bind-mount host's Uncloud socket directory so both
-            # /run/uncloud/api/uncloud.sock and the legacy
-            # /run/uncloud/uncloud.sock are visible.
-            - /run/uncloud:/run/uncloud:ro
+            - /run/uncloud/api/uncloud.sock:/run/uncloud/api/uncloud.sock
             # Required for host namespace access from the sidecar.
             - /:/host
         restart: unless-stopped
         privileged: true
         # Required: host command execution enters the namespaces of PID 1, and the
         # sidecar refuses to exec on a machine whose container is not in the host
-        # PID namespace. If uncloud merges
+        # PID namespace. Due to uncloud limitations theres nothing we can do, this is essentially like giving it ssh access like any other selfhosted PaaS does
         pid: host
         deploy:
             mode: global

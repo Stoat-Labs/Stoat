@@ -397,9 +397,9 @@ const prefixMergedAnchors = (
 /**
  * Rewrite a single environment value so inter-service references keep working
  * after prefixing. Only exact matches are rewritten: a value that is exactly
- * a service name (`DB_HOST=db`), or a URL whose authority host is exactly a
- * service name (`DATABASE_URL=postgres://user:pass@db:5432/app`). Substrings,
- * external hosts, ports, paths, and credentials are left byte-identical.
+ * a service name (or `<service>.internal`), or a URL whose authority host is
+ * one of those values. Substrings, external hosts, ports, paths, and
+ * credentials are left byte-identical.
  * Exported so future deploy-time env merging (DB-backed vars, .env files)
  * can apply the same rename.
  */
@@ -410,6 +410,10 @@ export const rewriteComposeHostname = (
 ): string => {
     if (serviceNames.has(value)) {
         return rename(value);
+    }
+
+    if (value.endsWith(".internal") && serviceNames.has(value.slice(0, -".internal".length))) {
+        return `${rename(value.slice(0, -".internal".length))}.internal`;
     }
 
     const schemeIndex = value.indexOf("://");
@@ -441,13 +445,16 @@ export const rewriteComposeHostname = (
         host = host.slice(0, host.indexOf(":"));
     }
 
-    if (!serviceNames.has(host)) {
+    const internalSuffix = host.endsWith(".internal") ? ".internal" : "";
+    const serviceHost = internalSuffix ? host.slice(0, -internalSuffix.length) : host;
+
+    if (!serviceNames.has(serviceHost)) {
         return value;
     }
 
     const hostStart = authorityStart + atIndex + 1 + hostWithPort.indexOf(host);
 
-    return `${value.slice(0, hostStart)}${rename(host)}${value.slice(hostStart + host.length)}`;
+    return `${value.slice(0, hostStart)}${rename(serviceHost)}${internalSuffix}${value.slice(hostStart + host.length)}`;
 };
 
 const rewriteServiceEnvironment = (

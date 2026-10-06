@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { Menu as MenuPrimitive } from '@shardsui/svelte/menu';
-  import type { ComponentProps, Snippet } from 'svelte';
+    import { Menu as MenuPrimitive } from "@shardsui/svelte/menu";
+    import type { ComponentProps, Snippet } from "svelte";
 
-  type Props = Omit<ComponentProps<typeof MenuPrimitive.Group>, 'children'> & {
-    children?: Snippet;
-  };
+    type Props = Omit<
+        ComponentProps<typeof MenuPrimitive.Group>,
+        "children"
+    > & {
+        children?: Snippet;
+    };
 
-  let { children, ...restProps }: Props = $props();
+    let { children, ...restProps }: Props = $props();
 </script>
 
 <MenuPrimitive.Group data-slot="menu-group" {...restProps}>
-  {@render children?.()}
+    {@render children?.()}
 </MenuPrimitive.Group>

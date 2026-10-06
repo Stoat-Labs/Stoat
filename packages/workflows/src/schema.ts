@@ -11,7 +11,11 @@ import {
 // The name column is typed to this union so a typo in queries is a compile error.
 // NOTE: Explicit `any` annotations keep `tsc -b` declaration emit portable
 // (TS2883) while the SQL layout stays owned by the factories below.
-export type MonitoringJobNames = "InitializeCluster" | "DeployResource";
+export type MonitoringJobNames =
+    | "InitializeCluster"
+    | "DeployResource"
+    | "ReconcileBucket"
+    | "HealthCheck";
 
 export const jobs: any = mqJobs<MonitoringJobNames>();
 

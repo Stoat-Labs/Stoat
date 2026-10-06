@@ -177,17 +177,17 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             .toBe(0);
     });
 
-    it("replays beyond 2000 in ascending cursor batches, hides snapshots, and drains terminal logs", async () => {
+    it("replays beyond 2000 in ascending cursor batches, carries the spec, and drains terminal logs", async () => {
         const deployment = await createDeployment(db, {
             clusterId,
             resourceId,
             name: "Replay",
             jobId: randomUUID(),
+            spec: "COMPOSE_SECRET",
         });
 
         await db.insert(resourceDeploymentInputs).values({
             deploymentId: deployment.id,
-            spec: "COMPOSE_SECRET",
             prefix: "private-prefix",
         });
         await writer.$client.query(
@@ -208,8 +208,10 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             true,
         );
         expect(events.every((event) => event.deployment.status === "ready")).toBe(true);
-        expect(JSON.stringify(events)).not.toContain("COMPOSE_SECRET");
-        expect(await getDeploymentWithLogs(db, deployment.id)).not.toHaveProperty("spec");
+        expect(events[0]?.deployment).toMatchObject({ spec: "COMPOSE_SECRET" });
+        expect(await getDeploymentWithLogs(db, deployment.id)).toMatchObject({
+            spec: "COMPOSE_SECRET",
+        });
 
         const resumed = [];
 

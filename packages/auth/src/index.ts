@@ -2,6 +2,8 @@ import { apiKey } from "@better-auth/api-key";
 import type { Database } from "@stoat/db";
 import * as schema from "@stoat/db/schema/auth";
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { getSignupsEnabled } from "@stoat/db/settings";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
@@ -38,6 +40,13 @@ export function createAuth(env: AuthConfig, database: Database) {
             },
         },
         trustedOrigins: [env.APP_URL],
+        hooks: {
+            before: createAuthMiddleware(async (ctx) => {
+                if (ctx.path === "/sign-up/email" && !(await getSignupsEnabled(database))) {
+                    throw new APIError("FORBIDDEN", { message: "User signups are disabled." });
+                }
+            }),
+        },
         emailAndPassword: { enabled: true },
         secret: env.APP_SECRET,
         baseURL: env.APP_URL,

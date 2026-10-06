@@ -8,10 +8,13 @@ services:
         environment:
             APP_URL: http://localhost:3001
             DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/stoat
+            REDIS_URL: redis://dragonfly:6379
             SIDECAR_TOKEN: ${SIDECAR_TOKEN:-sidecar}
         depends_on:
             postgres:
                 condition: service_healthy
+            dragonfly:
+                condition: service_started
         healthcheck:
             test:
                 [
@@ -41,6 +44,15 @@ services:
             timeout: 5s
             retries: 5
         restart: unless-stopped
+
+    # optional but heavily recommended, if a redis compatible database isnt provided it will use RAM
+    stoat-cache:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+        container_name: stoat-cache
+        volumes:
+            - stoat_cache_data:/data
+        restart: unless-stopped
+
     sidecar:
         image: ghcr.io/irazvan2745/sidecar:latest
         # Uncloud does not propagate Compose group_add. The sidecar needs
@@ -70,3 +82,4 @@ services:
 
 volumes:
     stoat_db_data:
+    stoat_dragonfly_data:

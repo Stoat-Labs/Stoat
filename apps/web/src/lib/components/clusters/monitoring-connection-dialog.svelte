@@ -1,5 +1,8 @@
 <script lang="ts">
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Dialog,
@@ -32,7 +35,11 @@
         }),
     );
 
-    const configured = $derived(connectionQuery.data?.configured === true ? connectionQuery.data : null);
+    const configured = $derived(
+        connectionQuery.data?.configured === true
+            ? connectionQuery.data
+            : null,
+    );
 </script>
 
 <Dialog bind:open>
@@ -40,55 +47,84 @@
         <DialogHeader>
             <DialogTitle>
                 <span class="flex items-center gap-2">
-                    <Database class="size-4 text-muted-foreground" aria-hidden="true" />
+                    <Database
+                        class="size-4 text-muted-foreground"
+                        aria-hidden="true"
+                    />
                     Monitoring connection
                 </span>
             </DialogTitle>
             <DialogDescription>
-                GreptimeDB credentials and endpoints for dashboards like Grafana.
+                GreptimeDB credentials and endpoints for dashboards
+                like Grafana.
             </DialogDescription>
         </DialogHeader>
 
         <DialogPanel>
             {#if connectionQuery.isPending}
-                <Skeleton loading count={3} count-gap={16} loading-label="Loading connection details">
-                    <ConnectionField label="Connection endpoint" value="https://monitoring.example.com" />
+                <Skeleton
+                    loading
+                    count={3}
+                    count-gap={16}
+                    loading-label="Loading connection details"
+                >
+                    <ConnectionField
+                        label="Connection endpoint"
+                        value="https://monitoring.example.com"
+                    />
                 </Skeleton>
             {:else if connectionQuery.isError}
                 <Alert variant="error">
                     <Info aria-hidden="true" />
                     <AlertDescription>
-                        {(connectionQuery.error as Error).message || "Could not load connection details."}
+                        {(connectionQuery.error as Error).message ||
+                            "Could not load connection details."}
                     </AlertDescription>
                 </Alert>
             {:else if !configured}
                 <Alert variant="info">
                     <Info aria-hidden="true" />
                     <AlertDescription>
-                        Monitoring isn't initialized for this cluster yet, so there are no credentials to show.
+                        Monitoring isn't initialized for this cluster
+                        yet, so there are no credentials to show.
                     </AlertDescription>
                 </Alert>
             {:else if configured}
                 <div class="space-y-4">
-                    <ConnectionField label="HTTP endpoint (dashboard + SQL)" value={configured.httpUrl} />
+                    <ConnectionField
+                        label="HTTP endpoint (dashboard + SQL)"
+                        value={configured.httpUrl}
+                    />
                     <ConnectionField
                         label="Ingest endpoint (Prometheus / Loki)"
                         value={configured.ingestUrl}
                     />
                     <div class="grid gap-4 sm:grid-cols-2">
-                        <ConnectionField label="Database" value={configured.database} />
-                        <ConnectionField label="Username" value={configured.username} />
+                        <ConnectionField
+                            label="Database"
+                            value={configured.database}
+                        />
+                        <ConnectionField
+                            label="Username"
+                            value={configured.username}
+                        />
                     </div>
                     {#if configured.canReveal}
                         {#if configured.password}
-                            <ConnectionField label="Password" value={configured.password} secret />
+                            <ConnectionField
+                                label="Password"
+                                value={configured.password}
+                                secret
+                            />
                         {:else}
                             <Alert variant="warning">
                                 <Info aria-hidden="true" />
                                 <AlertDescription>
-                                    The stored credential couldn't be decrypted — the app secret
-                                    likely rotated since issuance. Re-run initialization to issue
-                                    a fresh password.
+                                    The stored credential couldn't be
+                                    decrypted — the app secret likely
+                                    rotated since issuance. Re-run
+                                    initialization to issue a fresh
+                                    password.
                                 </AlertDescription>
                             </Alert>
                         {/if}
@@ -96,21 +132,26 @@
                         <Alert variant="info">
                             <Info aria-hidden="true" />
                             <AlertDescription>
-                                Only organization owners and admins can reveal the password.
+                                Only organization owners and admins
+                                can reveal the password.
                             </AlertDescription>
                         </Alert>
                     {/if}
                     <p class="text-xs text-muted-foreground">
-                        These endpoints use Uncloud internal DNS and are reachable from inside
-                        the cluster network. If your dashboard runs elsewhere, use a published
-                        port or machine address with the same ports.
+                        These endpoints use Uncloud internal DNS and
+                        are reachable from inside the cluster network.
+                        If your dashboard runs elsewhere, use a
+                        published port or machine address with the
+                        same ports.
                     </p>
                 </div>
             {/if}
         </DialogPanel>
 
         <DialogFooter>
-            <Button variant="outline" onclick={() => (open = false)}>Close</Button>
+            <Button variant="outline" onclick={() => (open = false)}>
+                Close
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>

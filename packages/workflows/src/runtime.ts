@@ -4,12 +4,16 @@ import {
     getDeploymentByJobId,
     setDeploymentStatus,
 } from "@stoat/db/deployments";
+import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
 import { setInitializationStatus } from "@stoat/db/initialization";
-import { JobStore, Worker } from "effect-mq";
+import { s3FailureMessage } from "@stoat/s3";
+import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
 import { createInitializeClusterHandler } from "./initialize-cluster";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
-import { DeployResource, InitializeCluster } from "./jobs";
+import { runHealthCheck } from "./health-check";
+import { DeployResource, HealthCheck, InitializeCluster, ReconcileBucket } from "./jobs";
+import { reconcileBucket } from "./reconcile-bucket";
 import { JobStoreLive, PgLive } from "./store";
 
 function requireEnv(name: string) {
@@ -29,7 +33,7 @@ function encryptionSecret() {
 }
 
 const TERMINAL_FAILURE_MESSAGE =
-    "Cluster monitoring initialization failed. Check the selected machine, storage paths, and sidecar connectivity, then retry.";
+    "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.";
 
 // Plain async attempt: manages its own Pool lifecycle with try/finally.
 // The AbortSignal comes from Effect.callback and aborts on interruption,
@@ -67,9 +71,9 @@ async function runAttemptAsync(clusterId: string, requestId: string, signal: Abo
                         ? error.message
                         : "Cluster monitoring initialization failed.";
 
-                await appendDeploymentLog(db, deployment.id, `Step failed: ${message}`).catch(
-                    () => {},
-                );
+                await appendDeploymentLog(db, deployment.id, `Step failed: ${message}`, {
+                    level: "error",
+                }).catch(() => {});
             }
 
             throw error;
@@ -133,6 +137,100 @@ export const DeployResourceLive = DeployResource.toLayer(
     { concurrency: 4 },
 );
 
+export const ReconcileBucketLive = ReconcileBucket.toLayer(
+    ({ resourceId, requestId }) =>
+        Effect.callback<void>((resume, signal) => {
+            const attempt = (async () => {
+                const db = createHandlerDb();
+
+                try {
+                    await reconcileBucket(db, resourceId, requestId, signal);
+                } finally {
+                    await db.$client.end();
+                }
+            })().then(
+                () => resume(Effect.void),
+                (error) =>
+                    resume(
+                        Effect.die(
+                            new Error(
+                                s3FailureMessage(
+                                    error instanceof Error
+                                        ? error
+                                        : new Error("Bucket job failed."),
+                                ),
+                            ),
+                        ),
+                    ),
+            );
+
+            return Effect.promise(() => attempt);
+        }),
+    { concurrency: 2 },
+);
+
+export const HealthCheckLive = HealthCheck.toLayer(
+    () =>
+        Effect.callback<void>((resume, signal) => {
+            const attempt = (async () => {
+                const db = createHandlerDb();
+
+                try {
+                    await runHealthCheck(db, signal);
+                } finally {
+                    await db.$client.end();
+                }
+            })().then(
+                () => resume(Effect.void),
+                (error) =>
+                    resume(
+                        Effect.die(
+                            error instanceof Error ? error : new Error("Health check failed."),
+                        ),
+                    ),
+            );
+
+            return Effect.promise(() => attempt);
+        }),
+    { concurrency: 1 },
+);
+
+// Top of every hour, UTC.
+const HEALTH_CHECK_CRON = "0 * * * *";
+
+// Upserted on startup. Each tick is claimed atomically, so it runs once across web replicas.
+export const SchedulesLive = JobSchedules.layer({
+    group: "stoat",
+    schedules: [
+        JobSchedules.schedule(HealthCheck, "hourly", { cron: HEALTH_CHECK_CRON, payload: {} }),
+    ],
+    // Schedules dropped from this list are removed after the grace window.
+    removal: "group",
+    removeAfter: "10 minutes",
+});
+
+async function recordBucketFailureAsync(failure: Worker.JobFailure) {
+    if (failure.willRetry) return;
+
+    // effect-mq ids are `ReconcileBucket/<resourceId>:<requestId>`.
+    const key = failure.jobId.slice(failure.jobId.indexOf("/") + 1);
+    const separator = key.indexOf(":");
+    const cause = Cause.squash(failure.cause);
+    const db = createHandlerDb();
+
+    try {
+        // The handler only dies with messages built by s3FailureMessage; timeouts carry their own.
+        await markBucketFailed(
+            db,
+            key.slice(0, separator),
+            new Date(key.slice(separator + 1)),
+            cause instanceof Error ? cause.message : "Bucket job failed.",
+        );
+    } finally {
+        await db.$client.end().catch(() => {});
+    }
+}
+
 async function recordFailureAsync(failure: Worker.JobFailure) {
     // effect-mq namespaces deterministic ids as `<JobName>/<idempotencyKey>`,
     // so strip the prefix before matching our `${clusterId}:${requestId}` shape.
@@ -147,6 +245,22 @@ async function recordFailureAsync(failure: Worker.JobFailure) {
 
         // A user-cancelled deployment already carries its final state.
         if (deployment?.status === "cancelled") return;
+
+        if (failure.name === "InitializeCluster" && failure.willRetry) {
+            if (!deployment || !["queued", "running"].includes(deployment.status)) return;
+
+            await appendDeploymentLog(
+                db,
+                deployment.id,
+                `Attempt ${failure.attempt} of ${failure.attemptsMax} failed; retrying.`,
+                { level: "error", event: "retry" },
+            );
+            await setDeploymentStatus(db, deployment.id, "queued", TERMINAL_FAILURE_MESSAGE).catch(
+                () => {},
+            );
+
+            return;
+        }
 
         if (failure.name === "DeployResource") {
             if (!deployment || !["queued", "running"].includes(deployment.status)) return;
@@ -204,6 +318,8 @@ export const WorkerLive = Worker.layer({
     queues: {
         initialize: { concurrency: 1 },
         deploy: { concurrency: 4 },
+        buckets: { concurrency: 2 },
+        health: { concurrency: 1 },
     },
     lockDuration: "10 minutes",
     // effect-mq also delivers cross-process cancellation on this heartbeat.
@@ -211,20 +327,23 @@ export const WorkerLive = Worker.layer({
     stalledInterval: "1 minute",
     maxStalledCount: 2,
     onJobFailure: (failure) => {
-        if (
-            failure.name !== "DeployResource" &&
-            (failure.name !== "InitializeCluster" || failure.willRetry)
-        )
+        if (failure.name === "ReconcileBucket")
+            return Effect.promise(() => recordBucketFailureAsync(failure)).pipe(Effect.ignore);
+
+        if (failure.name !== "DeployResource" && failure.name !== "InitializeCluster")
             return Effect.void;
 
         return Effect.promise(() => recordFailureAsync(failure)).pipe(Effect.ignore);
     },
 });
 
-export const MonitoringWorkerLive = Layer.merge(InitializeClusterLive, DeployResourceLive).pipe(
-    Layer.provideMerge(WorkerLive),
-    Layer.provideMerge(JobStoreLive),
-);
+export const MonitoringWorkerLive = Layer.mergeAll(
+    InitializeClusterLive,
+    DeployResourceLive,
+    ReconcileBucketLive,
+    HealthCheckLive,
+    SchedulesLive,
+).pipe(Layer.provideMerge(WorkerLive), Layer.provideMerge(JobStoreLive));
 
 // Enqueue (or re-enqueue) initialization for a cluster. Idempotent per
 // (clusterId, requestId) via the job's idempotencyKey.
@@ -235,6 +354,15 @@ export function enqueueInitialization(clusterId: string, requestId: string) {
 export async function queueResourceDeployment(deploymentId: string): Promise<void> {
     await Effect.runPromise(
         DeployResource.enqueue({ deploymentId }).pipe(Effect.provide(JobStoreLive)),
+    );
+}
+
+// The bucket row is the durable outbox if enqueue is temporarily unavailable.
+export async function queueBucketReconcile(resourceId: string, requestedAt: Date): Promise<void> {
+    await Effect.runPromise(
+        ReconcileBucket.enqueue({ resourceId, requestId: requestedAt.toISOString() }).pipe(
+            Effect.provide(JobStoreLive),
+        ),
     );
 }
 
@@ -274,22 +402,30 @@ async function pollOutboxAsync() {
             `SELECT id AS "deploymentId" FROM deployments WHERE name = 'DeployResource' AND status = 'queued'`,
         );
 
-        return { initialization: initialization.rows, resources: resources.rows };
+        const buckets = await pendingBucketRequests(db);
+
+        return { initialization: initialization.rows, resources: resources.rows, buckets };
     } finally {
         await db.$client.end().catch(() => {});
     }
 }
 
-// Sweep durable request rows, never deployment logs. Both job types are idempotent.
+// Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox() {
     return Effect.promise(() => pollOutboxAsync()).pipe(
-        Effect.flatMap(({ initialization, resources }) =>
+        Effect.flatMap(({ initialization, resources, buckets }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
                         enqueueInitialization(row.clusterId, row.requestedAt.toISOString()),
                     ),
                     ...resources.map((row) => DeployResource.enqueue(row)),
+                    ...buckets.map((row) =>
+                        ReconcileBucket.enqueue({
+                            resourceId: row.resourceId,
+                            requestId: row.requestedAt.toISOString(),
+                        }),
+                    ),
                 ],
                 (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
             ),
@@ -300,6 +436,6 @@ export function pollInitializationOutbox() {
 
 export { JobStoreLive, PgLive };
 
-export { DeployResource, InitializeCluster };
+export { DeployResource, HealthCheck, InitializeCluster, ReconcileBucket };
 
 export type { Database };

@@ -111,7 +111,7 @@ Status: Confirmed.
 
 Evidence: `packages/auth/src/index.ts:39` enables `organization()` with default deletion behavior. Better Auth 1.7.3 exposes deletion unless `disableOrganizationDeletion` is set (`packages/auth/node_modules/better-auth/dist/plugins/organization/routes/crud-org.mjs:237-290`). Organization deletion cascades clusters, while effect-mq jobs have no organization/cluster foreign key.
 
-Impact: An owner can delete an organization while initialization is active. The worker can continue with already loaded credentials, mutate remote services, then silently update zero deleted rows, leaving orphan infrastructure.
+Impact: An owner can delete an organization while initialization is active. The worker can continue with already loaded credentials, mutate remote services, then silently update zero deleted rows, leaving orphan infrastructure. The cascade also drops `s3_buckets` rows without revoking their provider keys (RustFS service accounts, R2 tokens) or deleting empty buckets; cluster and connection deletion are blocked while buckets exist, but organization deletion is not.
 
 Potential fix: Set `disableOrganizationDeletion: true` until coordinated deletion exists, or add a `beforeDeleteOrganization` flow that moves clusters to deleting, cancels and awaits all jobs, cleans remote resources, and only then deletes the organization.
 
@@ -469,7 +469,7 @@ Regression test: Attempt sidebar navigation, browser Back, reload, and tab close
 
 Status: Confirmed state flaw; requires a delayed request to reproduce.
 
-Evidence: Create dialogs call mutation `.reset()` when opened (`create-cluster-dialog.svelte:27-40`, `create-project-dialog.svelte:38-75`, `create-resource-dialog.svelte:27-38`). Reset does not abort the original network request. The shared X/backdrop/Escape remain available through `ui/dialog/dialog-content.svelte:31-57`.
+Evidence: Create dialogs call mutation `.reset()` when opened (`create-cluster-dialog.svelte:27-40`, `create-project-dialog.svelte:38-75`). Resource creation moved to the `/projects/[projectId]/create/[source]` page, which only navigates on success if the user is still on the submitting path; it still lacks server-side idempotency. Reset does not abort the original network request. The shared X/backdrop/Escape remain available through `ui/dialog/dialog-content.svelte:31-57`.
 
 Potential fix: Prevent all dismissal while pending, or actually abort before reset. Add server-side idempotency for create operations.
 

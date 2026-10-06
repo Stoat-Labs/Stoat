@@ -338,6 +338,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     deploymentProgress: null,
                     deploymentCreatedAt: null,
                     deploymentFinishedAt: null,
+                    bucketStatus: null,
                 }),
             ),
         );
@@ -868,6 +869,27 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         },
     );
 
+    it("gets containers from the saved draft when the resource has never been deployed", async () => {
+        const row = await resource({
+            spec: null,
+            draftSpec: spec,
+            settings: { prefixNames: false },
+        });
+        const containers = [{ id: "draft-web-1" }];
+        fetch.mockResolvedValue(Response.json({ containers }));
+
+        await expect(
+            client.getContainers({ clusterId, projectId, resourceId: row.id }),
+        ).resolves.toEqual(containers);
+        expect(String(fetch.mock.calls[0]?.[0])).toContain("/api/v1/services/web");
+        expect(
+            await db
+                .select({ id: deployments.id })
+                .from(deployments)
+                .where(eq(deployments.resourceId, row.id)),
+        ).toEqual([]);
+    });
+
     it.each(["captured-prefix", ""])(
         "uses deployed source and latest ready snapshot prefix %j despite draft/settings edits",
         async (prefix) => {
@@ -947,13 +969,13 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     clusterId,
                     resourceId: entry.resourceId,
                     name: entry.name,
+                    spec: entry.status === "ready" ? spec : draftSpec,
                     status: entry.status,
                     createdAt: new Date(entry.created),
                     finishedAt: entry.finished ? new Date(entry.finished) : null,
                 });
                 await db.insert(resourceDeploymentInputs).values({
                     deploymentId: id,
-                    spec: entry.status === "ready" ? spec : draftSpec,
                     prefix: entry.prefix,
                 });
             }
@@ -1028,11 +1050,11 @@ describe("core project and resource isolation (PostgreSQL)", () => {
     });
 
     it.each([
-        { spec: null, code: "NOT_FOUND" },
-        { spec: "", code: "NOT_FOUND" },
-        { spec: "services: [broken", code: "BAD_REQUEST" },
-    ])("rejects unusable Compose before external IO: %j", async ({ spec, code }) => {
-        const row = await resource({ spec });
+        { spec: null, draftSpec: null, code: "NOT_FOUND" },
+        { spec: "", draftSpec: "", code: "NOT_FOUND" },
+        { spec: "services: [broken", draftSpec: draftSpec, code: "BAD_REQUEST" },
+    ])("rejects unusable Compose before external IO: %j", async ({ spec, draftSpec, code }) => {
+        const row = await resource({ spec, draftSpec });
         await expect(
             client.getContainers({ clusterId, projectId, resourceId: row.id }),
         ).rejects.toMatchObject({ code });

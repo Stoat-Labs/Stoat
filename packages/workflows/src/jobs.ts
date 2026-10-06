@@ -55,3 +55,54 @@ export const DeployResource: Job.Job<
         },
     },
 });
+
+const bucketPayload = Schema.Struct({
+    resourceId: Schema.String,
+    // The bucket row's requested_at ISO string; each retry or deletion is a new job.
+    requestId: Schema.String,
+});
+
+// Provisions or deletes a bucket resource, depending on the bucket row's status.
+export const ReconcileBucket: Job.Job<
+    "ReconcileBucket",
+    typeof bucketPayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("ReconcileBucket", {
+    payload: bucketPayload,
+    success: Schema.Void,
+    idempotencyKey: ({ resourceId, requestId }) => `${resourceId}:${requestId}`,
+    queue: "buckets",
+    defaults: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: "10 seconds" },
+        timeout: "2 minutes",
+        keep: {
+            completed: { age: "1 day" },
+            failed: { age: "30 days" },
+        },
+    },
+});
+
+const healthCheckPayload = Schema.Struct({});
+
+// Periodic checks (bucket usage, cluster and S3 connection health). Runs from a schedule, never enqueued directly.
+export const HealthCheck: Job.Job<
+    "HealthCheck",
+    typeof healthCheckPayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("HealthCheck", {
+    payload: healthCheckPayload,
+    success: Schema.Void,
+    queue: "health",
+    defaults: {
+        // The next tick is the retry.
+        attempts: 1,
+        timeout: "10 minutes",
+        keep: {
+            completed: { age: "1 day" },
+            failed: { age: "7 days" },
+        },
+    },
+});

@@ -1,5 +1,8 @@
 <script lang="ts">
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Dialog,
@@ -10,7 +13,11 @@
         DialogPanel,
         DialogTitle,
     } from "$lib/components/ui/dialog";
-    import { Field, FieldDescription, FieldError } from "$lib/components/ui/field";
+    import {
+        Field,
+        FieldDescription,
+        FieldError,
+    } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import {
@@ -22,7 +29,10 @@
     } from "$lib/components/ui/select";
     import { Textarea } from "$lib/components/ui/textarea";
     import { orpc, queryClient } from "$lib/orpc";
-    import { createMutation, createQuery } from "@tanstack/svelte-query";
+    import {
+        createMutation,
+        createQuery,
+    } from "@tanstack/svelte-query";
     import { watch } from "runed";
 
     let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -33,11 +43,15 @@
 
     let clusterId = $state("");
 
-    const clustersQuery = createQuery(() => orpc.cluster.listClusters.queryOptions());
+    const clustersQuery = createQuery(() =>
+        orpc.cluster.listClusters.queryOptions(),
+    );
 
     const clusters = $derived(clustersQuery.data?.items ?? []);
 
-    const selectItems = $derived(clusters.map((c) => ({ label: c.name, value: c.id })));
+    const selectItems = $derived(
+        clusters.map((c) => ({ label: c.name, value: c.id })),
+    );
 
     watch(
         () => open,
@@ -58,20 +72,31 @@
             () => clusters,
             () => clusterId,
         ],
-        ([isOpen, isPending, isError, currentClusters, currentClusterId]) => {
-        if (!isOpen) return;
+        ([
+            isOpen,
+            isPending,
+            isError,
+            currentClusters,
+            currentClusterId,
+        ]) => {
+            if (!isOpen) return;
 
-        if (isPending || isError) return;
+            if (isPending || isError) return;
 
-        if (currentClusters.length === 0) {
-            if (clusterId !== "") clusterId = "";
+            if (currentClusters.length === 0) {
+                if (clusterId !== "") clusterId = "";
 
-            return;
-        }
+                return;
+            }
 
-        if (!currentClusterId || !currentClusters.some((c) => c.id === currentClusterId)) {
-            clusterId = currentClusters[0].id;
-        }
+            if (
+                !currentClusterId ||
+                !currentClusters.some(
+                    (c) => c.id === currentClusterId,
+                )
+            ) {
+                clusterId = currentClusters[0].id;
+            }
         },
     );
 
@@ -95,12 +120,15 @@
 
     const errorMessage = $derived(
         createMutationState.error
-            ? createMutationState.error.message || "Unable to create project."
+            ? createMutationState.error.message ||
+                  "Unable to create project."
             : "",
     );
 
     const canSubmit = $derived(
-        Boolean(name.trim()) && Boolean(clusterId) && !createMutationState.isPending,
+        Boolean(name.trim()) &&
+            Boolean(clusterId) &&
+            !createMutationState.isPending,
     );
 
     function createProject(event: SubmitEvent) {
@@ -119,12 +147,16 @@
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
-            <DialogDescription>Projects group your environments and resources.</DialogDescription>
+            <DialogDescription>
+                Projects group your environments and resources.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             {#if errorMessage}
                 <Alert variant="error" class="mb-4">
-                    <AlertDescription>{errorMessage}</AlertDescription>
+                    <AlertDescription>
+                        {errorMessage}
+                    </AlertDescription>
                 </Alert>
             {/if}
             <form
@@ -146,7 +178,9 @@
                     />
                 </Field>
                 <Field>
-                    <Label for="project-description">Description</Label>
+                    <Label for="project-description">
+                        Description
+                    </Label>
                     <Textarea
                         id="project-description"
                         bind:value={description}
@@ -167,12 +201,23 @@
                         />
                     {:else if clustersQuery.isError}
                         <FieldError>
-                            Unable to load clusters: {clustersQuery.error.message}
+                            Unable to load clusters: {clustersQuery
+                                .error.message}
                         </FieldError>
                     {:else if clusters.length === 0}
-                        <Select bind:value={clusterId} items={[]} disabled required>
-                            <SelectTrigger id="project-cluster" aria-label="No clusters available">
-                                <SelectValue placeholder="No clusters yet" />
+                        <Select
+                            bind:value={clusterId}
+                            items={[]}
+                            disabled
+                            required
+                        >
+                            <SelectTrigger
+                                id="project-cluster"
+                                aria-label="No clusters available"
+                            >
+                                <SelectValue
+                                    placeholder="No clusters yet"
+                                />
                             </SelectTrigger>
                         </Select>
                         <FieldDescription>
@@ -192,18 +237,28 @@
                             disabled={createMutationState.isPending}
                             required
                         >
-                            <SelectTrigger id="project-cluster" aria-label="Select a cluster">
-                                <SelectValue placeholder="Select a cluster" />
+                            <SelectTrigger
+                                id="project-cluster"
+                                aria-label="Select a cluster"
+                            >
+                                <SelectValue
+                                    placeholder="Select a cluster"
+                                />
                             </SelectTrigger>
                             <SelectContent>
                                 {#each clusters as cluster (cluster.id)}
-                                    <SelectItem value={cluster.id} label={cluster.name}>
+                                    <SelectItem
+                                        value={cluster.id}
+                                        label={cluster.name}
+                                    >
                                         {cluster.name}
                                     </SelectItem>
                                 {/each}
                             </SelectContent>
                         </Select>
-                        <FieldDescription>Where this project's resources will run.</FieldDescription>
+                        <FieldDescription>
+                            Where this project's resources will run.
+                        </FieldDescription>
                     {/if}
                 </Field>
             </form>

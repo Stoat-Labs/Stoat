@@ -71,7 +71,15 @@ func newDeployRedactor(project *types.Project) func(string) string {
 	// Ambient process values (e.g. PWD=/ or SHLVL=1) must not corrupt diagnostics.
 	add(project.Environment["SIDECAR_TOKEN"])
 	for _, service := range project.Services {
-		for _, value := range service.Environment {
+		for key, value := range service.Environment {
+			// These monitoring identifiers are intentionally public: Uncloud embeds
+			// them in resource names and progress IDs. Masking them makes otherwise
+			// useful deployment logs show up as "[REDACTED]" without protecting a
+			// credential.
+			switch key {
+			case "CUSTOMER_ID", "STOAT_MONITORING_CLUSTER_ID", "GREPTIME_USERNAME", "GREPTIME_DB", "GREPTIME_URL", "MONITORING_MACHINE":
+				continue
+			}
 			if value != nil {
 				add(*value)
 			}

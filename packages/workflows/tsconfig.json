@@ -8,5 +8,5 @@
     },
     "include": ["src/**/*.ts"],
     "exclude": ["src/**/*.test.ts"],
-    "references": [{ "path": "../db" }, { "path": "../uncloud" }]
+    "references": [{ "path": "../db" }, { "path": "../s3" }, { "path": "../uncloud" }]
 }

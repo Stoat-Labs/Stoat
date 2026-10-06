@@ -1,0 +1,78 @@
+{
+    "tab_size": 4,
+    "hard_tabs": false,
+    "languages": {
+        "JavaScript": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "TypeScript": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "JSX": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "TSX": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "JSON": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "JSONC": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "CSS": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        },
+        "Svelte": {
+            "format_on_save": "on",
+            "formatter": {
+                "external": {
+                    "command": "pnpm",
+                    "arguments": ["exec", "vp", "fmt", "--stdin-filepath={buffer_path}"]
+                }
+            }
+        }
+    }
+}

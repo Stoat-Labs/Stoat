@@ -35,7 +35,7 @@ export function startWorker(
 
     globalThis.__stoatWorker = running;
     process.on("sveltekit:shutdown", running.stop);
-    console.log("[worker] starting deployment worker (queues: initialize, deploy)");
+    console.log("[worker] starting deployment worker (queues: initialize, deploy, buckets)");
 
     // One interruptible parent owns both loops and waits for layer finalizers on shutdown.
     const done = Effect.runPromise(

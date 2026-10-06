@@ -1,9 +1,23 @@
 <script lang="ts">
     import { authClient } from "$lib/auth-client";
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogTitle } from "$lib/components/ui/dialog";
-    import { Field, FieldDescription } from "$lib/components/ui/field";
+    import {
+        Dialog,
+        DialogContent,
+        DialogDescription,
+        DialogFooter,
+        DialogHeader,
+        DialogPanel,
+        DialogTitle,
+    } from "$lib/components/ui/dialog";
+    import {
+        Field,
+        FieldDescription,
+    } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { watch } from "runed";
@@ -67,13 +81,20 @@
                 keepCurrentActiveOrganization: false,
             });
 
-            if (result.error) { error = result.error.message ?? "Unable to create organization.";
+            if (result.error) {
+                error =
+                    result.error.message ??
+                    "Unable to create organization.";
 
- return; }
+                return;
+            }
 
             window.location.assign("/");
-        } catch { error = "Unable to connect. Try again."; }
-        finally { pending = false; }
+        } catch {
+            error = "Unable to connect. Try again.";
+        } finally {
+            pending = false;
+        }
     }
 </script>
 
@@ -81,32 +102,89 @@
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Create Organization</DialogTitle>
-            <DialogDescription>Add a new organization to manage projects and team members.</DialogDescription>
+            <DialogDescription>
+                Add a new organization to manage projects and team
+                members.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             {#if error}
-                <Alert variant="error" class="mb-4"><AlertDescription>{error}</AlertDescription></Alert>
+                <Alert variant="error" class="mb-4">
+                    <AlertDescription>{error}</AlertDescription>
+                </Alert>
             {/if}
-            <form id="create-organization-form" onsubmit={createOrganization} class="space-y-4" aria-busy={pending}>
+            <form
+                id="create-organization-form"
+                onsubmit={createOrganization}
+                class="space-y-4"
+                aria-busy={pending}
+            >
                 <Field>
                     <Label for="org-name" required>Name</Label>
-                    <Input id="org-name" value={name} oninput={(event) => onNameInput(event.currentTarget.value)} placeholder="Acme Corp" required maxlength={100} pattern=".*\S.*" disabled={pending} />
+                    <Input
+                        id="org-name"
+                        value={name}
+                        oninput={(event) =>
+                            onNameInput(event.currentTarget.value)}
+                        placeholder="Acme Corp"
+                        required
+                        maxlength={100}
+                        pattern=".*\S.*"
+                        disabled={pending}
+                    />
                 </Field>
                 <Field>
                     <Label for="org-slug" required>Slug</Label>
-                    <Input id="org-slug" bind:value={slug} oninput={() => { slugTouched = true; }} placeholder="acme-corp" required minlength={2} maxlength={80} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby="org-slug-help" disabled={pending} />
-                    <FieldDescription id="org-slug-help">This will be used in your organization URL.</FieldDescription>
+                    <Input
+                        id="org-slug"
+                        bind:value={slug}
+                        oninput={() => {
+                            slugTouched = true;
+                        }}
+                        placeholder="acme-corp"
+                        required
+                        minlength={2}
+                        maxlength={80}
+                        pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                        aria-describedby="org-slug-help"
+                        disabled={pending}
+                    />
+                    <FieldDescription id="org-slug-help">
+                        This will be used in your organization URL.
+                    </FieldDescription>
                 </Field>
                 <Field>
                     <Label for="org-logo">Logo URL</Label>
-                    <Input id="org-logo" bind:value={logoUrl} type="url" placeholder="https://…" disabled={pending} />
-                    <FieldDescription>A direct link to your organization's logo.</FieldDescription>
+                    <Input
+                        id="org-logo"
+                        bind:value={logoUrl}
+                        type="url"
+                        placeholder="https://…"
+                        disabled={pending}
+                    />
+                    <FieldDescription>
+                        A direct link to your organization's logo.
+                    </FieldDescription>
                 </Field>
             </form>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" disabled={pending} onclick={() => { open = false; }}>Cancel</Button>
-            <Button type="submit" form="create-organization-form" loading={pending}>Create Organization</Button>
+            <Button
+                variant="outline"
+                disabled={pending}
+                onclick={() => {
+                    open = false;
+                }}
+            >
+                Cancel
+            </Button>
+            <Button
+                type="submit"
+                form="create-organization-form"
+                loading={pending}
+            >
+                Create Organization
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>

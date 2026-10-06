@@ -24,6 +24,9 @@ export type MetricSeries = {
     machineId: string;
     serviceId: string;
     container: string;
+    device?: string;
+    mountpoint?: string;
+    fstype?: string;
     points: MetricPoint[];
 };
 
@@ -34,6 +37,8 @@ export const metricNames = [
     "memoryTotal",
     "disk",
     "diskTotal",
+    "filesystemUsed",
+    "filesystemTotal",
     "networkIn",
     "networkOut",
     "diskRead",
@@ -61,9 +66,72 @@ export function metricWindow(
     return { start: end - Math.ceil(duration / step) * step, end, step, duration };
 }
 
-export const httpMetricNames = ["httpRequests", "httpErrors", "httpLatency"] as const;
+export const httpMetricNames = [
+    "httpRequests",
+    "httpErrors",
+    "httpLatency",
+    "httpLatencyP50",
+    "httpLatencyP99",
+] as const;
 
 export type HttpMetricName = (typeof httpMetricNames)[number];
+
+export const dnsMetricNames = ["dnsQueries", "dnsErrors", "dnsAvailability"] as const;
+
+export type DnsMetricName = (typeof dnsMetricNames)[number];
+
+export const registryMetricNames = [
+    "registryProxyHits",
+    "registryProxyMisses",
+    "registryProxyPulledBytes",
+    "registryProxyPushedBytes",
+    "registryProxyRequests",
+    "registryCacheErrors",
+    "registryCacheHits",
+    "registryCacheRequests",
+] as const;
+
+export type RegistryMetricName = (typeof registryMetricNames)[number];
+
+export type MachineMetricName = MetricName | DnsMetricName | RegistryMetricName;
+
+export function registryMetricQueries(
+    clusterId: string,
+    step: number,
+): Record<RegistryMetricName, string> {
+    const window = `${Math.max(60, step * 2)}s`;
+    const scope = `{customer_id=${JSON.stringify(clusterId)}}`;
+    const rate = (name: string) => `sum by (machine_id) (rate(${name}${scope}[${window}]))`;
+
+    return {
+        registryProxyHits: rate("registry_proxy_hits_total"),
+        registryProxyMisses: rate("registry_proxy_misses_total"),
+        registryProxyPulledBytes: rate("registry_proxy_pulled_bytes_total"),
+        registryProxyPushedBytes: rate("registry_proxy_pushed_bytes_total"),
+        registryProxyRequests: rate("registry_proxy_requests_total"),
+        registryCacheErrors: rate("registry_storage_cache_errors_total"),
+        registryCacheHits: rate("registry_storage_cache_hits_total"),
+        registryCacheRequests: rate("registry_storage_cache_requests_total"),
+    };
+}
+
+export function dnsMetricQueries(clusterId: string, step: number): Record<DnsMetricName, string> {
+    const scope = `customer_id=${JSON.stringify(clusterId)},job="prometheus.scrape.uncloud"`;
+    const window = Math.max(60, step * 2);
+
+    return {
+        dnsQueries: `sum by (machine_id) (rate(uncloud_dns_query_total{${scope}}[${window}s]))`,
+        dnsErrors: `(sum by (machine_id) (rate(uncloud_dns_query_total{${scope},status="err"}[${window}s]))) or (0 * sum by (machine_id) (rate(uncloud_dns_query_total{${scope}}[${window}s])))`,
+        // `up` is binary scrape health, not an availability percentage. Preserve any failure
+        // inside each chart interval instead of dropping it when a long range is downsampled.
+        dnsAvailability: `min by (machine_id) (min_over_time(up{${scope}}[${step}s]))`,
+    };
+}
+
+/** Counter increases are evaluated once at the range end, not integrated from chart samples. */
+export function counterTotalQuery(query: string, duration: number) {
+    return query.replaceAll("rate(", "increase(").replace(/\[\d+s\]/g, `[${duration}s]`);
+}
 
 /** Limits are null when the container is unlimited. */
 export type ObservabilityContainer = {
@@ -96,12 +164,20 @@ export type ClusterObservability = {
     step: number;
     machines: { id: string; name: string; state: string }[];
     services: ObservabilityService[];
-    metrics: Partial<Record<MetricName, MetricSeries[]>>;
+    metrics: Partial<Record<MachineMetricName, MetricSeries[]>>;
     unavailable: string[];
+    totals?: Partial<Record<MachineMetricName, MetricSeries[]>>;
 };
 
 /** Uncloud service IDs are hex; the pattern also keeps them safe inside a PromQL regex matcher. */
 export const serviceIdPattern = /^[\w-]+$/;
+
+/** Memory-backed and virtual mounts aren't disk capacity. Keep other filesystem types discoverable. */
+export const excludedFilesystemTypes =
+    "^(autofs|aufs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|ramfs|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tmpfs|tracefs)$";
+
+/** Boot partitions aren't application storage. Keep root and data mounts regardless of device name. */
+export const excludedFilesystemMounts = "^/boot($|/.*)";
 
 export function metricQueries(
     clusterId: string,
@@ -131,16 +207,32 @@ export function metricQueries(
     };
 
     // Exclude guest modes (already included in user/nice) and virtual host interfaces to avoid double counting.
-    const interfaces = ',device!~"lo|veth.*|docker.*|br-.*|virbr.*|uc.*|wg.*"';
+    // `uncloud` is the WireGuard mesh, whose traffic is already counted on the physical NIC.
+    const interfaces = ',device!~"lo|veth.*|docker.*|br-.*|virbr.*|uncloud|uc.*|wg.*"';
     const disks = ',device!~"loop.*|ram.*|dm-.*"';
+
+    const filesystem = (metric: string) =>
+        host(
+            metric,
+            `,fstype!~${JSON.stringify(excludedFilesystemTypes)},mountpoint!~${JSON.stringify(excludedFilesystemMounts)}`,
+        );
+
+    // A filesystem can have several bind mounts. Count its capacity once per device, not per mount.
+    const disk = (metric: string) =>
+        `sum by (machine_id) (max by (machine_id, device, fstype) (${filesystem(metric)}))`;
+
+    const mounted = (metric: string) =>
+        `max by (machine_id, device, mountpoint, fstype) (${filesystem(metric)})`;
 
     return {
         cpu: `100 * ${rate("node_cpu_seconds_total", ',mode!~"idle|guest|guest_nice"')}`,
         cores: `count by (machine_id) (${host("node_cpu_seconds_total", ',mode="idle"')})`,
         memory: `${gauge("node_memory_MemTotal_bytes")} - ${gauge("node_memory_MemAvailable_bytes")}`,
         memoryTotal: gauge("node_memory_MemTotal_bytes"),
-        disk: `${gauge("node_filesystem_size_bytes", ',mountpoint="/"')} - ${gauge("node_filesystem_avail_bytes", ',mountpoint="/"')}`,
-        diskTotal: gauge("node_filesystem_size_bytes", ',mountpoint="/"'),
+        disk: `${disk("node_filesystem_size_bytes")} - ${disk("node_filesystem_avail_bytes")}`,
+        diskTotal: disk("node_filesystem_size_bytes"),
+        filesystemUsed: `${mounted("node_filesystem_size_bytes")} - ${mounted("node_filesystem_avail_bytes")}`,
+        filesystemTotal: mounted("node_filesystem_size_bytes"),
         networkIn: rate("node_network_receive_bytes_total", interfaces),
         networkOut: rate("node_network_transmit_bytes_total", interfaces),
         diskRead: rate("node_disk_read_bytes_total", disks),
@@ -199,6 +291,9 @@ export function httpQueries(
     const requests = "loki_process_custom_http_requests_total";
     const buckets = "loki_process_custom_http_request_duration_seconds_bucket";
 
+    const latency = (quantile: number) => (selector: (metric: string, extra?: string) => string) =>
+        `histogram_quantile(${quantile}, sum by (le) (rate(${selector(buckets)}[${window}])))`;
+
     return {
         httpRequests: each((selector) => `sum(rate(${selector(requests)}[${window}]))`),
         // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
@@ -206,10 +301,9 @@ export function httpQueries(
             (selector) =>
                 `(sum(rate(${selector(requests, ',http_status=~"5.."')}[${window}])) or sum(rate(${selector(requests)}[${window}])) * 0)`,
         ),
-        httpLatency: each(
-            (selector) =>
-                `histogram_quantile(0.95, sum by (le) (rate(${selector(buckets)}[${window}])))`,
-        ),
+        httpLatency: each(latency(0.95)),
+        httpLatencyP50: each(latency(0.5)),
+        httpLatencyP99: each(latency(0.99)),
     };
 }
 
@@ -223,6 +317,9 @@ const matrix = z.object({
                     machine_id: z.string().optional(),
                     container_label_uncloud_service_id: z.string().optional(),
                     name: z.string().optional(),
+                    device: z.string().optional(),
+                    mountpoint: z.string().optional(),
+                    fstype: z.string().optional(),
                 }),
                 values: z.array(z.tuple([z.number().finite(), z.string()])),
             }),
@@ -255,6 +352,9 @@ export function parseMetricSeries(
             machineId: series.metric.machine_id ?? "",
             serviceId: series.metric.container_label_uncloud_service_id ?? "",
             container: series.metric.name ?? "",
+            device: series.metric.device,
+            mountpoint: series.metric.mountpoint,
+            fstype: series.metric.fstype,
             points,
         };
     });

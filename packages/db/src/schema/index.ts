@@ -1,14 +1,25 @@
+import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
 import { organization } from "./auth";
 
 export type MonitoringStorage = { type: "volume" | "bind"; source: string };
 
+export const instanceSettings = t.pgTable(
+    "instance_settings",
+    {
+        id: t.integer("id").primaryKey().default(1),
+        signupsEnabled: t.boolean("signups_enabled").notNull().default(true),
+    },
+    (table) => [t.check("instance_settings_singleton", sql`${table.id} = 1`)],
+);
+
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
     machine: string;
-    greptimeStorage: MonitoringStorage;
-    alloyStorage: MonitoringStorage;
     retentionDays: number;
+    /** Fixed managed volumes; omitted in new requests and defaulted server-side. */
+    greptimeStorage?: MonitoringStorage;
+    alloyStorage?: MonitoringStorage;
 };
 
 export const clusters = t.pgTable("clusters", {
@@ -201,9 +212,6 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
     encryptedPassword: t.text("encrypted_password").notNull(),
 });
 
-// Vercel-style deployment trail. One row per initialize/retry request so the
-// cluster page can show history; the worker streams progress lines into
-// deployment_logs while the job runs.
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 
 export const deployments = t.pgTable(
@@ -220,6 +228,8 @@ export const deployments = t.pgTable(
         // Deterministic effect-mq job id (`${clusterId}:${requestId}`), used by
         // the worker to attach progress to the right deployment.
         jobId: t.text("job_id").notNull().unique(),
+        // Compose spec captured at deploy time. Null for cluster initialization.
+        spec: t.text("spec"),
         configuration: t.jsonb("configuration").$type<ClusterInitializationConfiguration>(),
         error: t.text("error"),
         progress: t.smallint("progress").notNull().default(0),
@@ -260,16 +270,129 @@ export const deploymentLogs = t.pgTable(
     (table) => [t.index("deployment_logs_deployment_idx").on(table.deploymentId, table.id)],
 );
 
-// Private source snapshot and naming prefix. Never join into public deployment reads.
+// Private deploy inputs (naming prefix, env, recreate). The Compose spec lives on
+// deployments.spec so every deployment row carries what it deployed.
 export const resourceDeploymentInputs = t.pgTable("resource_deployment_inputs", {
     deploymentId: t
         .uuid("deployment_id")
         .primaryKey()
         .references(() => deployments.id, { onDelete: "cascade" }),
-    spec: t.text("spec").notNull(),
     prefix: t.text("prefix").notNull(),
     env: t.text("env").notNull().default(""),
     recreate: t.boolean("recreate").notNull().default(false),
 });
+
+// Mirrors `S3ProviderId` in @stoat/s3; the check constraint below keeps the database honest.
+export type S3Provider = "generic" | "rustfs" | "r2";
+
+// Account-level provider access; buckets are provisioned as project resources.
+export const s3Connections = t.pgTable(
+    "s3_connections",
+    {
+        id: t.uuid("id").primaryKey(),
+        organizationId: t
+            .text("organization_id")
+            .notNull()
+            .references(() => organization.id, { onDelete: "cascade" }),
+        name: t.text("name").notNull(),
+        provider: t.text("provider").$type<S3Provider>().notNull(),
+        // R2 derives its endpoint from the account ID.
+        endpoint: t.text("endpoint").notNull(),
+        region: t.text("region").notNull().default("us-east-1"),
+        forcePathStyle: t.boolean("force_path_style").notNull().default(false),
+        // Encrypted S3 access-key/secret-key pair. R2 derives it from the API token.
+        encryptedCredentials: t.text("encrypted_credentials").notNull(),
+        // Provider's account identifier; R2 uses the Cloudflare account ID.
+        providerAccountId: t.text("provider_account_id"),
+        // Provider management API token, used to mint per-bucket tokens.
+        encryptedApiToken: t.text("encrypted_api_token"),
+        lastTestedAt: t.timestamp("last_tested_at", { withTimezone: true }),
+        lastTestStatus: t.text("last_test_status").$type<"success" | "failure">(),
+        lastTestError: t.text("last_test_error"),
+        version: t.integer("version").notNull().default(1),
+        createdAt: t
+            .timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date()),
+        updatedAt: t
+            .timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date())
+            .$onUpdate(() => new Date()),
+    },
+    (table) => [
+        t.index("s3_connections_organization_idx").on(table.organizationId),
+        t.unique("s3_connections_organization_name_uidx").on(table.organizationId, table.name),
+        t.check(
+            "s3_connections_provider_check",
+            sql`${table.provider} in ('generic', 'rustfs', 'r2')`,
+        ),
+        t.check(
+            "s3_connections_provider_account_check",
+            sql`(${table.provider} = 'r2') = (
+                ${table.providerAccountId} is not null and ${table.encryptedApiToken} is not null
+            )`,
+        ),
+        t.check(
+            "s3_connections_test_status_check",
+            sql`${table.lastTestStatus} in ('success', 'failure') or ${table.lastTestStatus} is null`,
+        ),
+    ],
+);
+
+export type S3BucketStatus = "provisioning" | "ready" | "failed" | "deleting";
+
+// Written by the HealthCheck job; null until a bucket is first measured.
+export type S3BucketMetadata = {
+    /** Total bytes across every object. */
+    size: number;
+    objects: number;
+    /** Newest object's last-modified time (ISO); null for an empty bucket. */
+    lastModifiedAt: string | null;
+    /** When this snapshot was taken (ISO). */
+    measuredAt: string;
+};
+
+// Private state of `bucket` resources. Never return this table through resource/project APIs.
+export const s3Buckets = t.pgTable(
+    "s3_buckets",
+    {
+        resourceId: t
+            .uuid("resource_id")
+            .primaryKey()
+            .references(() => resources.id, { onDelete: "cascade" }),
+        // No cascade: deleting a connection would lose the credentials needed to revoke keys.
+        // Migration makes this FK deferred so organization-wide cascades can finish.
+        connectionId: t
+            .uuid("connection_id")
+            .notNull()
+            .references(() => s3Connections.id, { onDelete: "no action" }),
+        name: t.text("name").notNull(),
+        status: t.text("status").$type<S3BucketStatus>().notNull(),
+        // Durable outbox: a new request time is a new job, so retries are not deduplicated away.
+        requestedAt: t.timestamp("requested_at", { withTimezone: true }).notNull(),
+        error: t.text("error"),
+        // Provider key ID and its encrypted key pair; null when the provider shares connection keys.
+        keyId: t.text("key_id"),
+        encryptedCredentials: t.text("encrypted_credentials"),
+        metadata: t.jsonb("metadata").$type<S3BucketMetadata>(),
+        createdAt: t
+            .timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date()),
+        updatedAt: t
+            .timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date())
+            .$onUpdate(() => new Date()),
+    },
+    (table) => [
+        t.unique("s3_buckets_connection_name_uidx").on(table.connectionId, table.name),
+        t.check(
+            "s3_buckets_status_check",
+            sql`${table.status} in ('provisioning', 'ready', 'failed', 'deleting')`,
+        ),
+    ],
+);
 
 export * from "./auth";

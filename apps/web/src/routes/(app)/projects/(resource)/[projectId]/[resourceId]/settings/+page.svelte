@@ -1,9 +1,22 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import { Alert, AlertAction, AlertDescription } from "$lib/components/ui/alert";
-    import { Avatar, AvatarFallback, AvatarImage } from "$lib/components/ui/avatar";
+    import BucketDangerZone from "$lib/components/s3/bucket-danger-zone.svelte";
+    import {
+        Alert,
+        AlertAction,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
+    import {
+        Avatar,
+        AvatarFallback,
+        AvatarImage,
+    } from "$lib/components/ui/avatar";
     import { Button } from "$lib/components/ui/button";
-    import { Card, CardFooter, CardPanel } from "$lib/components/ui/card";
+    import {
+        Card,
+        CardFooter,
+        CardPanel,
+    } from "$lib/components/ui/card";
     import {
         Dialog,
         DialogContent,
@@ -20,10 +33,20 @@
         EmptyMedia,
         EmptyTitle,
     } from "$lib/components/ui/empty";
-    import { Field, FieldDescription, FieldError } from "$lib/components/ui/field";
+    import {
+        Field,
+        FieldDescription,
+        FieldError,
+    } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
-    import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "$lib/components/ui/menu";
+    import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuSeparator,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
     import { Switch } from "$lib/components/ui/switch";
@@ -36,8 +59,15 @@
     import Pencil from "@lucide/svelte/icons/pencil";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import Upload from "@lucide/svelte/icons/upload";
-    import { createMutation, createQuery } from "@tanstack/svelte-query";
-    import { parseAsBoolean, parseAsStringLiteral, useQueryStates } from "nuqs-svelte";
+    import {
+        createMutation,
+        createQuery,
+    } from "@tanstack/svelte-query";
+    import {
+        parseAsBoolean,
+        parseAsStringLiteral,
+        useQueryStates,
+    } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { fade } from "svelte/transition";
     import { watch } from "runed";
@@ -54,12 +84,17 @@
         }),
     );
 
-    const view = useQueryStates({
-        iconMenu: parseAsBoolean.withDefault(false),
-        iconDialog: parseAsStringLiteral(["upload", "link"]),
-    }, { shallow: true, scroll: false });
+    const view = useQueryStates(
+        {
+            iconMenu: parseAsBoolean.withDefault(false),
+            iconDialog: parseAsStringLiteral(["upload", "link"]),
+        },
+        { shallow: true, scroll: false },
+    );
 
-    const prefixNamesSchema = z.object({ prefixNames: z.boolean().catch(false) }).catch({ prefixNames: false });
+    const prefixNamesSchema = z
+        .object({ prefixNames: z.boolean().catch(false) })
+        .catch({ prefixNames: false });
 
     let prefixNames = $state(false);
 
@@ -123,7 +158,9 @@
         try {
             const url = new URL(value);
 
-            return url.protocol === "http:" || url.protocol === "https:";
+            return (
+                url.protocol === "http:" || url.protocol === "https:"
+            );
         } catch {
             return false;
         }
@@ -142,7 +179,8 @@
         void view.set({ iconMenu: false });
         linkError = "";
         const current = detailIcon.trim();
-        linkDraft = current && !current.startsWith("data:") ? current : "";
+        linkDraft =
+            current && !current.startsWith("data:") ? current : "";
         void view.set({ iconDialog: "link" });
     }
 
@@ -155,14 +193,19 @@
     const SVG_MAX_BYTES = 256 * 1024;
 
     function isSvgFile(file: File): boolean {
-        return file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
+        return (
+            file.type === "image/svg+xml" || /\.svg$/i.test(file.name)
+        );
     }
 
     function fileToDataUrl(file: File): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(reader.error ?? new Error("Unable to read file."));
+            reader.onerror = () =>
+                reject(
+                    reader.error ?? new Error("Unable to read file."),
+                );
             reader.readAsDataURL(file);
         });
     }
@@ -170,7 +213,8 @@
     async function svgToDataUrl(file: File): Promise<string> {
         const text = await file.text();
 
-        if (!/<svg[\s>]/i.test(text)) throw new Error("Not an SVG document.");
+        if (!/<svg[\s>]/i.test(text))
+            throw new Error("Not an SVG document.");
 
         return `data:image/svg+xml;base64,${(await fileToDataUrl(file)).split(",", 2)[1] ?? ""}`;
     }
@@ -180,7 +224,10 @@
 
         try {
             const max = 256;
-            const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+            const scale = Math.min(
+                1,
+                max / Math.max(bitmap.width, bitmap.height),
+            );
             const w = Math.max(1, Math.round(bitmap.width * scale));
             const h = Math.max(1, Math.round(bitmap.height * scale));
             const canvas = document.createElement("canvas");
@@ -234,9 +281,12 @@
         uploadProcessing = true;
 
         try {
-            uploadPreview = svg ? await svgToDataUrl(file) : await fileToResizedDataUrl(file);
+            uploadPreview = svg
+                ? await svgToDataUrl(file)
+                : await fileToResizedDataUrl(file);
         } catch {
-            uploadError = "Unable to read that image. Try another file.";
+            uploadError =
+                "Unable to read that image. Try another file.";
         } finally {
             uploadProcessing = false;
             input!.value = "";
@@ -262,8 +312,12 @@
         try {
             const url = new URL(value);
 
-            if (url.protocol !== "http:" && url.protocol !== "https:") {
-                linkError = "Link must start with http:// or https://.";
+            if (
+                url.protocol !== "http:" &&
+                url.protocol !== "https:"
+            ) {
+                linkError =
+                    "Link must start with http:// or https://.";
 
                 return;
             }
@@ -284,21 +338,29 @@
             onSuccess: (updated, input) => {
                 if (loadedResourceId === updated.id) {
                     failedValue = null;
-                    savedPrefixNames = prefixNamesSchema.parse(updated.settings).prefixNames;
+                    savedPrefixNames = prefixNamesSchema.parse(
+                        updated.settings,
+                    ).prefixNames;
                 }
 
                 queryClient.setQueryData(
                     orpc.resources.getResource.queryKey({
-                        input: { projectId: input.projectId, resourceId: input.resourceId },
+                        input: {
+                            projectId: input.projectId,
+                            resourceId: input.resourceId,
+                        },
                     }),
                     updated,
                 );
                 void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.queryKey({ input: { projectId: input.projectId } }),
+                    queryKey: orpc.resources.listResources.queryKey({
+                        input: { projectId: input.projectId },
+                    }),
                 });
             },
             onError: (_error, input) => {
-                if (loadedResourceId === input.resourceId) failedValue = input.prefixNames;
+                if (loadedResourceId === input.resourceId)
+                    failedValue = input.prefixNames;
             },
         }),
     );
@@ -308,7 +370,8 @@
             onSuccess: (updated, input) => {
                 if (loadedResourceId === updated.id) {
                     savedDetailName = updated.name ?? "";
-                    savedDetailDescription = updated.description ?? "";
+                    savedDetailDescription =
+                        updated.description ?? "";
                     savedDetailIcon = updated.icon ?? "";
                     detailName = savedDetailName;
                     detailDescription = savedDetailDescription;
@@ -317,12 +380,17 @@
 
                 queryClient.setQueryData(
                     orpc.resources.getResource.queryKey({
-                        input: { projectId: input.projectId, resourceId: input.resourceId },
+                        input: {
+                            projectId: input.projectId,
+                            resourceId: input.resourceId,
+                        },
                     }),
                     updated,
                 );
                 void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.queryKey({ input: { projectId: input.projectId } }),
+                    queryKey: orpc.resources.listResources.queryKey({
+                        input: { projectId: input.projectId },
+                    }),
                 });
             },
         }),
@@ -333,7 +401,9 @@
 
         if (!current) return;
         untrack(() => {
-            const saved = prefixNamesSchema.parse(current.settings).prefixNames;
+            const saved = prefixNamesSchema.parse(
+                current.settings,
+            ).prefixNames;
 
             if (loadedResourceId !== current.id) {
                 loadedResourceId = current.id;
@@ -357,7 +427,8 @@
 
                 if (!isDetailsDirty) {
                     savedDetailName = current.name ?? "";
-                    savedDetailDescription = current.description ?? "";
+                    savedDetailDescription =
+                        current.description ?? "";
                     savedDetailIcon = current.icon ?? "";
                     detailName = savedDetailName;
                     detailDescription = savedDetailDescription;
@@ -368,9 +439,12 @@
     });
 
     // Reset before Avatar's preloader can report a cached failure for the new source.
-    watch.pre(() => iconPreview, () => {
-        iconLoadFailed = false;
-    });
+    watch.pre(
+        () => iconPreview,
+        () => {
+            iconLoadFailed = false;
+        },
+    );
 
     $effect(() => {
         if (!isDirty) {
@@ -379,7 +453,12 @@
             return;
         }
 
-        if (loadedResourceId !== resourceId || saveMutation.isPending || failedValue === prefixNames) return;
+        if (
+            loadedResourceId !== resourceId ||
+            saveMutation.isPending ||
+            failedValue === prefixNames
+        )
+            return;
 
         const input = { projectId, resourceId, prefixNames };
 
@@ -392,7 +471,12 @@
     }
 
     function saveDetails() {
-        if (!isDetailsDirty || !isDetailsValid || detailsMutation.isPending) return;
+        if (
+            !isDetailsDirty ||
+            !isDetailsValid ||
+            detailsMutation.isPending
+        )
+            return;
         detailsMutation.mutate({
             projectId,
             resourceId,
@@ -411,26 +495,38 @@
     }
 </script>
 
-<svelte:head><title>Settings / {resourceQuery.data?.name ?? "Resource"} / Stoat</title></svelte:head>
+<svelte:head>
+    <title>
+        Settings / {resourceQuery.data?.name ?? "Resource"} / Stoat
+    </title>
+</svelte:head>
 
-<div class="mx-auto w-full max-w-5xl space-y-8 py-6 sm:py-8">
+<div class="mx-auto w-full max-w-5xl space-y-8 pt-6 sm:pt-8">
     {#if resourceQuery.isPending}
         <Skeleton loading loading-label="Loading resource settings">
             <div class="space-y-8">
                 <div class="grid gap-8 md:grid-cols-3">
                     <div>
                         <h2 class="text-lg font-semibold">General</h2>
-                        <p class="mt-1 text-sm text-muted-foreground">Update the resource name, description, and icon.</p>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                            Update the resource name, description, and
+                            icon.
+                        </p>
                     </div>
                     <Card class="md:col-span-2">
                         <CardPanel class="space-y-5 p-6">
                             <div>
                                 <Label>Resource name</Label>
-                                <p class="mt-2 text-sm">Resource service</p>
+                                <p class="mt-2 text-sm">
+                                    Resource service
+                                </p>
                             </div>
                             <div>
                                 <Label>Description</Label>
-                                <p class="mt-2 text-sm">Resource configuration and deployment settings.</p>
+                                <p class="mt-2 text-sm">
+                                    Resource configuration and
+                                    deployment settings.
+                                </p>
                             </div>
                         </CardPanel>
                     </Card>
@@ -440,25 +536,40 @@
     {:else if resourceQuery.isError}
         <Alert variant="error">
             <AlertDescription>
-                Unable to load resource settings: {resourceQuery.error.message}
+                Unable to load resource settings: {resourceQuery.error
+                    .message}
             </AlertDescription>
         </Alert>
     {:else if !resourceQuery.data}
         <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
-                <EmptyMedia variant="icon"><Boxes aria-hidden="true" /></EmptyMedia>
+                <EmptyMedia variant="icon">
+                    <Boxes aria-hidden="true" />
+                </EmptyMedia>
                 <EmptyTitle>Resource not found</EmptyTitle>
                 <EmptyDescription>
-                    It may have been deleted or belong to another organization.
+                    It may have been deleted or belong to another
+                    organization.
                 </EmptyDescription>
             </EmptyHeader>
         </Empty>
     {:else}
-        <section class="grid gap-5 md:grid-cols-3 md:gap-8" aria-labelledby="general-settings-heading">
+        <section
+            class="grid gap-5 md:grid-cols-3 md:gap-8"
+            aria-labelledby="general-settings-heading"
+        >
             <div>
-                <h2 id="general-settings-heading" class="text-lg font-semibold leading-tight tracking-tight">General</h2>
-                <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Update the name, description, and icon for this resource.
+                <h2
+                    id="general-settings-heading"
+                    class="text-lg font-semibold leading-tight tracking-tight"
+                >
+                    General
+                </h2>
+                <p
+                    class="mt-1 text-sm leading-relaxed text-muted-foreground"
+                >
+                    Update the name, description, and icon for this
+                    resource.
                 </p>
             </div>
 
@@ -466,34 +577,64 @@
                 <Card>
                     <CardPanel class="space-y-5 p-5 sm:p-6">
                         <div class="flex items-end gap-4">
-                            <Menu bind:open={() => iconMenuOpen, (open) => void view.set({ iconMenu: open })}>
+                            <Menu
+                                bind:open={
+                                    () => iconMenuOpen,
+                                    (open) =>
+                                        void view.set({
+                                            iconMenu: open,
+                                        })
+                                }
+                            >
                                 <MenuTrigger
-                                    aria-label={iconPreview ? "Change icon" : "Add icon"}
+                                    aria-label={iconPreview
+                                        ? "Change icon"
+                                        : "Add icon"}
                                     disabled={detailsMutation.isPending}
                                     class={cn(
                                         "group relative flex size-16 shrink-0 items-center justify-center rounded-xl border bg-muted/40 outline-none transition-colors",
                                         "hover:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                                         "disabled:pointer-events-none disabled:opacity-50",
-                                        iconPreview && !iconLoadFailed ? "border-border" : "border-dashed border-border",
+                                        iconPreview && !iconLoadFailed
+                                            ? "border-border"
+                                            : "border-dashed border-border",
                                     )}
                                 >
-                                    <Avatar class="size-full rounded-[calc(var(--radius-xl)-1px)] bg-transparent">
+                                    <Avatar
+                                        class="size-full rounded-[calc(var(--radius-xl)-1px)] bg-transparent"
+                                    >
                                         {#if iconPreview && !iconLoadFailed}
                                             <AvatarImage
                                                 src={iconPreview}
                                                 alt=""
                                                 class="object-contain"
-                                                onLoadingStatusChange={(status) => {
-                                                    const source = iconPreview;
+                                                onLoadingStatusChange={(
+                                                    status,
+                                                ) => {
+                                                    const source =
+                                                        iconPreview;
                                                     // Let Avatar finish mounting before a cached error removes it.
-                                                    queueMicrotask(() => {
-                                                        if (source === iconPreview) iconLoadFailed = status === "error";
-                                                    });
+                                                    queueMicrotask(
+                                                        () => {
+                                                            if (
+                                                                source ===
+                                                                iconPreview
+                                                            )
+                                                                iconLoadFailed =
+                                                                    status ===
+                                                                    "error";
+                                                        },
+                                                    );
                                                 }}
                                             />
                                         {/if}
-                                        <AvatarFallback class="rounded-none bg-transparent">
-                                            <Boxes class="size-6 text-muted-foreground" aria-hidden="true" />
+                                        <AvatarFallback
+                                            class="rounded-none bg-transparent"
+                                        >
+                                            <Boxes
+                                                class="size-6 text-muted-foreground"
+                                                aria-hidden="true"
+                                            />
                                         </AvatarFallback>
                                     </Avatar>
                                     <span
@@ -503,26 +644,40 @@
                                         <Pencil class="size-4" />
                                     </span>
                                 </MenuTrigger>
-                                <MenuPopup align="start" class="min-w-44">
-                                    <MenuItem onclick={openUploadDialog}>
+                                <MenuPopup
+                                    align="start"
+                                    class="min-w-44"
+                                >
+                                    <MenuItem
+                                        onclick={openUploadDialog}
+                                    >
                                         <Upload aria-hidden="true" />
                                         Upload image
                                     </MenuItem>
-                                    <MenuItem onclick={openLinkDialog}>
+                                    <MenuItem
+                                        onclick={openLinkDialog}
+                                    >
                                         <Link aria-hidden="true" />
                                         Use link
                                     </MenuItem>
                                     {#if iconPreview}
                                         <MenuSeparator />
-                                        <MenuItem variant="destructive" onclick={removeIcon}>
-                                            <Trash2 aria-hidden="true" />
+                                        <MenuItem
+                                            variant="destructive"
+                                            onclick={removeIcon}
+                                        >
+                                            <Trash2
+                                                aria-hidden="true"
+                                            />
                                             Remove icon
                                         </MenuItem>
                                     {/if}
                                 </MenuPopup>
                             </Menu>
                             <Field class="min-w-0 flex-1">
-                                <Label for="resource-name" required>Name</Label>
+                                <Label for="resource-name" required>
+                                    Name
+                                </Label>
                                 <Input
                                     id="resource-name"
                                     bind:value={detailName}
@@ -532,11 +687,15 @@
                                     disabled={detailsMutation.isPending}
                                     aria-invalid={!isDetailsValid}
                                 />
-                                {#if !isDetailsValid}<FieldError>Name is required.</FieldError>{/if}
+                                {#if !isDetailsValid}<FieldError>
+                                        Name is required.
+                                    </FieldError>{/if}
                             </Field>
                         </div>
                         <Field>
-                            <Label for="resource-description">Description</Label>
+                            <Label for="resource-description">
+                                Description
+                            </Label>
                             <Textarea
                                 id="resource-description"
                                 bind:value={detailDescription}
@@ -549,13 +708,19 @@
                         {#if detailsMutation.isError}
                             <Alert variant="error">
                                 <AlertDescription>
-                                    Unable to save: {detailsMutation.error.message}
+                                    Unable to save: {detailsMutation
+                                        .error.message}
                                 </AlertDescription>
                             </Alert>
                         {/if}
                     </CardPanel>
-                    <CardFooter class="justify-between gap-4 border-t px-5 py-4 sm:px-6">
-                        <p class="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">
+                    <CardFooter
+                        class="flex-wrap justify-between gap-4 border-t px-5 py-4 sm:px-6"
+                    >
+                        <p
+                            class="min-w-0 truncate text-sm text-muted-foreground"
+                            aria-live="polite"
+                        >
                             {#if detailsMutation.isPending}
                                 Saving…
                             {:else if isDetailsDirty}
@@ -568,7 +733,8 @@
                             <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={!isDetailsDirty || detailsMutation.isPending}
+                                disabled={!isDetailsDirty ||
+                                    detailsMutation.isPending}
                                 onclick={resetDetails}
                             >
                                 Reset
@@ -576,10 +742,14 @@
                             <Button
                                 size="sm"
                                 loading={detailsMutation.isPending}
-                                disabled={!isDetailsDirty || !isDetailsValid || detailsMutation.isPending}
+                                disabled={!isDetailsDirty ||
+                                    !isDetailsValid ||
+                                    detailsMutation.isPending}
                                 onclick={saveDetails}
                             >
-                                {detailsMutation.isPending ? "Saving…" : "Save changes"}
+                                {detailsMutation.isPending
+                                    ? "Saving…"
+                                    : "Save changes"}
                             </Button>
                         </div>
                     </CardFooter>
@@ -587,78 +757,172 @@
             </div>
         </section>
 
-        <section class="grid gap-5 md:grid-cols-3 md:gap-8" aria-labelledby="compose-settings-heading">
-            <div>
-                <h2 id="compose-settings-heading" class="text-lg font-semibold leading-tight tracking-tight">Compose settings</h2>
-                <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Configure how names in this resource's Compose spec are handled.
-                </p>
-            </div>
+        {#if resourceQuery.data.type === "bucket"}
+            <BucketDangerZone
+                {projectId}
+                {resourceId}
+                name={resourceQuery.data.name}
+            />
+        {:else}
+            <section
+                class="grid gap-5 md:grid-cols-3 md:gap-8"
+                aria-labelledby="compose-settings-heading"
+            >
+                <div>
+                    <h2
+                        id="compose-settings-heading"
+                        class="text-lg font-semibold leading-tight tracking-tight"
+                    >
+                        Compose settings
+                    </h2>
+                    <p
+                        class="mt-1 text-sm leading-relaxed text-muted-foreground"
+                    >
+                        Configure how names in this resource's Compose
+                        spec are handled.
+                    </p>
+                </div>
 
-            <div class="md:col-span-2">
-                <Card>
-                    <CardPanel class="p-5 sm:p-6">
-                        <div class="flex items-center justify-between gap-6">
-                            <Field class="min-w-0 gap-1">
-                                <Label for="prefix-names">Prefix names</Label>
-                                <FieldDescription id="prefix-names-description" class="leading-snug">
-                                    Prefix service, network, and volume names in the Compose spec with this resource's name so they are unique across the cluster.
-                                </FieldDescription>
-                            </Field>
-                            <div class="flex shrink-0 items-center gap-3">
-                                <span class="grid size-4 place-items-center text-muted-foreground" aria-live="polite">
-                                    {#if saveMutation.isPending || isDirty}
-                                        <span transition:fade={{ duration: 150 }} class="col-start-1 row-start-1">
-                                            <Spinner class="size-4" />
-                                            <span class="sr-only">Saving…</span>
-                                        </span>
-                                    {:else if saveMutation.isSuccess}
-                                        <span transition:fade={{ duration: 150 }} class="col-start-1 row-start-1" title="Saved">
-                                            <Check class="size-4" />
-                                            <span class="sr-only">Saved</span>
-                                        </span>
-                                    {/if}
-                                </span>
-                                <Switch id="prefix-names" aria-describedby="prefix-names-description" bind:checked={prefixNames} />
+                <div class="md:col-span-2">
+                    <Card>
+                        <CardPanel class="p-5 sm:p-6">
+                            <div
+                                class="flex items-center justify-between gap-6"
+                            >
+                                <Field class="min-w-0 gap-1">
+                                    <Label for="prefix-names">
+                                        Prefix names
+                                    </Label>
+                                    <FieldDescription
+                                        id="prefix-names-description"
+                                        class="leading-snug"
+                                    >
+                                        Prefix service, network, and
+                                        volume names in the Compose
+                                        spec with this resource's name
+                                        so they are unique across the
+                                        cluster.
+                                    </FieldDescription>
+                                </Field>
+                                <div
+                                    class="flex shrink-0 items-center gap-3"
+                                >
+                                    <span
+                                        class="grid size-4 place-items-center text-muted-foreground"
+                                        aria-live="polite"
+                                    >
+                                        {#if saveMutation.isPending || isDirty}
+                                            <span
+                                                transition:fade={{
+                                                    duration: 150,
+                                                }}
+                                                class="col-start-1 row-start-1"
+                                            >
+                                                <Spinner
+                                                    class="size-4"
+                                                />
+                                                <span class="sr-only">
+                                                    Saving…
+                                                </span>
+                                            </span>
+                                        {:else if saveMutation.isSuccess}
+                                            <span
+                                                transition:fade={{
+                                                    duration: 150,
+                                                }}
+                                                class="col-start-1 row-start-1"
+                                                title="Saved"
+                                            >
+                                                <Check
+                                                    class="size-4"
+                                                />
+                                                <span class="sr-only">
+                                                    Saved
+                                                </span>
+                                            </span>
+                                        {/if}
+                                    </span>
+                                    <Switch
+                                        id="prefix-names"
+                                        aria-describedby="prefix-names-description"
+                                        bind:checked={prefixNames}
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    </CardPanel>
-                    {#if saveMutation.isError && failedValue === prefixNames}
-                        <CardFooter class="border-t px-5 py-3 sm:px-6">
-                            <Alert variant="error" class="py-2">
-                                <AlertDescription>
-                                    Unable to save: {saveMutation.error.message}
-                                </AlertDescription>
-                                <AlertAction>
-                                    <Button variant="link" size="sm" class="h-auto p-0" onclick={retrySave}>Retry</Button>
-                                </AlertAction>
-                            </Alert>
-                        </CardFooter>
-                    {/if}
-                </Card>
-            </div>
-        </section>
+                        </CardPanel>
+                        {#if saveMutation.isError && failedValue === prefixNames}
+                            <CardFooter
+                                class="border-t px-5 py-3 sm:px-6"
+                            >
+                                <Alert variant="error" class="py-2">
+                                    <AlertDescription>
+                                        Unable to save: {saveMutation
+                                            .error.message}
+                                    </AlertDescription>
+                                    <AlertAction>
+                                        <Button
+                                            variant="link"
+                                            size="sm"
+                                            class="h-auto p-0"
+                                            onclick={retrySave}
+                                        >
+                                            Retry
+                                        </Button>
+                                    </AlertAction>
+                                </Alert>
+                            </CardFooter>
+                        {/if}
+                    </Card>
+                </div>
+            </section>
+        {/if}
     {/if}
 </div>
 
-<Dialog bind:open={() => uploadOpen, (open) => { if (!open) void view.set({ iconDialog: null }); }}>
+<Dialog
+    bind:open={
+        () => uploadOpen,
+        (open) => {
+            if (!open) void view.set({ iconDialog: null });
+        }
+    }
+>
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Upload icon</DialogTitle>
-            <DialogDescription>Choose an image. Raster images are resized to 256px; SVGs are stored as-is.</DialogDescription>
+            <DialogDescription>
+                Choose an image. Raster images are resized to 256px;
+                SVGs are stored as-is.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             <div class="space-y-4">
                 <div class="flex items-center gap-4">
-                    <Avatar class="size-14 rounded-xl border border-border bg-transparent">
-                        {#if uploadPreview}<AvatarImage src={uploadPreview} alt="" class="object-contain" />{/if}
-                        <AvatarFallback class="rounded-none bg-muted/50">
-                            <Boxes class="size-5 text-muted-foreground" aria-hidden="true" />
+                    <Avatar
+                        class="size-14 shrink-0 rounded-xl border border-border bg-transparent"
+                    >
+                        {#if uploadPreview}<AvatarImage
+                                src={uploadPreview}
+                                alt=""
+                                class="object-contain"
+                            />{/if}
+                        <AvatarFallback
+                            class="rounded-none bg-muted/50"
+                        >
+                            <Boxes
+                                class="size-5 text-muted-foreground"
+                                aria-hidden="true"
+                            />
                         </AvatarFallback>
                     </Avatar>
                     <div class="min-w-0 flex-1 space-y-1">
-                        <p class="truncate text-sm font-medium">{uploadFileName || "No file chosen"}</p>
-                        <p class="text-sm text-muted-foreground">PNG, JPEG, GIF, or WebP up to 5 MB. SVG up to 256 KB.</p>
+                        <p class="truncate text-sm font-medium">
+                            {uploadFileName || "No file chosen"}
+                        </p>
+                        <p class="text-sm text-muted-foreground">
+                            PNG, JPEG, GIF, or WebP up to 5 MB. SVG up
+                            to 256 KB.
+                        </p>
                     </div>
                 </div>
                 <Input
@@ -669,47 +933,86 @@
                     aria-label="Choose an image file"
                     onchange={handleFileChange}
                 />
-                <Button variant="outline" size="sm" loading={uploadProcessing} onclick={() => fileInput?.click()}>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    loading={uploadProcessing}
+                    onclick={() => fileInput?.click()}
+                >
                     <Upload class="size-4" aria-hidden="true" />
                     {uploadProcessing ? "Reading…" : "Choose file"}
                 </Button>
                 {#if uploadError}
-                    <Alert variant="error"><AlertDescription>{uploadError}</AlertDescription></Alert>
+                    <Alert variant="error">
+                        <AlertDescription>
+                            {uploadError}
+                        </AlertDescription>
+                    </Alert>
                 {/if}
             </div>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" onclick={() => void view.set({ iconDialog: null })}>Cancel</Button>
-            <Button disabled={!uploadPreview || uploadProcessing} onclick={confirmUpload}>Use icon</Button>
+            <Button
+                variant="outline"
+                onclick={() => void view.set({ iconDialog: null })}
+            >
+                Cancel
+            </Button>
+            <Button
+                disabled={!uploadPreview || uploadProcessing}
+                onclick={confirmUpload}
+            >
+                Use icon
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>
 
-<Dialog bind:open={() => linkOpen, (open) => { if (!open) void view.set({ iconDialog: null }); }}>
+<Dialog
+    bind:open={
+        () => linkOpen,
+        (open) => {
+            if (!open) void view.set({ iconDialog: null });
+        }
+    }
+>
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Use icon link</DialogTitle>
-            <DialogDescription>Paste a direct link to an image. It will be shown in the resource list.</DialogDescription>
+            <DialogDescription>
+                Paste a direct link to an image. It will be shown in
+                the resource list.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
-                    <Avatar class="size-14 rounded-xl border border-border bg-transparent">
+                    <Avatar
+                        class="size-14 shrink-0 rounded-xl border border-border bg-transparent"
+                    >
                         {#if linkDraft.trim() && isLinkValid}
                             <AvatarImage
                                 src={linkDraft.trim()}
                                 alt=""
                                 class="object-contain"
                                 onLoadingStatusChange={(status) => {
-                                    linkError = status === "error" ? "Unable to load a preview for that URL." : "";
+                                    linkError =
+                                        status === "error"
+                                            ? "Unable to load a preview for that URL."
+                                            : "";
                                 }}
                             />
                         {/if}
-                        <AvatarFallback class="rounded-none bg-muted/50">
-                            <Boxes class="size-5 text-muted-foreground" aria-hidden="true" />
+                        <AvatarFallback
+                            class="rounded-none bg-muted/50"
+                        >
+                            <Boxes
+                                class="size-5 text-muted-foreground"
+                                aria-hidden="true"
+                            />
                         </AvatarFallback>
                     </Avatar>
-                    <Field class="flex-1">
+                    <Field class="min-w-0 flex-1">
                         <Label for="icon-link-url">Image URL</Label>
                         <Input
                             id="icon-link-url"
@@ -720,14 +1023,23 @@
                             aria-invalid={Boolean(linkError)}
                             oninput={() => (linkError = "")}
                         />
-                        {#if linkError}<FieldError>{linkError}</FieldError>{/if}
+                        {#if linkError}<FieldError>
+                                {linkError}
+                            </FieldError>{/if}
                     </Field>
                 </div>
             </div>
         </DialogPanel>
         <DialogFooter>
-            <Button variant="outline" onclick={() => void view.set({ iconDialog: null })}>Cancel</Button>
-            <Button disabled={!isLinkValid} onclick={confirmLink}>Use icon</Button>
+            <Button
+                variant="outline"
+                onclick={() => void view.set({ iconDialog: null })}
+            >
+                Cancel
+            </Button>
+            <Button disabled={!isLinkValid} onclick={confirmLink}>
+                Use icon
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>

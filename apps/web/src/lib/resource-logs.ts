@@ -134,6 +134,91 @@ export function logBucketIndex(time: number, start: number, end: number) {
     return Math.min(23, Math.floor((time - start) / (Math.max(1, end - start) / 24)));
 }
 
+export type LogSeriesItem = {
+    key: LogLevel;
+    label: string;
+    color: string;
+    foreground: string;
+};
+
+/** Legend rows for the log activity histogram and level badges. */
+export const logSeries: LogSeriesItem[] = [
+    {
+        key: "error",
+        label: "Errors",
+        color: "bg-destructive",
+        foreground: "text-destructive-foreground",
+    },
+    {
+        key: "warning",
+        label: "Warnings",
+        color: "bg-warning",
+        foreground: "text-warning-foreground",
+    },
+    {
+        key: "success",
+        label: "Success",
+        color: "bg-success",
+        foreground: "text-success-foreground",
+    },
+    {
+        key: "other",
+        label: "Info",
+        color: "bg-muted-foreground/40",
+        foreground: "text-muted-foreground",
+    },
+];
+
+/** Split `text` around each case-insensitive match; odd parts are the matches. */
+export function highlightParts(text: string, highlight: string) {
+    const needle = highlight.trim().toLowerCase();
+
+    if (!needle) return [text];
+    const lower = text.toLowerCase();
+    const parts: string[] = [];
+    let from = 0;
+
+    for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, from)) {
+        parts.push(text.slice(from, at), text.slice(at, at + needle.length));
+        from = at + needle.length;
+    }
+
+    parts.push(text.slice(from));
+
+    return parts;
+}
+
+/** Estimated live-buffer cost of one log line. */
+export function logByteCost(message: string) {
+    return message.length * 2 + 512;
+}
+
+/** Drop the oldest lines past the count or byte cap; returns the kept lines and drop count. */
+export function trimLogLines<T extends { message: string }>(
+    lines: T[],
+    maxCount: number,
+    maxBytes: number,
+) {
+    let bytes = lines.reduce((sum, log) => sum + logByteCost(log.message), 0);
+    let remove = 0;
+
+    while (lines.length - remove > maxCount || bytes > maxBytes) {
+        bytes -= logByteCost(lines[remove]!.message);
+        remove++;
+    }
+
+    return { kept: lines.slice(remove), removed: remove };
+}
+
+/** Preset search ranges to milliseconds. */
+export function rangeDurationMs(range: string) {
+    if (range === "24h") return 86_400_000;
+
+    if (range === "1h") return 3_600_000;
+
+    return 900_000;
+}
+
 export function logActivity(logs: Pick<LogRow, "time" | "level">[], start: number, end: number) {
     const width = Math.max(1, end - start) / 24;
     const counts = { error: 0, warning: 0, success: 0, other: 0 };

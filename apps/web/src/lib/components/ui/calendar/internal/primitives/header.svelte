@@ -1,34 +1,36 @@
 <script lang="ts">
-  import { boxWith, mergeProps } from 'svelte-toolbelt';
-  import { CalendarHeaderState } from '../calendar-state.svelte';
-  import { createId } from '../ids';
-  import type { CalendarHeaderProps } from '../types';
+    import { boxWith, mergeProps } from "svelte-toolbelt";
+    import { CalendarHeaderState } from "../calendar-state.svelte";
+    import { createId } from "../ids";
+    import type { CalendarHeaderProps } from "../types";
 
-  const uid = $props.id();
+    const uid = $props.id();
 
-  let {
-    children,
-    child,
-    ref = $bindable(null),
-    id = createId(uid),
-    ...restProps
-  }: CalendarHeaderProps = $props();
+    let {
+        children,
+        child,
+        ref = $bindable(null),
+        id = createId(uid),
+        ...restProps
+    }: CalendarHeaderProps = $props();
 
-  const headerState = CalendarHeaderState.create({
-    id: boxWith(() => id!),
-    ref: boxWith(
-      () => ref,
-      (v) => (ref = v)
-    )
-  });
+    const headerState = CalendarHeaderState.create({
+        id: boxWith(() => id!),
+        ref: boxWith(
+            () => ref,
+            (v) => (ref = v),
+        ),
+    });
 
-  const mergedProps = $derived(mergeProps(restProps, headerState.props));
+    const mergedProps = $derived(
+        mergeProps(restProps, headerState.props),
+    );
 </script>
 
 {#if child}
-  {@render child({ props: mergedProps })}
+    {@render child({ props: mergedProps })}
 {:else}
-  <header {...mergedProps}>
-    {@render children?.()}
-  </header>
+    <header {...mergedProps}>
+        {@render children?.()}
+    </header>
 {/if}

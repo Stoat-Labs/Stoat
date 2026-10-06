@@ -1,5 +1,8 @@
 <script lang="ts">
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import {
         Dialog,
@@ -10,7 +13,10 @@
         DialogPanel,
         DialogTitle,
     } from "$lib/components/ui/dialog";
-    import { Field, FieldDescription } from "$lib/components/ui/field";
+    import {
+        Field,
+        FieldDescription,
+    } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { orpc, queryClient } from "$lib/orpc";
@@ -52,7 +58,8 @@
 
     const errorMessage = $derived(
         createMutationState.error
-            ? createMutationState.error.message || "Unable to create cluster."
+            ? createMutationState.error.message ||
+                  "Unable to create cluster."
             : "",
     );
 
@@ -68,7 +75,12 @@
 
         if (createMutationState.isPending) return;
 
-        if (!name.trim() || !sidecarUrl.trim() || !sidecarToken.trim()) return;
+        if (
+            !name.trim() ||
+            !sidecarUrl.trim() ||
+            !sidecarToken.trim()
+        )
+            return;
         createMutationState.mutate({
             name: name.trim(),
             sidecarUrl: sidecarUrl.trim(),
@@ -81,12 +93,16 @@
     <DialogContent>
         <DialogHeader>
             <DialogTitle>Create Cluster</DialogTitle>
-            <DialogDescription>Clusters run your projects' resources.</DialogDescription>
+            <DialogDescription>
+                Clusters run your projects' resources.
+            </DialogDescription>
         </DialogHeader>
         <DialogPanel>
             {#if errorMessage}
                 <Alert variant="error" class="mb-4">
-                    <AlertDescription>{errorMessage}</AlertDescription>
+                    <AlertDescription>
+                        {errorMessage}
+                    </AlertDescription>
                 </Alert>
             {/if}
             <form
@@ -108,7 +124,9 @@
                     />
                 </Field>
                 <Field>
-                    <Label for="cluster-sidecar-url" required>Sidecar URL</Label>
+                    <Label for="cluster-sidecar-url" required>
+                        Sidecar URL
+                    </Label>
                     <Input
                         id="cluster-sidecar-url"
                         type="url"
@@ -126,7 +144,9 @@
                     </FieldDescription>
                 </Field>
                 <Field>
-                    <Label for="cluster-sidecar-token" required>Sidecar token</Label>
+                    <Label for="cluster-sidecar-token" required>
+                        Sidecar token
+                    </Label>
                     <Input
                         id="cluster-sidecar-token"
                         type="password"
@@ -139,8 +159,8 @@
                         aria-describedby="cluster-sidecar-token-hint"
                     />
                     <FieldDescription id="cluster-sidecar-token-hint">
-                        Authenticates Stoat against the sidecar. Never shown again after
-                        creation.
+                        Authenticates Stoat against the sidecar. Never
+                        shown again after creation.
                     </FieldDescription>
                 </Field>
             </form>

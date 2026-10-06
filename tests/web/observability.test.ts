@@ -2,15 +2,18 @@ import { ORPCError } from "@orpc/client";
 import {
     httpQueries,
     metricNames,
+    parseMetricSeries,
     serviceHosts,
     type ObservabilityContainer,
 } from "../../packages/api/src/observability";
 import { expect, it } from "vite-plus/test";
 import {
     assembleCluster,
+    bridgeGaps,
     chartSeries,
     chartSeriesRatio,
     current,
+    filesystemRows,
     machineList,
     percent,
     serviceRows,
@@ -33,6 +36,71 @@ const container = (overrides: Partial<ObservabilityContainer>): ObservabilityCon
     memoryLimit: null,
     cpuLimit: null,
     ...overrides,
+});
+
+it("matches filesystem usage by machine, device, mount and type, preserving missing samples", () => {
+    const samples = (values: [string, string, string, string][]) =>
+        parseMetricSeries(
+            JSON.stringify({
+                status: "success",
+                data: {
+                    resultType: "matrix",
+                    result: values.map(([machine_id, device, mountpoint, value]) => ({
+                        metric: { machine_id, device, mountpoint, fstype: "ext4" },
+                        values: [[60, value]],
+                    })),
+                },
+            }),
+            45,
+            60,
+            15,
+        );
+
+    const cluster: ClusterData = {
+        id: "a",
+        name: "A",
+        available: true,
+        start: 45,
+        end: 60,
+        step: 15,
+        unavailable: [],
+        services: [],
+        machines: [{ id: "node", name: "Node", state: "Up" }],
+        metrics: {
+            filesystemTotal: samples([
+                ["node", "/dev/vda1", "/", "100"],
+                ["node", "/dev/vdb1", "/data", "200"],
+                ["node", "/dev/vdc1", "/missing", "300"],
+            ]),
+            filesystemUsed: samples([
+                ["node", "/dev/vdb1", "/data", "190"],
+                ["node", "/dev/vda1", "/", "20"],
+                ["other", "/dev/vdc1", "/missing", "300"],
+            ]),
+        },
+    };
+
+    const rows = filesystemRows(machineList([cluster, { ...cluster, id: "b" }]));
+    expect(rows).toHaveLength(6);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(6);
+    expect(rows.every((row) => !/[.[\]]/.test(row.key))).toBe(true);
+    expect(
+        rows.find((row) => row.machineKey === "a:node" && row.mountpoint === "/data"),
+    ).toMatchObject({
+        device: "/dev/vdb1",
+        used: 190,
+        total: 200,
+        percent: 95,
+        points: [
+            { time: 45000, value: null },
+            { time: 60000, value: 95 },
+        ],
+    });
+    expect(rows.find((row) => row.mountpoint === "/missing")).toMatchObject({
+        used: null,
+        percent: null,
+    });
+    expect(filesystemRows(machineList([{ ...cluster, end: 90 }]))[0]?.percent).toBeNull();
 });
 
 it("keeps machine and service identities cluster-scoped and CPU above 100%, without replacing missing data with zero", () => {
@@ -198,6 +266,30 @@ it("maps ingress hostnames to per-service HTTP queries", () => {
     expect(queries?.httpRequests).toContain('"container_label_uncloud_service_id", "web"');
     expect(queries?.httpErrors).toContain('http_status=~"5.."');
     expect(queries?.httpLatency).toContain("histogram_quantile(0.95");
+    expect(queries?.httpLatencyP50).toContain("histogram_quantile(0.5");
+    expect(queries?.httpLatencyP99).toContain("histogram_quantile(0.99");
+});
+
+it("bridges short interior gaps so sparse series still draw", () => {
+    const points = (values: (number | null)[], step = 30) =>
+        values.map((value, index) => ({ time: index * step * 1000, value }));
+
+    expect(bridgeGaps(points([10, null, 30])).map((point) => point.value)).toEqual([10, 20, 30]);
+    expect(bridgeGaps(points([null, 10, null])).map((point) => point.value)).toEqual([
+        null,
+        10,
+        null,
+    ]);
+    expect(bridgeGaps([])).toEqual([]);
+
+    // A 5.5-minute outage stays a gap instead of drawing a straight line across it.
+    const outage = points([10, ...Array<null>(11).fill(null), 30]);
+    expect(bridgeGaps(outage).slice(1, -1).every((point) => point.value === null)).toBe(true);
+
+    // Alternating samples and single gaps (bursty traffic) connect into one line.
+    const bursty = points([12, null, 14, null, 12]);
+    expect(bursty.map((point) => point.value)).toEqual([12, null, 14, null, 12]);
+    expect(bridgeGaps(bursty).map((point) => point.value)).toEqual([12, 13, 14, 13, 12]);
 });
 
 it("assembles per-procedure queries into cluster data, filling charts as metrics arrive", () => {

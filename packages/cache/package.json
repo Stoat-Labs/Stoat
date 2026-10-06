@@ -1,0 +1,26 @@
+{
+    "name": "@stoat/cache",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./*": {
+            "types": "./src/*.ts",
+            "default": "./src/*.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc -b",
+        "check-types": "tsc -b"
+    },
+    "dependencies": {
+        "ioredis": "^6.0.0",
+        "unstorage": "^1.17.5"
+    },
+    "devDependencies": {
+        "@stoat/config": "workspace:*",
+        "typescript": "catalog:"
+    }
+}

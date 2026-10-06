@@ -144,6 +144,132 @@ describe("cluster initialization API (PostgreSQL)", () => {
         expect(result).not.toHaveProperty("sidecarToken");
     });
 
+    it("re-runs failed initialization with a replacement configuration", async () => {
+        const added = await call(
+            clusterRouter.createCluster,
+            { name: "Reconfigure", sidecarUrl: "http://sidecar.test", sidecarToken: "secret" },
+            { context },
+        );
+
+        const clusterId = added.id!;
+        await call(
+            clusterRouter.initializeCluster,
+            { clusterId, configuration: config },
+            { context },
+        );
+        const projectId = randomUUID();
+        const resourceId = randomUUID();
+        await db
+            .insert(projects)
+            .values({ id: projectId, clusterId, name: "Reconfigure-internal", isInternal: true });
+        await db.insert(resources).values({
+            id: resourceId,
+            projectId,
+            name: "Monitoring",
+            type: "compose",
+            settings: config,
+        });
+        await db.insert(clusterMonitoring).values({
+            clusterId,
+            projectId,
+            resourceId,
+            encryptedPassword: "test-ciphertext",
+        });
+        await db
+            .update(clusters)
+            .set({ initializationStatus: "failed" })
+            .where(eq(clusters.id, clusterId));
+
+        const replacement = {
+            ...config,
+            retentionDays: 30,
+            alloyStorage: { type: "volume" as const, source: "replacement-alloy" },
+        };
+
+        const retried = await call(
+            clusterRouter.retryInitialization,
+            { clusterId, configuration: replacement },
+            { context },
+        );
+
+        expect(retried).toMatchObject({ id: clusterId, initializationStatus: "queued" });
+        const [cluster] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+        expect(cluster).toMatchObject({
+            initializationStatus: "queued",
+            initializationConfiguration: replacement,
+        });
+        const [resource] = await db.select().from(resources).where(eq(resources.id, resourceId));
+        expect(resource?.settings).toEqual(replacement);
+        const history = await call(clusterRouter.listDeployments, { clusterId }, { context });
+        expect(history[0]).toMatchObject({
+            name: "InitializeCluster",
+            status: "queued",
+            configuration: replacement,
+        });
+
+        // Unknown machines are rejected before anything is queued.
+        await expect(
+            call(
+                clusterRouter.retryInitialization,
+                { clusterId, configuration: { ...replacement, machine: "gone" } },
+                { context },
+            ),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        const [unchanged] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+        expect(unchanged?.initializationConfiguration).toEqual(replacement);
+    });
+
+    it("re-runs ready initialization and rejects anything still in flight", async () => {
+        const added = await call(
+            clusterRouter.createCluster,
+            { name: "Rerun", sidecarUrl: "http://sidecar.test", sidecarToken: "secret" },
+            { context },
+        );
+
+        const clusterId = added.id!;
+        await call(
+            clusterRouter.initializeCluster,
+            { clusterId, configuration: config },
+            { context },
+        );
+        await db
+            .update(clusters)
+            .set({
+                initializationStatus: "ready",
+                initializedAt: new Date(),
+                greptimeUrl: "http://stoat-monitoring-greptimedb.internal:4006",
+            })
+            .where(eq(clusters.id, clusterId));
+
+        await call(clusterRouter.retryInitialization, { clusterId }, { context });
+        const [rerun] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+        expect(rerun).toMatchObject({
+            initializationStatus: "queued",
+            initializationConfiguration: config,
+            initializedAt: null,
+        });
+        expect(rerun?.initializationRequestedAt).toBeInstanceOf(Date);
+
+        for (const status of ["uninitialized", "queued", "running", "retrying"] as const) {
+            await db
+                .update(clusters)
+                .set({ initializationStatus: status })
+                .where(eq(clusters.id, clusterId));
+            await expect(
+                call(clusterRouter.retryInitialization, { clusterId }, { context }),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+        }
+
+        // A re-run without a replacement still needs a saved configuration.
+        await db
+            .update(clusters)
+            .set({ initializationStatus: "failed", initializationConfiguration: null })
+            .where(eq(clusters.id, clusterId));
+        await expect(
+            call(clusterRouter.retryInitialization, { clusterId }, { context }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+    });
+
     it("hides internal projects, resources, and project counts, including direct-ID access", async () => {
         const clusterId = randomUUID();
         const projectId = randomUUID();
@@ -633,6 +759,74 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 { clusterId: added.id!, configuration: config },
                 { context },
             ),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("updates retention without redeploying, validating input and membership", async () => {
+        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
+
+        const added = await call(
+            clusterRouter.createCluster,
+            { name: "Retention", sidecarUrl: "http://sidecar.test", sidecarToken: "secret" },
+            { context },
+        );
+
+        const clusterId = added.id!;
+
+        for (const retentionDays of [0, 366, 1.5]) {
+            await expect(
+                call(clusterRouter.updateRetention, { clusterId, retentionDays }, { context }),
+            ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        }
+
+        await expect(
+            call(
+                clusterRouter.updateRetention,
+                { clusterId: randomUUID(), retentionDays: 30 },
+                { context },
+            ),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+        // No monitoring row yet: nothing to apply retention to.
+        await expect(
+            call(clusterRouter.updateRetention, { clusterId, retentionDays: 30 }, { context }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+
+        const projectId = randomUUID();
+        const resourceId = randomUUID();
+        const configuration = { machine: "First", retentionDays: 14 };
+        await db
+            .insert(projects)
+            .values({ id: projectId, clusterId, name: "Retention-internal", isInternal: true });
+        await db.insert(resources).values({
+            id: resourceId,
+            projectId,
+            name: "Monitoring",
+            type: "compose",
+            settings: configuration,
+        });
+        await db.insert(clusterMonitoring).values({
+            clusterId,
+            projectId,
+            resourceId,
+            encryptedPassword: "test-ciphertext",
+        });
+        await db
+            .update(clusters)
+            .set({ initializationConfiguration: configuration })
+            .where(eq(clusters.id, clusterId));
+
+        // Same value is a no-op that never touches the sidecar.
+        await expect(
+            call(clusterRouter.updateRetention, { clusterId, retentionDays: 14 }, { context }),
+        ).resolves.toEqual({ retentionDays: 14 });
+
+        const [untouched] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+        expect(untouched?.initializationConfiguration).toEqual(configuration);
+
+        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'initializer'`);
+        await expect(
+            call(clusterRouter.updateRetention, { clusterId, retentionDays: 30 }, { context }),
         ).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 });

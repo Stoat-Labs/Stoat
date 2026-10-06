@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { currentWindow, swr } from "@stoat/cache";
 import { clusterMonitoring, clusters, projects, resources } from "@stoat/db/schema/index";
 import { ucClient, unwrap, type UcClient } from "@stoat/uncloud";
 import { monitoringRequest, sql as greptimeSql } from "@stoat/workflows/greptime";
@@ -9,12 +10,15 @@ import {
 } from "@stoat/workflows/monitoring-compose";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
-import { createStorage } from "unstorage";
-import lruCacheDriver from "unstorage/drivers/lru-cache";
 import { z } from "zod";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import {
+    counterTotalQuery,
+    dnsMetricNames,
+    dnsMetricQueries,
+    registryMetricNames,
+    registryMetricQueries,
     httpMetricNames,
     httpQueries,
     metricNames,
@@ -24,7 +28,9 @@ import {
     rangePresets,
     serviceHosts,
     serviceIdPattern,
+    type DnsMetricName,
     type HttpMetricName,
+    type RegistryMetricName,
     type MetricName,
     type MetricSeries,
     type ObservabilityRange,
@@ -53,50 +59,10 @@ const containerInspect = z
     })
     .catch({});
 
-// ponytail: per-process memory cache; move to a shared driver (e.g. redis) if the web app scales out.
-const cache = createStorage({ driver: lruCacheDriver({ max: 1000, ttl: 10 * 60_000 }) });
-
-const inflight = new Map<string, Promise<unknown>>();
-
-/**
- * Stale-while-revalidate keyed on a 15s-aligned window: the previous window is served instantly
- * while one shared fetch refreshes it, so nobody waits on the cluster after the first load.
- */
-async function swr<T>(key: string, window: number, load: () => Promise<T>): Promise<T> {
-    const cached = await cache.getItem<{ window: number; value: T }>(key);
-
-    if (cached?.window === window) return cached.value;
-
-    const refresh =
-        // SAFETY: keys embed the procedure name, so one key always resolves to one T.
-        (inflight.get(key) as Promise<T> | undefined) ??
-        load()
-            .then(async (value) => {
-                await cache.setItem(key, { window, value });
-
-                return value;
-            })
-            .finally(() => {
-                inflight.delete(key);
-            });
-
-    inflight.set(key, refresh);
-
-    if (cached) {
-        refresh.catch(() => {});
-
-        return cached.value;
-    }
-
-    return refresh;
-}
-
-const currentWindow = () => Math.floor(Date.now() / 15_000);
-
 const unreachable = () => new ORPCError("BAD_GATEWAY", { message: "Monitoring is unreachable." });
 
 // Shown only as the latest value, never charted, so a single sample is enough.
-const latestOnly = new Set<MetricName>([
+const latestOnly = new Set<MetricName | DnsMetricName | RegistryMetricName>([
     "cores",
     "memoryTotal",
     "serviceMemory",
@@ -221,11 +187,14 @@ type MetricResponse = {
     end: number;
     step: number;
     series: MetricSeries[];
+    totals?: MetricSeries[];
     /** HTTP metrics only: whether the services have ingress hostnames and Alloy is recording traffic. */
     status: "ok" | "no-routes" | "not-collecting";
 };
 
-function isHttpMetric(name: MetricName | HttpMetricName): name is HttpMetricName {
+function isHttpMetric(
+    name: MetricName | HttpMetricName | DnsMetricName | RegistryMetricName,
+): name is HttpMetricName {
     return httpMetricNames.some((item) => item === name);
 }
 
@@ -416,11 +385,16 @@ export const observabilityRouter = {
                 },
             ),
         ),
-    // HTTP metrics share this procedure: a separate one pushes AppRouter past tsc's type serialization limit.
+    // HTTP and DNS metrics share this procedure to stay within tsc's router type serialization limit.
     getObservabilityMetric: organizationProcedure
         .input(
             clusterInput.extend({
-                name: z.enum([...metricNames, ...httpMetricNames]),
+                name: z.enum([
+                    ...metricNames,
+                    ...httpMetricNames,
+                    ...dnsMetricNames,
+                    ...registryMetricNames,
+                ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
                 serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
                 range: rangeInput,
@@ -457,15 +431,32 @@ export const observabilityRouter = {
                     end,
                     async () => {
                         try {
-                            const query = metricQueries(cluster.id, window.step, serviceIds)[name];
+                            const query = {
+                                ...metricQueries(cluster.id, window.step, serviceIds),
+                                ...dnsMetricQueries(cluster.id, window.step),
+                                ...registryMetricQueries(cluster.id, window.step),
+                            }[name];
 
-                            return {
-                                start,
-                                end,
-                                step,
-                                series: await queryRange(cluster, uc, query, start, end, step),
-                                status: "ok" as const,
-                            };
+                            const counter =
+                                name === "dnsQueries" ||
+                                name === "dnsErrors" ||
+                                registryMetricNames.some((item) => item === name);
+
+                            const [series, totals] = await Promise.all([
+                                queryRange(cluster, uc, query, start, end, step),
+                                counter
+                                    ? queryRange(
+                                          cluster,
+                                          uc,
+                                          counterTotalQuery(query, end - start),
+                                          end,
+                                          end,
+                                          step,
+                                      )
+                                    : undefined,
+                            ]);
+
+                            return { start, end, step, series, totals, status: "ok" as const };
                         } catch {
                             throw unreachable();
                         }

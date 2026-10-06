@@ -127,8 +127,8 @@ describe("resource logs backend", () => {
         const id = randomUUID();
         await db
             .insert(deployments)
-            .values({ id, clusterId, resourceId, jobId: id, name: "DeployResource", status });
-        await db.insert(resourceDeploymentInputs).values({ deploymentId: id, spec, prefix });
+            .values({ id, clusterId, resourceId, jobId: id, name: "DeployResource", status, spec });
+        await db.insert(resourceDeploymentInputs).values({ deploymentId: id, prefix });
 
         if (attempted)
             await db.$client.query(

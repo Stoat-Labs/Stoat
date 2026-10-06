@@ -1,12 +1,25 @@
 <script lang="ts">
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import { Badge } from "$lib/components/ui/badge";
-    import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from "$lib/components/ui/card";
+    import {
+        Card,
+        CardDescription,
+        CardHeader,
+        CardPanel,
+        CardTitle,
+    } from "$lib/components/ui/card";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/orpc";
     import { createQuery } from "@tanstack/svelte-query";
 
-    type ClusterOption = { id: string; name: string; initializedAt?: unknown };
+    type ClusterOption = {
+        id: string;
+        name: string;
+        initializedAt?: unknown;
+    };
 
     let {
         clusters = [],
@@ -30,7 +43,10 @@
     function percent(usage: Usage): number | null {
         if (!usage || usage.total <= 0) return null;
 
-        return Math.min(100, Math.max(0, (usage.used / usage.total) * 100));
+        return Math.min(
+            100,
+            Math.max(0, (usage.used / usage.total) * 100),
+        );
     }
 
     function formatBytes(value: number): string {
@@ -57,16 +73,23 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <CardTitle>Cluster monitoring</CardTitle>
-                <CardDescription class="mt-1">CPU, memory, and disk usage over the last 5 minutes.</CardDescription>
+                <CardDescription class="mt-1">
+                    CPU, memory, and disk usage over the last 5
+                    minutes.
+                </CardDescription>
             </div>
             {#if clusters.length > 1}
                 <select
                     class="h-8 rounded-md border border-input bg-background px-2 text-sm"
                     aria-label="Select cluster"
-                    bind:value={() => clusterId, (id) => (clusterId = id)}
+                    bind:value={
+                        () => clusterId, (id) => (clusterId = id)
+                    }
                 >
                     {#each clusters as cluster (cluster.id)}
-                        <option value={cluster.id}>{cluster.name}</option>
+                        <option value={cluster.id}>
+                            {cluster.name}
+                        </option>
                     {/each}
                 </select>
             {/if}
@@ -75,20 +98,37 @@
     <CardPanel class="p-4 pt-0 sm:p-5 sm:pt-0">
         {#if metricsQuery.isPending}
             <Skeleton loading loading-label="Loading cluster metrics">
-                <p class="text-sm">CPU memory disk</p>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {#each ["Machines", "CPU", "Memory", "Disk (/)"] as label (label)}
+                        <div class="rounded-lg border p-3">
+                            <p class="text-xs">{label}</p>
+                            <p class="mt-1 text-xl font-semibold">
+                                0.0
+                            </p>
+                            <p class="mt-0.5 text-xs">of 0.0 · 0%</p>
+                        </div>
+                    {/each}
+                </div>
             </Skeleton>
         {:else if metricsQuery.isError}
             <Alert variant="error">
-                <AlertDescription>Unable to load metrics: {metricsQuery.error.message}</AlertDescription>
+                <AlertDescription>
+                    Unable to load metrics: {metricsQuery.error
+                        .message}
+                </AlertDescription>
             </Alert>
         {:else if !metrics}
-            <p class="text-sm text-muted-foreground">No metrics available.</p>
+            <p class="text-sm text-muted-foreground">
+                No metrics available.
+            </p>
         {:else if !metrics.available}
             <p class="text-sm text-muted-foreground">
                 {#if metrics.reason === "uninitialized"}
-                    Initialize monitoring for this cluster to see usage.
+                    Initialize monitoring for this cluster to see
+                    usage.
                 {:else}
-                    Metrics are currently unreachable. The cluster may be offline.
+                    Metrics are currently unreachable. The cluster may
+                    be offline.
                 {/if}
             </p>
         {:else}
@@ -97,49 +137,104 @@
             {@const diskPct = percent(metrics.disk)}
             <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-lg border p-3">
-                    <p class="text-xs text-muted-foreground">Machines</p>
-                    <p class="mt-1 text-xl font-semibold">{metrics.machines}</p>
-                    <p class="mt-0.5 text-xs text-muted-foreground">Reporting in window</p>
+                    <p class="text-xs text-muted-foreground">
+                        Machines
+                    </p>
+                    <p class="mt-1 text-xl font-semibold">
+                        {metrics.machines}
+                    </p>
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                        Reporting in window
+                    </p>
                 </div>
                 <div class="rounded-lg border p-3">
                     <p class="text-xs text-muted-foreground">CPU</p>
                     <p class="mt-1 text-xl font-semibold">
-                        {metrics.cpu ? formatCores(metrics.cpu.used) : "—"}
+                        {metrics.cpu
+                            ? formatCores(metrics.cpu.used)
+                            : "—"}
                     </p>
                     <p class="mt-0.5 text-xs text-muted-foreground">
-                        {metrics.cpu ? `of ${formatCores(metrics.cpu.total)}${cpuPct !== null ? ` · ${cpuPct.toFixed(0)}%` : ""}` : "No data"}
+                        {metrics.cpu
+                            ? `of ${formatCores(metrics.cpu.total)}${cpuPct !== null ? ` · ${cpuPct.toFixed(0)}%` : ""}`
+                            : "No data"}
                     </p>
                     {#if cpuPct !== null}
-                        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div class="h-full rounded-full bg-primary" style={`width: ${cpuPct}%`}></div>
+                        <div
+                            class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                        >
+                            <div
+                                class="h-full rounded-full bg-primary"
+                                style={`width: ${cpuPct}%`}
+                            ></div>
                         </div>
                     {/if}
                 </div>
                 <div class="rounded-lg border p-3">
-                    <p class="flex items-center justify-between gap-2 text-xs text-muted-foreground">Memory{#if memPct !== null && memPct >= 90}<Badge size="sm" variant="warning">High</Badge>{/if}</p>
+                    <p
+                        class="flex items-center justify-between gap-2 text-xs text-muted-foreground"
+                    >
+                        Memory{#if memPct !== null && memPct >= 90}<Badge
+                                size="sm"
+                                variant="warning"
+                            >
+                                High
+                            </Badge>{/if}
+                    </p>
                     <p class="mt-1 text-xl font-semibold">
-                        {metrics.memory ? formatBytes(metrics.memory.used) : "—"}
+                        {metrics.memory
+                            ? formatBytes(metrics.memory.used)
+                            : "—"}
                     </p>
                     <p class="mt-0.5 text-xs text-muted-foreground">
-                        {metrics.memory ? `of ${formatBytes(metrics.memory.total)}${memPct !== null ? ` · ${memPct.toFixed(0)}%` : ""}` : "No data"}
+                        {metrics.memory
+                            ? `of ${formatBytes(metrics.memory.total)}${memPct !== null ? ` · ${memPct.toFixed(0)}%` : ""}`
+                            : "No data"}
                     </p>
                     {#if memPct !== null}
-                        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div class="h-full rounded-full bg-primary" style={`width: ${memPct}%`}></div>
+                        <div
+                            class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                        >
+                            <div
+                                class="h-full rounded-full bg-primary"
+                                style={`width: ${memPct}%`}
+                            ></div>
                         </div>
                     {/if}
                 </div>
                 <div class="rounded-lg border p-3">
-                    <p class="flex items-center justify-between gap-2 text-xs text-muted-foreground">Disk (/){#if diskPct !== null && diskPct >= 85}<Badge size="sm" variant={diskPct >= 95 ? "error" : "warning"}>{diskPct >= 95 ? "Almost full" : "Filling up"}</Badge>{/if}</p>
+                    <p
+                        class="flex items-center justify-between gap-2 text-xs text-muted-foreground"
+                    >
+                        Disk (/){#if diskPct !== null && diskPct >= 85}<Badge
+                                size="sm"
+                                variant={diskPct >= 95
+                                    ? "error"
+                                    : "warning"}
+                            >
+                                {diskPct >= 95
+                                    ? "Almost full"
+                                    : "Filling up"}
+                            </Badge>{/if}
+                    </p>
                     <p class="mt-1 text-xl font-semibold">
-                        {metrics.disk ? formatBytes(metrics.disk.used) : "—"}
+                        {metrics.disk
+                            ? formatBytes(metrics.disk.used)
+                            : "—"}
                     </p>
                     <p class="mt-0.5 text-xs text-muted-foreground">
-                        {metrics.disk ? `of ${formatBytes(metrics.disk.total)}${diskPct !== null ? ` · ${diskPct.toFixed(0)}%` : ""}` : "No data"}
+                        {metrics.disk
+                            ? `of ${formatBytes(metrics.disk.total)}${diskPct !== null ? ` · ${diskPct.toFixed(0)}%` : ""}`
+                            : "No data"}
                     </p>
                     {#if diskPct !== null}
-                        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div class="h-full rounded-full bg-primary" style={`width: ${diskPct}%`}></div>
+                        <div
+                            class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                        >
+                            <div
+                                class="h-full rounded-full bg-primary"
+                                style={`width: ${diskPct}%`}
+                            ></div>
                         </div>
                     {/if}
                 </div>

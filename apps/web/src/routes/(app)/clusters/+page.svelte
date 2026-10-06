@@ -1,7 +1,10 @@
 <script lang="ts">
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
-    import { Alert, AlertDescription } from "$lib/components/ui/alert";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
     import {
         AlertDialog,
         AlertDialogContent,
@@ -14,16 +17,33 @@
     import { Button } from "$lib/components/ui/button";
     import { buttonVariants } from "$lib/components/ui/button/button-variants";
     import { DataTable } from "$lib/components/ui/data-table";
-    import { InputGroup, InputGroupAddon, InputGroupInput } from "$lib/components/ui/input-group";
-    import { Menu, MenuItem, MenuPopup, MenuTrigger } from "$lib/components/ui/menu";
-    import { TableCell, TableHead, TableRow } from "$lib/components/ui/table";
+    import {
+        InputGroup,
+        InputGroupAddon,
+        InputGroupInput,
+    } from "$lib/components/ui/input-group";
+    import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
+    import {
+        TableCell,
+        TableHead,
+        TableRow,
+    } from "$lib/components/ui/table";
     import { orpc, queryClient } from "$lib/orpc";
+    import { formatDate } from "$lib/format";
     import { listPageSize, pageParser } from "$lib/query-params";
     import Ellipsis from "@lucide/svelte/icons/ellipsis";
     import Plus from "@lucide/svelte/icons/plus";
     import Search from "@lucide/svelte/icons/search";
     import Trash2 from "@lucide/svelte/icons/trash-2";
-    import { createMutation, createQuery } from "@tanstack/svelte-query";
+    import {
+        createMutation,
+        createQuery,
+    } from "@tanstack/svelte-query";
     import { parseAsString, useQueryStates } from "nuqs-svelte";
     import { Debounced } from "runed";
     import { onMount } from "svelte";
@@ -31,13 +51,20 @@
     const limit = listPageSize;
 
     const list = useQueryStates(
-        { q: parseAsString.withDefault(""), page: pageParser, dialog: parseAsString, clusterId: parseAsString },
+        {
+            q: parseAsString.withDefault(""),
+            page: pageParser,
+            dialog: parseAsString,
+            clusterId: parseAsString,
+        },
         { shallow: true, scroll: false },
     );
 
     const debounced = new Debounced(() => list.q.current, 400);
 
-    const searchPending = $derived(list.q.current !== debounced.current);
+    const searchPending = $derived(
+        list.q.current !== debounced.current,
+    );
 
     let ready = $state(false);
 
@@ -46,12 +73,18 @@
     onMount(() => {
         ready = true;
 
-        return () => { ready = false; };
+        return () => {
+            ready = false;
+        };
     });
 
     const clustersQuery = createQuery(() =>
         orpc.cluster.listClusters.queryOptions({
-            input: { q: debounced.current || undefined, limit, offset: (list.page.current - 1) * limit },
+            input: {
+                q: debounced.current || undefined,
+                limit,
+                offset: (list.page.current - 1) * limit,
+            },
             enabled: !searchPending,
         }),
     );
@@ -60,14 +93,12 @@
 
     const total = $derived(clustersQuery.data?.total ?? 0);
 
-    const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
+    const totalPages = $derived(
+        Math.max(1, Math.ceil(total / limit)),
+    );
 
-    // Do not clamp a restored URL against missing data or the previous search's count.
-    $effect(() => {
-        if (clustersQuery.isSuccess && !clustersQuery.isFetching && !searchPending && list.page.current > totalPages) {
-            void list.set({ page: totalPages });
-        }
-    });
+    // ponytail: no auto-clamp when total shrinks; pagination UI already
+    // gets totalPages, re-add URL write-back if empty last-pages get reported.
 
     const meta = $derived(
         total === 0
@@ -75,18 +106,30 @@
             : `${(list.page.current - 1) * limit + 1}–${Math.min(list.page.current * limit, total)} of ${total}`,
     );
 
-    type ClusterItem = { id: string; name: string; projectCount: number };
+    type ClusterItem = {
+        id: string;
+        name: string;
+        projectCount: number;
+    };
 
-    const clusterToDelete = $derived(items.find((cluster) => cluster.id === list.clusterId.current) ?? null);
+    const clusterToDelete = $derived(
+        items.find(
+            (cluster) => cluster.id === list.clusterId.current,
+        ) ?? null,
+    );
 
-    const deleteOpen = $derived(list.dialog.current === "delete-cluster" && Boolean(clusterToDelete));
+    const deleteOpen = $derived(
+        list.dialog.current === "delete-cluster" &&
+            Boolean(clusterToDelete),
+    );
 
     const deleteMutationState = createMutation(() =>
         orpc.cluster.deleteCluster.mutationOptions({
             onSuccess: async () => {
                 await Promise.all([
                     queryClient.invalidateQueries({
-                        queryKey: orpc.cluster.listClusters.queryKey(),
+                        queryKey:
+                            orpc.cluster.listClusters.queryKey(),
                     }),
                     queryClient.invalidateQueries({
                         queryKey: orpc.projects.key(),
@@ -99,13 +142,18 @@
 
     const deleteErrorMessage = $derived(
         deleteMutationState.error
-            ? deleteMutationState.error.message || "Unable to delete cluster."
+            ? deleteMutationState.error.message ||
+                  "Unable to delete cluster."
             : "",
     );
 
-    const deleteName = $derived(clusterToDelete?.name ?? "this cluster");
+    const deleteName = $derived(
+        clusterToDelete?.name ?? "this cluster",
+    );
 
-    const deleteProjectCount = $derived(clusterToDelete?.projectCount ?? 0);
+    const deleteProjectCount = $derived(
+        clusterToDelete?.projectCount ?? 0,
+    );
 
     const deleteProjectCopy = $derived(
         deleteProjectCount === 1
@@ -115,42 +163,53 @@
 
     function askDelete(cluster: ClusterItem) {
         deleteMutationState.reset();
-        void list.set({ dialog: "delete-cluster", clusterId: cluster.id });
+        void list.set({
+            dialog: "delete-cluster",
+            clusterId: cluster.id,
+        });
     }
 
     function confirmDelete() {
         if (!clusterToDelete || deleteMutationState.isPending) return;
         deleteMutationState.mutate({ clusterId: clusterToDelete.id });
     }
-
-    function formatDate(value: Date | string) {
-        return new Date(value).toLocaleDateString();
-    }
 </script>
 
 <svelte:head><title>Clusters / Stoat</title></svelte:head>
 
 {#snippet clusterActions()}
-    <div class="flex items-center gap-2">
+    <div
+        class="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2"
+    >
         <InputGroup class="w-40 sm:w-64">
             <InputGroupInput
                 type="search"
                 placeholder="Search clusters…"
                 aria-label="Search clusters"
-                bind:value={() => list.q.current, (q) => { void list.set({ q, page: 1 }); }}
+                bind:value={
+                    () => list.q.current,
+                    (q) => {
+                        void list.set({ q, page: 1 });
+                    }
+                }
             />
             <InputGroupAddon align="inline-start">
                 <Search aria-hidden="true" />
             </InputGroupAddon>
         </InputGroup>
-        <Button size="sm" disabled={!ready} onclick={() => void list.set({ dialog: "create-cluster" })}>
+        <Button
+            size="sm"
+            disabled={!ready}
+            onclick={() =>
+                void list.set({ dialog: "create-cluster" })}
+        >
             <Plus class="size-4" aria-hidden="true" />
             Create cluster
         </Button>
     </div>
 {/snippet}
 
-<div class="w-full space-y-6 py-6">
+<div class="w-full space-y-6 pt-6">
     {#if clustersQuery.isError}
         <Alert variant="error">
             <AlertDescription>
@@ -165,11 +224,18 @@
             loadingRows={5}
             colSpan={5}
             isEmpty={items.length === 0}
-            emptyTitle={debounced.current ? "No matching clusters" : "No clusters yet"}
+            emptyTitle={debounced.current
+                ? "No matching clusters"
+                : "No clusters yet"}
             emptyDescription={debounced.current
                 ? "No clusters match your search."
                 : "Create your first cluster to get started."}
-            bind:page={() => list.page.current, (page) => { void list.set({ page }, { history: "push" }); }}
+            bind:page={
+                () => list.page.current,
+                (page) => {
+                    void list.set({ page }, { history: "push" });
+                }
+            }
             {totalPages}
         >
             {#snippet header()}
@@ -177,8 +243,12 @@
                     <TableHead>Status</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Projects</TableHead>
-                    <TableHead class="hidden md:table-cell">Updated</TableHead>
-                    <TableHead><span class="sr-only">Actions</span></TableHead>
+                    <TableHead class="hidden md:table-cell">
+                        Updated
+                    </TableHead>
+                    <TableHead>
+                        <span class="sr-only">Actions</span>
+                    </TableHead>
                 </TableRow>
             {/snippet}
             {#snippet children()}
@@ -186,20 +256,32 @@
                     <TableRow class="group">
                         <TableCell>
                             {#if cluster.diagnostics?.status === "healthy"}
-                                <Badge variant="success">Healthy</Badge>
+                                <Badge variant="success">
+                                    Healthy
+                                </Badge>
                             {:else if cluster.diagnostics?.status === "degraded"}
-                                <Badge variant="warning">Degraded</Badge>
+                                <Badge variant="warning">
+                                    Degraded
+                                </Badge>
                             {:else}
-                                <Badge variant="secondary">Unknown</Badge>
+                                <Badge variant="secondary">
+                                    Unknown
+                                </Badge>
                             {/if}
                         </TableCell>
                         <TableCell>
                             <a
                                 href={`/clusters/${cluster.id}`}
                                 class="block font-semibold hover:underline"
-                            >{cluster.name}</a>
-                            <span class="mt-0.5 block text-xs text-muted-foreground">
-                                Created {formatDate(cluster.createdAt)}
+                            >
+                                {cluster.name}
+                            </a>
+                            <span
+                                class="mt-0.5 block text-xs text-muted-foreground"
+                            >
+                                Created {formatDate(
+                                    cluster.createdAt,
+                                )}
                             </span>
                         </TableCell>
                         <TableCell>{cluster.projectCount}</TableCell>
@@ -216,12 +298,16 @@
                                     })}
                                     aria-label={`Actions for ${cluster.name}`}
                                 >
-                                    <Ellipsis class="size-4" aria-hidden="true" />
+                                    <Ellipsis
+                                        class="size-4"
+                                        aria-hidden="true"
+                                    />
                                 </MenuTrigger>
                                 <MenuPopup align="end">
                                     <MenuItem
                                         variant="destructive"
-                                        onclick={() => askDelete(cluster)}
+                                        onclick={() =>
+                                            askDelete(cluster)}
                                     >
                                         <Trash2 aria-hidden="true" />
                                         Delete
@@ -233,7 +319,12 @@
                 {/each}
             {/snippet}
             {#snippet emptyAction()}
-                <Button size="sm" disabled={!ready} onclick={() => void list.set({ dialog: "create-cluster" })}>
+                <Button
+                    size="sm"
+                    disabled={!ready}
+                    onclick={() =>
+                        void list.set({ dialog: "create-cluster" })}
+                >
                     <Plus class="size-4" aria-hidden="true" />
                     New cluster
                 </Button>
@@ -246,26 +337,39 @@
     bind:open={
         () => list.dialog.current === "create-cluster",
         (open) => {
-            if (ready && !open && list.dialog.current === "create-cluster") void list.set({ dialog: null });
+            if (
+                ready &&
+                !open &&
+                list.dialog.current === "create-cluster"
+            )
+                void list.set({ dialog: null });
         }
     }
 />
 
 <AlertDialog
-    bind:open={() => deleteOpen, (open) => { if (!open) void list.set({ dialog: null, clusterId: null }); }}
+    bind:open={
+        () => deleteOpen,
+        (open) => {
+            if (!open)
+                void list.set({ dialog: null, clusterId: null });
+        }
+    }
 >
     <AlertDialogContent>
         <AlertDialogHeader>
             <AlertDialogTitle>Delete cluster?</AlertDialogTitle>
-            <AlertDialogDescription>
-                "{deleteName}" will be permanently deleted. {deleteProjectCopy} This action
-                cannot be undone.
+            <AlertDialogDescription class="break-words">
+                "{deleteName}" will be permanently deleted. {deleteProjectCopy}
+                This action cannot be undone.
             </AlertDialogDescription>
         </AlertDialogHeader>
         {#if deleteErrorMessage}
             <div class="px-6">
                 <Alert variant="error">
-                    <AlertDescription>{deleteErrorMessage}</AlertDescription>
+                    <AlertDescription>
+                        {deleteErrorMessage}
+                    </AlertDescription>
                 </Alert>
             </div>
         {/if}
@@ -282,7 +386,8 @@
             <Button
                 variant="destructive"
                 loading={deleteMutationState.isPending}
-                disabled={deleteMutationState.isPending || !clusterToDelete}
+                disabled={deleteMutationState.isPending ||
+                    !clusterToDelete}
                 onclick={confirmDelete}
             >
                 Delete

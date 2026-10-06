@@ -1,20 +1,20 @@
 <script lang="ts">
-  import type { HTMLAttributes } from 'svelte/elements';
-  import { cn, type WithElementRef } from '$lib/utils';
+    import type { HTMLAttributes } from "svelte/elements";
+    import { cn, type WithElementRef } from "$lib/utils";
 
-  let {
-    ref = $bindable(null),
-    class: className,
-    children,
-    ...restProps
-  }: WithElementRef<HTMLAttributes<HTMLElement>> = $props();
+    let {
+        ref = $bindable(null),
+        class: className,
+        children,
+        ...restProps
+    }: WithElementRef<HTMLAttributes<HTMLElement>> = $props();
 </script>
 
 <nav
-  bind:this={ref}
-  class={cn('-m-2 flex flex-col', className)}
-  data-slot="drawer-menu"
-  {...restProps}
+    bind:this={ref}
+    class={cn("-m-2 flex flex-col", className)}
+    data-slot="drawer-menu"
+    {...restProps}
 >
-  {@render children?.()}
+    {@render children?.()}
 </nav>

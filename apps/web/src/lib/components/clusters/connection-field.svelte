@@ -1,7 +1,11 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
     import { Field } from "$lib/components/ui/field";
-    import { InputGroup, InputGroupAddon, InputGroupInput } from "$lib/components/ui/input-group";
+    import {
+        InputGroup,
+        InputGroupAddon,
+        InputGroupInput,
+    } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
     import Check from "@lucide/svelte/icons/check";
     import Copy from "@lucide/svelte/icons/copy";
@@ -22,7 +26,9 @@
 
     let timer: ReturnType<typeof setTimeout> | undefined = undefined;
 
-    const displayValue = $derived(secret && !revealed ? "••••••••••••" : value);
+    const displayValue = $derived(
+        secret && !revealed ? "••••••••••••" : value,
+    );
 
     async function copy() {
         try {
@@ -39,21 +45,29 @@
     }
 
     function selectAll(event: Event) {
-        if (event.currentTarget instanceof HTMLInputElement) event.currentTarget.select();
+        if (event.currentTarget instanceof HTMLInputElement)
+            event.currentTarget.select();
     }
 </script>
 
 <Field>
     <Label>{label}</Label>
     <InputGroup>
-        <InputGroupInput readonly value={displayValue} class="font-mono" onclick={selectAll} />
+        <InputGroupInput
+            readonly
+            value={displayValue}
+            class="font-mono"
+            onclick={selectAll}
+        />
         <InputGroupAddon align="inline-end">
             {#if secret}
                 <Button
                     variant="ghost"
                     size="sm"
                     onclick={() => (revealed = !revealed)}
-                    aria-label={revealed ? `Hide ${label}` : `Show ${label}`}
+                    aria-label={revealed
+                        ? `Hide ${label}`
+                        : `Show ${label}`}
                 >
                     {revealed ? "Hide" : "Show"}
                 </Button>
@@ -66,7 +80,10 @@
                 title={`Copy ${label}`}
             >
                 {#if copied}
-                    <Check class="text-success-foreground" aria-hidden="true" />
+                    <Check
+                        class="text-success-foreground"
+                        aria-hidden="true"
+                    />
                 {:else}
                     <Copy aria-hidden="true" />
                 {/if}

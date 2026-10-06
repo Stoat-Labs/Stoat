@@ -1,0 +1,76 @@
+<script lang="ts">
+    import { page } from "$app/state";
+    import { authClient } from "$lib/auth-client";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
+    import { Badge } from "$lib/components/ui/badge";
+    import { Button } from "$lib/components/ui/button";
+    import { Field } from "$lib/components/ui/field";
+    import { Input } from "$lib/components/ui/input";
+    import { Label } from "$lib/components/ui/label";
+    import {
+        Select,
+        SelectContent,
+        SelectItem,
+        SelectTrigger,
+        SelectValue,
+    } from "$lib/components/ui/select";
+    import { Skeleton } from "$lib/components/ui/skeleton";
+    import { createQuery } from "@tanstack/svelte-query";
+    import ConfirmDialog from "./confirm-dialog.svelte";
+    import SettingsSection from "./settings-section.svelte";
+
+    let {
+        organizationId,
+        currentUserEmail,
+        canManage,
+    }: {
+        organizationId: string;
+        currentUserEmail: string;
+        canManage: boolean;
+    } = $props();
+
+    const roles = [
+        { value: "member", label: "Member" },
+        { value: "admin", label: "Admin" },
+    ];
+
+    const membersQuery = createQuery(() => ({
+        queryKey: ["organization-members", organizationId],
+        queryFn: async () => {
+            const result = await authClient.organization.listMembers({
+                query: { organizationId },
+            });
+
+            if (result.error)
+                throw new Error(
+                    result.error.message ?? "Unable to load members.",
+                );
+
+            return result.data.members;
+        },
+    }));
+
+    const invitationsQuery = createQuery(() => ({
+        queryKey: ["organization-invitations", organizationId],
+        queryFn: async () => {
+            const result =
+                await authClient.organization.listInvitations({
+                    query: { organizationId },
+                });
+
+            if (result.error)
+                throw new Error(
+                    result.error.message ??
+                        "Unable to load invitations.",
+                );
+
+            return result.data.filter(
+                (invitation) => invitation.status === "pending",
+            );
+        },
+        enabled: canManage,
+    }));
+
