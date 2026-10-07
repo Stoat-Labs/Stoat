@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { authClient } from "$lib/auth-client";
+    import { authClient } from "$lib/api/auth-client";
     import { Button } from "$lib/components/ui/button";
     import ConfirmDialog from "./confirm-dialog.svelte";
     import SettingsSection from "./settings-section.svelte";

@@ -35,7 +35,7 @@
         serviceRows,
         serviceSeries,
     } from "$lib/observability";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import {
         createQueries,
         createQuery,

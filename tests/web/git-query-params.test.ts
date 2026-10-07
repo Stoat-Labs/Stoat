@@ -2,7 +2,7 @@ import { expect, it } from "vite-plus/test";
 import {
     connectionDialogUrl,
     connectionFormParsers,
-} from "../../apps/web/src/lib/git-query-params";
+} from "../../apps/web/src/lib/params/git-query-params";
 
 it("accepts supported query providers and rejects Gitea", () => {
     for (const provider of ["github", "forgejo", "generic"]) {

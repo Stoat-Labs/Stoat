@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import { render } from "svelte/server";
-import IngressRouteFlow from "../../apps/web/src/lib/components/ingress-route-flow.svelte";
+import IngressRouteFlow from "../../apps/web/src/lib/components/shared/ingress-route-flow.svelte";
 
 it("renders one hostname and a distinct path-to-container branch for every route", () => {
     const { body } = render(IngressRouteFlow, {

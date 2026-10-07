@@ -4,7 +4,7 @@
         ProgressIndicator,
         ProgressTrack,
     } from "$lib/components/ui/progress";
-    import type { DeploymentStep } from "$lib/deployment-steps";
+    import type { DeploymentStep } from "$lib/deployments/steps";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import CornerDownRight from "@lucide/svelte/icons/corner-down-right";
     import Plus from "@lucide/svelte/icons/plus";

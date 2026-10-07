@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { containerInfo } from "../../apps/web/src/lib/container-info";
+import { containerInfo } from "../../apps/web/src/lib/resources/container-info";
 
 describe("containerInfo", () => {
     it("preserves full names and separates health from runtime status", () => {

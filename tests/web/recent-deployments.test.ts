@@ -8,8 +8,8 @@ import { render } from "svelte/server";
 import { expect, it } from "vite-plus/test";
 import DeploymentsTable from "../../apps/web/src/lib/components/deployments/deployments-table.svelte";
 import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/header-actions";
-import { orpc } from "../../apps/web/src/lib/orpc";
-import { listPageSize } from "../../apps/web/src/lib/query-params";
+import { orpc } from "../../apps/web/src/lib/api/orpc";
+import { listPageSize } from "../../apps/web/src/lib/params/query-params";
 
 function renderDeployments(latest: number | undefined, search: string, resourceId?: string) {
     const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });

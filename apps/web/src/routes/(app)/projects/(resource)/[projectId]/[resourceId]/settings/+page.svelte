@@ -52,7 +52,7 @@
     import { Spinner } from "$lib/components/ui/spinner";
     import { Switch } from "$lib/components/ui/switch";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
     import Boxes from "@lucide/svelte/icons/boxes";
     import Check from "@lucide/svelte/icons/check";

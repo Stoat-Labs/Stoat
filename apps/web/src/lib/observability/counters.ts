@@ -1,5 +1,5 @@
 import type { MachineMetricName } from "@stoat/api/observability";
-import { metricTotals, type MachineData } from "./observability";
+import { metricTotals, type MachineData } from "$lib/observability";
 
 /** Require every visible machine to report; never present a partial total as complete. */
 export function counterTotal(machines: MachineData[], name: MachineMetricName) {

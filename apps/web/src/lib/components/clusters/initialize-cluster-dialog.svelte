@@ -32,7 +32,7 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import Info from "@lucide/svelte/icons/info";
     import Server from "@lucide/svelte/icons/server";
     import ShieldCheck from "@lucide/svelte/icons/shield-check";

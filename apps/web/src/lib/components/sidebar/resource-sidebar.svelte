@@ -13,7 +13,7 @@
         SidebarSeparator,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Braces from "@lucide/svelte/icons/braces";

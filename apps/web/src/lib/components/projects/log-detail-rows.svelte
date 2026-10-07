@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { DisplayLog } from "$lib/resource-logs";
+    import type { DisplayLog } from "$lib/resources/logs";
 
     let {
         log,

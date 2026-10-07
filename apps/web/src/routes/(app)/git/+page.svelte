@@ -26,8 +26,8 @@
     import {
         connectionDialogParsers,
         connectionDialogUrl,
-    } from "$lib/git-query-params";
-    import { orpc } from "$lib/orpc";
+    } from "$lib/params/git-query-params";
+    import { orpc } from "$lib/api/orpc";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import { createQuery } from "@tanstack/svelte-query";

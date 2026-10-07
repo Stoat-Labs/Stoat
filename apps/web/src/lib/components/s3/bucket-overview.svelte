@@ -19,7 +19,7 @@
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { s3BucketStatusVariant } from "$lib/s3";
     import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
     import {

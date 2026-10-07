@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { imageIcon } from "$lib/image-icons";
+    import { imageIcon } from "$lib/resources/image-icons";
     import Box from "@lucide/svelte/icons/box";
 
     let { image }: { image: string | null | undefined } = $props();

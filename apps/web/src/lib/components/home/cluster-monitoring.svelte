@@ -12,7 +12,7 @@
         CardTitle,
     } from "$lib/components/ui/card";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
 
     type ClusterOption = {

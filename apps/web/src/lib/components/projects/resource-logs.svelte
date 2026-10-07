@@ -18,15 +18,15 @@
     } from "$lib/components/ui/frame";
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import LogViewer from "$lib/components/log-viewer.svelte";
-    import { subscribeToStream } from "$lib/deployment-stream";
+    import LogViewer from "$lib/components/shared/log-viewer.svelte";
+    import { subscribeToStream } from "$lib/deployments/stream";
     import {
         logDateTime,
         parseDateInput,
         toLocalDateInput,
     } from "$lib/format";
-    import { client, orpc, queryClient } from "$lib/orpc";
-    import { logBucketParser } from "$lib/query-params";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { logBucketParser } from "$lib/params/query-params";
     import {
         classifyLog,
         logByteCost,
@@ -35,7 +35,7 @@
         selectedLogServices,
         trimLogLines,
         type DisplayLog,
-    } from "$lib/resource-logs";
+    } from "$lib/resources/logs";
     import Pause from "@lucide/svelte/icons/pause";
     import Play from "@lucide/svelte/icons/play";
     import RefreshCw from "@lucide/svelte/icons/refresh-cw";

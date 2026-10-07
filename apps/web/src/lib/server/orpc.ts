@@ -2,7 +2,7 @@ import { getRequestEvent } from "$app/server";
 import { createRouterClient } from "@orpc/server";
 import { appRouter, type AppRouterClient } from "@stoat/api/routers/index";
 
-import { createContext } from "../context";
+import { createContext } from "../../context";
 
 if (typeof window !== "undefined") {
     throw new Error("This file should only be imported on the server.");

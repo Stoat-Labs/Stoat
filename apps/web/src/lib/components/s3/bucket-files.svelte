@@ -8,7 +8,7 @@
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { formatDate } from "$lib/format";
-    import { client, orpc } from "$lib/orpc";
+    import { client, orpc } from "$lib/api/orpc";
     import { bytes } from "$lib/observability";
     import CornerLeftUp from "@lucide/svelte/icons/corner-left-up";
     import Download from "@lucide/svelte/icons/download";

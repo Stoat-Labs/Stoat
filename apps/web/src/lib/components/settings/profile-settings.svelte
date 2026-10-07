@@ -1,6 +1,6 @@
 <script lang="ts">
     import { invalidateAll } from "$app/navigation";
-    import { authClient } from "$lib/auth-client";
+    import { authClient } from "$lib/api/auth-client";
     import {
         Alert,
         AlertDescription,

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { page } from "$app/state";
     import Container from "@lucide/svelte/icons/container";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         SidebarMenu,

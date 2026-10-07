@@ -38,7 +38,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import FolderOpen from "@lucide/svelte/icons/folder-open";
     import Plus from "@lucide/svelte/icons/plus";

@@ -7,7 +7,7 @@ import {
     selectedLogServices,
     stripLogPrefix,
     type DisplayLog,
-} from "../../apps/web/src/lib/resource-logs";
+} from "../../apps/web/src/lib/resources/logs";
 
 it("preserves name-based log selections across replacement, disappearance and rediscovery", () => {
     const original = [

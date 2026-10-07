@@ -1,5 +1,5 @@
 import { createParser, type Parser } from "nuqs-svelte";
-import type { LogBucket } from "./resource-logs";
+import type { LogBucket } from "$lib/resources/logs";
 
 export const listPageSize = 25;
 

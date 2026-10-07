@@ -13,15 +13,18 @@
         TableHead,
         TableRow,
     } from "$lib/components/ui/table";
-    import { subscribeToStream } from "$lib/deployment-stream";
+    import { subscribeToStream } from "$lib/deployments/stream";
     import {
         deploymentStatusLabel,
         deploymentStatusVariant,
-    } from "$lib/deployment-status";
+    } from "$lib/deployments/status";
     import { ago, deploymentDuration } from "$lib/format";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
-    import { client, orpc, queryClient } from "$lib/orpc";
-    import { listPageSize, pageParser } from "$lib/query-params";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import {
+        listPageSize,
+        pageParser,
+    } from "$lib/params/query-params";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsStringLiteral,

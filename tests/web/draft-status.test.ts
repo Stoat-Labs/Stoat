@@ -1,5 +1,5 @@
 import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/header-actions";
-import { orpc } from "../../apps/web/src/lib/orpc";
+import { orpc } from "../../apps/web/src/lib/api/orpc";
 import { QueryClient, setQueryClientContext } from "@tanstack/svelte-query";
 import { setContext } from "svelte";
 import { render } from "svelte/server";

@@ -13,7 +13,7 @@
     } from "$lib/components/ui/card";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,

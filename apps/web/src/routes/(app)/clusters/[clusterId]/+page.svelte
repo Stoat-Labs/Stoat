@@ -44,9 +44,9 @@
         TableHeader,
         TableRow,
     } from "$lib/components/ui/table";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { formatDate } from "$lib/format";
-    import { deploymentIdParser } from "$lib/query-params";
+    import { deploymentIdParser } from "$lib/params/query-params";
     import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Check from "@lucide/svelte/icons/check";

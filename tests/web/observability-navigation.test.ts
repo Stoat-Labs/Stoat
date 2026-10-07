@@ -4,7 +4,7 @@ import {
     observabilityMetrics,
     observabilityView,
     observabilityViews,
-} from "../../apps/web/src/lib/observability-navigation";
+} from "../../apps/web/src/lib/observability/navigation";
 import {
     dnsMetricNames,
     metricNames,

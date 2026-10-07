@@ -3,13 +3,13 @@ import type { Handle } from "@sveltejs/kit";
 import { sequence } from "@sveltejs/kit/hooks";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 
-import "./lib/orpc.server";
+import "./lib/server/orpc";
 import { createAuthMiddleware } from "evlog/better-auth";
 import { createFsDrain } from "evlog/fs";
 import { createEvlogHooks } from "evlog/sveltekit";
 
 import { getAuth } from "./services";
-import { startMonitoringWorker } from "./lib/worker.server";
+import { startMonitoringWorker } from "./lib/server/worker";
 
 // Server modules also execute during `vite build` (SSR analysis). The worker
 // must only run in a live server, never at build time.

@@ -2,7 +2,7 @@
     import { beforeNavigate, goto } from "$app/navigation";
     import { page } from "$app/state";
     import ConnectionField from "$lib/components/clusters/connection-field.svelte";
-    import CodeEditor from "$lib/components/code-editor.svelte";
+    import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import PreviewComposeDialog from "$lib/components/projects/preview-compose-dialog.svelte";
     import BucketOverview from "$lib/components/s3/bucket-overview.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
@@ -42,9 +42,9 @@
     } from "$lib/components/ui/frame";
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { containerInfo } from "$lib/container-info";
-    import ImageIcon from "$lib/components/image-icon.svelte";
-    import { client, orpc, queryClient } from "$lib/orpc";
+    import { containerInfo } from "$lib/resources/container-info";
+    import ImageIcon from "$lib/components/shared/image-icon.svelte";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Box from "@lucide/svelte/icons/box";
     import Boxes from "@lucide/svelte/icons/boxes";

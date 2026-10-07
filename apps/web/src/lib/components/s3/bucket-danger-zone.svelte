@@ -3,7 +3,7 @@
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
     import { Card, CardPanel } from "$lib/components/ui/card";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import {
         createMutation,
         createQuery,

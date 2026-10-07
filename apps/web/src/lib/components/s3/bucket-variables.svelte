@@ -1,5 +1,5 @@
 <script lang="ts">
-    import CodeEditor from "$lib/components/code-editor.svelte";
+    import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import {
         Alert,
         AlertDescription,
@@ -13,7 +13,7 @@
         FrameTitle,
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import Eye from "@lucide/svelte/icons/eye";
     import EyeOff from "@lucide/svelte/icons/eye-off";
     import {

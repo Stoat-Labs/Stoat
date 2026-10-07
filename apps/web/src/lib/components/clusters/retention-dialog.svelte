@@ -23,7 +23,7 @@
         InputGroupInput,
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import Info from "@lucide/svelte/icons/info";
     import { createMutation } from "@tanstack/svelte-query";
     import { watch } from "runed";

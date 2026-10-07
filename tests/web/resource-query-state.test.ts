@@ -5,7 +5,7 @@ import {
 import { setContext } from "svelte";
 import { render } from "svelte/server";
 import { describe, expect, it } from "vite-plus/test";
-import { orpc } from "../../apps/web/src/lib/orpc";
+import { orpc } from "../../apps/web/src/lib/api/orpc";
 import CreatePage from "../../apps/web/src/routes/(app)/projects/[projectId]/create/[source]/+page.svelte";
 import CatalogPage from "../../apps/web/src/routes/(app)/projects/[projectId]/create/+page.svelte";
 

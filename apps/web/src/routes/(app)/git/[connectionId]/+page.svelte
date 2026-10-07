@@ -24,8 +24,8 @@
         TableHeader,
         TableRow,
     } from "$lib/components/ui/table";
-    import { connectionDialogUrl } from "$lib/git-query-params";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { connectionDialogUrl } from "$lib/params/git-query-params";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import {
         createMutation,

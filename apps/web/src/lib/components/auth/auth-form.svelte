@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { authClient } from "$lib/auth-client";
+    import { authClient } from "$lib/api/auth-client";
     import { page } from "$app/state";
     import {
         Alert,

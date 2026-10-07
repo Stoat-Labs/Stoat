@@ -15,7 +15,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
 
     let {

@@ -33,9 +33,12 @@
         TableHead,
         TableRow,
     } from "$lib/components/ui/table";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { formatDate } from "$lib/format";
-    import { listPageSize, pageParser } from "$lib/query-params";
+    import {
+        listPageSize,
+        pageParser,
+    } from "$lib/params/query-params";
     import Ellipsis from "@lucide/svelte/icons/ellipsis";
     import Plus from "@lucide/svelte/icons/plus";
     import Search from "@lucide/svelte/icons/search";

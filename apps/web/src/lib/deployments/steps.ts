@@ -1,4 +1,4 @@
-import type { LogLevel } from "$lib/resource-logs";
+import type { LogLevel } from "$lib/resources/logs";
 
 export type DeploymentLine = { time: number; message: string; level: LogLevel; event?: string };
 

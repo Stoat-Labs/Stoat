@@ -22,7 +22,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import {
         s3BucketStatusVariant,
         s3ConnectionInput,

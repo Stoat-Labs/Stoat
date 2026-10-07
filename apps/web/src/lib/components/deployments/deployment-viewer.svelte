@@ -1,6 +1,6 @@
 <script lang="ts">
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
-    import LogViewer from "$lib/components/log-viewer.svelte";
+    import LogViewer from "$lib/components/shared/log-viewer.svelte";
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
     import {
@@ -17,17 +17,17 @@
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
-    import { subscribeToStream } from "$lib/deployment-stream";
+    import { subscribeToStream } from "$lib/deployments/stream";
     import {
         deploymentStatusLabel,
         deploymentStatusVariant,
         isActiveDeploymentStatus,
         isTerminalDeploymentStatus,
-    } from "$lib/deployment-status";
+    } from "$lib/deployments/status";
     import { formatDurationMs } from "$lib/format";
-    import { client, orpc, queryClient } from "$lib/orpc";
-    import { classifyLog, type LogRow } from "$lib/resource-logs";
-    import { deploymentSteps } from "$lib/deployment-steps";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { classifyLog, type LogRow } from "$lib/resources/logs";
+    import { deploymentSteps } from "$lib/deployments/steps";
     import Check from "@lucide/svelte/icons/check";
     import Copy from "@lucide/svelte/icons/copy";
     import Download from "@lucide/svelte/icons/download";

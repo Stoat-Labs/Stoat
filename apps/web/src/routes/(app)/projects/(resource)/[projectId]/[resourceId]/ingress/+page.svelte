@@ -42,10 +42,10 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import IngressRouteFlow from "$lib/components/ingress-route-flow.svelte";
+    import IngressRouteFlow from "$lib/components/shared/ingress-route-flow.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import Container from "@lucide/svelte/icons/container";

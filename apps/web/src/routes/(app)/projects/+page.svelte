@@ -16,7 +16,7 @@
         EmptyTitle,
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import FolderOpen from "@lucide/svelte/icons/folder-open";
     import Plus from "@lucide/svelte/icons/plus";
     import { createQuery } from "@tanstack/svelte-query";

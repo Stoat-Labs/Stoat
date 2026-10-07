@@ -31,8 +31,8 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { connectionFormParsers } from "$lib/git-query-params";
-    import { client, orpc, queryClient } from "$lib/orpc";
+    import { connectionFormParsers } from "$lib/params/git-query-params";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
     import { Match } from "effect";
     import {

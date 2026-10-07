@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import BucketIcon from "$lib/components/bucket-icon.svelte";
+    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import {
         dotClass,
         statusLabels,
@@ -36,10 +36,10 @@
     import {
         deploymentStatusVariant,
         isActiveDeploymentStatus,
-    } from "$lib/deployment-status";
-    import { subscribeToStream } from "$lib/deployment-stream";
+    } from "$lib/deployments/status";
+    import { subscribeToStream } from "$lib/deployments/stream";
     import { ago, elapsed } from "$lib/format";
-    import { client, orpc, queryClient } from "$lib/orpc";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import { s3BucketStatusVariant } from "$lib/s3";
     import { cn } from "$lib/utils";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";

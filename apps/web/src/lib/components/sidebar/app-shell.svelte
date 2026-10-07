@@ -6,11 +6,11 @@
         SidebarProvider,
         SidebarTrigger,
     } from "$lib/components/ui/sidebar";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import {
         observabilityHref,
         observabilityView,
-    } from "$lib/observability-navigation";
+    } from "$lib/observability/navigation";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
     import Pencil from "@lucide/svelte/icons/pencil";

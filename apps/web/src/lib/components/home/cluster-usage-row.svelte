@@ -7,7 +7,7 @@
         MeterIndicator,
         MeterTrack,
     } from "$lib/components/ui/meter";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
     import { createQuery } from "@tanstack/svelte-query";
 

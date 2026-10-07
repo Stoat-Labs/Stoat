@@ -22,7 +22,7 @@
     import { Label } from "$lib/components/ui/label";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { bytes } from "$lib/observability";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import {
         createMutation,
         createQuery,

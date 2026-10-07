@@ -33,7 +33,7 @@
         seriesColor,
         type ChartSeries,
     } from "$lib/observability";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import {
         httpMetricNames,

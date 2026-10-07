@@ -37,7 +37,7 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import { s3Providers } from "@stoat/s3/providers";

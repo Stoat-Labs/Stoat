@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { queryClient } from "$lib/orpc";
+    import { queryClient } from "$lib/api/orpc";
     import { QueryClientProvider } from "@tanstack/svelte-query";
     import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
     import { NuqsAdapter } from "nuqs-svelte/adapters/svelte-kit";

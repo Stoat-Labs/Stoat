@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { StepState } from "$lib/deployment-steps";
+    import type { StepState } from "$lib/deployments/steps";
     import Check from "@lucide/svelte/icons/check";
     import Loader from "@lucide/svelte/icons/loader-circle";
     import Minus from "@lucide/svelte/icons/minus";

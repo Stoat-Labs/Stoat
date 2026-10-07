@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { deploymentSteps, type DeploymentLine } from "../../apps/web/src/lib/deployment-steps";
+import { deploymentSteps, type DeploymentLine } from "../../apps/web/src/lib/deployments/steps";
 
 const lines = (entries: [number, string, string?, DeploymentLine["level"]?][]): DeploymentLine[] =>
     entries.map(([time, message, event, level = "other"]) => ({ time, message, event, level }));

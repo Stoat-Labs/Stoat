@@ -28,7 +28,7 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import {
         createMutation,
         createQuery,

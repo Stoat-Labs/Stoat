@@ -31,7 +31,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import Box from "@lucide/svelte/icons/box";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import Container from "@lucide/svelte/icons/container";

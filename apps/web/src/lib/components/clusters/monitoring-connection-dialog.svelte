@@ -14,7 +14,7 @@
         DialogTitle,
     } from "$lib/components/ui/dialog";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import Database from "@lucide/svelte/icons/database";
     import Info from "@lucide/svelte/icons/info";
     import { createQuery } from "@tanstack/svelte-query";

@@ -29,7 +29,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import {
         s3ConnectionInput,
         s3DraftComplete,

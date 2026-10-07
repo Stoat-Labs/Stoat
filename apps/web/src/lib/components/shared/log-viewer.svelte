@@ -21,7 +21,7 @@
         type LogBucket,
         type LogLevel,
         type LogRow,
-    } from "$lib/resource-logs";
+    } from "$lib/resources/logs";
     import ArrowDown from "@lucide/svelte/icons/arrow-down";
     import Check from "@lucide/svelte/icons/check";
     import Copy from "@lucide/svelte/icons/copy";

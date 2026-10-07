@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import CodeEditor from "$lib/components/code-editor.svelte";
+    import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import BucketVariables from "$lib/components/s3/bucket-variables.svelte";
     import {
         Alert,
@@ -21,7 +21,7 @@
         EmptyTitle,
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
     import Container from "@lucide/svelte/icons/container";

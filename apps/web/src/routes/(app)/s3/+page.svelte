@@ -22,7 +22,7 @@
         FrameTitle,
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Plus from "@lucide/svelte/icons/plus";

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { deploymentIdParser, listPageSize, pageParser } from "../../apps/web/src/lib/query-params";
+import {
+    deploymentIdParser,
+    listPageSize,
+    pageParser,
+} from "../../apps/web/src/lib/params/query-params";
 
 describe("page query parameter", () => {
     it("restores positive pages and serializes them", () => {

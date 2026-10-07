@@ -18,7 +18,7 @@
         observabilityHref,
         observabilityView,
         observabilityViews,
-    } from "$lib/observability-navigation";
+    } from "$lib/observability/navigation";
     import Activity from "@lucide/svelte/icons/activity";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
 

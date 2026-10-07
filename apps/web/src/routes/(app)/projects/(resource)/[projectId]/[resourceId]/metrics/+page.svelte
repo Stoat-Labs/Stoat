@@ -42,7 +42,7 @@
         sumPoints,
         type ChartSeries,
     } from "$lib/observability";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import {
         httpMetricNames,
         type MetricSeries,

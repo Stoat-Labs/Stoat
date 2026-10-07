@@ -40,10 +40,10 @@
         segmentedControlRootClassName,
     } from "$lib/components/ui/tabs/segmented-control";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { orpc, queryClient } from "$lib/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import ImageIcon from "$lib/components/image-icon.svelte";
+    import ImageIcon from "$lib/components/shared/image-icon.svelte";
     import Container from "@lucide/svelte/icons/container";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import HardDrive from "@lucide/svelte/icons/hard-drive";

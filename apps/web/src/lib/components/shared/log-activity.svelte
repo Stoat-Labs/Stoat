@@ -13,7 +13,7 @@
         type LogLevel,
         type LogRow,
         type logActivity,
-    } from "$lib/resource-logs";
+    } from "$lib/resources/logs";
     import { onMount } from "svelte";
 
     let {

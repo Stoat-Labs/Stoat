@@ -2,7 +2,7 @@
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
     import { onMount } from "svelte";
     import { page } from "$app/state";
-    import { authClient } from "$lib/auth-client";
+    import { authClient } from "$lib/api/auth-client";
     import {
         Alert,
         AlertDescription,

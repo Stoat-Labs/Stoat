@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { DeploymentStep as Step } from "$lib/deployment-steps";
+    import type { DeploymentStep as Step } from "$lib/deployments/steps";
     import { formatDurationMs } from "$lib/format";
     import DeploymentStep from "./deployment-step.svelte";
     import StepNode from "./step-node.svelte";

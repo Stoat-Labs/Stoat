@@ -62,17 +62,17 @@
         topServices,
         type ClusterData,
     } from "$lib/observability";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import {
         observabilityMetrics,
         observabilityViews,
         type ObservabilityView,
-    } from "$lib/observability-navigation";
+    } from "$lib/observability/navigation";
     import {
         counterCount,
         counterPercent,
         counterTotal,
-    } from "$lib/observability-counters";
+    } from "$lib/observability/counters";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import {
         createQueries,

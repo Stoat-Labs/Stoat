@@ -16,7 +16,7 @@
     } from "$lib/components/ui/dialog";
     import { Spinner } from "$lib/components/ui/spinner";
     import { Textarea } from "$lib/components/ui/textarea";
-    import { orpc } from "$lib/orpc";
+    import { orpc } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
 

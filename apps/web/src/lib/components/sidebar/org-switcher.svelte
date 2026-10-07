@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import { authClient } from "$lib/auth-client";
+    import { authClient } from "$lib/api/auth-client";
     import CreateOrganizationDialog from "$lib/components/organization/create-organization-dialog.svelte";
     import {
         Alert,
