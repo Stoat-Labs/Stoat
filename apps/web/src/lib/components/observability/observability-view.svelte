@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { syncMetricCharts } from "$lib/components/observability/chart-sync";
     import { browser } from "$app/environment";
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
     import Filesystems from "$lib/components/observability/filesystems.svelte";
@@ -77,7 +78,6 @@
         createQueries,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { ChartGroup } from "layerchart";
     import {
         parseAsArrayOf,
         parseAsBoolean,
@@ -103,6 +103,8 @@
 
     const range = useObservabilityRange();
 
+    syncMetricCharts();
+
     const machineMetricNames = $derived(observabilityMetrics(view));
 
     const loadingTitles = {
@@ -122,12 +124,14 @@
         ],
         health: ["Uncloud scrape health"],
         registry: [
-            "Registry requests",
-            "Registry cache",
-            "Registry bandwidth",
-            "Registry errors",
+            "Proxy requests",
+            "Proxy hit percentage",
+            "Upstream fetches (cache misses)",
+            "Transfer · upstream / clients",
         ],
-    };
+        // HTTP traffic renders its own page (http-traffic.svelte), never this view.
+        http: [],
+    } satisfies Record<ObservabilityView, string[]>;
 
     let hoveredMachine = $state("");
 
@@ -436,7 +440,56 @@
         },
     ]);
 
-    const registryCards = $derived([] as [string, string][]);
+    const registryTotals = $derived({
+        proxyRequests: counterTotal(
+            visibleMachines,
+            "registryProxyRequests",
+        ),
+        proxyHits: counterTotal(visibleMachines, "registryProxyHits"),
+        pulled: counterTotal(
+            visibleMachines,
+            "registryProxyPulledBytes",
+        ),
+        pushed: counterTotal(
+            visibleMachines,
+            "registryProxyPushedBytes",
+        ),
+        cacheErrors: counterTotal(
+            visibleMachines,
+            "registryCacheErrors",
+        ),
+    });
+
+    const registryCards = $derived([
+        [
+            "Proxy requests",
+            counterCount(registryTotals.proxyRequests),
+        ],
+        [
+            "Proxy hit rate",
+            percent(
+                counterPercent(
+                    registryTotals.proxyHits,
+                    registryTotals.proxyRequests,
+                ),
+            ),
+        ],
+        ["Pulled from upstream", bytes(registryTotals.pulled)],
+        ["Served to clients", bytes(registryTotals.pushed)],
+        [
+            "Storage-cache errors",
+            counterCount(registryTotals.cacheErrors),
+        ],
+    ]);
+
+    // Registry series only exist once the registry has served at least one request.
+    const registryReporting = $derived(
+        registryCharts.some((chart) =>
+            chart.series.some((item) =>
+                item.points.some((point) => point.value !== null),
+            ),
+        ),
+    );
 
     const serviceNames = [
         "serviceCpu",
@@ -839,536 +892,309 @@
             </a>
         </Empty>
     {:else if data.some((cluster) => cluster.available)}
-        <ChartGroup
-            pointer={{ tooltip: false }}
-            brush={false}
-            domain={false}
-            series={false}
-        >
-            {#if view === "overview"}
-                <Frame>
+        {#if view === "overview"}
+            <Frame>
+                <FrameHeader
+                    class="flex-row flex-wrap items-center justify-between gap-2"
+                >
+                    <FrameTitle>CPU per machine</FrameTitle>
+                    <span
+                        class="text-xs text-muted-foreground tabular-nums"
+                    >
+                        <span class="font-medium text-foreground">
+                            {percent(
+                                sumMachines(visibleMachines, "cpu"),
+                            )}
+                        </span>
+                        of {percent(
+                            cores === null ? null : cores * 100,
+                        )}{reporting < visibleMachines.length
+                            ? ` · ${reporting} / ${visibleMachines.length} reporting`
+                            : ""}
+                    </span>
+                </FrameHeader>
+                <FramePanel class="min-w-0 p-4">
+                    <MetricChart
+                        series={chartSeries(visibleMachines, "cpu")}
+                        {start}
+                        {end}
+                        bind:hoveredMachine
+                    />
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        {#each machines as machine (machine.key)}
+                            <Button
+                                variant={filters.machine.current ===
+                                machine.key
+                                    ? "secondary"
+                                    : "ghost"}
+                                size="sm"
+                                class="gap-2 text-xs"
+                                style={`opacity: ${hoveredMachine && hoveredMachine !== machine.key ? 0.4 : 1}`}
+                                onpointerenter={() =>
+                                    (hoveredMachine = machine.key)}
+                                onpointerleave={() =>
+                                    (hoveredMachine = "")}
+                                onfocus={() =>
+                                    (hoveredMachine = machine.key)}
+                                onblur={() => (hoveredMachine = "")}
+                                aria-pressed={filters.machine
+                                    .current === machine.key}
+                                onclick={() =>
+                                    (filters.machine.current =
+                                        filters.machine.current ===
+                                        machine.key
+                                            ? ""
+                                            : machine.key)}
+                            >
+                                <span
+                                    class="size-2 rounded-full"
+                                    style:background={machine.color}
+                                ></span>
+                                {machine.cluster.name} / {machine.name}
+                                <span
+                                    class="font-semibold tabular-nums"
+                                >
+                                    {percent(
+                                        machineValue(machine, "cpu"),
+                                    )}
+                                </span>
+                            </Button>
+                        {/each}
+                    </div>
+                </FramePanel>
+            </Frame>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+                <Frame class="min-w-0">
                     <FrameHeader
                         class="flex-row flex-wrap items-center justify-between gap-2"
                     >
-                        <FrameTitle>CPU per machine</FrameTitle>
+                        <FrameTitle>Memory by machine</FrameTitle>
                         <span
                             class="text-xs text-muted-foreground tabular-nums"
                         >
                             <span class="font-medium text-foreground">
-                                {percent(
-                                    sumMachines(
-                                        visibleMachines,
-                                        "cpu",
-                                    ),
-                                )}
+                                {bytes(memory)}
                             </span>
-                            of {percent(
-                                cores === null ? null : cores * 100,
-                            )}{reporting < visibleMachines.length
-                                ? ` · ${reporting} / ${visibleMachines.length} reporting`
-                                : ""}
+                            of {bytes(memoryTotal)}
                         </span>
-                    </FrameHeader>
-                    <FramePanel class="min-w-0 p-4">
+                    </FrameHeader><FramePanel class="min-w-0 p-4">
                         <MetricChart
                             series={chartSeries(
                                 visibleMachines,
-                                "cpu",
+                                "memory",
                             )}
                             {start}
                             {end}
+                            unit="bytes"
                             bind:hoveredMachine
                         />
-                        <div class="mt-3 flex flex-wrap gap-2">
-                            {#each machines as machine (machine.key)}
-                                <Button
-                                    variant={filters.machine
-                                        .current === machine.key
-                                        ? "secondary"
-                                        : "ghost"}
-                                    size="sm"
-                                    class="gap-2 text-xs"
-                                    style={`opacity: ${hoveredMachine && hoveredMachine !== machine.key ? 0.4 : 1}`}
-                                    onpointerenter={() =>
-                                        (hoveredMachine =
-                                            machine.key)}
-                                    onpointerleave={() =>
-                                        (hoveredMachine = "")}
-                                    onfocus={() =>
-                                        (hoveredMachine =
-                                            machine.key)}
-                                    onblur={() =>
-                                        (hoveredMachine = "")}
-                                    aria-pressed={filters.machine
-                                        .current === machine.key}
-                                    onclick={() =>
-                                        (filters.machine.current =
-                                            filters.machine
-                                                .current ===
-                                            machine.key
-                                                ? ""
-                                                : machine.key)}
+                        <div
+                            class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
+                        >
+                            {#each visibleMachines as machine (machine.key)}<span
+                                    class="flex items-center gap-2 text-xs"
+                                    style:opacity={hoveredMachine &&
+                                    hoveredMachine !== machine.key
+                                        ? 0.4
+                                        : 1}
                                 >
                                     <span
                                         class="size-2 rounded-full"
                                         style:background={machine.color}
                                     ></span>
                                     {machine.cluster.name} / {machine.name}
-                                    <span
-                                        class="font-semibold tabular-nums"
-                                    >
-                                        {percent(
-                                            machineValue(
-                                                machine,
-                                                "cpu",
-                                            ),
-                                        )}
-                                    </span>
-                                </Button>
-                            {/each}
+                                </span>{/each}
                         </div>
                     </FramePanel>
                 </Frame>
-
-                <div class="grid gap-4 lg:grid-cols-2">
-                    <Frame class="min-w-0">
-                        <FrameHeader
-                            class="flex-row flex-wrap items-center justify-between gap-2"
+                <Frame class="min-w-0">
+                    <FrameHeader
+                        class="flex-row flex-wrap items-center justify-between gap-2"
+                    >
+                        <FrameTitle>
+                            Disk usage · all filesystems
+                        </FrameTitle>
+                        <span
+                            class="text-xs text-muted-foreground tabular-nums"
                         >
-                            <FrameTitle>Memory by machine</FrameTitle>
-                            <span
-                                class="text-xs text-muted-foreground tabular-nums"
-                            >
-                                <span
-                                    class="font-medium text-foreground"
-                                >
-                                    {bytes(memory)}
-                                </span>
-                                of {bytes(memoryTotal)}
+                            <span class="font-medium text-foreground">
+                                {disk !== null && diskTotal
+                                    ? percent(
+                                          (100 * disk) / diskTotal,
+                                      )
+                                    : "—"}
                             </span>
-                        </FrameHeader><FramePanel class="min-w-0 p-4">
-                            <MetricChart
-                                series={chartSeries(
-                                    visibleMachines,
-                                    "memory",
-                                )}
-                                {start}
-                                {end}
-                                unit="bytes"
-                                bind:hoveredMachine
-                            />
-                            <div
-                                class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
-                            >
-                                {#each visibleMachines as machine (machine.key)}<span
-                                        class="flex items-center gap-2 text-xs"
-                                        style:opacity={hoveredMachine &&
-                                        hoveredMachine !== machine.key
-                                            ? 0.4
-                                            : 1}
-                                    >
-                                        <span
-                                            class="size-2 rounded-full"
-                                            style:background={machine.color}
-                                        ></span>
-                                        {machine.cluster.name} / {machine.name}
-                                    </span>{/each}
-                            </div>
-                        </FramePanel>
-                    </Frame>
-                    <Frame class="min-w-0">
-                        <FrameHeader
-                            class="flex-row flex-wrap items-center justify-between gap-2"
+                            · {bytes(disk)} of {bytes(diskTotal)}
+                        </span>
+                    </FrameHeader><FramePanel class="min-w-0 p-4">
+                        <MetricChart
+                            series={chartSeriesRatio(
+                                visibleMachines,
+                                "disk",
+                                "diskTotal",
+                            )}
+                            {start}
+                            {end}
+                            max={100}
+                            bind:hoveredMachine
+                        />
+                        <div
+                            class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
                         >
-                            <FrameTitle>
-                                Disk usage · all filesystems
-                            </FrameTitle>
-                            <span
-                                class="text-xs text-muted-foreground tabular-nums"
-                            >
-                                <span
-                                    class="font-medium text-foreground"
+                            {#each visibleMachines as machine (machine.key)}<span
+                                    class="flex items-center gap-2 text-xs"
+                                    style:opacity={hoveredMachine &&
+                                    hoveredMachine !== machine.key
+                                        ? 0.4
+                                        : 1}
                                 >
-                                    {disk !== null && diskTotal
-                                        ? percent(
-                                              (100 * disk) /
-                                                  diskTotal,
-                                          )
-                                        : "—"}
-                                </span>
-                                · {bytes(disk)} of {bytes(diskTotal)}
-                            </span>
-                        </FrameHeader><FramePanel class="min-w-0 p-4">
-                            <MetricChart
-                                series={chartSeriesRatio(
-                                    visibleMachines,
-                                    "disk",
-                                    "diskTotal",
-                                )}
-                                {start}
-                                {end}
-                                max={100}
-                                bind:hoveredMachine
-                            />
-                            <div
-                                class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
-                            >
-                                {#each visibleMachines as machine (machine.key)}<span
-                                        class="flex items-center gap-2 text-xs"
-                                        style:opacity={hoveredMachine &&
-                                        hoveredMachine !== machine.key
-                                            ? 0.4
-                                            : 1}
-                                    >
-                                        <span
-                                            class="size-2 rounded-full"
-                                            style:background={machine.color}
-                                        ></span>
-                                        {machine.cluster.name} / {machine.name}
-                                    </span>{/each}
-                            </div>
-                        </FramePanel>
-                    </Frame>
-                    <Frame class="min-w-0">
-                        <FrameHeader
-                            class="flex-row flex-wrap items-center justify-between gap-2"
+                                    <span
+                                        class="size-2 rounded-full"
+                                        style:background={machine.color}
+                                    ></span>
+                                    {machine.cluster.name} / {machine.name}
+                                </span>{/each}
+                        </div>
+                    </FramePanel>
+                </Frame>
+                <Frame class="min-w-0">
+                    <FrameHeader
+                        class="flex-row flex-wrap items-center justify-between gap-2"
+                    >
+                        <FrameTitle>
+                            Network · receive / send
+                        </FrameTitle>
+                        <span
+                            class="text-xs text-muted-foreground tabular-nums"
                         >
-                            <FrameTitle>
-                                Network · receive / send
-                            </FrameTitle>
-                            <span
-                                class="text-xs text-muted-foreground tabular-nums"
+                            ↓ <span
+                                class="font-medium text-foreground"
                             >
-                                ↓ <span
-                                    class="font-medium text-foreground"
-                                >
-                                    {bandwidth(
-                                        sumMachines(
-                                            visibleMachines,
-                                            "networkIn",
-                                        ),
-                                    )}
-                                </span>
-                                · ↑
-                                <span
-                                    class="font-medium text-foreground"
-                                >
-                                    {bandwidth(
-                                        sumMachines(
-                                            visibleMachines,
-                                            "networkOut",
-                                        ),
-                                    )}
-                                </span>
-                            </span>
-                        </FrameHeader><FramePanel class="min-w-0 p-4">
-                            <MetricChart
-                                series={[
-                                    ...chartSeries(
+                                {bandwidth(
+                                    sumMachines(
                                         visibleMachines,
                                         "networkIn",
-                                    ).map((item) => ({
-                                        ...item,
-                                        label: `${item.label} receive`,
-                                    })),
-                                    ...chartSeries(
+                                    ),
+                                )}
+                            </span>
+                            · ↑
+                            <span class="font-medium text-foreground">
+                                {bandwidth(
+                                    sumMachines(
                                         visibleMachines,
                                         "networkOut",
-                                    ).map((item) => ({
-                                        ...item,
-                                        label: `${item.label} send`,
-                                    })),
-                                ]}
-                                {start}
-                                {end}
-                                unit="rate"
-                                bind:hoveredMachine
-                            />
-                            <p
-                                class="mt-2 text-xs text-muted-foreground"
-                            >
-                                Solid: receive · dashed: send · bits
-                                per second
-                            </p>
-                        </FramePanel>
-                    </Frame>
-                    <Frame class="min-w-0">
-                        <FrameHeader
-                            class="flex-row flex-wrap items-center justify-between gap-2"
-                        >
-                            <FrameTitle>
-                                Disk I/O · read / write
-                            </FrameTitle>
-                            <span
-                                class="text-xs text-muted-foreground tabular-nums"
-                            >
-                                R <span
-                                    class="font-medium text-foreground"
-                                >
-                                    {bandwidth(
-                                        sumMachines(
-                                            visibleMachines,
-                                            "diskRead",
-                                        ),
-                                    )}
-                                </span>
-                                · W
-                                <span
-                                    class="font-medium text-foreground"
-                                >
-                                    {bandwidth(
-                                        sumMachines(
-                                            visibleMachines,
-                                            "diskWrite",
-                                        ),
-                                    )}
-                                </span>
+                                    ),
+                                )}
                             </span>
-                        </FrameHeader><FramePanel class="min-w-0 p-4">
-                            <MetricChart
-                                series={[
-                                    ...chartSeries(
-                                        visibleMachines,
-                                        "diskRead",
-                                    ).map((item) => ({
-                                        ...item,
-                                        label: `${item.label} read`,
-                                    })),
-                                    ...chartSeries(
-                                        visibleMachines,
-                                        "diskWrite",
-                                    ).map((item) => ({
-                                        ...item,
-                                        label: `${item.label} write`,
-                                    })),
-                                ]}
-                                {start}
-                                {end}
-                                unit="rate"
-                                bind:hoveredMachine
-                            />
-                            <p
-                                class="mt-2 text-xs text-muted-foreground"
-                            >
-                                Solid: read · dashed: write · bytes
-                                per second
-                            </p>
-                        </FramePanel>
-                    </Frame>
-                </div>
-
-                <Filesystems
-                    rows={filesystems}
-                    {start}
-                    {end}
-                    loading={filesystemsPending}
-                    bind:hoveredMachine
-                />
-            {/if}
-
-            {#if view === "dns"}
-                <section
-                    class="min-w-0 space-y-3"
-                    aria-label="DNS metrics"
-                >
-                    <h2 class="text-sm font-semibold">DNS</h2>
-                    <div
-                        class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-                    >
-                        {#each [["Total queries", counterCount(dnsTotal)], ["Average rate", requests(dnsAverage)], ["Failed queries", `${counterCount(dnsErrors)} · ${percent(dnsFailedPercentage)}`], ["Reporting machines", `${new Set(dnsSeries.map((item) => item.machineKey)).size}`]] as card (card[0])}
-                            <Frame class="min-w-0">
-                                <FrameHeader class="gap-1 py-3">
-                                    <FrameTitle
-                                        class="text-xs text-muted-foreground"
-                                    >
-                                        {card[0]}
-                                    </FrameTitle>
-                                    <p
-                                        class="text-xl font-semibold tabular-nums"
-                                    >
-                                        {card[1]}
-                                    </p>
-                                </FrameHeader>
-                            </Frame>
-                        {/each}
-                    </div>
-                    <p class="text-xs text-muted-foreground">
-                        Totals use the selected time range. Failed
-                        queries are Uncloud requests recorded with
-                        status “err”; scrape outages are shown under
-                        Collection health.
-                    </p>
-                    <Frame class="min-w-0 w-full">
-                        <FrameHeader>
-                            <FrameTitle>DNS queries</FrameTitle>
-                        </FrameHeader>
-                        <FramePanel class="min-w-0 p-4">
-                            {#if dnsPending}
-                                <Skeleton
-                                    loading
-                                    loading-label="Loading DNS queries"
-                                >
-                                    <div class="h-40 sm:h-48">
-                                        Loading chart
-                                    </div>
-                                </Skeleton>
-                            {:else}
-                                <MetricChart
-                                    series={dnsSeries}
-                                    {start}
-                                    {end}
-                                    unit="requests"
-                                    bind:hoveredMachine
-                                />
-                                <div class="mt-6 border-t pt-4">
-                                    <p
-                                        class="mb-2 text-xs font-medium text-muted-foreground"
-                                    >
-                                        Failed query rate
-                                    </p>
-                                    <MetricChart
-                                        series={dnsErrorSeries}
-                                        {start}
-                                        {end}
-                                        unit="requests"
-                                        bind:hoveredMachine
-                                    />
-                                </div>
-                                <div
-                                    class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
-                                >
-                                    {#each dnsSeries as series (series.key)}
-                                        <span
-                                            class="flex items-center gap-2 text-xs"
-                                            style:opacity={hoveredMachine &&
-                                            hoveredMachine !==
-                                                series.machineKey
-                                                ? 0.4
-                                                : 1}
-                                        >
-                                            <span
-                                                class="size-2 rounded-full"
-                                                style:background={series.color}
-                                            ></span>
-                                            {series.label}
-                                        </span>
-                                    {/each}
-                                </div>
-                            {/if}
-                            <p
-                                class="mt-2 text-xs text-muted-foreground"
-                            >
-                                Queries per second · all statuses and
-                                internal/external traffic
-                            </p>
-                        </FramePanel>
-                    </Frame>
-                </section>
-            {/if}
-
-            {#if view === "services"}
-                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {#each serviceCharts as chart (chart.title)}
-                        <Frame class="min-w-0">
-                            <FrameHeader>
-                                <FrameTitle>{chart.title}</FrameTitle>
-                            </FrameHeader>
-                            <FramePanel
-                                class="flex min-w-0 flex-1 flex-col p-4"
-                            >
-                                {#if showServiceSkeleton}
-                                    <Skeleton
-                                        loading
-                                        loading-label="Loading service metrics"
-                                    >
-                                        <div class="h-40 sm:h-48">
-                                            Loading chart
-                                        </div>
-                                    </Skeleton>
-                                {:else}
-                                    <MetricChart
-                                        series={chart.series}
-                                        {start}
-                                        {end}
-                                        unit={chart.unit}
-                                        bind:hoveredMachine={
-                                            hoveredService
-                                        }
-                                    />
-                                {/if}
-                                <div
-                                    class="mt-3 grid min-h-20 grid-cols-2 content-start gap-x-3 gap-y-1"
-                                    aria-label={`${chart.title} legend`}
-                                >
-                                    {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<button
-                                            type="button"
-                                            class="flex min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                            title={item.label}
-                                            onpointerenter={() =>
-                                                (hoveredService =
-                                                    item.machineKey ??
-                                                    "")}
-                                            onpointerleave={() =>
-                                                (hoveredService = "")}
-                                            onfocus={() =>
-                                                (hoveredService =
-                                                    item.machineKey ??
-                                                    "")}
-                                            onblur={() =>
-                                                (hoveredService = "")}
-                                            style:opacity={hoveredService &&
-                                            hoveredService !==
-                                                item.machineKey
-                                                ? 0.4
-                                                : 1}
-                                        >
-                                            <span
-                                                class="size-2 shrink-0 rounded-full"
-                                                style:background={item.color}
-                                                aria-hidden="true"
-                                            ></span>
-                                            <span class="truncate">
-                                                {item.label}
-                                            </span>
-                                        </button>{/each}
-                                </div>
-                                <p
-                                    class="mt-auto min-h-10 pt-2 text-xs text-muted-foreground"
-                                >
-                                    {chart.note}
-                                </p>
-                            </FramePanel>
-                        </Frame>
-                    {/each}
-                </div>
-            {/if}
-
-            {#if view === "registry"}
-                <Frame>
-                    <FrameHeader>
-                        <FrameTitle>
-                            Registry metrics are not collected
-                        </FrameTitle>
-                    </FrameHeader>
-                    <FramePanel
-                        class="space-y-2 p-4 text-sm text-muted-foreground"
-                    >
-                        <p>
-                            The connected GreptimeDB schema currently
-                            contains host, container, and HTTP ingress
-                            metrics, but no registry tables or
-                            registry series.
-                        </p>
-                        <p>
-                            This page will become useful once registry
-                            instrumentation is enabled.
+                        </span>
+                    </FrameHeader><FramePanel class="min-w-0 p-4">
+                        <MetricChart
+                            series={[
+                                ...chartSeries(
+                                    visibleMachines,
+                                    "networkIn",
+                                ).map((item) => ({
+                                    ...item,
+                                    label: `${item.label} receive`,
+                                })),
+                                ...chartSeries(
+                                    visibleMachines,
+                                    "networkOut",
+                                ).map((item) => ({
+                                    ...item,
+                                    label: `${item.label} send`,
+                                })),
+                            ]}
+                            {start}
+                            {end}
+                            unit="rate"
+                            bind:hoveredMachine
+                        />
+                        <p class="mt-2 text-xs text-muted-foreground">
+                            Solid: receive · dashed: send · bits per
+                            second
                         </p>
                     </FramePanel>
                 </Frame>
-                <div
-                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
-                >
-                    {#each registryCards as card (card[0])}
+                <Frame class="min-w-0">
+                    <FrameHeader
+                        class="flex-row flex-wrap items-center justify-between gap-2"
+                    >
+                        <FrameTitle>
+                            Disk I/O · read / write
+                        </FrameTitle>
+                        <span
+                            class="text-xs text-muted-foreground tabular-nums"
+                        >
+                            R <span
+                                class="font-medium text-foreground"
+                            >
+                                {bandwidth(
+                                    sumMachines(
+                                        visibleMachines,
+                                        "diskRead",
+                                    ),
+                                )}
+                            </span>
+                            · W
+                            <span class="font-medium text-foreground">
+                                {bandwidth(
+                                    sumMachines(
+                                        visibleMachines,
+                                        "diskWrite",
+                                    ),
+                                )}
+                            </span>
+                        </span>
+                    </FrameHeader><FramePanel class="min-w-0 p-4">
+                        <MetricChart
+                            series={[
+                                ...chartSeries(
+                                    visibleMachines,
+                                    "diskRead",
+                                ).map((item) => ({
+                                    ...item,
+                                    label: `${item.label} read`,
+                                })),
+                                ...chartSeries(
+                                    visibleMachines,
+                                    "diskWrite",
+                                ).map((item) => ({
+                                    ...item,
+                                    label: `${item.label} write`,
+                                })),
+                            ]}
+                            {start}
+                            {end}
+                            unit="rate"
+                            bind:hoveredMachine
+                        />
+                        <p class="mt-2 text-xs text-muted-foreground">
+                            Solid: read · dashed: write · bytes per
+                            second
+                        </p>
+                    </FramePanel>
+                </Frame>
+            </div>
+
+            <Filesystems
+                rows={filesystems}
+                {start}
+                {end}
+                loading={filesystemsPending}
+                bind:hoveredMachine
+            />
+        {/if}
+
+        {#if view === "dns"}
+            <section
+                class="min-w-0 space-y-3"
+                aria-label="DNS metrics"
+            >
+                <h2 class="text-sm font-semibold">DNS</h2>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {#each [["Total queries", counterCount(dnsTotal)], ["Average rate", requests(dnsAverage)], ["Failed queries", `${counterCount(dnsErrors)} · ${percent(dnsFailedPercentage)}`], ["Reporting machines", `${new Set(dnsSeries.map((item) => item.machineKey)).size}`]] as card (card[0])}
                         <Frame class="min-w-0">
                             <FrameHeader class="gap-1 py-3">
                                 <FrameTitle
@@ -1385,31 +1211,217 @@
                         </Frame>
                     {/each}
                 </div>
-                <div class="grid gap-4 sm:grid-cols-2">
-                    {#each registryCharts as chart (chart.title)}
-                        <Frame class="min-w-0">
-                            <FrameHeader>
-                                <FrameTitle>{chart.title}</FrameTitle>
-                            </FrameHeader>
-                            <FramePanel class="min-w-0 p-4">
+                <p class="text-xs text-muted-foreground">
+                    Totals use the selected time range. Failed queries
+                    are Uncloud requests recorded with status “err”;
+                    scrape outages are shown under Collection health.
+                </p>
+                <Frame class="min-w-0 w-full">
+                    <FrameHeader>
+                        <FrameTitle>DNS queries</FrameTitle>
+                    </FrameHeader>
+                    <FramePanel class="min-w-0 p-4">
+                        {#if dnsPending}
+                            <Skeleton
+                                loading
+                                loading-label="Loading DNS queries"
+                            >
+                                <div class="h-40 sm:h-48">
+                                    Loading chart
+                                </div>
+                            </Skeleton>
+                        {:else}
+                            <MetricChart
+                                series={dnsSeries}
+                                {start}
+                                {end}
+                                unit="requests"
+                                bind:hoveredMachine
+                            />
+                            <div class="mt-6 border-t pt-4">
+                                <p
+                                    class="mb-2 text-xs font-medium text-muted-foreground"
+                                >
+                                    Failed query rate
+                                </p>
+                                <MetricChart
+                                    series={dnsErrorSeries}
+                                    {start}
+                                    {end}
+                                    unit="requests"
+                                    bind:hoveredMachine
+                                />
+                            </div>
+                            <div
+                                class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
+                            >
+                                {#each dnsSeries as series (series.key)}
+                                    <span
+                                        class="flex items-center gap-2 text-xs"
+                                        style:opacity={hoveredMachine &&
+                                        hoveredMachine !==
+                                            series.machineKey
+                                            ? 0.4
+                                            : 1}
+                                    >
+                                        <span
+                                            class="size-2 rounded-full"
+                                            style:background={series.color}
+                                        ></span>
+                                        {series.label}
+                                    </span>
+                                {/each}
+                            </div>
+                        {/if}
+                        <p class="mt-2 text-xs text-muted-foreground">
+                            Queries per second · all statuses and
+                            internal/external traffic
+                        </p>
+                    </FramePanel>
+                </Frame>
+            </section>
+        {/if}
+
+        {#if view === "services"}
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {#each serviceCharts as chart (chart.title)}
+                    <Frame class="min-w-0">
+                        <FrameHeader>
+                            <FrameTitle>{chart.title}</FrameTitle>
+                        </FrameHeader>
+                        <FramePanel
+                            class="flex min-w-0 flex-1 flex-col p-4"
+                        >
+                            {#if showServiceSkeleton}
+                                <Skeleton
+                                    loading
+                                    loading-label="Loading service metrics"
+                                >
+                                    <div class="h-40 sm:h-48">
+                                        Loading chart
+                                    </div>
+                                </Skeleton>
+                            {:else}
                                 <MetricChart
                                     series={chart.series}
                                     {start}
                                     {end}
                                     unit={chart.unit}
+                                    bind:hoveredMachine={
+                                        hoveredService
+                                    }
                                 />
-                            </FramePanel>
-                        </Frame>
-                    {/each}
-                </div>
-                <p class="text-xs text-muted-foreground">
-                    Totals cover the selected time range. Proxy hits
-                    and misses describe registry content requests;
-                    storage-cache metrics describe metadata lookups.
-                    Pushed bytes means bytes served to clients.
-                </p>
+                            {/if}
+                            <div
+                                class="mt-3 grid min-h-20 grid-cols-2 content-start gap-x-3 gap-y-1"
+                                aria-label={`${chart.title} legend`}
+                            >
+                                {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<button
+                                        type="button"
+                                        class="flex min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        title={item.label}
+                                        onpointerenter={() =>
+                                            (hoveredService =
+                                                item.machineKey ??
+                                                "")}
+                                        onpointerleave={() =>
+                                            (hoveredService = "")}
+                                        onfocus={() =>
+                                            (hoveredService =
+                                                item.machineKey ??
+                                                "")}
+                                        onblur={() =>
+                                            (hoveredService = "")}
+                                        style:opacity={hoveredService &&
+                                        hoveredService !==
+                                            item.machineKey
+                                            ? 0.4
+                                            : 1}
+                                    >
+                                        <span
+                                            class="size-2 shrink-0 rounded-full"
+                                            style:background={item.color}
+                                            aria-hidden="true"
+                                        ></span>
+                                        <span class="truncate">
+                                            {item.label}
+                                        </span>
+                                    </button>{/each}
+                            </div>
+                            <p
+                                class="mt-auto min-h-10 pt-2 text-xs text-muted-foreground"
+                            >
+                                {chart.note}
+                            </p>
+                        </FramePanel>
+                    </Frame>
+                {/each}
+            </div>
+        {/if}
+
+        {#if view === "registry"}
+            {#if !registryReporting}
+                <Frame>
+                    <FrameHeader>
+                        <FrameTitle>
+                            No registry traffic recorded yet
+                        </FrameTitle>
+                    </FrameHeader>
+                    <FramePanel
+                        class="space-y-2 p-4 text-sm text-muted-foreground"
+                    >
+                        <p>
+                            No registry requests were recorded in this
+                            time range. Charts fill in after machines
+                            pull images through the cluster registry.
+                        </p>
+                    </FramePanel>
+                </Frame>
             {/if}
-        </ChartGroup>
+            <div
+                class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+            >
+                {#each registryCards as card (card[0])}
+                    <Frame class="min-w-0">
+                        <FrameHeader class="gap-1 py-3">
+                            <FrameTitle
+                                class="text-xs text-muted-foreground"
+                            >
+                                {card[0]}
+                            </FrameTitle>
+                            <p
+                                class="text-xl font-semibold tabular-nums"
+                            >
+                                {card[1]}
+                            </p>
+                        </FrameHeader>
+                    </Frame>
+                {/each}
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+                {#each registryCharts as chart (chart.title)}
+                    <Frame class="min-w-0">
+                        <FrameHeader>
+                            <FrameTitle>{chart.title}</FrameTitle>
+                        </FrameHeader>
+                        <FramePanel class="min-w-0 p-4">
+                            <MetricChart
+                                series={chart.series}
+                                {start}
+                                {end}
+                                unit={chart.unit}
+                            />
+                        </FramePanel>
+                    </Frame>
+                {/each}
+            </div>
+            <p class="text-xs text-muted-foreground">
+                Totals cover the selected time range. Proxy hits and
+                misses describe registry content requests;
+                storage-cache metrics describe metadata lookups.
+                Pushed bytes means bytes served to clients.
+            </p>
+        {/if}
         {#if view === "services"}
             <ServicesTable
                 data={services}

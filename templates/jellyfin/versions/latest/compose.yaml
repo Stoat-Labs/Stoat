@@ -13,6 +13,12 @@ services:
         volumes:
             - jellyfin_config:/config
             - jellyfin_media:/media
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://localhost:8096/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
 
 volumes:
     jellyfin_config:

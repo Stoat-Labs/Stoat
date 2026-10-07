@@ -1,0 +1,21 @@
+services:
+    trilium:
+        image: triliumnext/trilium:latest
+        restart: unless-stopped
+        environment:
+            - TRILIUM_DATA_DIR=/home/node/trilium-data
+        x-ports:
+            - "8080/https"
+        volumes:
+            - trilium-data:/home/node/trilium-data
+            - /etc/timezone:/etc/timezone:ro
+            - /etc/localtime:/etc/localtime:ro
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health-check"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+
+volumes:
+    trilium-data:

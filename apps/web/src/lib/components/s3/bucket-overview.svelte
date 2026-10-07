@@ -1,7 +1,9 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
-    import BucketFiles from "$lib/components/s3/bucket-files.svelte";
     import BucketDetail from "$lib/components/s3/bucket-detail.svelte";
+    import BucketFiles from "$lib/components/s3/bucket-files.svelte";
+    import BucketUsage from "$lib/components/s3/bucket-usage.svelte";
+    import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
     import {
         Alert,
         AlertDescription,
@@ -17,10 +19,9 @@
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
-    import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
     import { orpc, queryClient } from "$lib/orpc";
     import { s3BucketStatusVariant } from "$lib/s3";
-    import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
+    import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
     import {
         createMutation,
         createQuery,
@@ -201,6 +202,13 @@
 
         <div class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-3">
             <div class="flex min-h-0 min-w-0 flex-col gap-6">
+                {#if bucket.status === "ready"}
+                    <BucketUsage
+                        usage={bucket.usage}
+                        quota={bucket.quota}
+                    />
+                {/if}
+
                 <Frame
                     class="min-w-0 flex-1"
                     role="region"
@@ -300,7 +308,7 @@
 
             {#if bucket.status === "ready"}
                 <div
-                    class="flex min-h-0 min-w-0 flex-col xl:col-span-2 [&>[data-slot=frame]]:min-h-0 [&>[data-slot=frame]]:flex-1"
+                    class="flex min-h-0 min-w-0 flex-col xl:col-span-2 *:data-[slot=frame]:min-h-0 *:data-[slot=frame]:flex-1"
                 >
                     <BucketFiles {projectId} {resourceId} />
                 </div>

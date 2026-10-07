@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Database } from "./index";
 import {
+    projects,
     resources,
     s3Buckets,
     s3Connections,
@@ -81,12 +82,20 @@ export async function deleteBucketResource(db: Database, bucket: S3BucketRow) {
     });
 }
 
-export async function readyBuckets(db: Database) {
+// Every ready bucket, or only those in one cluster's projects.
+export async function readyBuckets(db: Database, clusterId?: string) {
     return db
         .select({ bucket: s3Buckets, connection: s3Connections })
         .from(s3Buckets)
         .innerJoin(s3Connections, eq(s3Buckets.connectionId, s3Connections.id))
-        .where(eq(s3Buckets.status, "ready"));
+        .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
+        .innerJoin(projects, eq(resources.projectId, projects.id))
+        .where(
+            and(
+                eq(s3Buckets.status, "ready"),
+                clusterId === undefined ? undefined : eq(projects.clusterId, clusterId),
+            ),
+        );
 }
 
 // Only ready buckets take a snapshot, so a measurement never lands on one being deleted.

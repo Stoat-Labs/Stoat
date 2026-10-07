@@ -1,0 +1,6 @@
+{
+    "name": "MongoDB",
+    "description": "Document database for apps that store flexible JSON-like data.",
+    "type": "database",
+    "engine": "mongodb"
+}

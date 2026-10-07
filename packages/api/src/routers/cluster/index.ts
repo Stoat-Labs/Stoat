@@ -4,7 +4,13 @@ import { ucClient, unwrap } from "@stoat/uncloud";
 import { and, asc, eq, ilike, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { isOrganizationAdmin, organizationProcedure, uncloudMiddleware } from "../..";
+import { queueClusterHealthCheck } from "@stoat/workflows/runtime";
+import {
+    isOrganizationAdmin,
+    organizationAdminProcedure,
+    organizationProcedure,
+    uncloudMiddleware,
+} from "../..";
 import { deploymentsRouter } from "./deployments";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
@@ -259,6 +265,27 @@ export const clusterRouter = {
                 );
 
             return { id: cluster.id };
+        }),
+    // Queues the HealthCheck job for this cluster only; it otherwise runs hourly for every cluster.
+    runHealthCheck: organizationAdminProcedure
+        .input(clusterInput)
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [cluster] = await db
+                .select({ id: clusters.id })
+                .from(clusters)
+                .where(
+                    and(
+                        eq(clusters.id, input.clusterId),
+                        eq(clusters.organizationId, organizationId),
+                    ),
+                )
+                .limit(1);
+
+            if (!cluster) throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
+
+            await queueClusterHealthCheck(cluster.id);
+
+            return { queued: true };
         }),
     healthz: organizationProcedure
         .input(clusterInput)

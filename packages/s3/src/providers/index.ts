@@ -10,6 +10,8 @@ export type S3ProviderInfo = {
     description: string;
     // Whether each bucket gets its own access key; otherwise buckets share the connection's keys.
     scopedKeys: boolean;
+    // Whether the provider rejects writes over a bucket's storage limit; otherwise it is display-only.
+    enforcedQuota: boolean;
 };
 
 export const s3Providers = {
@@ -18,18 +20,21 @@ export const s3Providers = {
         name: "Generic S3",
         description: "Any S3-compatible endpoint. Buckets share this connection's access keys.",
         scopedKeys: false,
+        enforcedQuota: false,
     },
     rustfs: {
         id: "rustfs",
         name: "RustFS",
         description: "Self-hosted RustFS. Each bucket gets its own service account.",
         scopedKeys: true,
+        enforcedQuota: true,
     },
     r2: {
         id: "r2",
         name: "Cloudflare R2",
         description: "Cloudflare R2 storage. Each bucket gets its own scoped API token.",
         scopedKeys: true,
+        enforcedQuota: false,
     },
 } as const satisfies Record<S3ProviderId, S3ProviderInfo>;
 

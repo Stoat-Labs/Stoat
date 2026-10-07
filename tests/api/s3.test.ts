@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, ORPCError } from "@orpc/server";
 import { createDb } from "@stoat/db";
-import { markBucketFailed, markBucketReady } from "@stoat/db/buckets";
+import {
+    markBucketFailed,
+    markBucketReady,
+    readyBuckets,
+    setBucketMetadata,
+} from "@stoat/db/buckets";
 import { clusters, projects, resources, s3Buckets, s3Connections } from "@stoat/db/schema/index";
 import {
     resolveS3Connection,
@@ -10,6 +15,8 @@ import {
     s3ConnectionTarget,
     type S3ConnectionInput,
 } from "@stoat/s3";
+import { getR2BucketUsage } from "@stoat/s3/providers/r2";
+import { parseRustfsBucketUsage } from "@stoat/s3/providers/rustfs";
 import { decryptS3Secret, encryptS3Secret } from "@stoat/s3/secrets";
 import * as runtime from "@stoat/workflows/runtime";
 import { eq } from "drizzle-orm";
@@ -85,6 +92,104 @@ describe("S3 secrets and input", () => {
                 forcePathStyle: true,
                 credentials: { accessKey: "stoat-test-access", secretKey: generic.secretKey },
             },
+        );
+    });
+});
+
+describe("provider bucket usage", () => {
+    afterAll(() => {
+        vi.unstubAllGlobals();
+    });
+
+    function rustfsBody(lastUpdate: { secs_since_epoch: number } | null) {
+        return JSON.stringify({
+            last_update: lastUpdate && { ...lastUpdate, nanos_since_epoch: 275864172 },
+            buckets_usage: { media: { size: 2048, objects_count: 3, versions_count: 3 } },
+        });
+    }
+
+    it("reads RustFS usage with the scanner's snapshot time in seconds", () => {
+        expect(
+            parseRustfsBucketUsage(rustfsBody({ secs_since_epoch: 1791300780 }), "media"),
+        ).toEqual({ size: 2048, objects: 3, measuredAt: new Date("2026-10-06T15:33:00.000Z") });
+    });
+
+    it("treats a bucket the RustFS scanner has not reached as unmeasured, not empty", () => {
+        const scanned = rustfsBody({ secs_since_epoch: 1791300780 });
+
+        expect(parseRustfsBucketUsage(scanned, "uploads")).toBeNull();
+        expect(parseRustfsBucketUsage(rustfsBody(null), "media")).toBeNull();
+        expect(() => parseRustfsBucketUsage("{}", "media")).toThrow();
+    });
+
+    type AnalyticsResponse = {
+        data: {
+            viewer: {
+                accounts: {
+                    r2StorageAdaptiveGroups: {
+                        max: { objectCount: number; payloadSize: number };
+                        dimensions: { datetime: string };
+                    }[];
+                }[];
+            };
+        } | null;
+        errors?: { message: string }[];
+    };
+
+    function analytics(body: AnalyticsResponse) {
+        const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+            Response.json(body),
+        );
+
+        vi.stubGlobal("fetch", fetch);
+
+        return fetch;
+    }
+
+    it("reads the newest R2 storage sample for the bucket", async () => {
+        const fetch = analytics({
+            data: {
+                viewer: {
+                    accounts: [
+                        {
+                            r2StorageAdaptiveGroups: [
+                                {
+                                    max: { objectCount: 7, payloadSize: 4096 },
+                                    dimensions: { datetime: "2026-10-06T15:00:00Z" },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        });
+
+        expect(await getR2BucketUsage("account", "token", "media")).toEqual({
+            size: 4096,
+            objects: 7,
+            measuredAt: new Date("2026-10-06T15:00:00Z"),
+        });
+
+        const [, init] = fetch.mock.calls[0]!;
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer token");
+        expect(JSON.parse(String(init?.body)).variables).toMatchObject({
+            accountTag: "account",
+            filter: { bucketName: "media" },
+        });
+    });
+
+    it("treats an R2 bucket without recent samples as unmeasured", async () => {
+        analytics({ data: { viewer: { accounts: [{ r2StorageAdaptiveGroups: [] }] } } });
+
+        expect(await getR2BucketUsage("account", "token", "media")).toBeNull();
+    });
+
+    it("fails loudly when the R2 token cannot read analytics", async () => {
+        // GraphQL reports permission problems with a 200 and an errors array.
+        analytics({ data: null, errors: [{ message: "not authorized for that account" }] });
+
+        await expect(getR2BucketUsage("account", "token", "media")).rejects.toThrow(
+            "not authorized",
         );
     });
 });
@@ -282,6 +387,162 @@ describe("S3 connections and buckets API", () => {
         expect(await markBucketReady(db, provisioning!, null)).toBe(false);
         const [after] = await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id));
         expect(after).toMatchObject({ status: "deleting" });
+    });
+
+    it("stores a display-only limit for providers that cannot enforce one", async () => {
+        const connection = await createConnection();
+
+        const { id } = await call(
+            bucketsRouter.create,
+            { projectId, connectionId: connection.id, name: "Limited", bucket: "limited" },
+            { context: ownerContext },
+        );
+
+        const input = { projectId, resourceId: id };
+
+        await expect(
+            call(bucketsRouter.setQuota, { ...input, quota: 1024 }, { context: ownerContext }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+        const [provisioning] = await db
+            .select()
+            .from(s3Buckets)
+            .where(eq(s3Buckets.resourceId, id));
+
+        await markBucketReady(db, provisioning!, null);
+
+        await expect(
+            call(bucketsRouter.setQuota, { ...input, quota: 1024 }, { context: memberContext }),
+        ).rejects.toBeInstanceOf(ORPCError);
+
+        // Generic S3 has no quota API, so this never reaches the provider.
+        await call(bucketsRouter.setQuota, { ...input, quota: 1024 }, { context: ownerContext });
+
+        expect(await call(bucketsRouter.get, input, { context: memberContext })).toMatchObject({
+            quota: 1024,
+            enforcedQuota: false,
+            usage: null,
+        });
+
+        await call(bucketsRouter.setQuota, { ...input, quota: null }, { context: ownerContext });
+
+        expect(await call(bucketsRouter.get, input, { context: memberContext })).toMatchObject({
+            quota: null,
+        });
+    });
+
+    it("never writes a usage snapshot onto a bucket that is not ready", async () => {
+        const connection = await createConnection();
+
+        const { id } = await call(
+            bucketsRouter.create,
+            { projectId, connectionId: connection.id, name: "Measured", bucket: "measured" },
+            { context: ownerContext },
+        );
+
+        const snapshot = { size: 10, objects: 1, measuredAt: "2026-10-06T15:33:00.000Z" };
+
+        const metadata = async () =>
+            (await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id)))[0]?.metadata;
+
+        await setBucketMetadata(db, id, snapshot);
+        expect(await metadata()).toBeNull();
+
+        const [provisioning] = await db
+            .select()
+            .from(s3Buckets)
+            .where(eq(s3Buckets.resourceId, id));
+
+        await markBucketReady(db, provisioning!, null);
+        await setBucketMetadata(db, id, snapshot);
+        expect(await metadata()).toEqual(snapshot);
+
+        // A measurement that finishes after deletion starts must not touch the row.
+        await call(bucketsRouter.remove, { projectId, resourceId: id }, { context: ownerContext });
+        await setBucketMetadata(db, id, { ...snapshot, size: 99 });
+        expect(await metadata()).toEqual(snapshot);
+    });
+
+    it("scopes a manual health check to the cluster's own buckets", async () => {
+        const otherClusterId = randomUUID();
+        const otherProjectId = randomUUID();
+
+        await db.insert(clusters).values({
+            id: otherClusterId,
+            name: "Other cluster",
+            sidecarUrl: "http://other-sidecar.test",
+            sidecarToken: "secret",
+            organizationId: ownerContext.session!.session.activeOrganizationId!,
+        });
+        await db.insert(projects).values({
+            id: otherProjectId,
+            name: "Other",
+            clusterId: otherClusterId,
+        });
+
+        const connection = await createConnection();
+
+        async function readyBucket(project: string, bucket: string) {
+            const { id } = await call(
+                bucketsRouter.create,
+                { projectId: project, connectionId: connection.id, name: bucket, bucket },
+                { context: ownerContext },
+            );
+
+            const [row] = await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id));
+
+            await markBucketReady(db, row!, null);
+
+            return id;
+        }
+
+        const here = await readyBucket(projectId, "scoped-here");
+        const there = await readyBucket(otherProjectId, "scoped-there");
+
+        const scoped = (await readyBuckets(db, otherClusterId)).map(
+            ({ bucket }) => bucket.resourceId,
+        );
+
+        const everywhere = (await readyBuckets(db)).map(({ bucket }) => bucket.resourceId);
+
+        expect(scoped).toEqual([there]);
+        expect(everywhere).toEqual(expect.arrayContaining([here, there]));
+    });
+
+    it("lets only admins queue a health check, and only for their own clusters", async () => {
+        const queue = vi.spyOn(runtime, "queueClusterHealthCheck").mockResolvedValue();
+
+        try {
+            await call(clusterRouter.runHealthCheck, { clusterId }, { context: ownerContext });
+            expect(queue).toHaveBeenCalledWith(clusterId);
+
+            await expect(
+                call(clusterRouter.runHealthCheck, { clusterId }, { context: memberContext }),
+            ).rejects.toBeInstanceOf(ORPCError);
+
+            const [{ id: strangerOrganization }] = (
+                await db.$client.query(
+                    `INSERT INTO organization (id, name, slug, created_at) VALUES ($1, 'Stranger', $1, now()) RETURNING id`,
+                    [randomUUID()],
+                )
+            ).rows;
+
+            await db.$client.query(
+                `INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES ($1, $2, 'member', 'owner', now())`,
+                [randomUUID(), strangerOrganization],
+            );
+
+            await expect(
+                call(
+                    clusterRouter.runHealthCheck,
+                    { clusterId },
+                    { context: context("member", strangerOrganization) },
+                ),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+            expect(queue).toHaveBeenCalledTimes(1);
+        } finally {
+            queue.mockRestore();
+        }
     });
 
     it("hides credentials from members", async () => {

@@ -1,0 +1,6 @@
+{
+    "name": "Ntfy",
+    "description": "Push notifications made easy.",
+    "type": "compose",
+    "tags": ["notifications", "alerts"]
+}

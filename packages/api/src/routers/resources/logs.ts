@@ -360,7 +360,7 @@ async function requireLiveAccess(
             JOIN member m ON m.user_id = u.id AND m.organization_id = ${organizationId}
             JOIN clusters c ON c.organization_id = m.organization_id AND c.id = ${clusterId}
             JOIN projects p ON p.cluster_id = c.id AND p.id = ${projectId} AND p.is_internal IS NOT TRUE
-            JOIN resources r ON r.project_id = p.id AND r.id = ${resourceId} AND r.type = 'compose'
+            JOIN resources r ON r.project_id = p.id AND r.id = ${resourceId} AND r.type IN ('compose', 'database')
             WHERE s.id = ${sessionId} AND s.user_id = ${userId} AND s.active_organization_id = ${organizationId}
             AND s.token = ${sessionToken}
             AND s.expires_at > now()

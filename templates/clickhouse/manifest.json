@@ -1,0 +1,6 @@
+{
+    "name": "ClickHouse",
+    "description": "Column-oriented database for fast analytics over large datasets.",
+    "type": "database",
+    "engine": "clickhouse"
+}

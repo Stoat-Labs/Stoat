@@ -1,0 +1,47 @@
+services:
+    voidauth:
+        image: voidauth/voidauth:latest
+        restart: unless-stopped
+        x-ports:
+            - ${VOIDAUTH_HOST}:3000/https
+        #  - "3890:3890" # only needed if LDAP Server is enabled
+        environment:
+            # Public URL: OIDC issuer, redirects, and emailed links all use it.
+            APP_URL: https://${VOIDAUTH_HOST}
+            STORAGE_KEY: ${STORAGE_KEY}
+            DB_HOST: voidauth-db
+            DB_PASSWORD: ${POSTGRES_PASSWORD}
+        volumes:
+            - voidauth_config:/app/config
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "node",
+                    "-e",
+                    "fetch('http://localhost:3000/healthcheck').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+                ]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+        depends_on:
+            voidauth-db:
+                condition: service_healthy
+
+    voidauth-db:
+        image: postgres:18
+        restart: unless-stopped
+        environment:
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        volumes:
+            - voidauth_db:/var/lib/postgresql
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+volumes:
+    voidauth_config:
+    voidauth_db:

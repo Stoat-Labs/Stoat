@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { S3Credentials } from "../client";
+import * as v from "valibot";
+import type { S3BucketUsage, S3Credentials } from "../client";
 
 const API = "https://api.cloudflare.com/client/v4";
 
@@ -108,4 +109,81 @@ export async function createR2Key(
     );
 
     return { keyId: result.id, credentials: s3Credentials(result.id, result.value) };
+}
+
+const storageMetrics = v.object({
+    data: v.nullable(
+        v.object({
+            viewer: v.object({
+                accounts: v.array(
+                    v.object({
+                        r2StorageAdaptiveGroups: v.array(
+                            v.object({
+                                max: v.object({ objectCount: v.number(), payloadSize: v.number() }),
+                                dimensions: v.object({ datetime: v.string() }),
+                            }),
+                        ),
+                    }),
+                ),
+            }),
+        }),
+    ),
+    errors: v.nullish(v.array(v.object({ message: v.string() }))),
+});
+
+// Cloudflare's storage analytics, the same source `wrangler r2 bucket info` reads. Needs the
+// token's Account Analytics: Read permission. Null when R2 reported nothing in the last day.
+export async function getR2BucketUsage(
+    accountId: string,
+    apiToken: string,
+    bucket: string,
+): Promise<S3BucketUsage | null> {
+    const now = new Date();
+
+    const response = await fetch(`${API}/graphql`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        body: JSON.stringify({
+            query: `query ($accountTag: String, $filter: R2StorageAdaptiveGroupsFilter_InputObject) {
+                viewer {
+                    accounts(filter: { accountTag: $accountTag }) {
+                        r2StorageAdaptiveGroups(limit: 1, filter: $filter, orderBy: [datetime_DESC]) {
+                            max { objectCount payloadSize }
+                            dimensions { datetime }
+                        }
+                    }
+                }
+            }`,
+            variables: {
+                accountTag: accountId,
+                filter: {
+                    bucketName: bucket,
+                    datetime_geq: new Date(now.getTime() - 86_400_000).toISOString(),
+                    datetime_leq: now.toISOString(),
+                },
+            },
+        }),
+    });
+
+    const parsed = v.safeParse(storageMetrics, await response.json().catch(() => null));
+
+    if (!response.ok || !parsed.success || parsed.output.errors?.length)
+        throw new Error(
+            `Cloudflare analytics request failed with status ${response.status}${
+                parsed.success && parsed.output.errors?.[0]
+                    ? ` (${parsed.output.errors[0].message})`
+                    : ""
+            }.`,
+        );
+
+    const latest = parsed.output.data?.viewer.accounts[0]?.r2StorageAdaptiveGroups[0];
+
+    if (!latest) return null;
+
+    return {
+        size: latest.max.payloadSize,
+        objects: latest.max.objectCount,
+        measuredAt: new Date(latest.dimensions.datetime),
+    };
 }

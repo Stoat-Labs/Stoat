@@ -1,0 +1,14 @@
+services:
+    basedbin:
+        # No healthcheck: the image is FROM scratch, with no shell or HTTP client to probe with.
+        image: wantguns/bin
+        x-ports:
+            - 6162/https
+        environment:
+            - BIN_LIMITS={form="32 MiB"}
+            - BIN_CLIENT_DESC=placeholder
+        volumes:
+            - basedbin:/upload # upload folder will have your pastes
+
+volumes:
+    basedbin:

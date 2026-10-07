@@ -12,12 +12,24 @@ import {
     createS3Client,
     normalizeS3Endpoint,
     s3ErrorCode,
+    type S3BucketUsage,
     type S3Credentials,
     type S3Target,
 } from "./client";
 import type { S3ProviderId } from "./providers/index";
-import { createR2Key, deleteR2Key, r2ConnectionCredentials, r2Endpoint } from "./providers/r2";
-import { createRustfsKey, deleteRustfsKey } from "./providers/rustfs";
+import {
+    createR2Key,
+    deleteR2Key,
+    getR2BucketUsage,
+    r2ConnectionCredentials,
+    r2Endpoint,
+} from "./providers/r2";
+import {
+    createRustfsKey,
+    deleteRustfsKey,
+    getRustfsBucketUsage,
+    setRustfsQuota,
+} from "./providers/rustfs";
 import { decryptS3Secret, encryptS3Secret } from "./secrets";
 
 export {
@@ -301,6 +313,16 @@ export async function deleteS3BucketKey(connection: S3ConnectionRecord, resource
     }
 }
 
+// Applies the limit where the provider enforces it (see `enforcedQuota`); elsewhere it is display-only.
+export async function setS3BucketQuota(
+    connection: S3ConnectionRecord,
+    bucket: string,
+    quota: number | null,
+) {
+    if (connection.provider === "rustfs")
+        await setRustfsQuota(s3ConnectionTarget(connection), bucket, quota);
+}
+
 export function encryptS3BucketCredentials(credentials: S3Credentials, resourceId: string) {
     return encryptS3Secret(JSON.stringify(credentials), { kind: "bucket-credentials", resourceId });
 }
@@ -324,12 +346,15 @@ export function s3BucketTarget(
         : target;
 }
 
-// Walks every object in the bucket, one ListObjectsV2 page (up to 1000 keys) at a time.
-export async function getS3BucketStats(target: S3Target, bucket: string, signal: AbortSignal) {
+// Generic S3 has no usage API, so the bucket is walked one ListObjectsV2 page (up to 1000 keys) at a time.
+async function listBucketUsage(
+    target: S3Target,
+    bucket: string,
+    signal: AbortSignal,
+): Promise<S3BucketUsage> {
     const client = createS3Client(target);
     let size = 0;
     let objects = 0;
-    let lastModified: Date | null = null;
     let cursor: string | undefined;
 
     try {
@@ -342,9 +367,6 @@ export async function getS3BucketStats(target: S3Target, bucket: string, signal:
             for (const item of result.Contents ?? []) {
                 size += item.Size ?? 0;
                 objects += 1;
-
-                if (item.LastModified && (!lastModified || item.LastModified > lastModified))
-                    lastModified = item.LastModified;
             }
 
             cursor = result.NextContinuationToken;
@@ -353,7 +375,25 @@ export async function getS3BucketStats(target: S3Target, bucket: string, signal:
         client.destroy();
     }
 
-    return { size, objects, lastModified };
+    return { size, objects, measuredAt: new Date() };
+}
+
+// Asks the provider's own usage API where one exists. Null when the provider has not measured the bucket yet.
+export async function getS3BucketUsage(
+    connection: S3ConnectionRecord,
+    bucket: string,
+    signal: AbortSignal,
+): Promise<S3BucketUsage | null> {
+    if (connection.provider === "rustfs")
+        return getRustfsBucketUsage(s3ConnectionTarget(connection), bucket);
+
+    if (connection.provider === "r2") {
+        const { accountId, token } = apiToken(connection);
+
+        return getR2BucketUsage(accountId, token, bucket);
+    }
+
+    return listBucketUsage(s3ConnectionTarget(connection), bucket, signal);
 }
 
 export async function listS3Objects(

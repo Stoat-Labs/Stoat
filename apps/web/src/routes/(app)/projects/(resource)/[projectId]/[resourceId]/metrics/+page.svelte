@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { syncMetricCharts } from "$lib/components/observability/chart-sync";
     import { browser } from "$app/environment";
     import { page } from "$app/state";
     import { ago } from "$lib/format";
@@ -50,7 +51,6 @@
         createQueries,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { ChartGroup } from "layerchart";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
 
     const names = [
@@ -65,6 +65,8 @@
     const resourceId = $derived(page.params.resourceId ?? "");
 
     const range = useObservabilityRange();
+
+    syncMetricCharts();
 
     const paused = useQueryState(
         "paused",
@@ -714,22 +716,14 @@
                 </div>
             {/each}
         </div>
-
-        <ChartGroup
-            pointer={{ tooltip: false }}
-            brush={false}
-            domain={false}
-            series={false}
-        >
-            <div class="grid gap-4 lg:grid-cols-2">
-                {#each charts as chart (chart.title)}{@render chartFrame(
+        <div class="grid gap-4 lg:grid-cols-2">
+            {#each charts as chart (chart.title)}{@render chartFrame(
+                    chart,
+                )}{/each}
+            {#if httpStatus === "ok"}{#each httpCharts as chart (chart.title)}{@render chartFrame(
                         chart,
-                    )}{/each}
-                {#if httpStatus === "ok"}{#each httpCharts as chart (chart.title)}{@render chartFrame(
-                            chart,
-                        )}{/each}{/if}
-            </div>
-        </ChartGroup>
+                    )}{/each}{/if}
+        </div>
         {#if httpStatus === "not-collecting"}
             <Alert variant="info">
                 <AlertDescription>

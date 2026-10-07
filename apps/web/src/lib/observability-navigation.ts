@@ -1,4 +1,4 @@
-import { metricNames, type MachineMetricName } from "@stoat/api/observability";
+import { metricNames, registryMetricNames, type MachineMetricName } from "@stoat/api/observability";
 
 export const observabilityViews = [
     { id: "overview", title: "Overview", href: "/observability" },
@@ -40,7 +40,8 @@ export function observabilityMetrics(view: ObservabilityView): readonly MachineM
         case "health":
             return ["dnsAvailability"];
         case "registry":
-            return [];
+            return registryMetricNames;
+        // HTTP traffic has its own page with service-scoped queries.
         case "http":
             return [];
         case "services":

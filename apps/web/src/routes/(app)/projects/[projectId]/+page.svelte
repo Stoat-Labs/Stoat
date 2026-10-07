@@ -1,15 +1,11 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import BucketIcon from "$lib/components/bucket-icon.svelte";
     import {
         dotClass,
         statusLabels,
         type ResourceStatus,
     } from "$lib/components/home/project-overview-card.svelte";
-    import {
-        deploymentStatusVariant,
-        isActiveDeploymentStatus,
-    } from "$lib/deployment-status";
-    import { ago, elapsed } from "$lib/format";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -37,13 +33,17 @@
         EmptyTitle,
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
+    import {
+        deploymentStatusVariant,
+        isActiveDeploymentStatus,
+    } from "$lib/deployment-status";
     import { subscribeToStream } from "$lib/deployment-stream";
+    import { ago, elapsed } from "$lib/format";
     import { client, orpc, queryClient } from "$lib/orpc";
+    import { s3BucketStatusVariant } from "$lib/s3";
     import { cn } from "$lib/utils";
-    import BucketIcon from "$lib/components/bucket-icon.svelte";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
-    import { s3BucketStatusVariant } from "$lib/s3";
     import Container from "@lucide/svelte/icons/container";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import Plus from "@lucide/svelte/icons/plus";
@@ -216,9 +216,6 @@
         {#if projectQuery.isPending || resourcesQuery.isPending}
             <Skeleton loading loading-label="Loading resources">
                 <div class="space-y-4">
-                    <p class="text-sm">
-                        0 deployed · 0 deploying · 0 failed
-                    </p>
                     <ul
                         class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                     >
@@ -296,28 +293,6 @@
             </Empty>
         {:else}
             <main class="space-y-4">
-                <p
-                    class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground"
-                    aria-live="polite"
-                >
-                    {#each summary as item (item.label)}
-                        <span class="flex items-center gap-1.5">
-                            <span
-                                class={cn(
-                                    "size-2 rounded-full",
-                                    item.dot,
-                                )}
-                                aria-hidden="true"
-                            ></span>
-                            <span
-                                class="font-medium text-foreground tabular-nums"
-                            >
-                                {item.count}
-                            </span>
-                            {item.label}
-                        </span>
-                    {/each}
-                </p>
                 <ul
                     class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 >
@@ -446,7 +421,8 @@
                                             </span>
                                         {:else}
                                             <span class="truncate">
-                                                {resource.type ??
+                                                {resource.engine ??
+                                                    resource.type ??
                                                     "compose"}
                                             </span>
                                         {/if}

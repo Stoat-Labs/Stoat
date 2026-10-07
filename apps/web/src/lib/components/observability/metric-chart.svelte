@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { Chart } from "$lib/components/ui/chart";
     import {
         bandwidth,
         bridgeGaps,
@@ -9,16 +8,22 @@
         requests,
         type ChartSeries,
     } from "$lib/observability";
+    import CanvasChart from "./canvas-chart.svelte";
+    import { metricChartCursor } from "./chart-sync";
     import {
-        AnnotationLine,
-        ChartClipPath,
-        Circle,
-        LineChart,
-        Spline,
-        Tooltip,
-        type ChartState,
-        type HighlightPoint,
-    } from "layerchart";
+        crosshair,
+        defineChart,
+        lineY,
+        ruleX,
+        ruleY,
+        text,
+        type ChartInteractionController,
+        type ChartPoint,
+    } from "@tanstack/charts";
+    import { cursorHost } from "@tanstack/charts/cursor";
+    import { decorative } from "@tanstack/charts/mark/decorative";
+    import { scaleLinear } from "@tanstack/charts/scales/linear";
+    import { tooltip } from "@tanstack/charts/tooltip";
 
     let {
         series,
@@ -42,7 +47,12 @@
         onselecttime?: (time: number) => void;
     } = $props();
 
-    let context = $state<ChartState<Record<string, number | null>>>();
+    type Row = { time: number; value: number | null };
+
+    const cursor = metricChartCursor();
+
+    // Synced charts share the crosshair, but only the chart under the pointer shows a tooltip.
+    let pointerInside = $state(false);
 
     const format = $derived(
         {
@@ -52,97 +62,6 @@
             requests,
             duration,
         }[unit],
-    );
-
-    const chartData = $derived.by(() => {
-        // Rebuilt within this derivation; the temporary Map is not reactive state.
-        const rows = new Map<
-            number,
-            { time: number; [key: string]: number | null }
-        >();
-
-        for (const item of series)
-            for (const point of bridgeGaps(item.points)) {
-                const row = rows.get(point.time) ?? {
-                    time: point.time,
-                };
-                row[item.key] = point.value;
-                rows.set(point.time, row);
-            }
-
-        return [...rows.values()].sort((a, b) => a.time - b.time);
-    });
-
-    // Hover opacity is applied on the Spline, not here: changing `series` makes LineChart rebuild its series state on every pointer move.
-    const lines = $derived(
-        series.map((item) => ({
-            key: item.key,
-            label: item.label,
-            color: item.color,
-            props: {
-                "stroke-dasharray": item.dashed ? "4 3" : undefined,
-            },
-        })),
-    );
-
-    function opacity(key: string) {
-        return !hoveredMachine ||
-            series.find((item) => item.key === key)?.machineKey ===
-                hoveredMachine
-            ? 1
-            : 0.15;
-    }
-
-    let pinned = $state("");
-
-    function nearestLine(event: PointerEvent) {
-        if (!context?.tooltip.data || !context.containerRef)
-            return "";
-        const y =
-            event.clientY -
-            context.containerRef.getBoundingClientRect().top -
-            context.padding.top;
-        let nearest = "";
-        // Only counts as hovering a line when the pointer is within a few pixels of it.
-        let distance = 8;
-
-        for (const item of series) {
-            const value = context.tooltip.data[item.key];
-
-            if (value == null || !item.machineKey) continue;
-            const delta = Math.abs(context.yScale(value) - y);
-
-            if (delta < distance) {
-                distance = delta;
-                nearest = item.machineKey;
-            }
-        }
-
-        return nearest;
-    }
-
-    function hover(event: PointerEvent) {
-        if (compact) return;
-        hoveredMachine = nearestLine(event) || pinned;
-    }
-
-    function select(event: PointerEvent) {
-        if (compact) return;
-        const line = nearestLine(event);
-        pinned = line === pinned ? "" : line;
-        hoveredMachine = pinned;
-        const time = context?.tooltip.data?.time;
-
-        if (time) onselecttime?.(time);
-    }
-
-    const config = $derived(
-        Object.fromEntries(
-            lines.map((item) => [
-                item.key,
-                { label: item.label, color: item.color },
-            ]),
-        ),
     );
 
     const hasData = $derived(
@@ -159,124 +78,239 @@
                 : { hour: "2-digit", minute: "2-digit" },
         );
     }
+
+    function dimmed(item: ChartSeries) {
+        return !!hoveredMachine && item.machineKey !== hoveredMachine;
+    }
+
+    // Each series is its own mark so it keeps its own color, dash and hover opacity.
+    const lines = $derived(
+        series.map((item) =>
+            lineY<Row>(bridgeGaps(item.points), {
+                id: item.key,
+                x: "time",
+                y: "value",
+                // Grouped focus dedupes by series, so every line needs its own group.
+                z: () => item.key,
+                stroke: item.color,
+                strokeWidth: compact ? 1.5 : 2,
+                strokeOpacity: dimmed(item) ? 0.15 : 1,
+                strokeDasharray: item.dashed ? "4 3" : undefined,
+            }),
+        ),
+    );
+
+    const seriesByKey = $derived(
+        new Map(series.map((item) => [item.key, item])),
+    );
+
+    const definition = $derived(
+        defineChart({
+            marks: [
+                // Keeps zero in the inferred y domain, like a baseline.
+                ruleY([0], { strokeOpacity: compact ? 0 : 0.15 }),
+                ...lines,
+                ruleX(markers, {
+                    x: "time",
+                    strokeOpacity: 0.6,
+                    strokeDasharray: "2 3",
+                }),
+                decorative(
+                    text(markers, {
+                        x: "time",
+                        y: () => 1,
+                        yScale: "marker",
+                        text: "label",
+                        anchor: "start",
+                        dx: 4,
+                        dy: 6,
+                        fontSize: 10,
+                    }),
+                ),
+                crosshair({
+                    x: { strokeDasharray: "4 4" },
+                    y: false,
+                }),
+            ],
+            scales: {
+                x: {
+                    scale: scaleLinear().domain([
+                        start * 1000,
+                        end * 1000,
+                    ]),
+                    axis: {
+                        line: false,
+                        ticks: { count: 3, size: 0, format: time },
+                    },
+                },
+                y: {
+                    scale: max
+                        ? scaleLinear().domain([0, max])
+                        : scaleLinear,
+                    nice: !max,
+                    grid: true,
+                    axis: {
+                        line: false,
+                        ticks: { count: 3, size: 0, format },
+                    },
+                },
+                // Fixed 0..1 scale that pins marker labels to the top of the plot.
+                marker: {
+                    channel: "y",
+                    scale: scaleLinear().domain([0, 1]),
+                    axis: false,
+                },
+            },
+            guides: !compact,
+            clip: true,
+            margin: compact ? 2 : undefined,
+            pointer: !compact,
+            keyboard: !compact,
+            focus: "group-x",
+            maxFocusDistance: Number.POSITIVE_INFINITY,
+            focusRing: { radius: 3, strokeWidth: 1.5 },
+            cursor:
+                cursor && !compact
+                    ? {
+                          use: cursorHost,
+                          controller: cursor,
+                          mode: "focus",
+                          match: "x",
+                      }
+                    : undefined,
+            tooltip:
+                compact || (cursor && !pointerInside)
+                    ? false
+                    : {
+                          use: tooltip,
+                          sticky: false,
+                          anchor: "pointer",
+                          placement: [
+                              "right",
+                              "left",
+                              "bottom",
+                              "top",
+                          ],
+                          offset: 12,
+                          content: (points) => ({
+                              title: time(
+                                  Number(points[0]?.xValue ?? 0),
+                              ),
+                              rows: points
+                                  .toSorted(
+                                      (a, b) =>
+                                          Number(b.yValue) -
+                                          Number(a.yValue),
+                                  )
+                                  .flatMap((point) => {
+                                      const item = seriesByKey.get(
+                                          point.markId,
+                                      );
+
+                                      return item
+                                          ? [
+                                                {
+                                                    label: item.label,
+                                                    value: format(
+                                                        Number(
+                                                            point.yValue,
+                                                        ),
+                                                    ),
+                                                    color: item.color,
+                                                    active:
+                                                        !!hoveredMachine &&
+                                                        item.machineKey ===
+                                                            hoveredMachine,
+                                                },
+                                            ]
+                                          : [];
+                                  }),
+                          }),
+                      },
+        }),
+    );
+
+    let interaction:
+        | ChartInteractionController<Row, number, number>
+        | undefined;
+
+    let focused: readonly ChartPoint<Row, number, number>[] = [];
+
+    let pinned = $state("");
+
+    function nearestLine(event: PointerEvent) {
+        const position = interaction?.clientToScene(
+            event.clientX,
+            event.clientY,
+        );
+
+        if (!position) return "";
+        let nearest = "";
+        // Only counts as hovering a line when the pointer is within a few pixels of it.
+        let distance = 8;
+
+        for (const point of focused) {
+            const machine = seriesByKey.get(point.markId)?.machineKey;
+            const delta = Math.abs(point.y - position.y);
+
+            if (machine && delta < distance) {
+                distance = delta;
+                nearest = machine;
+            }
+        }
+
+        return nearest;
+    }
+
+    function hover(event: PointerEvent) {
+        hoveredMachine = nearestLine(event) || pinned;
+    }
+
+    function select(event: PointerEvent) {
+        const line = nearestLine(event);
+        pinned = line === pinned ? "" : line;
+        hoveredMachine = pinned;
+        const time = focused[0]?.xValue;
+
+        if (time) onselecttime?.(Number(time));
+    }
 </script>
 
-{#snippet hoverPoints({ points }: { points: HighlightPoint[] })}
-    {#each points as point (point.seriesKey)}
-        <Circle
-            cx={point.x}
-            cy={point.y}
-            r={3}
-            fill={point.fill}
-            opacity={opacity(point.seriesKey ?? "")}
-            class="pointer-events-none"
-        />
-    {/each}
-{/snippet}
-
 {#if hasData}
-    <Chart
-        {config}
-        class={compact
-            ? "h-8 w-24 shrink-0 aspect-auto"
-            : "h-40 min-w-0 w-full aspect-auto sm:h-48 [&_.lc-highlight-line]:stroke-1! [&_.lc-highlight-line]:stroke-muted-foreground!"}
-        aria-label={series.map((item) => item.label).join(", ")}
-        onpointermove={hover}
-        onpointerup={select}
-        onpointerleave={() => (hoveredMachine = pinned)}
-    >
-        <!-- With no motion prop, domains derive synchronously as live data and ranges change. -->
-        <LineChart
-            bind:context
-            data={chartData}
-            x="time"
-            series={lines}
-            xDomain={[start * 1000, end * 1000]}
-            xNice={false}
-            yDomain={max ? [0, max] : undefined}
-            seriesLayout="overlap"
-            clip
-            axis={!compact}
-            grid={!compact}
-            rule={false}
-            highlight={compact
-                ? false
-                : {
-                      axis: "x",
-                      lines: { dashArray: "4 4" },
-                      points: hoverPoints,
-                  }}
-            tooltipContext={!compact}
-            padding={compact
-                ? 2
-                : { left: 58, bottom: 28, right: 12, top: 10 }}
-            props={{
-                xAxis: {
-                    ticks: 3,
-                    format: (value: number) => time(value),
-                },
-                yAxis: {
-                    ticks: 3,
-                    format: (value: number) => format(value),
-                },
+    {#if compact}
+        <div class="h-8 w-24 shrink-0">
+            <CanvasChart
+                {definition}
+                ariaLabel={series
+                    .map((item) => item.label)
+                    .join(", ")}
+                class="size-full"
+            />
+        </div>
+    {:else}
+        <div
+            role="presentation"
+            class="h-40 min-w-0 w-full text-xs text-muted-foreground sm:h-48 [--ts-chart-tooltip-background:var(--popover)] [--ts-chart-tooltip-border-radius:var(--radius)] [--ts-chart-tooltip-border:1px_solid_var(--border)] [--ts-chart-tooltip-color:var(--popover-foreground)]"
+            onpointerenter={() => (pointerInside = true)}
+            onpointermove={hover}
+            onpointerup={select}
+            onpointerleave={() => {
+                pointerInside = false;
+                hoveredMachine = pinned;
             }}
         >
-            {#snippet marks()}
-                <ChartClipPath>
-                    {#each lines as line (line.key)}<Spline
-                            seriesKey={line.key}
-                            strokeWidth={compact ? 1.5 : 2}
-                            opacity={opacity(line.key)}
-                        />{/each}
-                    {#each markers as marker (marker.key)}<AnnotationLine
-                            x={marker.time}
-                            label={marker.label}
-                            labelPlacement="top-right"
-                            class="pointer-events-none stroke-muted-foreground/60 text-[10px] [stroke-dasharray:2_3]"
-                        />{/each}
-                </ChartClipPath>
-            {/snippet}
-            {#snippet tooltip({ context })}
-                {#if !compact}
-                    <Tooltip.Root variant="none">
-                        <div
-                            class="space-y-2 rounded-lg border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
-                        >
-                            <div class="font-medium">
-                                {time(
-                                    context.tooltip.data?.time ?? 0,
-                                )}
-                            </div>
-                            {#each context.tooltip.series as item (item.key)}
-                                <div
-                                    class="flex items-center justify-between gap-4"
-                                    style:opacity={opacity(
-                                        item.key,
-                                    ) === 1
-                                        ? 1
-                                        : 0.5}
-                                >
-                                    <span
-                                        class="flex items-center gap-2"
-                                    >
-                                        <span
-                                            class="size-2 shrink-0 rounded-full"
-                                            style:background={item.color}
-                                            aria-hidden="true"
-                                        ></span>
-                                        {item.label}
-                                    </span>
-                                    <span class="tabular-nums">
-                                        {format(item.value)}
-                                    </span>
-                                </div>
-                            {/each}
-                        </div>
-                    </Tooltip.Root>
-                {/if}
-            {/snippet}
-        </LineChart>
-    </Chart>
+            <CanvasChart
+                {definition}
+                ariaLabel={series
+                    .map((item) => item.label)
+                    .join(", ")}
+                class="size-full"
+                onRender={(context) =>
+                    (interaction = context.interaction)}
+                onFocusGroupChange={(points) => (focused = points)}
+            />
+        </div>
+    {/if}
 {:else}
     <div
         class={compact

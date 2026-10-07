@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import * as v from "valibot";
 import YAML from "yaml";
+import { databaseEngines } from "./databases";
 
 // Bundled at build time: adding a template needs a rebuild, but there is no runtime
 // filesystem access, so app ids and versions can never escape the templates folder.
@@ -23,24 +24,30 @@ const SEGMENT = "[A-Za-z0-9][A-Za-z0-9._-]*";
 
 const PATH = new RegExp(`/templates/(${SEGMENT})/(?:versions/(${SEGMENT})/)?([^/]+)$`, "u");
 
-const manifestSchema = v.object({
-    name: v.pipe(v.string(), v.trim(), v.minLength(1)),
-    description: v.pipe(v.string(), v.trim(), v.minLength(1)),
-    type: v.pipe(v.string(), v.trim(), v.minLength(1)),
-    icon: v.optional(v.pipe(v.string(), v.regex(new RegExp(`^${SEGMENT}$`, "u")))),
-    tags: v.optional(v.array(v.string()), []),
-});
+const manifestSchema = v.intersect([
+    v.object({
+        name: v.pipe(v.string(), v.trim(), v.minLength(1)),
+        description: v.pipe(v.string(), v.trim(), v.minLength(1)),
+        icon: v.optional(v.pipe(v.string(), v.regex(new RegExp(`^${SEGMENT}$`, "u")))),
+        tags: v.optional(v.array(v.string()), []),
+    }),
+    // Database templates name their engine; it is stored in the resource's `settings.engine`.
+    v.variant("type", [
+        v.object({ type: v.literal("compose") }),
+        v.object({ type: v.literal("database"), engine: v.picklist(databaseEngines) }),
+    ]),
+]);
 
 export interface TemplateVersion {
     compose: string;
     env: string;
 }
 
-export interface Template extends v.InferOutput<typeof manifestSchema> {
+export type Template = v.InferOutput<typeof manifestSchema> & {
     appId: string;
     logo: string | null;
     versions: Record<string, TemplateVersion>;
-}
+};
 
 function loadTemplates() {
     const apps = new Map<

@@ -476,6 +476,11 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         status: "no-routes",
         series: [],
     });
+    // The cluster-wide HTTP page sends no service filter and charts every routed service.
+    await expect(http("httpRequests", [])).resolves.toMatchObject({
+        status: "ok",
+        series: [{ serviceId: "web-id" }],
+    });
 }, 60000);
 
 it("preserves missing, NaN and stale samples as gaps rather than inventing zeros", () => {

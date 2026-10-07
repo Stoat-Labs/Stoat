@@ -8,6 +8,7 @@ import {
     s3DownloadUrl,
     s3FailureMessage,
     s3Providers,
+    setS3BucketQuota,
     type S3Target,
 } from "@stoat/s3";
 import { queueBucketReconcile } from "@stoat/workflows/runtime";
@@ -192,6 +193,9 @@ export const bucketsRouter = {
                 status: bucket.status,
                 error: bucket.error,
                 scopedKey: Boolean(bucket.keyId),
+                usage: bucket.metadata,
+                quota: bucket.quota,
+                enforcedQuota: s3Providers[connection.provider].enforcedQuota,
                 connection: {
                     id: connection.id,
                     name: connection.name,
@@ -210,6 +214,36 @@ export const bucketsRouter = {
             const row = await getBucket(db, organizationId, input.projectId, input.resourceId);
 
             return readyTarget(row).credentials;
+        }),
+    // The provider is updated first, so a failed save never claims a limit it does not enforce.
+    setQuota: organizationAdminProcedure
+        .input(
+            v.object({
+                ...resourceInput,
+                quota: v.nullable(v.pipe(v.number(), v.safeInteger(), v.minValue(1))),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const { bucket, connection } = await getBucket(
+                db,
+                organizationId,
+                input.projectId,
+                input.resourceId,
+            );
+
+            if (bucket.status !== "ready")
+                throw new ORPCError("BAD_REQUEST", { message: "The bucket is not ready yet." });
+
+            await setS3BucketQuota(connection, bucket.name, input.quota).catch((error) => {
+                throw badGateway(error instanceof Error ? error : new Error("S3 request failed."));
+            });
+
+            await db
+                .update(s3Buckets)
+                .set({ quota: input.quota })
+                .where(eq(s3Buckets.resourceId, bucket.resourceId));
+
+            return { quota: input.quota };
         }),
     retry: organizationAdminProcedure
         .input(v.object(resourceInput))

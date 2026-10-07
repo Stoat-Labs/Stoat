@@ -256,8 +256,6 @@ export function machineValue(machine: MachineData, name: MetricName) {
 }
 
 export function machineList(clusters: ClusterData[]): MachineData[] {
-    const colors = new Map<string, string>();
-
     return clusters.flatMap((cluster) => {
         const machines = new Map(cluster.machines.map((machine) => [machine.id, machine.name]));
 
@@ -265,22 +263,24 @@ export function machineList(clusters: ClusterData[]): MachineData[] {
             for (const item of series ?? [])
                 if (!machines.has(item.machineId)) machines.set(item.machineId, item.machineId);
 
-        return [...machines].map(([id, name]) => {
-            const key = `${cluster.id}:${id}`;
-            let hash = 0;
-
-            for (const character of key) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-            let index = hash % 5;
-
-            // Resolve palette collisions before repeating a color on dashboards with more than five machines.
-            while (colors.size < 5 && colors.has(`var(--chart-${index + 1})`))
-                index = (index + 1) % 5;
-            const color = `var(--chart-${index + 1})`;
-            colors.set(color, key);
-
-            return { key, id, name, cluster, color };
-        });
+        return [...machines].map(([id, name]) => ({
+            key: `${cluster.id}:${id}`,
+            id,
+            name,
+            cluster,
+            color: seriesColor(name),
+        }));
     });
+}
+
+/** A color derived only from `name`, so a machine or service looks the same in every chart. */
+export function seriesColor(name: string) {
+    // FNV-1a spreads similar names (stoat-monitoring-*) across the hue wheel.
+    let hash = 2166136261;
+
+    for (const character of name) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+
+    return `oklch(var(--series-lightness) var(--series-chroma) ${(hash >>> 0) % 360})`;
 }
 
 export function chartSeries(machines: MachineData[], name: MachineMetricName): ChartSeries[] {
@@ -368,7 +368,7 @@ export function filesystemRows(machines: MachineData[]) {
                         ).replaceAll(".", "%2E"),
                         machineKey: machine.key,
                         label: `${machine.cluster.name} / ${machine.name} · ${capacity.mountpoint}`,
-                        color: machine.color,
+                        color: seriesColor(`${machine.name} ${capacity.mountpoint}`),
                         device: capacity.device ?? "",
                         mountpoint: capacity.mountpoint,
                         fstype: capacity.fstype ?? "",
@@ -380,8 +380,7 @@ export function filesystemRows(machines: MachineData[]) {
                 ];
             }),
         )
-        .sort((a, b) => a.label.localeCompare(b.label) || a.device.localeCompare(b.device))
-        .map((row, index) => ({ ...row, color: `var(--chart-${(index % 5) + 1})` }));
+        .sort((a, b) => a.label.localeCompare(b.label) || a.device.localeCompare(b.device));
 }
 
 /** The busiest `limit` services by `rank`, so chart palettes stay distinguishable. */
@@ -413,7 +412,7 @@ export function serviceSeries(
     const top = topServices(rows, rank, limit);
 
     return names.flatMap((name) =>
-        top.flatMap((row, index) => {
+        top.flatMap((row) => {
             const cluster = clusters.find((item) => item.id === row.clusterId);
 
             return cluster
@@ -422,7 +421,7 @@ export function serviceSeries(
                           key: `${row.key}:${name}`,
                           machineKey: row.key,
                           label: row.name,
-                          color: `var(--chart-${(index % 5) + 1})`,
+                          color: seriesColor(row.name),
                           dashed: name === "serviceNetworkOut",
                           points: metric(cluster, name, row.scope || undefined, row.id),
                       },

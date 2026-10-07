@@ -6,6 +6,9 @@ import { BlockList, isIP } from "node:net";
 
 export type S3Credentials = { accessKey: string; secretKey: string };
 
+// A provider's view of how much a bucket holds, as of `measuredAt`.
+export type S3BucketUsage = { size: number; objects: number; measuredAt: Date };
+
 // Everything needed to talk S3 to one provider account.
 export type S3Target = {
     endpoint: string;

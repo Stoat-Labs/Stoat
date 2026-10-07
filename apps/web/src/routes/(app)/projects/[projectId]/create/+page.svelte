@@ -38,6 +38,7 @@
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Search from "@lucide/svelte/icons/search";
+    import type { AppRouterClient } from "@stoat/api/routers/index";
     import { createQuery } from "@tanstack/svelte-query";
     import type { Component } from "svelte";
     import { parseAsString, useQueryStates } from "nuqs-svelte";
@@ -52,7 +53,9 @@
         tags: string[];
     };
 
-    const DATABASE_TAG = "database";
+    type Template = Awaited<
+        ReturnType<AppRouterClient["resources"]["listTemplates"]>
+    >[number];
 
     const projectId = $derived(page.params.projectId ?? "");
 
@@ -121,44 +124,40 @@
         },
     ]);
 
-    const templates = $derived(
-        (templatesQuery.data ?? []).map((template) => {
-            const latest = template.versions[0];
-            const services = latest?.services.length ?? 0;
+    function templateEntry(template: Template): Entry {
+        const latest = template.versions[0];
+        const services = latest?.services.length ?? 0;
 
-            return {
-                href: `/projects/${projectId}/create/${encodeURIComponent(template.appId)}`,
-                name: template.name,
-                meta: `${services} ${services === 1 ? "service" : "services"}${latest ? ` · ${latest.version}` : ""}`,
-                description: template.description,
-                logo: template.logo,
-                icon: Box,
-                tags: template.tags,
-            } satisfies Entry;
-        }),
-    );
+        return {
+            href: `/projects/${projectId}/create/${encodeURIComponent(template.appId)}`,
+            name: template.name,
+            meta: `${services} ${services === 1 ? "service" : "services"}${latest ? ` · ${latest.version}` : ""}`,
+            description: template.description,
+            logo: template.logo,
+            icon: Box,
+            tags: template.tags,
+        };
+    }
 
     const databases = $derived(
-        templates.filter((entry) =>
-            entry.tags.includes(DATABASE_TAG),
+        (templatesQuery.data ?? []).flatMap((template) =>
+            template.type === "database"
+                ? [templateEntry(template)]
+                : [],
         ),
     );
 
     const otherTemplates = $derived(
-        templates.filter(
-            (entry) => !entry.tags.includes(DATABASE_TAG),
+        (templatesQuery.data ?? []).flatMap((template) =>
+            template.type === "database"
+                ? []
+                : [templateEntry(template)],
         ),
     );
 
     const tags = $derived(
         [
-            ...new Set(
-                otherTemplates.flatMap((entry) =>
-                    entry.tags.filter(
-                        (value) => value !== DATABASE_TAG,
-                    ),
-                ),
-            ),
+            ...new Set(otherTemplates.flatMap((entry) => entry.tags)),
         ].toSorted(),
     );
 
@@ -325,7 +324,7 @@
                 {@render groupHeading(
                     "group-scratch",
                     "Start from scratch",
-                    "Bring your own Docker Compose, or provision storage.",
+                    "",
                     null,
                 )}
             </FrameHeader>
@@ -351,10 +350,8 @@
                         {@render groupHeading(
                             "group-databases",
                             "Databases",
-                            "Managed storage for your apps.",
-                            templatesQuery.isPending
-                                ? null
-                                : databases.length,
+                            "",
+                            null,
                         )}
                     </FrameHeader>
                     <FramePanel class="overflow-hidden p-0">

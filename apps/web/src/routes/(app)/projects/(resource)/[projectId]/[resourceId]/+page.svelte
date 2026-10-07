@@ -51,6 +51,7 @@
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Container from "@lucide/svelte/icons/container";
     import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import { databaseEngine } from "@stoat/api/databases";
     import {
         createMutation,
         createQuery,
@@ -127,7 +128,8 @@
                 resource?.updatedAt,
             ],
             enabled:
-                resource?.type === "postgresql" &&
+                !!resource &&
+                databaseEngine(resource) === "postgresql" &&
                 clusterId.length > 0,
         }),
     );
@@ -190,6 +192,7 @@
             gitError = gitStatus = "";
             gitPending = false;
             saveMutation.reset();
+            externalConnectionMutation.reset();
             deployMutation.reset();
             deploymentId = null;
         });
@@ -274,6 +277,55 @@
         }),
     );
 
+    const externalConnectionMutation = createMutation(() =>
+        orpc.resources.enableExternalConnection.mutationOptions({
+            onSuccess: (updated, input) => {
+                queryClient.setQueryData(
+                    orpc.resources.getResource.queryKey({
+                        input: {
+                            projectId: input.projectId,
+                            resourceId: input.resourceId,
+                        },
+                    }),
+                    updated,
+                );
+                void queryClient.invalidateQueries({
+                    queryKey: orpc.resources.listResources.queryKey({
+                        input: { projectId: input.projectId },
+                    }),
+                });
+                if (
+                    !active ||
+                    projectId !== input.projectId ||
+                    resourceId !== input.resourceId
+                )
+                    return;
+                compose = updated.draftSpec ?? "";
+                savedSpec = updated.draftSpec;
+                debouncedCompose.setImmediately(compose);
+                saveMutation.reset();
+            },
+        }),
+    );
+
+    function enableExternalConnection() {
+        if (
+            readOnly ||
+            busy ||
+            isDirty ||
+            loadedResourceId !== resourceId ||
+            !savedSpec
+        )
+            return;
+        externalConnectionMutation.mutate({
+            projectId,
+            resourceId,
+            clusterId,
+            expectedSpec: savedSpec,
+            expectedSource: savedSource ? { ...savedSource } : null,
+        });
+    }
+
     const deployMutation = createMutation(() =>
         orpc.resources.deploy.mutationOptions({
             onSuccess: (deployment, input) => {
@@ -295,6 +347,7 @@
     const busy = $derived(
         gitPending ||
             saveMutation.isPending ||
+            externalConnectionMutation.isPending ||
             deployMutation.isPending,
     );
 
@@ -347,6 +400,7 @@
             readOnly ||
             gitPending ||
             deployMutation.isPending ||
+            externalConnectionMutation.isPending ||
             saveMutation.isPending;
         const settled = !debouncePending && currentText === target;
         const dirty = target !== (baseline ?? "");
@@ -722,206 +776,274 @@
                 </EmptyContent>
             </Empty>
         {:else}
-            {#if connectionQuery.data}
-                <Frame
-                    class="min-w-0"
-                    role="region"
-                    aria-labelledby="connection-heading"
-                >
-                    <FrameHeader>
-                        <FrameTitle class="text-base">
-                            <h2 id="connection-heading">
-                                Connection
-                            </h2>
-                        </FrameTitle>
-                        <FrameDescription class="mt-1">
-                            Built from the POSTGRES_* variables.
-                            Publish a TCP port in the Compose file to
-                            connect from outside the cluster.
-                        </FrameDescription>
-                    </FrameHeader>
-                    <FramePanel class="grid gap-4 lg:grid-cols-2">
-                        <ConnectionField
-                            label="Internal URL"
-                            value={connectionQuery.data.internal}
-                            secret
-                        />
-                        {#if connectionQuery.data.external}
-                            <ConnectionField
-                                label="External URL"
-                                value={connectionQuery.data.external}
-                                secret
-                            />
-                        {/if}
-                    </FramePanel>
-                </Frame>
-            {/if}
             <div
                 class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0"
             >
-                <Frame
-                    class="w-full min-w-0 xl:col-span-1 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid"
-                    role="region"
-                    aria-labelledby="containers-heading"
+                <div
+                    class="flex min-w-0 flex-col gap-6 xl:col-span-1 xl:row-span-2 xl:min-h-0"
                 >
-                    <FrameHeader class="shrink-0">
-                        <div
-                            class="flex flex-wrap items-center justify-between gap-2"
+                    {#if connectionQuery.data}
+                        <Frame
+                            class="min-w-0"
+                            role="region"
+                            aria-labelledby="connection-heading"
                         >
-                            <FrameTitle class="text-base">
-                                <h2 id="containers-heading">
-                                    Containers
-                                </h2>
-                            </FrameTitle>
-                            <span
-                                class="text-xs tabular-nums text-muted-foreground"
-                            >
-                                {#if (resource.spec?.trim() || resource.draftSpec?.trim()) && containersQuery.data !== undefined}
-                                    {containers.length}
-                                    {containers.length === 1
-                                        ? "container"
-                                        : "containers"}
-                                {/if}
-                            </span>
-                        </div>
-                        <FrameDescription class="mt-1">
-                            Runtime status across machines.
-                        </FrameDescription>
-                    </FrameHeader>
-                    <FramePanel
-                        class="max-h-96 overflow-y-auto p-0 xl:min-h-0 xl:max-h-none"
-                    >
-                        {#if !(resource.spec?.trim() || resource.draftSpec?.trim())}
-                            <Empty
-                                class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
-                            >
-                                <EmptyHeader>
-                                    <EmptyDescription>
-                                        Save a Compose spec to view
-                                        this resource's containers.
-                                    </EmptyDescription>
-                                </EmptyHeader>
-                            </Empty>
-                        {:else}
-                            {#if containersQuery.isError}
-                                <Alert variant="error" class="m-3">
-                                    <AlertDescription>
-                                        Unable to load containers: {containersQuery
-                                            .error.message}
-                                        {#if containers.length > 0}Showing
-                                            previously loaded
-                                            containers.{/if}
-                                    </AlertDescription>
-                                </Alert>
-                            {/if}
-                            {#if containersQuery.isPending}
-                                <Skeleton
-                                    loading
-                                    count={2}
-                                    count-gap={1}
-                                    loading-label="Loading containers"
-                                >
-                                    <div
-                                        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+                            <FrameHeader>
+                                <FrameTitle class="text-base">
+                                    <h2 id="connection-heading">
+                                        Connection
+                                    </h2>
+                                </FrameTitle>
+                                <FrameDescription class="mt-1">
+                                    Built from the saved Compose draft
+                                    and POSTGRES_* variables.
+                                </FrameDescription>
+                            </FrameHeader>
+                            <FramePanel class="grid gap-4">
+                                <ConnectionField
+                                    label="Internal URL"
+                                    value={connectionQuery.data
+                                        .internal}
+                                    secret
+                                />
+                                {#if connectionQuery.data.external}
+                                    <ConnectionField
+                                        label="External URL"
+                                        value={connectionQuery.data
+                                            .external}
+                                        secret
+                                    />
+                                {:else if connectionQuery.data.externalPort}
+                                    <p
+                                        class="text-sm text-muted-foreground"
                                     >
-                                        <span
-                                            class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                        External port {connectionQuery
+                                            .data.externalPort} is configured,
+                                        but no machine address is available.
+                                    </p>
+                                {/if}
+                                {#if connectionQuery.data.pendingDeployment}
+                                    <p
+                                        role="status"
+                                        class="text-sm text-warning-foreground"
+                                    >
+                                        External connection not
+                                        deployed yet. Deploy to apply
+                                        the external port.
+                                    </p>
+                                {/if}
+                                {#if !connectionQuery.data.externalPort && !readOnly}
+                                    <div class="grid gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onclick={enableExternalConnection}
+                                            loading={externalConnectionMutation.isPending}
+                                            disabled={busy ||
+                                                isDirty ||
+                                                loadedResourceId !==
+                                                    resourceId ||
+                                                !savedSpec}
                                         >
-                                            <Box
-                                                class="size-5"
-                                                aria-hidden="true"
-                                            />
-                                        </span>
-                                        <div class="min-w-0">
-                                            <h3
-                                                class="truncate text-sm font-medium leading-5"
-                                            >
-                                                Container service
-                                            </h3>
-                                            <p
-                                                class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                            >
-                                                image:latest &middot;
-                                                machine
-                                            </p>
-                                        </div>
-                                        <Badge
-                                            variant="secondary"
-                                            class="col-start-2 sm:col-start-auto"
+                                            Enable external connection
+                                        </Button>
+                                        <p
+                                            class="text-xs text-muted-foreground"
                                         >
-                                            Healthy
-                                        </Badge>
+                                            Adds an unused host port
+                                            to the Compose draft.
+                                            After deployment,
+                                            PostgreSQL will be
+                                            reachable outside the
+                                            cluster wherever your
+                                            firewall allows.
+                                        </p>
                                     </div>
-                                </Skeleton>
-                            {:else if containers.length > 0}
-                                <ul>
-                                    {#each containers as item, index (`${item.machineId}-${item.container.Id ?? index}`)}
-                                        {@const info = containerInfo(
-                                            item.container,
-                                        )}
-                                        <li class="min-w-0">
-                                            {#if index > 0}<Separator
-                                                />{/if}
-                                            <div
-                                                class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
-                                            >
-                                                <ImageIcon
-                                                    image={info.image}
-                                                />
-                                                <div class="min-w-0">
-                                                    <h3
-                                                        class="truncate text-sm font-medium leading-5"
-                                                        title={info.name}
-                                                    >
-                                                        {info.name}
-                                                    </h3>
-                                                    <p
-                                                        class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                                        title={`${info.image} · ${item.machineName || item.machineId || "Unknown machine"}${info.id ? ` · ${info.id}` : ""}`}
-                                                    >
-                                                        {info.image} &middot;
-                                                        {item.machineName ||
-                                                            item.machineId ||
-                                                            "Unknown machine"}
-                                                        {#if info.id}
-                                                            &middot; <span
-                                                                class="font-mono"
-                                                                title={info.id}
-                                                            >
-                                                                {info.id.slice(
-                                                                    0,
-                                                                    12,
-                                                                )}
-                                                            </span>
-                                                        {/if}
-                                                    </p>
-                                                </div>
-                                                <Badge
-                                                    variant={info.healthVariant}
-                                                    class="col-start-2 shrink-0 justify-self-start whitespace-nowrap capitalize sm:col-start-auto sm:justify-self-end"
-                                                    aria-label={`Health: ${info.health}. Runtime status: ${info.status}`}
-                                                    title={`Runtime status: ${info.status}`}
-                                                >
-                                                    {info.health}
-                                                </Badge>
-                                            </div>
-                                        </li>
-                                    {/each}
-                                </ul>
-                            {:else if !containersQuery.isError}
+                                {/if}
+                                {#if externalConnectionMutation.isError}
+                                    <Alert variant="error">
+                                        <AlertDescription>
+                                            {externalConnectionMutation
+                                                .error.message}
+                                        </AlertDescription>
+                                    </Alert>
+                                {/if}
+                            </FramePanel>
+                        </Frame>
+                    {/if}
+                    <Frame
+                        class="w-full min-w-0 xl:min-h-0 xl:flex-1"
+                        role="region"
+                        aria-labelledby="containers-heading"
+                    >
+                        <FrameHeader class="shrink-0">
+                            <div
+                                class="flex flex-wrap items-center justify-between gap-2"
+                            >
+                                <FrameTitle class="text-base">
+                                    <h2 id="containers-heading">
+                                        Containers
+                                    </h2>
+                                </FrameTitle>
+                                <span
+                                    class="text-xs tabular-nums text-muted-foreground"
+                                >
+                                    {#if (resource.spec?.trim() || resource.draftSpec?.trim()) && containersQuery.data !== undefined}
+                                        {containers.length}
+                                        {containers.length === 1
+                                            ? "container"
+                                            : "containers"}
+                                    {/if}
+                                </span>
+                            </div>
+                            <FrameDescription class="mt-1">
+                                Runtime status across machines.
+                            </FrameDescription>
+                        </FrameHeader>
+                        <FramePanel
+                            class="max-h-96 overflow-y-auto p-0 xl:min-h-0 xl:max-h-none xl:flex-1"
+                        >
+                            {#if !(resource.spec?.trim() || resource.draftSpec?.trim())}
                                 <Empty
                                     class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
                                 >
                                     <EmptyHeader>
                                         <EmptyDescription>
-                                            No containers found.
+                                            Save a Compose spec to
+                                            view this resource's
+                                            containers.
                                         </EmptyDescription>
                                     </EmptyHeader>
                                 </Empty>
+                            {:else}
+                                {#if containersQuery.isError}
+                                    <Alert
+                                        variant="error"
+                                        class="m-3"
+                                    >
+                                        <AlertDescription>
+                                            Unable to load containers: {containersQuery
+                                                .error.message}
+                                            {#if containers.length > 0}Showing
+                                                previously loaded
+                                                containers.{/if}
+                                        </AlertDescription>
+                                    </Alert>
+                                {/if}
+                                {#if containersQuery.isPending}
+                                    <Skeleton
+                                        loading
+                                        count={2}
+                                        count-gap={1}
+                                        loading-label="Loading containers"
+                                    >
+                                        <div
+                                            class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+                                        >
+                                            <span
+                                                class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                            >
+                                                <Box
+                                                    class="size-5"
+                                                    aria-hidden="true"
+                                                />
+                                            </span>
+                                            <div class="min-w-0">
+                                                <h3
+                                                    class="truncate text-sm font-medium leading-5"
+                                                >
+                                                    Container service
+                                                </h3>
+                                                <p
+                                                    class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                                >
+                                                    image:latest
+                                                    &middot; machine
+                                                </p>
+                                            </div>
+                                            <Badge
+                                                variant="secondary"
+                                                class="col-start-2 sm:col-start-auto"
+                                            >
+                                                Healthy
+                                            </Badge>
+                                        </div>
+                                    </Skeleton>
+                                {:else if containers.length > 0}
+                                    <ul>
+                                        {#each containers as item, index (`${item.machineId}-${item.container.Id ?? index}`)}
+                                            {@const info =
+                                                containerInfo(
+                                                    item.container,
+                                                )}
+                                            <li class="min-w-0">
+                                                {#if index > 0}<Separator
+                                                    />{/if}
+                                                <div
+                                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+                                                >
+                                                    <ImageIcon
+                                                        image={info.image}
+                                                    />
+                                                    <div
+                                                        class="min-w-0"
+                                                    >
+                                                        <h3
+                                                            class="truncate text-sm font-medium leading-5"
+                                                            title={info.name}
+                                                        >
+                                                            {info.name}
+                                                        </h3>
+                                                        <p
+                                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                                            title={`${info.image} · ${item.machineName || item.machineId || "Unknown machine"}${info.id ? ` · ${info.id}` : ""}`}
+                                                        >
+                                                            {info.image}
+                                                            &middot;
+                                                            {item.machineName ||
+                                                                item.machineId ||
+                                                                "Unknown machine"}
+                                                            {#if info.id}
+                                                                &middot;
+                                                                <span
+                                                                    class="font-mono"
+                                                                    title={info.id}
+                                                                >
+                                                                    {info.id.slice(
+                                                                        0,
+                                                                        12,
+                                                                    )}
+                                                                </span>
+                                                            {/if}
+                                                        </p>
+                                                    </div>
+                                                    <Badge
+                                                        variant={info.healthVariant}
+                                                        class="col-start-2 shrink-0 justify-self-start whitespace-nowrap capitalize sm:col-start-auto sm:justify-self-end"
+                                                        aria-label={`Health: ${info.health}. Runtime status: ${info.status}`}
+                                                        title={`Runtime status: ${info.status}`}
+                                                    >
+                                                        {info.health}
+                                                    </Badge>
+                                                </div>
+                                            </li>
+                                        {/each}
+                                    </ul>
+                                {:else if !containersQuery.isError}
+                                    <Empty
+                                        class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
+                                    >
+                                        <EmptyHeader>
+                                            <EmptyDescription>
+                                                No containers found.
+                                            </EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
+                                {/if}
                             {/if}
-                        {/if}
-                    </FramePanel>
-                </Frame>
+                        </FramePanel>
+                    </Frame>
+                </div>
                 <Frame
                     id="compose-editor"
                     class="min-w-0 xl:col-span-3 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid"
@@ -1005,6 +1127,7 @@
                                 <CodeEditor
                                     bind:value={compose}
                                     readOnly={readOnly ||
+                                        externalConnectionMutation.isPending ||
                                         gitPending ||
                                         deployMutation.isPending ||
                                         loadedResourceId !==

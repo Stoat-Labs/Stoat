@@ -1,0 +1,6 @@
+{
+    "name": "Dragonfly",
+    "description": "Multi-threaded, Redis-compatible in-memory data store.",
+    "type": "database",
+    "engine": "dragonfly"
+}

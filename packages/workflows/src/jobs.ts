@@ -84,9 +84,11 @@ export const ReconcileBucket: Job.Job<
     },
 });
 
-const healthCheckPayload = Schema.Struct({});
+// The hourly schedule checks everything; a manual run from the cluster page passes its cluster.
+const healthCheckPayload = Schema.Struct({ clusterId: Schema.optional(Schema.String) });
 
-// Periodic checks (bucket usage, cluster and S3 connection health). Runs from a schedule, never enqueued directly.
+// Periodic checks (bucket usage, cluster and S3 connection health). Runs hourly from a schedule,
+// or on demand for one cluster through `queueClusterHealthCheck`.
 export const HealthCheck: Job.Job<
     "HealthCheck",
     typeof healthCheckPayload,

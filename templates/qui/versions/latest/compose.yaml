@@ -1,0 +1,23 @@
+services:
+    qui:
+        image: ghcr.io/autobrr/qui:latest
+        pull_policy: always
+        volumes:
+            - qui_data:/config
+        restart: unless-stopped
+        x-ports:
+            - 7476/https
+        healthcheck:
+            test: ["CMD", "wget", "-q", "--spider", "http://localhost:7476/health"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "3"
+
+volumes:
+    qui_data:

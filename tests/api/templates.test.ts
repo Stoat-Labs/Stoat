@@ -1,6 +1,9 @@
 import { parseEnv } from "node:util";
+import * as v from "valibot";
 import { describe, expect, it } from "vite-plus/test";
+import YAML from "yaml";
 import { postgresService } from "../../packages/api/src/compose";
+import { databaseEngines } from "../../packages/api/src/databases";
 import {
     expandSecrets,
     fillVariables,
@@ -10,14 +13,26 @@ import {
 } from "../../packages/api/src/templates";
 import { formatComposeFile, interpolateCompose } from "../../packages/workflows/src/compose";
 
+const renderedSchema = v.object({
+    services: v.record(
+        v.string(),
+        v.looseObject({
+            healthcheck: v.optional(v.looseObject({ test: v.array(v.string()) })),
+            depends_on: v.optional(
+                v.record(v.string(), v.object({ condition: v.optional(v.string()) })),
+            ),
+        }),
+    ),
+});
+
 describe("templates", () => {
     it("loads the postgresql template", () => {
         const postgres = templates.find((template) => template.appId === "postgresql");
 
         expect(postgres).toMatchObject({
             name: "PostgreSQL",
-            type: "postgresql",
-            tags: ["database"],
+            type: "database",
+            engine: "postgresql",
         });
         expect(postgres?.logo).toMatch(/^data:image\/svg\+xml/u);
         expect(postgres?.versions["18"]?.compose).toContain("postgres:18");
@@ -35,6 +50,14 @@ describe("templates", () => {
         for (const template of templates) {
             for (const version of Object.values(template.versions)) summarizeVersion(version);
         }
+    });
+
+    it("bundles a database template for every engine", () => {
+        const engines = templates.flatMap((template) =>
+            template.type === "database" ? [template.engine] : [],
+        );
+
+        expect(engines.toSorted()).toEqual([...databaseEngines].toSorted());
     });
 
     it("renders the jellyfin template with prefixed volumes and the cluster domain", () => {
@@ -125,6 +148,84 @@ describe("templates", () => {
         expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
         expect(() => expandSecrets("{{ 0 }}")).toThrow();
         expect(() => expandSecrets("{{ 257 }}")).toThrow();
+    });
+
+    describe.each(
+        templates.flatMap(({ appId, versions }) =>
+            Object.entries(versions).map(([version, files]) => ({ appId, version, files })),
+        ),
+    )("$appId@$version", ({ appId, files }) => {
+        const prefix = "a1b2c3d4-e5f6a7b8";
+        const domain = "abc.uncld.dev";
+
+        // Same steps as creating the resource and then deploying it.
+        const env = fillVariables(
+            expandSecrets(files.env, domain),
+            Object.fromEntries(requiredVariables(files.env).map((key) => [key, "required-value"])),
+        );
+
+        const compose = expandSecrets(files.compose, domain);
+
+        const rendered = v.parse(
+            renderedSchema,
+            YAML.parse(
+                formatComposeFile(interpolateCompose(compose, env, prefix, domain), prefix).yaml,
+            ),
+        );
+
+        const services = Object.entries(rendered.services);
+
+        it("only references variables it defines or Stoat provides", () => {
+            const builtIns = summarizeVersion(files).services.flatMap(({ name }) => {
+                const variable = name.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
+
+                return [`${variable}_SERVICE_NAME`, `${variable}_INTERNAL_HOST`];
+            });
+
+            const defined = new Set([
+                ...Object.keys(parseEnv(env)),
+                ...builtIns,
+                "STOAT_PREFIX",
+                "STOAT_DOMAIN",
+            ]);
+
+            // `$$` is an escaped literal `$`, not a reference.
+            const referenced = Array.from(
+                (compose + env).replaceAll("$$", "").matchAll(/\$\{?([A-Za-z_]\w*)/gu),
+                ([, name = ""]) => name,
+            );
+
+            expect(referenced.filter((name) => !defined.has(name))).toEqual([]);
+        });
+
+        it("follows the template rules", () => {
+            expect(compose + env).not.toMatch(/\{\{\s*(?:UUID|DNS|\d+)\s*\}\}/iu);
+
+            for (const [, service] of services) {
+                expect(service).not.toHaveProperty("env_file");
+                expect(service).not.toHaveProperty("container_name");
+            }
+        });
+
+        it("gives every service a healthcheck", () => {
+            const missing = services.flatMap(([name, service]) =>
+                service.healthcheck ? [] : [name],
+            );
+
+            expect(missing).toEqual(
+                // FROM scratch image: nothing inside it can run a probe.
+                appId === "basedbin" ? [`${prefix}-basedbin`] : [],
+            );
+        });
+
+        it("only waits on services that report health", () => {
+            for (const [, service] of services) {
+                for (const [target, { condition }] of Object.entries(service.depends_on ?? {})) {
+                    if (condition === "service_healthy")
+                        expect(rendered.services[target]?.healthcheck).toBeDefined();
+                }
+            }
+        });
     });
 
     it("expands {{ DNS }} to the cluster domain", () => {

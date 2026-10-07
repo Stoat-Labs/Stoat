@@ -1,0 +1,6 @@
+{
+    "name": "Trilium",
+    "description": "Trilium Notes is a free and open-source, cross-platform hierarchical note taking application with focus on building large personal knowledge bases.",
+    "type": "compose",
+    "tags": ["notes", "calendar"]
+}

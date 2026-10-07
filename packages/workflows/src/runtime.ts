@@ -170,13 +170,13 @@ export const ReconcileBucketLive = ReconcileBucket.toLayer(
 );
 
 export const HealthCheckLive = HealthCheck.toLayer(
-    () =>
+    ({ clusterId }) =>
         Effect.callback<void>((resume, signal) => {
             const attempt = (async () => {
                 const db = createHandlerDb();
 
                 try {
-                    await runHealthCheck(db, signal);
+                    await runHealthCheck(db, signal, clusterId);
                 } finally {
                     await db.$client.end();
                 }
@@ -363,6 +363,16 @@ export async function queueBucketReconcile(resourceId: string, requestedAt: Date
         ReconcileBucket.enqueue({ resourceId, requestId: requestedAt.toISOString() }).pipe(
             Effect.provide(JobStoreLive),
         ),
+    );
+}
+
+// At most one manual run per cluster a minute, however often the button is pressed.
+export async function queueClusterHealthCheck(clusterId: string): Promise<void> {
+    await Effect.runPromise(
+        HealthCheck.enqueue(
+            { clusterId },
+            { dedupe: { key: `cluster:${clusterId}`, ttl: "1 minute" } },
+        ).pipe(Effect.provide(JobStoreLive)),
     );
 }
 

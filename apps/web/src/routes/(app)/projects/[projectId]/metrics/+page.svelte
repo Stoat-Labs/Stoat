@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { syncMetricCharts } from "$lib/components/observability/chart-sync";
     import { browser } from "$app/environment";
     import { page } from "$app/state";
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
@@ -39,12 +40,13 @@
         createQueries,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { ChartGroup } from "layerchart";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
 
     const projectId = $derived(page.params.projectId ?? "");
 
     const range = useObservabilityRange();
+
+    syncMetricCharts();
 
     const names = [
         "serviceCpu",
@@ -253,49 +255,42 @@
             </AlertDescription>
         </Alert>
     {:else if cluster.available}
-        <ChartGroup
-            pointer={{ tooltip: false }}
-            brush={false}
-            domain={false}
-            series={false}
-        >
-            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {#each charts as chart (chart.title)}<Frame
-                        class="min-w-0"
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {#each charts as chart (chart.title)}<Frame
+                    class="min-w-0"
+                >
+                    <FrameHeader
+                        class="flex-row items-center justify-between gap-2"
                     >
-                        <FrameHeader
-                            class="flex-row items-center justify-between gap-2"
+                        <FrameTitle>{chart.title}</FrameTitle>
+                        <span
+                            class="text-xs font-medium tabular-nums"
                         >
-                            <FrameTitle>{chart.title}</FrameTitle>
-                            <span
-                                class="text-xs font-medium tabular-nums"
-                            >
-                                {chart.total}
-                            </span>
-                        </FrameHeader><FramePanel class="min-w-0 p-4">
-                            <MetricChart
-                                series={chart.series}
-                                start={cluster.start}
-                                end={cluster.end}
-                                unit={chart.unit}
-                            />
-                            <div
-                                class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
-                            >
-                                {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<span
-                                        class="flex items-center gap-2 text-xs"
-                                    >
-                                        <span
-                                            class="size-2 rounded-full"
-                                            style:background={item.color}
-                                        ></span>
-                                        {item.label}
-                                    </span>{/each}
-                            </div>
-                        </FramePanel>
-                    </Frame>{/each}
-            </div>
-        </ChartGroup>
+                            {chart.total}
+                        </span>
+                    </FrameHeader><FramePanel class="min-w-0 p-4">
+                        <MetricChart
+                            series={chart.series}
+                            start={cluster.start}
+                            end={cluster.end}
+                            unit={chart.unit}
+                        />
+                        <div
+                            class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
+                        >
+                            {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<span
+                                    class="flex items-center gap-2 text-xs"
+                                >
+                                    <span
+                                        class="size-2 rounded-full"
+                                        style:background={item.color}
+                                    ></span>
+                                    {item.label}
+                                </span>{/each}
+                        </div>
+                    </FramePanel>
+                </Frame>{/each}
+        </div>
         <ServicesTable
             data={rows}
             start={cluster.start}

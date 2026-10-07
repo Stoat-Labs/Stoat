@@ -1,0 +1,32 @@
+services:
+    voidauth:
+        image: voidauth/voidauth:latest
+        restart: unless-stopped
+        x-ports:
+            - ${VOIDAUTH_HOST}:3000/https
+        #  - "3890:3890" # only needed if LDAP Server is enabled
+        environment:
+            # Public URL: OIDC issuer, redirects, and emailed links all use it.
+            APP_URL: https://${VOIDAUTH_HOST}
+            STORAGE_KEY: ${STORAGE_KEY}
+            DB_ADAPTER: sqlite
+        volumes:
+            - voidauth_config:/app/config
+            - voidauth_db:/app/db
+        healthcheck:
+            # The image's own HEALTHCHECK is a quoted string literal that always passes.
+            test:
+                [
+                    "CMD",
+                    "node",
+                    "-e",
+                    "fetch('http://localhost:3000/healthcheck').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+                ]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+
+volumes:
+    voidauth_config:
+    voidauth_db:

@@ -33,6 +33,16 @@ services:
             ]
         environment:
             REDIS_PASSWORD: ${REDIS_PASSWORD}
+        healthcheck:
+            # redis-cli exits 0 even on auth errors, so check the reply.
+            test:
+                [
+                    "CMD-SHELL",
+                    'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG',
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
 
     server:
         image: seafileltd/seafile-pro-mc:13.0-latest
@@ -88,7 +98,7 @@ services:
             db:
                 condition: service_healthy
             cache:
-                condition: service_started
+                condition: service_healthy
 
     seadoc:
         image: seafileltd/sdoc-server:2.0-latest
@@ -105,6 +115,13 @@ services:
             JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
             NON_ROOT: "false"
             SEAHUB_SERVICE_URL: http://server
+        healthcheck:
+            # nginx on :80 fronts the sdoc Node server on :7070; any HTTP reply means it is up.
+            test: ["CMD", "curl", "-so", "/dev/null", "http://localhost:7070/"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
         depends_on:
             db:
                 condition: service_healthy

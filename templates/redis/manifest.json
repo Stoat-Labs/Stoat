@@ -1,0 +1,6 @@
+{
+    "name": "Redis",
+    "description": "In-memory key-value store for caching, queues, and sessions.",
+    "type": "database",
+    "engine": "redis"
+}

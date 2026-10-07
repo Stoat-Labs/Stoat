@@ -1,9 +1,5 @@
 <script lang="ts">
-    import {
-        beforeNavigate,
-        goto,
-        onNavigate,
-    } from "$app/navigation";
+    import { goto, onNavigate } from "$app/navigation";
     import { page } from "$app/state";
     import ConnectionDialog from "$lib/components/connections/connection-dialog.svelte";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
@@ -13,26 +9,27 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { Field } from "$lib/components/ui/field";
+    import {
+        Empty,
+        EmptyDescription,
+        EmptyHeader,
+        EmptyMedia,
+        EmptyTitle,
+    } from "$lib/components/ui/empty";
     import {
         Frame,
         FrameHeader,
         FramePanel,
         FrameTitle,
     } from "$lib/components/ui/frame";
-    import { Label } from "$lib/components/ui/label";
-    import {
-        Select,
-        SelectContent,
-        SelectItem,
-        SelectTrigger,
-        SelectValue,
-    } from "$lib/components/ui/select";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         connectionDialogParsers,
         connectionDialogUrl,
     } from "$lib/git-query-params";
-    import { client, orpc, queryClient } from "$lib/orpc";
+    import { orpc } from "$lib/orpc";
+    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import GitBranch from "@lucide/svelte/icons/git-branch";
     import { createQuery } from "@tanstack/svelte-query";
     import { useQueryStates } from "nuqs-svelte";
     import { onDestroy, untrack } from "svelte";
@@ -111,40 +108,6 @@
                     !editingConnection)),
     );
 
-    const selectedConnection = $derived(
-        connections.find(
-            (connection) =>
-                connection.id === params.connectionId.current,
-        ) ?? connections[0],
-    );
-
-    const repositoriesQuery = createQuery(() => {
-        const requestedConnectionId = selectedConnection?.id ?? "";
-
-        return orpc.connections.getRepositories.queryOptions({
-            input: { connectionId: requestedConnectionId },
-            enabled: Boolean(requestedConnectionId),
-            placeholderData: undefined,
-            select: (result) => ({
-                ...result,
-                connectionId: requestedConnectionId,
-            }),
-        });
-    });
-
-    const repositoryData = $derived(
-        repositoriesQuery.data?.connectionId ===
-            selectedConnection?.id
-            ? repositoriesQuery.data
-            : undefined,
-    );
-
-    const repositories = $derived(
-        selectedConnection && !repositoriesQuery.isError
-            ? (repositoryData?.repositories ?? [])
-            : [],
-    );
-
     const providerNames = {
         github: "GitHub",
         forgejo: "Forgejo",
@@ -187,17 +150,9 @@
         );
     });
 
-    let pending = $state("");
-
-    let error = $state("");
-
     let status = $state("");
 
-    const disabled = $derived(Boolean(pending) || Boolean(form));
-
-    beforeNavigate((navigation) => {
-        if (pending) navigation.cancel();
-    });
+    const disabled = $derived(Boolean(form));
 
     onNavigate((navigation) => {
         leaving = navigation.to?.route.id !== routeId;
@@ -239,36 +194,6 @@
             }
         } catch {
             // A navigation guard may cancel; leave the existing URL and form intact.
-        }
-    }
-
-    async function remove(connection: (typeof connections)[number]) {
-        if (
-            disabled ||
-            !canManage ||
-            !window.confirm(
-                `Delete connection "${connection.name}"? Deletion is blocked while any resource is attached. Detach those resources first.`,
-            )
-        )
-            return;
-        pending = "Deleting account connection";
-        error = status = "";
-
-        try {
-            await client.connections.delete({
-                connectionId: connection.id,
-            });
-            await queryClient.invalidateQueries({
-                queryKey: orpc.connections.list.queryKey(),
-            });
-            status = "Account connection deleted.";
-        } catch (cause) {
-            error =
-                cause instanceof Error
-                    ? cause.message
-                    : "Unable to delete account connection.";
-        } finally {
-            pending = "";
         }
     }
 </script>
@@ -314,9 +239,6 @@
     {#if oauthError}<Alert variant="error">
             <AlertDescription>{oauthError}</AlertDescription>
         </Alert>{/if}
-    {#if error}<Alert variant="error">
-            <AlertDescription>{error}</AlertDescription>
-        </Alert>{/if}
     {#if invalidDialog}
         <Alert variant="error">
             <AlertDescription>
@@ -330,7 +252,7 @@
         </Button>
     {/if}
     <p class="text-sm text-muted-foreground" role="status">
-        {pending ? `${pending}...` : status}
+        {status}
     </p>
     {#if form && canManage}
         {#key formKey}
@@ -350,236 +272,67 @@
             />
         {/key}
     {/if}
-    <Frame class="min-w-0">
-        <FrameHeader>
-            <FrameTitle>Account connections</FrameTitle>
-        </FrameHeader>
-        <FramePanel class="min-w-0 space-y-4">
-            {#if connectionsQuery.isPending}
-                <p class="text-sm text-muted-foreground">
-                    Loading account connections...
-                </p>
-            {:else if selectedConnection}
-                <Field class="w-full min-w-0 sm:max-w-sm">
-                    <Label for="git-connection">
-                        Git account connection
-                    </Label>
-                    <Select
-                        value={selectedConnection.id}
-                        items={connections.map((connection) => ({
-                            value: connection.id,
-                            label: connection.name,
-                        }))}
-                        {disabled}
-                        onValueChange={(value) => {
-                            params.connectionId.current = value;
-                        }}
+    {#if connectionsQuery.isPending}
+        <Skeleton loading loading-label="Loading connections">
+            <Frame>
+                <FrameHeader>
+                    <FrameTitle>Connection name</FrameTitle>
+                </FrameHeader>
+                <FramePanel class="h-32"></FramePanel>
+            </Frame>
+        </Skeleton>
+    {:else if connections.length === 0 && !connectionsQuery.isError}
+        <Empty class="rounded-xl border border-dashed border-border">
+            <EmptyHeader>
+                <EmptyMedia variant="icon">
+                    <GitBranch aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>No Git connections yet</EmptyTitle>
+                <EmptyDescription>
+                    An administrator can add a connection using OAuth
+                    or an access token.
+                </EmptyDescription>
+            </EmptyHeader>
+        </Empty>
+    {:else}
+        <Frame role="region" aria-labelledby="connections-heading">
+            <FrameHeader>
+                <FrameTitle class="text-base">
+                    <h2 id="connections-heading">Connections</h2>
+                </FrameTitle>
+            </FrameHeader>
+            <FramePanel class="divide-y divide-border p-0">
+                {#each connections as connection (connection.id)}
+                    <a
+                        href={`/git/${connection.id}`}
+                        class="group flex items-center gap-3 p-4 outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50"
                     >
-                        <SelectTrigger
-                            id="git-connection"
-                            class="min-w-0"
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted"
                         >
-                            <span
-                                class="flex min-w-0 items-center gap-2"
-                            >
-                                <ProviderIcon
-                                    provider={selectedConnection.provider}
-                                />
-                                <span class="truncate">
-                                    {selectedConnection.name}
-                                </span>
-                            </span>
-                        </SelectTrigger>
-                        <SelectContent>
-                            {#each connections as connection (connection.id)}
-                                <SelectItem
-                                    value={connection.id}
-                                    label={connection.name}
-                                >
-                                    <span
-                                        class="flex min-w-0 items-center gap-2"
-                                    >
-                                        <ProviderIcon
-                                            provider={connection.provider}
-                                        />
-                                        <span class="truncate">
-                                            {connection.name}
-                                        </span>
-                                    </span>
-                                </SelectItem>
-                            {/each}
-                        </SelectContent>
-                    </Select>
-                </Field>
-                <dl class="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                        <dt class="text-xs text-muted-foreground">
-                            Provider
-                        </dt>
-                        <dd class="flex items-center gap-2">
                             <ProviderIcon
-                                provider={selectedConnection.provider}
+                                provider={connection.provider}
                             />
-                            <span>
-                                {providerNames[
-                                    selectedConnection.provider
-                                ]}
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span
+                                class="block truncate text-sm font-medium"
+                            >
+                                {connection.name}
                             </span>
-                        </dd>
-                    </div>
-                    <div class="min-w-0">
-                        <dt class="text-xs text-muted-foreground">
-                            Server
-                        </dt>
-                        <dd class="break-all">
-                            {selectedConnection.serverUrl}
-                        </dd>
-                    </div>
-                    <div class="min-w-0">
-                        <dt class="text-xs text-muted-foreground">
-                            Account
-                        </dt>
-                        <dd class="break-all">
-                            {selectedConnection.account?.login ??
-                                "Account discovery unavailable"}{selectedConnection
-                                .account?.name
-                                ? ` (${selectedConnection.account.name})`
-                                : ""}
-                        </dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs text-muted-foreground">
-                            Authorization
-                        </dt>
-                        <dd>
-                            {selectedConnection.authType === "oauth"
-                                ? "OAuth"
-                                : selectedConnection.hasCredentials
-                                  ? "Stored token / credentials"
-                                  : "No credentials stored"}
-                        </dd>
-                    </div>
-                </dl>
-                {#if canManage}
-                    <div class="flex flex-wrap gap-2">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            {disabled}
-                            onclick={() =>
-                                changeDialog(
-                                    "edit-connection",
-                                    selectedConnection.id,
-                                )}
-                        >
-                            Edit
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            {disabled}
-                            onclick={() => remove(selectedConnection)}
-                        >
-                            Delete
-                        </Button>
-                    </div>
-                {:else if !connectionsQuery.isError}
-                    <p class="text-xs text-muted-foreground">
-                        Read-only. Only organization owners and
-                        administrators can manage account connections.
-                    </p>
-                {/if}
-                {#key selectedConnection.id}
-                    <div
-                        class="space-y-2 border-t border-border pt-4"
-                    >
-                        {#if repositoriesQuery.isError}
-                            <Alert variant="error">
-                                <AlertDescription>
-                                    Unable to load repositories: {repositoriesQuery
-                                        .error.message}
-                                </AlertDescription>
-                            </Alert>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={disabled ||
-                                    repositoriesQuery.isFetching}
-                                onclick={() =>
-                                    repositoriesQuery.refetch()}
+                            <span
+                                class="block truncate text-xs text-muted-foreground"
                             >
-                                Retry repositories
-                            </Button>
-                        {:else if repositoriesQuery.isPending || !repositoryData}
-                            <p
-                                class="text-sm text-muted-foreground"
-                                role="status"
-                            >
-                                Loading repositories...
-                            </p>
-                        {:else}
-                            <Field class="w-full min-w-0 sm:max-w-lg">
-                                <Label for="account-repositories">
-                                    Accessible repositories ({repositories.length}{repositoryData.truncated
-                                        ? "+"
-                                        : ""})
-                                </Label>
-                                <Select
-                                    items={repositories.map(
-                                        (repo) => ({
-                                            value: repo.url,
-                                            label: `${repo.name} (${repo.defaultBranch})`,
-                                        }),
-                                    )}
-                                    disabled={disabled ||
-                                        repositories.length === 0}
-                                >
-                                    <SelectTrigger
-                                        id="account-repositories"
-                                        class="min-w-0"
-                                    >
-                                        <SelectValue
-                                            placeholder={repositories.length
-                                                ? "Browse repositories"
-                                                : "No repositories available"}
-                                        />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem
-                                            value={null}
-                                            label="Browse repositories"
-                                        />
-                                        {#each repositories as repo (repo.url)}<SelectItem
-                                                value={repo.url}
-                                                label={`${repo.name} (${repo.defaultBranch})`}
-                                            />{/each}
-                                    </SelectContent>
-                                </Select>
-                            </Field>
-                            {#if repositoryData.truncated}<p
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    This is a partial repository list
-                                    returned by the provider. Not all
-                                    accessible repositories may be
-                                    shown.
-                                </p>{/if}
-                        {/if}
-                        <p class="text-xs text-muted-foreground">
-                            {selectedConnection.provider === "generic"
-                                ? "Generic servers cannot auto-discover repositories. Edit the connection to maintain known repository URLs."
-                                : "Repositories are discovered using this account's permissions. Select a repository and branch when configuring a resource."}
-                        </p>
-                    </div>
-                {/key}
-            {:else if !connectionsQuery.isError}
-                <p class="text-sm text-muted-foreground">
-                    No Git account connections yet. An administrator
-                    can add a connection using OAuth or an access
-                    token.
-                </p>
-            {/if}
-        </FramePanel>
-    </Frame>
+                                {providerNames[connection.provider]} · {connection.serverUrl}
+                            </span>
+                        </span>
+                        <ChevronRight
+                            class="size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                        />
+                    </a>
+                {/each}
+            </FramePanel>
+        </Frame>
+    {/if}
 </div>

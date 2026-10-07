@@ -20,6 +20,7 @@
         bandwidth,
         bytes,
         percent,
+        seriesColor,
         type ContainerRow,
         type ServiceRow,
     } from "$lib/observability";
@@ -257,7 +258,7 @@
                 {
                     key: row.key,
                     label: row.name,
-                    color: "var(--chart-1)",
+                    color: seriesColor(row.name),
                     points: row.trend,
                 },
             ]}

@@ -209,8 +209,9 @@ async function httpMetric(
     const services = await ucServices(cluster, uc);
     const hosts = new Map<string, string[]>();
 
+    // No service filter means the whole cluster, as on the HTTP traffic page.
     for (const service of services.items)
-        if (serviceIds.includes(service.id))
+        if (!serviceIds.length || serviceIds.includes(service.id))
             hosts.set(service.id, [
                 ...new Set(
                     service.containers.flatMap((item) =>

@@ -1,0 +1,21 @@
+services:
+    mongodb:
+        image: mongo:9.0
+        restart: unless-stopped
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+            MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+            MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+        volumes:
+            - mongodb_data:/data/db
+            - mongodb_config:/data/configdb
+        healthcheck:
+            test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+
+volumes:
+    mongodb_data:
+    mongodb_config:

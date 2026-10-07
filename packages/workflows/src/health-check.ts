@@ -1,33 +1,30 @@
 import type { Database } from "@stoat/db";
 import { readyBuckets, setBucketMetadata } from "@stoat/db/buckets";
-import { getS3BucketStats, s3BucketTarget } from "@stoat/s3";
+import { getS3BucketUsage } from "@stoat/s3";
 
 // Runs once per HealthCheck tick (see HEALTH_CHECK_CRON in runtime.ts).
 // Throwing fails this tick only; the next tick runs regardless.
-export async function runHealthCheck(db: Database, signal: AbortSignal) {
+// Without a cluster it checks every cluster.
+export async function runHealthCheck(db: Database, signal: AbortSignal, clusterId?: string) {
     // TODO: cluster sidecar reachability, S3 connection tests.
     signal.throwIfAborted();
-    await measureBuckets(db, signal);
+    await measureBuckets(db, signal, clusterId);
 }
 
-async function measureBuckets(db: Database, signal: AbortSignal) {
-    for (const { bucket, connection } of await readyBuckets(db)) {
+async function measureBuckets(db: Database, signal: AbortSignal, clusterId?: string) {
+    for (const { bucket, connection } of await readyBuckets(db, clusterId)) {
         signal.throwIfAborted();
 
         try {
-            const target = s3BucketTarget(
-                connection,
-                bucket.resourceId,
-                bucket.encryptedCredentials,
-            );
+            const usage = await getS3BucketUsage(connection, bucket.name, signal);
 
-            const stats = await getS3BucketStats(target, bucket.name, signal);
+            // The provider has not measured this bucket yet; keep the last snapshot.
+            if (!usage) continue;
 
             await setBucketMetadata(db, bucket.resourceId, {
-                size: stats.size,
-                objects: stats.objects,
-                lastModifiedAt: stats.lastModified?.toISOString() ?? null,
-                measuredAt: new Date().toISOString(),
+                size: usage.size,
+                objects: usage.objects,
+                measuredAt: usage.measuredAt.toISOString(),
             });
         } catch (error) {
             // One unreachable provider must not stop the other buckets; the last snapshot stays.

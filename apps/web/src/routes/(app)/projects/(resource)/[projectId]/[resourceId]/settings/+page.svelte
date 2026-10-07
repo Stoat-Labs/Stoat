@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from "$app/state";
     import BucketDangerZone from "$lib/components/s3/bucket-danger-zone.svelte";
+    import BucketStorageLimit from "$lib/components/s3/bucket-storage-limit.svelte";
     import {
         Alert,
         AlertAction,
@@ -758,6 +759,7 @@
         </section>
 
         {#if resourceQuery.data.type === "bucket"}
+            <BucketStorageLimit {projectId} {resourceId} />
             <BucketDangerZone
                 {projectId}
                 {resourceId}

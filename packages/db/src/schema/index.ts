@@ -347,9 +347,7 @@ export type S3BucketMetadata = {
     /** Total bytes across every object. */
     size: number;
     objects: number;
-    /** Newest object's last-modified time (ISO); null for an empty bucket. */
-    lastModifiedAt: string | null;
-    /** When this snapshot was taken (ISO). */
+    /** When the provider took this snapshot (ISO); provider usage APIs lag behind writes. */
     measuredAt: string;
 };
 
@@ -376,6 +374,8 @@ export const s3Buckets = t.pgTable(
         keyId: t.text("key_id"),
         encryptedCredentials: t.text("encrypted_credentials"),
         metadata: t.jsonb("metadata").$type<S3BucketMetadata>(),
+        // Storage limit in bytes; null means unlimited. Enforced only where the provider supports it.
+        quota: t.bigint("quota", { mode: "number" }),
         createdAt: t
             .timestamp("created_at", { withTimezone: true })
             .notNull()

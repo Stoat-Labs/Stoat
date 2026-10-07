@@ -49,6 +49,7 @@
     import { deploymentIdParser } from "$lib/query-params";
     import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
+    import Check from "@lucide/svelte/icons/check";
     import CircleAlert from "@lucide/svelte/icons/circle-alert";
     import CircleCheck from "@lucide/svelte/icons/circle-check";
     import GitBranch from "@lucide/svelte/icons/git-branch";
@@ -183,6 +184,15 @@
         }),
     );
 
+    // The job runs in the background; the button only confirms it was queued.
+    const healthCheckState = createMutation(() =>
+        orpc.cluster.runHealthCheck.mutationOptions({
+            onSuccess: () => {
+                setTimeout(() => healthCheckState.reset(), 4_000);
+            },
+        }),
+    );
+
     const retryErrorMessage = $derived(
         retryMutationState.error
             ? retryMutationState.error.message ||
@@ -231,6 +241,36 @@
 {#snippet clusterActions()}
     {#if cluster}
         <div class="flex flex-wrap items-center justify-end gap-2">
+            {#if healthCheckState.isError}
+                <span
+                    class="text-sm text-destructive-foreground"
+                    role="alert"
+                >
+                    {healthCheckState.error.message ||
+                        "Unable to queue the health check."}
+                </span>
+            {/if}
+            {#if cluster.canInitialize}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    loading={healthCheckState.isPending}
+                    disabled={healthCheckState.isPending ||
+                        healthCheckState.isSuccess}
+                    onclick={() =>
+                        healthCheckState.mutate({
+                            clusterId: cluster.id,
+                        })}
+                >
+                    {#if healthCheckState.isSuccess}
+                        <Check aria-hidden="true" />
+                        Health check queued
+                    {:else}
+                        <Activity aria-hidden="true" />
+                        Run health check
+                    {/if}
+                </Button>
+            {/if}
             <Button
                 variant="outline"
                 size="sm"

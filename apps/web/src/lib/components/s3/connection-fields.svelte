@@ -61,9 +61,10 @@
             {disabled}
         />
         <FieldDescription id="s3-token-description">
-            An account-owned token with Account API Tokens: Edit and
-            Workers R2 Storage: Edit. Stoat uses it to create buckets
-            and a scoped token for each one.
+            An account-owned token with Account API Tokens: Edit,
+            Workers R2 Storage: Edit, and Account Analytics: Read.
+            Stoat uses it to create buckets, a scoped token for each
+            one, and to read bucket usage.
         </FieldDescription>
     </Field>
 {:else}

@@ -9,6 +9,8 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { formatDate } from "$lib/format";
     import { client, orpc } from "$lib/orpc";
+    import { bytes } from "$lib/observability";
+    import CornerLeftUp from "@lucide/svelte/icons/corner-left-up";
     import Download from "@lucide/svelte/icons/download";
     import File from "@lucide/svelte/icons/file";
     import Folder from "@lucide/svelte/icons/folder";
@@ -23,7 +25,6 @@
     const location = useQueryStates(
         {
             prefix: parseAsString.withDefault(""),
-            cursor: parseAsString,
         },
         { history: "push", shallow: true, scroll: false },
     );
@@ -34,13 +35,18 @@
                 projectId,
                 resourceId,
                 prefix: location.prefix.current || undefined,
-                cursor: location.cursor.current || undefined,
             },
             retry: false,
         }),
     );
 
     const data = $derived(filesQuery.data);
+    // S3 may return the folder's own marker object; it isn't a file.
+    const files = $derived(
+        data?.items.filter(
+            (item) => item.key !== location.prefix.current,
+        ) ?? [],
+    );
 
     let downloadError = $state("");
 
@@ -64,7 +70,7 @@
     }
 
     function open(prefix: string) {
-        void location.set({ prefix, cursor: null });
+        void location.set({ prefix });
     }
 
     function up() {
@@ -93,26 +99,6 @@
                     /{location.prefix.current}
                 </p>
             </div>
-            <div class="flex gap-2">
-                <Button
-                    size="sm"
-                    variant="outline"
-                    onclick={up}
-                    disabled={!location.prefix.current}
-                >
-                    Up
-                </Button>
-                {#if data?.cursor}
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onclick={() =>
-                            (location.cursor.current = data.cursor)}
-                    >
-                        Next page
-                    </Button>
-                {/if}
-            </div>
         </div>
     </FrameHeader>
     <FramePanel
@@ -120,31 +106,44 @@
     >
         {#if downloadError}
             <p
-                class="p-4 text-sm text-destructive-foreground"
+                class="p-3 text-sm text-destructive-foreground"
                 role="alert"
             >
                 {downloadError}
             </p>
         {/if}
+        {#if location.prefix.current}
+            <button
+                type="button"
+                class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent/50"
+                onclick={up}
+            >
+                <CornerLeftUp
+                    class="size-4 text-muted-foreground"
+                    aria-hidden="true"
+                />
+                ../
+            </button>
+        {/if}
         {#if filesQuery.isPending}
             <Skeleton loading loading-label="Loading files">
                 {#each { length: 3 }, index (index)}
-                    <div class="p-4 text-sm">file-name.txt</div>
+                    <div class="px-3 py-2 text-sm">file-name.txt</div>
                 {/each}
             </Skeleton>
         {:else if filesQuery.isError}
-            <p class="p-4 text-sm text-destructive-foreground">
+            <p class="p-3 text-sm text-destructive-foreground">
                 {filesQuery.error.message}
             </p>
-        {:else if !data?.prefixes.length && !data?.items.length}
-            <p class="p-4 text-sm text-muted-foreground">
+        {:else if !data || (!data.prefixes.length && !files.length)}
+            <p class="p-3 text-sm text-muted-foreground">
                 This folder is empty.
             </p>
         {:else}
             {#each data.prefixes as folder (folder)}
                 <button
                     type="button"
-                    class="flex w-full items-center gap-3 p-4 text-left text-sm hover:bg-accent/50"
+                    class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent/50"
                     onclick={() => open(folder)}
                 >
                     <Folder
@@ -154,30 +153,24 @@
                     {folder.slice(location.prefix.current.length)}
                 </button>
             {/each}
-            {#each data.items as item (item.key)}
-                <div
-                    class="flex items-center justify-between gap-3 p-4"
-                >
-                    <div class="flex min-w-0 items-center gap-3">
-                        <File
-                            class="size-4 shrink-0 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                        <div class="min-w-0">
-                            <div class="truncate text-sm">
-                                {item.key.slice(
-                                    location.prefix.current.length,
-                                )}
-                            </div>
-                            <div
-                                class="text-xs text-muted-foreground"
-                            >
-                                {item.size.toLocaleString()} bytes{item.lastModified
-                                    ? ` · ${formatDate(new Date(item.lastModified))}`
-                                    : ""}
-                            </div>
-                        </div>
-                    </div>
+            {#each files as item (item.key)}
+                <div class="flex items-center gap-3 py-1 pr-1 pl-3">
+                    <File
+                        class="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <span class="min-w-0 flex-1 truncate text-sm">
+                        {item.key.slice(
+                            location.prefix.current.length,
+                        )}
+                    </span>
+                    <span
+                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                    >
+                        {bytes(item.size)}{item.lastModified
+                            ? ` · ${formatDate(new Date(item.lastModified))}`
+                            : ""}
+                    </span>
                     <Button
                         size="icon-sm"
                         variant="ghost"

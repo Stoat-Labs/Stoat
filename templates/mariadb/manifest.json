@@ -1,0 +1,6 @@
+{
+    "name": "MariaDB",
+    "description": "MySQL-compatible relational database for apps that need SQL storage.",
+    "type": "database",
+    "engine": "mariadb"
+}

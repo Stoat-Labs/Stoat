@@ -2,7 +2,13 @@ import { SignatureV4 } from "@smithy/signature-v4";
 import type { Checksum, SourceData } from "@smithy/types";
 import { createHash, createHmac, randomBytes, type Hash, type Hmac } from "node:crypto";
 import https from "node:https";
-import { guardedHttpsAgent, normalizeS3Endpoint, type S3Target } from "../client";
+import * as v from "valibot";
+import {
+    guardedHttpsAgent,
+    normalizeS3Endpoint,
+    type S3BucketUsage,
+    type S3Target,
+} from "../client";
 
 // The `/rustfs/admin/v3` paths take plain JSON; the MinIO-compatible paths encrypt bodies.
 const ADMIN_PATH = "/rustfs/admin/v3";
@@ -70,7 +76,7 @@ function send(url: URL, method: string, headers: Record<string, string>, body: s
 
 async function admin(
     target: S3Target,
-    method: "PUT" | "DELETE",
+    method: "GET" | "PUT" | "DELETE",
     operation: string,
     query: Record<string, string>,
     body = "",
@@ -126,6 +132,51 @@ function bucketPolicy(bucket: string) {
             },
         ],
     };
+}
+
+const dataUsage = v.object({
+    // Serialized Rust SystemTime; null before the scanner's first cycle.
+    last_update: v.nullish(v.object({ secs_since_epoch: v.number() })),
+    buckets_usage: v.record(v.string(), v.object({ size: v.number(), objects_count: v.number() })),
+});
+
+// The scanner's usage snapshot, the same accounting quotas are enforced against.
+// Null when the scanner has not reached this bucket yet.
+export async function getRustfsBucketUsage(target: S3Target, bucket: string) {
+    const response = await admin(target, "GET", "datausageinfo", {});
+
+    if (response.status >= 300) throw failed(response);
+
+    return parseRustfsBucketUsage(response.text, bucket);
+}
+
+export function parseRustfsBucketUsage(body: string, bucket: string): S3BucketUsage | null {
+    const info = v.parse(dataUsage, JSON.parse(body));
+    const usage = info.buckets_usage[bucket];
+
+    if (!usage || !info.last_update) return null;
+
+    return {
+        size: usage.size,
+        objects: usage.objects_count,
+        measuredAt: new Date(info.last_update.secs_since_epoch * 1000),
+    };
+}
+
+// A hard byte limit; null clears it. Needs the connection's admin keys, not the bucket's own key.
+export async function setRustfsQuota(target: S3Target, bucket: string, quota: number | null) {
+    const response =
+        quota === null
+            ? await admin(target, "DELETE", `quota/${bucket}`, {})
+            : await admin(
+                  target,
+                  "PUT",
+                  `quota/${bucket}`,
+                  {},
+                  JSON.stringify({ quota, quota_type: "HARD" }),
+              );
+
+    if (response.status >= 300) throw failed(response);
 }
 
 // A key that is already gone counts as revoked, so retried deletions can finish.

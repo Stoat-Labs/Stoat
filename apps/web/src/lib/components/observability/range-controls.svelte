@@ -39,7 +39,7 @@
         onrefresh: () => void;
     } = $props();
 
-    let rangeOpen = useQueryState(
+    const rangeOpen = useQueryState(
         "rangeOpen",
         parseAsBoolean.withDefault(false),
     );
@@ -218,7 +218,7 @@
                                     from: null,
                                     to: null,
                                 });
-                                rangeOpen = false;
+                                void rangeOpen.set(false);
                             }}
                         >
                             {presetLabel(preset)}

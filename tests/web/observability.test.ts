@@ -163,7 +163,8 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
 
     const machines = machineList([base, { ...base, id: "b" }]);
     expect(machines[0]?.key).not.toBe(machines[1]?.key);
-    expect(machines[0]?.color).not.toBe(machines[1]?.color);
+    // Colors follow the name alone, so the same machine name matches across every chart.
+    expect(machines[0]?.color).toBe(machines[1]?.color);
     const rows = serviceRows([base, { ...base, id: "b" }]);
     expect(rows[0]?.key).not.toBe(rows[1]?.key);
     expect(rows[0]).toMatchObject({ cpu: 120, memory: null, memoryPercent: null, networkIn: null });
@@ -284,7 +285,11 @@ it("bridges short interior gaps so sparse series still draw", () => {
 
     // A 5.5-minute outage stays a gap instead of drawing a straight line across it.
     const outage = points([10, ...Array<null>(11).fill(null), 30]);
-    expect(bridgeGaps(outage).slice(1, -1).every((point) => point.value === null)).toBe(true);
+    expect(
+        bridgeGaps(outage)
+            .slice(1, -1)
+            .every((point) => point.value === null),
+    ).toBe(true);
 
     // Alternating samples and single gaps (bursty traffic) connect into one line.
     const bursty = points([12, null, 14, null, 12]);
