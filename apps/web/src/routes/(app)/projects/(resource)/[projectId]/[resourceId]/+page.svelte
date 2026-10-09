@@ -1,16 +1,16 @@
 <script lang="ts">
     import { beforeNavigate, goto } from "$app/navigation";
     import { page } from "$app/state";
-    import ConnectionField from "$lib/components/clusters/connection-field.svelte";
-    import CodeEditor from "$lib/components/shared/code-editor.svelte";
-    import PreviewComposeDialog from "$lib/components/projects/preview-compose-dialog.svelte";
+    import PostgresConnectionCard from "$lib/components/projects/postgres-connection-card.svelte";
+    import ResourceComposeEditor from "$lib/components/projects/resource-compose-editor.svelte";
+    import ResourceContainersCard from "$lib/components/projects/resource-containers-card.svelte";
+    import ResourcePageSkeleton from "$lib/components/projects/resource-page-skeleton.svelte";
     import BucketOverview from "$lib/components/s3/bucket-overview.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Badge } from "$lib/components/ui/badge";
     import {
         Button,
         buttonVariants,
@@ -33,20 +33,8 @@
         EmptyMedia,
         EmptyTitle,
     } from "$lib/components/ui/empty";
-    import {
-        Frame,
-        FrameDescription,
-        FrameHeader,
-        FramePanel,
-        FrameTitle,
-    } from "$lib/components/ui/frame";
-    import { Separator } from "$lib/components/ui/separator";
-    import { Skeleton } from "$lib/components/ui/skeleton";
-    import { containerInfo } from "$lib/resources/container-info";
-    import ImageIcon from "$lib/components/shared/image-icon.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Box from "@lucide/svelte/icons/box";
     import Boxes from "@lucide/svelte/icons/boxes";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Container from "@lucide/svelte/icons/container";
@@ -386,6 +374,16 @@
             formattedComposeQuery.data.serviceCount > 0,
     );
 
+    const saveStatus = $derived(
+        saveMutation.isPending
+            ? "saving"
+            : isDirty
+              ? "unsaved"
+              : hasUndeployedChanges
+                ? "saved"
+                : "",
+    );
+
     function deploySavedDraft(recreate = false) {
         if (!canDeploy) return;
         deployMutation.mutate({ projectId, resourceId, recreate });
@@ -508,91 +506,7 @@
 {:else}
     <div class="flex w-full flex-col gap-6 pt-6 xl:min-h-0 xl:flex-1">
         {#if projectQuery.isPending || resourceQuery.isPending}
-            <Skeleton loading loading-label="Loading resource">
-                <div class="space-y-6">
-                    <div
-                        class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0"
-                    >
-                        <Frame
-                            class="w-full min-w-0 xl:col-span-1 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid"
-                        >
-                            <FrameHeader class="shrink-0">
-                                <FrameTitle class="text-base">
-                                    <h2>Containers</h2>
-                                </FrameTitle>
-                                <FrameDescription class="mt-1">
-                                    Runtime status across machines.
-                                </FrameDescription>
-                            </FrameHeader>
-                            <FramePanel
-                                class="max-h-96 overflow-y-auto p-0 xl:min-h-0 xl:max-h-none"
-                            >
-                                <div
-                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
-                                >
-                                    <span
-                                        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                                    >
-                                        <Box
-                                            class="size-5"
-                                            aria-hidden="true"
-                                        />
-                                    </span>
-                                    <div class="min-w-0">
-                                        <h3
-                                            class="truncate text-sm font-medium leading-5"
-                                        >
-                                            Container service
-                                        </h3>
-                                        <p
-                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                        >
-                                            image:latest &middot;
-                                            machine
-                                        </p>
-                                    </div>
-                                    <Badge
-                                        variant="secondary"
-                                        class="col-start-2 sm:col-start-auto"
-                                    >
-                                        Healthy
-                                    </Badge>
-                                </div>
-                            </FramePanel>
-                        </Frame>
-                        <Frame
-                            class="min-w-0 xl:col-span-3 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid"
-                        >
-                            <FrameHeader
-                                class="shrink-0 flex-row flex-wrap items-start justify-between gap-2"
-                            >
-                                <div class="min-w-0">
-                                    <FrameTitle class="text-base">
-                                        <h2>Docker Compose</h2>
-                                    </FrameTitle>
-                                    <FrameDescription class="mt-1">
-                                        Edit the Docker Compose YAML
-                                        for this resource.
-                                    </FrameDescription>
-                                </div>
-                                <div
-                                    class="flex flex-wrap items-center gap-2"
-                                >
-                                    <Button
-                                        variant="secondary"
-                                        disabled
-                                    >
-                                        Preview compose
-                                    </Button>
-                                </div>
-                            </FrameHeader>
-                            <FramePanel
-                                class="min-h-88 overflow-hidden bg-code p-0 dark:bg-black/20"
-                            />
-                        </Frame>
-                    </div>
-                </div>
-            </Skeleton>
+            <ResourcePageSkeleton />
         {:else if projectQuery.isError}
             <div class="space-y-4">
                 <Alert variant="error">
@@ -678,403 +592,49 @@
                 <div
                     class="flex min-w-0 flex-col gap-6 xl:col-span-1 xl:row-span-2 xl:min-h-0"
                 >
-                    {#if isPostgres && connectionQuery.isPending}
-                        <Skeleton
-                            loading
-                            loading-label="Loading connection"
-                        >
-                            <Frame class="min-w-0">
-                                <FrameHeader>
-                                    <FrameTitle class="text-base">
-                                        <h2>Connection</h2>
-                                    </FrameTitle>
-                                    <FrameDescription class="mt-1">
-                                        Built from the saved Compose
-                                        draft and POSTGRES_*
-                                        variables.
-                                    </FrameDescription>
-                                </FrameHeader>
-                                <FramePanel class="grid gap-4">
-                                    <ConnectionField
-                                        label="Internal URL"
-                                        value="postgres://user:password@host:5432/db"
-                                        secret
-                                    />
-                                </FramePanel>
-                            </Frame>
-                        </Skeleton>
+                    {#if connectionQuery.data || (isPostgres && connectionQuery.isPending)}
+                        <PostgresConnectionCard
+                            connection={connectionQuery.data ??
+                                undefined}
+                            {readOnly}
+                            enabling={externalConnectionMutation.isPending}
+                            canEnable={!busy &&
+                                !isDirty &&
+                                loadedResourceId === resourceId &&
+                                !!savedSpec}
+                            errorMessage={externalConnectionMutation
+                                .error?.message}
+                            onEnable={enableExternalConnection}
+                        />
                     {/if}
-                    {#if connectionQuery.data}
-                        <Frame
-                            class="min-w-0"
-                            role="region"
-                            aria-labelledby="connection-heading"
-                        >
-                            <FrameHeader>
-                                <FrameTitle class="text-base">
-                                    <h2 id="connection-heading">
-                                        Connection
-                                    </h2>
-                                </FrameTitle>
-                                <FrameDescription class="mt-1">
-                                    Built from the saved Compose draft
-                                    and POSTGRES_* variables.
-                                </FrameDescription>
-                            </FrameHeader>
-                            <FramePanel class="grid gap-4">
-                                <ConnectionField
-                                    label="Internal URL"
-                                    value={connectionQuery.data
-                                        .internal}
-                                    secret
-                                />
-                                {#if connectionQuery.data.external}
-                                    <ConnectionField
-                                        label="External URL"
-                                        value={connectionQuery.data
-                                            .external}
-                                        secret
-                                    />
-                                {:else if connectionQuery.data.externalPort}
-                                    <p
-                                        class="text-sm text-muted-foreground"
-                                    >
-                                        External port {connectionQuery
-                                            .data.externalPort} is configured,
-                                        but no machine address is available.
-                                    </p>
-                                {/if}
-                                {#if connectionQuery.data.pendingDeployment}
-                                    <p
-                                        role="status"
-                                        class="text-sm text-warning-foreground"
-                                    >
-                                        External connection not
-                                        deployed yet. Deploy to apply
-                                        the external port.
-                                    </p>
-                                {/if}
-                                {#if !connectionQuery.data.externalPort && !readOnly}
-                                    <div class="grid gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onclick={enableExternalConnection}
-                                            loading={externalConnectionMutation.isPending}
-                                            disabled={busy ||
-                                                isDirty ||
-                                                loadedResourceId !==
-                                                    resourceId ||
-                                                !savedSpec}
-                                        >
-                                            Enable external connection
-                                        </Button>
-                                        <p
-                                            class="text-xs text-muted-foreground"
-                                        >
-                                            Adds an unused host port
-                                            to the Compose draft.
-                                            After deployment,
-                                            PostgreSQL will be
-                                            reachable outside the
-                                            cluster wherever your
-                                            firewall allows.
-                                        </p>
-                                    </div>
-                                {/if}
-                                {#if externalConnectionMutation.isError}
-                                    <Alert variant="error">
-                                        <AlertDescription>
-                                            {externalConnectionMutation
-                                                .error.message}
-                                        </AlertDescription>
-                                    </Alert>
-                                {/if}
-                            </FramePanel>
-                        </Frame>
-                    {/if}
-                    <Frame
-                        class="w-full min-w-0 xl:min-h-0 xl:flex-1"
-                        role="region"
-                        aria-labelledby="containers-heading"
-                    >
-                        <FrameHeader class="shrink-0">
-                            <div
-                                class="flex flex-wrap items-center justify-between gap-2"
-                            >
-                                <FrameTitle class="text-base">
-                                    <h2 id="containers-heading">
-                                        Containers
-                                    </h2>
-                                </FrameTitle>
-                                <span
-                                    class="text-xs tabular-nums text-muted-foreground"
-                                >
-                                    {#if (resource.spec?.trim() || resource.draftSpec?.trim()) && containersQuery.data !== undefined}
-                                        {containers.length}
-                                        {containers.length === 1
-                                            ? "container"
-                                            : "containers"}
-                                    {/if}
-                                </span>
-                            </div>
-                            <FrameDescription class="mt-1">
-                                Runtime status across machines.
-                            </FrameDescription>
-                        </FrameHeader>
-                        <FramePanel
-                            class="max-h-96 overflow-y-auto p-0 xl:min-h-0 xl:max-h-none xl:flex-1"
-                        >
-                            {#if !(resource.spec?.trim() || resource.draftSpec?.trim())}
-                                <Empty
-                                    class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
-                                >
-                                    <EmptyHeader>
-                                        <EmptyDescription>
-                                            Save a Compose spec to
-                                            view this resource's
-                                            containers.
-                                        </EmptyDescription>
-                                    </EmptyHeader>
-                                </Empty>
-                            {:else}
-                                {#if containersQuery.isError}
-                                    <Alert
-                                        variant="error"
-                                        class="m-3"
-                                    >
-                                        <AlertDescription>
-                                            Unable to load containers: {containersQuery
-                                                .error.message}
-                                            {#if containers.length > 0}Showing
-                                                previously loaded
-                                                containers.{/if}
-                                        </AlertDescription>
-                                    </Alert>
-                                {/if}
-                                {#if containersQuery.isPending}
-                                    <Skeleton
-                                        loading
-                                        count={2}
-                                        count-gap={1}
-                                        loading-label="Loading containers"
-                                    >
-                                        <div
-                                            class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
-                                        >
-                                            <span
-                                                class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                                            >
-                                                <Box
-                                                    class="size-5"
-                                                    aria-hidden="true"
-                                                />
-                                            </span>
-                                            <div class="min-w-0">
-                                                <h3
-                                                    class="truncate text-sm font-medium leading-5"
-                                                >
-                                                    Container service
-                                                </h3>
-                                                <p
-                                                    class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                                >
-                                                    image:latest
-                                                    &middot; machine
-                                                </p>
-                                            </div>
-                                            <Badge
-                                                variant="secondary"
-                                                class="col-start-2 sm:col-start-auto"
-                                            >
-                                                Healthy
-                                            </Badge>
-                                        </div>
-                                    </Skeleton>
-                                {:else if containers.length > 0}
-                                    <ul>
-                                        {#each containers as item, index (`${item.machineId}-${item.container.Id ?? index}`)}
-                                            {@const info =
-                                                containerInfo(
-                                                    item.container,
-                                                )}
-                                            <li class="min-w-0">
-                                                {#if index > 0}<Separator
-                                                    />{/if}
-                                                <div
-                                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
-                                                >
-                                                    <ImageIcon
-                                                        image={info.image}
-                                                    />
-                                                    <div
-                                                        class="min-w-0"
-                                                    >
-                                                        <h3
-                                                            class="truncate text-sm font-medium leading-5"
-                                                            title={info.name}
-                                                        >
-                                                            {info.name}
-                                                        </h3>
-                                                        <p
-                                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                                            title={`${info.image} · ${item.machineName || item.machineId || "Unknown machine"}${info.id ? ` · ${info.id}` : ""}`}
-                                                        >
-                                                            {info.image}
-                                                            &middot;
-                                                            {item.machineName ||
-                                                                item.machineId ||
-                                                                "Unknown machine"}
-                                                            {#if info.id}
-                                                                &middot;
-                                                                <span
-                                                                    class="font-mono"
-                                                                    title={info.id}
-                                                                >
-                                                                    {info.id.slice(
-                                                                        0,
-                                                                        12,
-                                                                    )}
-                                                                </span>
-                                                            {/if}
-                                                        </p>
-                                                    </div>
-                                                    <Badge
-                                                        variant={info.healthVariant}
-                                                        class="col-start-2 shrink-0 justify-self-start whitespace-nowrap capitalize sm:col-start-auto sm:justify-self-end"
-                                                        aria-label={`Health: ${info.health}. Runtime status: ${info.status}`}
-                                                        title={`Runtime status: ${info.status}`}
-                                                    >
-                                                        {info.health}
-                                                    </Badge>
-                                                </div>
-                                            </li>
-                                        {/each}
-                                    </ul>
-                                {:else if !containersQuery.isError}
-                                    <Empty
-                                        class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
-                                    >
-                                        <EmptyHeader>
-                                            <EmptyDescription>
-                                                No containers found.
-                                            </EmptyDescription>
-                                        </EmptyHeader>
-                                    </Empty>
-                                {/if}
-                            {/if}
-                        </FramePanel>
-                    </Frame>
+                    <ResourceContainersCard
+                        {containers}
+                        hasSpec={!!(
+                            resource.spec?.trim() ||
+                            resource.draftSpec?.trim()
+                        )}
+                        loaded={containersQuery.data !== undefined}
+                        pending={containersQuery.isPending}
+                        errorMessage={containersQuery.error?.message}
+                    />
                 </div>
-                <Frame
-                    id="compose-editor"
-                    class="min-w-0 xl:col-span-3 xl:row-span-2 xl:grid xl:min-h-0 xl:grid-rows-subgrid"
-                    role="region"
-                    aria-labelledby="compose-heading"
-                >
-                    <FrameHeader
-                        class="shrink-0 flex-row flex-wrap items-start justify-between gap-2"
-                    >
-                        <div class="min-w-0">
-                            <FrameTitle class="text-base">
-                                <h2 id="compose-heading">
-                                    Docker Compose
-                                </h2>
-                            </FrameTitle>
-                            <FrameDescription class="mt-1">
-                                Edit the Docker Compose YAML for this
-                                resource.
-                            </FrameDescription>
-                        </div>
-                        <div
-                            class="flex flex-wrap items-center gap-2"
-                        >
-                            <div class="text-sm" aria-live="polite">
-                                {#if saveMutation.isError}
-                                    <Alert
-                                        variant="error"
-                                        class="w-auto px-2 py-1.5"
-                                    >
-                                        <AlertDescription>
-                                            Unable to save: {saveMutation
-                                                .error.message}
-                                        </AlertDescription>
-                                    </Alert>
-                                {:else if saveMutation.isPending}
-                                    <p class="text-muted-foreground">
-                                        Saving...
-                                    </p>
-                                {:else if isDirty}
-                                    <p class="text-muted-foreground">
-                                        Unsaved changes
-                                    </p>
-                                {:else if hasUndeployedChanges}
-                                    <p class="text-muted-foreground">
-                                        Draft saved.
-                                    </p>
-                                {/if}
-                            </div>
-                            <PreviewComposeDialog
-                                {projectId}
-                                {resourceId}
-                            />
-                            {#if readOnly}
-                                <Badge variant="secondary">
-                                    System-managed
-                                </Badge>
-                            {/if}
-                            {#if deployMutation.isError}
-                                <Alert variant="error" class="w-full">
-                                    <AlertDescription>
-                                        Unable to deploy: {deployMutation
-                                            .error.message}
-                                    </AlertDescription>
-                                </Alert>
-                            {:else if !isDirty && savedSpec?.trim() && formattedComposeQuery.isError}
-                                <Alert variant="error" class="w-full">
-                                    <AlertDescription>
-                                        Saved draft cannot be
-                                        deployed: {formattedComposeQuery
-                                            .error.message}
-                                    </AlertDescription>
-                                </Alert>
-                            {/if}
-                        </div>
-                    </FrameHeader>
-                    <FramePanel
-                        class="min-h-0 overflow-hidden bg-code p-0 transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/20 dark:bg-black/20"
-                    >
-                        <div class="compose-editor-canvas">
-                            {#key resource.id}
-                                <CodeEditor
-                                    bind:value={compose}
-                                    readOnly={readOnly ||
-                                        externalConnectionMutation.isPending ||
-                                        deployMutation.isPending ||
-                                        loadedResourceId !==
-                                            resource.id}
-                                />
-                            {/key}
-                        </div>
-                    </FramePanel>
-                </Frame>
+                <ResourceComposeEditor
+                    {projectId}
+                    {resourceId}
+                    editorKey={resource.id}
+                    bind:compose
+                    {readOnly}
+                    editorLocked={externalConnectionMutation.isPending ||
+                        deployMutation.isPending ||
+                        loadedResourceId !== resource.id}
+                    {saveStatus}
+                    saveError={saveMutation.error?.message}
+                    deployError={deployMutation.error?.message}
+                    composeError={!isDirty && savedSpec?.trim()
+                        ? formattedComposeQuery.error?.message
+                        : undefined}
+                />
             </div>
         {/if}
     </div>
 {/if}
-
-<style>
-    @media (min-width: 80rem) {
-        .compose-editor-canvas,
-        .compose-editor-canvas > :global(div),
-        .compose-editor-canvas :global(.cm-editor) {
-            height: 100%;
-            min-height: 0;
-        }
-
-        .compose-editor-canvas :global(.cm-scroller) {
-            min-height: 0;
-            max-height: none;
-        }
-    }
-</style>

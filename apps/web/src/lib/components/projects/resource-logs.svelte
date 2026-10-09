@@ -3,7 +3,6 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
     import {
         Empty,
@@ -29,16 +28,15 @@
     import { logBucketParser } from "$lib/params/query-params";
     import {
         classifyLog,
+        liveStreamStatus,
         logByteCost,
         logEntryKey,
         rangeDurationMs,
         selectedLogServices,
         trimLogLines,
         type DisplayLog,
+        type LogServiceState,
     } from "$lib/resources/logs";
-    import Pause from "@lucide/svelte/icons/pause";
-    import Play from "@lucide/svelte/icons/play";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
     import type { ResourceLog } from "@stoat/api/routers/resources/logs";
     import { createQuery } from "@tanstack/svelte-query";
     import {
@@ -52,6 +50,9 @@
     import { onDestroy, onMount, untrack } from "svelte";
     import LogDetailRows from "./log-detail-rows.svelte";
     import LogEmptyState from "./log-empty-state.svelte";
+    import LogLiveControls from "./log-live-controls.svelte";
+    import LogNotices from "./log-notices.svelte";
+    import LogPaneFooter from "./log-pane-footer.svelte";
     import LogSearchForm from "./log-search-form.svelte";
     import ServicePicker from "./service-picker.svelte";
 
@@ -196,17 +197,7 @@
 
     let reconnecting = $state(false);
 
-    let serviceStates = $state<
-        {
-            id: string;
-            state:
-                | "connecting"
-                | "connected"
-                | "reconnecting"
-                | "error";
-            message?: string;
-        }[]
-    >([]);
+    let serviceStates = $state<LogServiceState[]>([]);
 
     let nextId = 0;
 
@@ -259,12 +250,6 @@
             : logs,
     );
 
-    const connected = $derived(
-        serviceStates.filter(
-            (service) => service.state === "connected",
-        ).length,
-    );
-
     const failures = $derived(
         serviceStates.filter(
             (service) =>
@@ -274,24 +259,13 @@
     );
 
     const status = $derived(
-        view.logPaused.current
-            ? "Paused"
-            : reconnecting
-              ? "Reconnecting"
-              : streamError
-                ? "Disconnected"
-                : failures.length
-                  ? connected > 0
-                      ? "Partial stream"
-                      : failures.some(
-                              (service) =>
-                                  service.state === "reconnecting",
-                          )
-                        ? "Reconnecting"
-                        : "Disconnected"
-                  : connected === selectedIds.length && connected > 0
-                    ? "Live"
-                    : "Connecting",
+        liveStreamStatus(
+            view.logPaused.current,
+            reconnecting,
+            streamError,
+            serviceStates,
+            selectedIds.length,
+        ),
     );
 
     const searchSummary = $derived(
@@ -919,44 +893,15 @@
                                 class="min-w-0 flex-1 whitespace-nowrap text-xs text-muted-foreground sm:min-w-16"
                             ></span>
                             {#if view.logMode.current === "live" && (loading || selectedIds.length)}
-                                <span role="status">
-                                    <Badge
-                                        variant={status === "Live"
-                                            ? "success"
-                                            : failures.length ||
-                                                streamError
-                                              ? "warning"
-                                              : "secondary"}
-                                    >
-                                        {status}
-                                    </Badge>
-                                </span>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onclick={togglePause}
-                                >
-                                    {#if view.logPaused.current}<Play
-                                            class="size-3.5"
-                                            aria-hidden="true"
-                                        />Resume{:else}<Pause
-                                            class="size-3.5"
-                                            aria-hidden="true"
-                                        />Pause{/if}
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label="Reconnect live logs"
-                                    title="Refresh services and reload recent tail"
-                                    disabled={servicesQuery.isFetching}
-                                    onclick={reconnect}
-                                >
-                                    <RefreshCw
-                                        class="size-3.5"
-                                        aria-hidden="true"
-                                    />
-                                </Button>
+                                <LogLiveControls
+                                    {status}
+                                    warn={failures.length > 0 ||
+                                        !!streamError}
+                                    paused={view.logPaused.current}
+                                    reconnecting={servicesQuery.isFetching}
+                                    ontogglepause={togglePause}
+                                    onreconnect={reconnect}
+                                />
                             {/if}
                         </div>
                         {#if view.logMode.current === "live"}
@@ -1098,45 +1043,23 @@
                                             value)
                                 }
                             >
-                                {#if streamError && view.logMode.current === "live"}
-                                    <Alert
-                                        variant={reconnecting
-                                            ? "warning"
-                                            : "error"}
-                                        class="m-2 shrink-0 px-3 py-2"
-                                    >
-                                        <AlertDescription>
-                                            {streamError}
-                                            {#if reconnecting}Retrying
-                                                with a fresh recent
-                                                tail.{/if}
-                                        </AlertDescription>
-                                    </Alert>
-                                {/if}
-                                {#if view.logMode.current === "live" && failures.length}
-                                    <div
-                                        class="shrink-0 border-b px-3 py-2 text-xs text-warning-foreground"
-                                        role="status"
-                                    >
-                                        {#each failures as failure (failure.id)}<p
-                                            >
-                                                {services.find(
-                                                    (service) =>
-                                                        service.id ===
-                                                        failure.id,
-                                                )?.name}: {failure.message ??
-                                                    "Stream unavailable. Reconnect to retry."}
-                                            </p>{/each}
-                                    </div>
-                                {/if}
-                                {#if searchError}<Alert
-                                        variant="error"
-                                        class="m-2 shrink-0 px-3 py-2"
-                                    >
-                                        <AlertDescription>
-                                            {searchError}
-                                        </AlertDescription>
-                                    </Alert>{/if}
+                                <LogNotices
+                                    live={view.logMode.current ===
+                                        "live"}
+                                    {streamError}
+                                    {reconnecting}
+                                    failures={failures.map(
+                                        (failure) => ({
+                                            ...failure,
+                                            name: services.find(
+                                                (service) =>
+                                                    service.id ===
+                                                    failure.id,
+                                            )?.name,
+                                        }),
+                                    )}
+                                    {searchError}
+                                />
 
                                 {#snippet details(log)}
                                     <LogDetailRows
@@ -1160,37 +1083,15 @@
                                 {/snippet}
                             </LogViewer>
 
-                            <div
-                                class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground"
-                            >
-                                {#if view.logMode.current === "live"}
-                                    <span>{timezone}</span>
-                                {:else}
-                                    <p
-                                        class="min-w-0 flex-1 truncate"
-                                        title={searchSummary}
-                                    >
-                                        {searchSummary}
-                                    </p>
-                                    {#if nextCursor}<Button
-                                            variant="outline"
-                                            size="sm"
-                                            loading={pending}
-                                            disabled={pending ||
-                                                historyLogs.length >=
-                                                    2000}
-                                            onclick={() =>
-                                                search(true)}
-                                        >
-                                            Load older
-                                        </Button>{/if}
-                                    {#if historyLogs.length >= 2000 && nextCursor}<span
-                                        >
-                                            Narrow the range to browse
-                                            more than 2,000 lines.
-                                        </span>{/if}
-                                {/if}
-                            </div>
+                            <LogPaneFooter
+                                live={view.logMode.current === "live"}
+                                {timezone}
+                                {searchSummary}
+                                hasMore={!!nextCursor}
+                                capped={historyLogs.length >= 2000}
+                                {pending}
+                                onloadolder={() => search(true)}
+                            />
                         </FramePanel>
                     {/if}
                 </Frame>

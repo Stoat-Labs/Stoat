@@ -1,5 +1,7 @@
 <script lang="ts">
     import { beforeNavigate } from "$app/navigation";
+    import ConnectionOAuthFields from "$lib/components/connections/connection-oauth-fields.svelte";
+    import ConnectionTokenFields from "$lib/components/connections/connection-token-fields.svelte";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import {
         Alert,
@@ -17,11 +19,6 @@
     } from "$lib/components/ui/dialog";
     import { Field } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
-    import {
-        InputGroup,
-        InputGroupAddon,
-        InputGroupInput,
-    } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
     import {
         Select,
@@ -141,27 +138,6 @@
         },
         { value: "oauth", label: "OAuth" },
     ]);
-
-    const credentialOptions = $derived([
-        {
-            value: "keep",
-            label: `Keep current credentials${initial?.hasCredentials ? " (stored)" : " (none stored)"}`,
-        },
-        { value: "replace", label: "Replace credentials" },
-        ...(fields.provider.current === "generic"
-            ? [
-                  {
-                      value: "clear",
-                      label: "Clear credentials (public repositories)",
-                  },
-              ]
-            : []),
-    ]);
-
-    const credentialTypeOptions = [
-        { value: "https", label: "HTTPS access token" },
-        { value: "ssh", label: "SSH private key / known hosts" },
-    ];
 
     let serverUrl = $state(
         untrack(() => {
@@ -564,6 +540,20 @@
         }
     }
 
+    function retryCallback() {
+        copyStatus = copyError = "";
+        void oauthSetupQuery.refetch();
+    }
+
+    function selectOAuthProvider(oauthProviderId: string) {
+        void fields.set({ oauthProviderId, setupExpanded: null });
+    }
+
+    function toggleSetup() {
+        fields.setupExpanded.current = !setupOpen;
+        clientId = clientSecret = setupError = setupStatus = "";
+    }
+
     function startOAuth(event: SubmitEvent) {
         if (
             busy ||
@@ -930,457 +920,47 @@
                     </Select>
                 </Field>
                 {#if authMode === "oauth"}
-                    {#if matchingOAuthProviders.length > 0}
-                        <Field>
-                            <Label for="{id}-oauth">
-                                Configured OAuth application
-                            </Label>
-                            <Select
-                                value={oauthProvider?.id ?? null}
-                                items={oauthOptions}
-                                disabled={busy}
-                                onValueChange={(next) => {
-                                    if (!next) return;
-                                    void fields.set({
-                                        oauthProviderId: next,
-                                        setupExpanded: null,
-                                    });
-                                }}
-                            >
-                                <SelectTrigger
-                                    id="{id}-oauth"
-                                    class="min-w-0"
-                                >
-                                    <SelectValue
-                                        placeholder="Select an OAuth application"
-                                    />
-                                </SelectTrigger>
-                                <SelectContent
-                                    class="max-w-[calc(100vw-2rem)]"
-                                >
-                                    {#each oauthOptions as option (option.value)}
-                                        <SelectItem
-                                            value={option.value}
-                                            label={option.label}
-                                        >
-                                            <span
-                                                class="min-w-0 break-all"
-                                            >
-                                                {option.label}
-                                            </span>
-                                        </SelectItem>
-                                    {/each}
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                    {/if}
-                    <div
-                        class="space-y-3 rounded-lg border border-border p-4"
-                    >
-                        {#if oauthSetupQuery.isError}
-                            <Alert variant="error">
-                                <AlertDescription>
-                                    Unable to load the OAuth callback
-                                    URL. {oauthSetupQuery.error
-                                        .message}
-                                </AlertDescription>
-                            </Alert>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                loading={oauthSetupQuery.isFetching}
-                                disabled={busy ||
-                                    oauthSetupQuery.isFetching}
-                                onclick={() => {
-                                    copyStatus = copyError = "";
-                                    void oauthSetupQuery.refetch();
-                                }}
-                            >
-                                Retry callback URL
-                            </Button>
-                        {:else if oauthSetupQuery.isPending}
-                            <p
-                                class="text-sm text-muted-foreground"
-                                role="status"
-                            >
-                                Loading OAuth callback URL...
-                            </p>
-                        {:else}
-                            <Field>
-                                <Label for="{id}-callback">
-                                    OAuth callback URL
-                                </Label>
-                                <InputGroup>
-                                    <InputGroupInput
-                                        id="{id}-callback"
-                                        value={oauthSetupQuery.data
-                                            .callbackUrl}
-                                        readonly
-                                        disabled={busy}
-                                        aria-describedby={copyError
-                                            ? `${id}-copy-error`
-                                            : undefined}
-                                    />
-                                    <InputGroupAddon
-                                        align="inline-end"
-                                        class="shrink-0"
-                                    >
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            loading={copying}
-                                            disabled={busy || copying}
-                                            onclick={copyCallback}
-                                        >
-                                            Copy URL
-                                        </Button>
-                                    </InputGroupAddon>
-                                </InputGroup>
-                            </Field>
-                        {/if}
-                        {#if copyStatus}<p
-                                class="text-xs text-muted-foreground"
-                                role="status"
-                            >
-                                {copyStatus}
-                            </p>{/if}
-                        {#if copyError}<Alert
-                                id="{id}-copy-error"
-                                variant="error"
-                            >
-                                <AlertDescription>
-                                    {copyError}
-                                </AlertDescription>
-                            </Alert>{/if}
-                        <Button
-                            type="button"
-                            variant="outline"
-                            class="h-auto whitespace-normal"
-                            aria-expanded={setupOpen}
-                            aria-controls="{id}-oauth-setup"
-                            disabled={busy}
-                            onclick={() => {
-                                fields.setupExpanded.current =
-                                    !setupOpen;
-                                clientId =
-                                    clientSecret =
-                                    setupError =
-                                    setupStatus =
-                                        "";
-                            }}
-                        >
-                            {setupOpen
-                                ? "Hide OAuth application setup"
-                                : "Set up a new OAuth application"}
-                        </Button>
-                        <div
-                            id="{id}-oauth-setup"
-                            hidden={!setupOpen}
-                            class="space-y-3"
-                        >
-                            {#if setupOpen}
-                                <p
-                                    class="text-sm text-muted-foreground"
-                                >
-                                    Register an OAuth application with
-                                    your Git provider once, using the
-                                    callback URL above. Then save its
-                                    client credentials here for reuse
-                                    in this organization. No
-                                    environment editing or restart is
-                                    needed.
-                                </p>
-                                {#if fields.provider.current === "forgejo"}
-                                    <ol
-                                        class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground"
-                                    >
-                                        <li>
-                                            Open your server's
-                                            applications settings
-                                            below and find <strong>
-                                                Create a new OAuth2
-                                                Application
-                                            </strong>
-                                            .
-                                        </li>
-                                        <li>
-                                            Name it <strong>
-                                                Stoat
-                                            </strong>
-                                            , paste the callback URL as
-                                            its
-                                            <strong>
-                                                Redirect URI
-                                            </strong>
-                                            , and enable
-                                            <strong>
-                                                Confidential Client
-                                            </strong>
-                                            .
-                                        </li>
-                                        <li>
-                                            Create the application,
-                                            then enter its client ID
-                                            and secret below. Save,
-                                            then continue with OAuth
-                                            to authorize your account.
-                                        </li>
-                                    </ol>
-                                {/if}
-                                {#if registrationUrl}
-                                    <a
-                                        class="inline-block break-all text-sm underline underline-offset-4"
-                                        href={registrationUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        Register an OAuth application
-                                        on {oauthServerUrl} (opens a new
-                                        tab)
-                                    </a>
-                                {:else}
-                                    <p
-                                        class="text-sm text-muted-foreground"
-                                    >
-                                        Enter a valid HTTPS Git server
-                                        URL without credentials, a
-                                        query, or a fragment to
-                                        register and save an
-                                        application.
-                                    </p>
-                                {/if}
-                                <div
-                                    class="grid gap-3 sm:grid-cols-2"
-                                >
-                                    <Field>
-                                        <Label
-                                            for="{id}-client-id"
-                                            required
-                                        >
-                                            Client ID
-                                        </Label><Input
-                                            id="{id}-client-id"
-                                            form="{id}-oauth-setup-form"
-                                            type="password"
-                                            bind:value={clientId}
-                                            maxlength={2048}
-                                            autocomplete="off"
-                                            spellcheck={false}
-                                            required
-                                            disabled={busy}
-                                        />
-                                    </Field>
-                                    <Field>
-                                        <Label
-                                            for="{id}-client-secret"
-                                            required
-                                        >
-                                            Client secret
-                                        </Label><Input
-                                            id="{id}-client-secret"
-                                            form="{id}-oauth-setup-form"
-                                            type="password"
-                                            bind:value={clientSecret}
-                                            maxlength={8192}
-                                            autocomplete="new-password"
-                                            spellcheck={false}
-                                            required
-                                            disabled={busy}
-                                        />
-                                    </Field>
-                                </div>
-                                <Button
-                                    type="submit"
-                                    form="{id}-oauth-setup-form"
-                                    class="h-auto whitespace-normal"
-                                    loading={pending === "app"}
-                                    disabled={busy || !setupReady}
-                                >
-                                    Save OAuth application
-                                </Button>
-                            {/if}
-                        </div>
-                        {#if setupError}<Alert variant="error">
-                                <AlertDescription>
-                                    OAuth application not saved. {setupError}
-                                </AlertDescription>
-                            </Alert>{/if}
-                        {#if setupStatus}<p
-                                class="text-sm text-muted-foreground"
-                                role="status"
-                            >
-                                {setupStatus}
-                            </p>{/if}
-                    </div>
-                    {#if !oauthProvider}<p
-                            class="text-sm text-muted-foreground"
-                        >
-                            Set up an OAuth application for this
-                            provider and server above, or use an
-                            access token instead.
-                        </p>{/if}
-                    {#if keepOAuth}<p
-                            class="text-sm text-muted-foreground"
-                        >
-                            Currently authorized{initial?.account
-                                ? ` as ${initial.account.login}`
-                                : ""}. Save keeps this authorization;
-                            reconnect to authorize again.
-                        </p>{/if}
-                    <p class="text-xs text-muted-foreground">
-                        Continue to the provider to authorize your
-                        account. The callback verifies your identity
-                        and repository access before saving. No
-                        separate test is needed before authorization.
-                    </p>
+                    <ConnectionOAuthFields
+                        {id}
+                        {busy}
+                        {pending}
+                        provider={fields.provider.current}
+                        {initial}
+                        {keepOAuth}
+                        {oauthSetupQuery}
+                        {oauthOptions}
+                        selectedProviderId={oauthProvider?.id ?? null}
+                        {setupOpen}
+                        {registrationUrl}
+                        {oauthServerUrl}
+                        {setupReady}
+                        {setupError}
+                        {setupStatus}
+                        {copyStatus}
+                        {copyError}
+                        {copying}
+                        bind:clientId
+                        bind:clientSecret
+                        oncopy={copyCallback}
+                        onretry={retryCallback}
+                        onselectprovider={selectOAuthProvider}
+                        ontogglesetup={toggleSetup}
+                    />
                 {:else}
-                    {#if initial && initial.authType === "token"}
-                        <Field>
-                            <Label for="{id}-credentials">
-                                Stored credentials
-                            </Label>
-                            <Select
-                                value={credentialAction}
-                                items={credentialOptions}
-                                disabled={busy}
-                                onValueChange={(next) => {
-                                    if (next) credentialAction = next;
-                                }}
-                            >
-                                <SelectTrigger
-                                    id="{id}-credentials"
-                                    class="min-w-0"
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {#each credentialOptions as option (option.value)}
-                                        <SelectItem
-                                            value={option.value}
-                                            label={option.label}
-                                        />
-                                    {/each}
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                    {/if}
-                    {#if !initial || initial.authType === "oauth" || credentialAction === "replace"}
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            {#if fields.provider.current === "generic"}
-                                <Field class="sm:col-span-2">
-                                    <Label for="{id}-type">
-                                        Credential type
-                                    </Label>
-                                    <Select
-                                        value={fields.credentialType
-                                            .current}
-                                        items={credentialTypeOptions}
-                                        disabled={busy}
-                                        onValueChange={(next) => {
-                                            if (next)
-                                                fields.credentialType.current =
-                                                    next as
-                                                        | "https"
-                                                        | "ssh";
-                                        }}
-                                    >
-                                        <SelectTrigger
-                                            id="{id}-type"
-                                            class="min-w-0"
-                                        >
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {#each credentialTypeOptions as option (option.value)}
-                                                <SelectItem
-                                                    value={option.value}
-                                                    label={option.label}
-                                                />
-                                            {/each}
-                                        </SelectContent>
-                                    </Select>
-                                </Field>
-                            {/if}
-                            <Field>
-                                <Label for="{id}-username">
-                                    Username (optional)
-                                </Label><Input
-                                    id="{id}-username"
-                                    bind:value={username}
-                                    autocomplete="off"
-                                    disabled={busy}
-                                />
-                            </Field>
-                            {#if fields.provider.current === "generic" && fields.credentialType.current === "ssh"}
-                                <Field class="sm:col-span-2">
-                                    <Label for="{id}-key" required>
-                                        SSH private key
-                                    </Label><Textarea
-                                        id="{id}-key"
-                                        bind:value={privateKey}
-                                        rows={5}
-                                        autocomplete="off"
-                                        spellcheck={false}
-                                        required
-                                        disabled={busy}
-                                    />
-                                </Field>
-                                <Field class="sm:col-span-2">
-                                    <Label for="{id}-hosts" required>
-                                        Known hosts
-                                    </Label><Textarea
-                                        id="{id}-hosts"
-                                        bind:value={knownHosts}
-                                        rows={3}
-                                        autocomplete="off"
-                                        spellcheck={false}
-                                        required
-                                        disabled={busy}
-                                    />
-                                </Field>
-                                <p
-                                    class="text-xs text-muted-foreground sm:col-span-2"
-                                >
-                                    Use an unencrypted key and
-                                    verified known_hosts entries. For
-                                    custom SSH ports use <code>
-                                        [hostname]:port
-                                    </code>
-                                    . Existing SSH credentials can also
-                                    be kept unchanged.
-                                </p>
-                            {:else}
-                                <Field>
-                                    <Label
-                                        for="{id}-token"
-                                        required={fields.provider
-                                            .current !== "generic"}
-                                    >
-                                        Access token
-                                    </Label><Input
-                                        id="{id}-token"
-                                        type="password"
-                                        bind:value={password}
-                                        autocomplete="new-password"
-                                        required={fields.provider
-                                            .current !== "generic"}
-                                        disabled={busy}
-                                    />
-                                </Field>
-                            {/if}
-                        </div>
-                        <p class="text-xs text-muted-foreground">
-                            Stored secrets are never displayed.{fields
-                                .provider.current === "generic"
-                                ? " Leave the token empty only for public repositories."
-                                : " The token must permit account and repository discovery."}{initial?.authType ===
-                            "oauth"
-                                ? " Saving a token replaces the existing OAuth authorization."
-                                : ""}
-                        </p>
-                    {/if}
+                    <ConnectionTokenFields
+                        {id}
+                        {busy}
+                        provider={fields.provider.current}
+                        {initial}
+                        bind:credentialAction
+                        bind:credentialType={
+                            fields.credentialType.current
+                        }
+                        bind:username
+                        bind:password
+                        bind:privateKey
+                        bind:knownHosts
+                    />
                 {/if}
                 {#if fields.provider.current === "generic"}
                     <Field>

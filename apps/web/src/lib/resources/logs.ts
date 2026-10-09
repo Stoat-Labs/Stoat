@@ -245,3 +245,40 @@ export function logActivity(logs: Pick<LogRow, "time" | "level">[], start: numbe
 
     return { buckets, counts, maximum: Math.max(1, ...buckets.map((bucket) => bucket.total)) };
 }
+
+export type LogServiceState = {
+    id: string;
+    state: "connecting" | "connected" | "reconnecting" | "error";
+    message?: string;
+};
+
+/** Label for the live stream badge, from per-service connection states. */
+export function liveStreamStatus(
+    paused: boolean,
+    reconnecting: boolean,
+    streamError: string,
+    states: LogServiceState[],
+    selectedCount: number,
+) {
+    if (paused) return "Paused";
+
+    if (reconnecting) return "Reconnecting";
+
+    if (streamError) return "Disconnected";
+
+    const connected = states.filter((service) => service.state === "connected").length;
+
+    const failed = states.filter(
+        (service) => service.state === "error" || service.state === "reconnecting",
+    );
+
+    if (failed.length) {
+        if (connected > 0) return "Partial stream";
+
+        return failed.some((service) => service.state === "reconnecting")
+            ? "Reconnecting"
+            : "Disconnected";
+    }
+
+    return connected === selectedCount && connected > 0 ? "Live" : "Connecting";
+}
