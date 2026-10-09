@@ -2,27 +2,22 @@ name: stoat
 
 services:
     stoat:
+        image: ghcr.io/stoat-labs/stoat:latest
+        pull_policy: always
         x-ports:
-            - "${APP_URL}:3001/https"
-        env_file: .env.dev
+            - "${APP_URL:-stoat.example.com}:3001/https"
+        env_file: .env
         environment:
-            APP_URL: http://localhost:3001
-            DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/stoat
-            REDIS_URL: redis://dragonfly:6379
-            SIDECAR_TOKEN: ${SIDECAR_TOKEN:-sidecar}
+            APP_URL: https://${APP_URL:-stoat.example.com}
+            DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
+            REDIS_URL: ${REDIS_URL:-redis://dragonfly.internal:6379}
+        x-pre_deploy:
+            command: ["node", "node_modules/drizzle-kit/bin.cjs", "migrate", "--config", "drizzle.config.ts"]
         depends_on:
-            postgres:
+            stoat-db:
                 condition: service_healthy
-            dragonfly:
-                condition: service_started
         healthcheck:
-            test:
-                [
-                    "CMD",
-                    "node",
-                    "-e",
-                    "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
-                ]
+            test: ["CMD", "node", "-e", "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
             interval: 10s
             timeout: 5s
             retries: 5

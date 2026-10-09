@@ -131,7 +131,7 @@ export const DeployResourceLive = DeployResource.toLayer(
             );
 
             // Interruption aborts the signal, then drains writes and releases the lock
-            // before effect-mq invokes its terminal failure hook or retries the job.
+            // before effect-mq invokes its terminal failure hook.
             return Effect.promise(() => attempt);
         }),
     { concurrency: 4 },
@@ -272,24 +272,13 @@ async function recordFailureAsync(failure: Worker.JobFailure) {
                 : (deployment.error ?? RESOURCE_FAILURE_MESSAGE);
 
             // The attempt already logged its own reason; only timeouts are new here.
-            const text = failure.willRetry
-                ? `Attempt ${failure.attempt} of ${failure.attemptsMax} failed; retrying.`
-                : timedOut
-                  ? reason
-                  : failure.attempt > 1
-                    ? `Deployment failed after ${failure.attempt} attempts.`
-                    : "Deployment failed.";
+            const text = timedOut ? reason : "Deployment failed.";
 
             await appendDeploymentLog(db, deployment.id, text, {
                 level: "error",
-                event: failure.willRetry ? "retry" : "failed",
+                event: "failed",
             });
-            await setDeploymentStatus(
-                db,
-                deployment.id,
-                failure.willRetry ? "queued" : "failed",
-                reason,
-            );
+            await setDeploymentStatus(db, deployment.id, "failed", reason);
 
             return;
         }

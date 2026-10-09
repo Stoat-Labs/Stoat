@@ -46,8 +46,8 @@ export const DeployResource: Job.Job<
     idempotencyKey: ({ deploymentId }) => deploymentId,
     queue: "deploy",
     defaults: {
-        attempts: 5,
-        backoff: { type: "exponential", delay: "30 seconds" },
+        // No retries: a failed deployment stays failed until the user redeploys.
+        attempts: 1,
         timeout: "15 minutes",
         keep: {
             completed: { age: "1 day" },

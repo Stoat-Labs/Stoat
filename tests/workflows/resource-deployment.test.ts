@@ -65,8 +65,6 @@ describe("resource deployment worker", () => {
         | "hang"
         | "pause" = "success";
 
-    let failures = 0;
-    let httpStatus = 500;
     let requestCount = 0;
     let requestBody = "";
     let authorization: string | undefined;
@@ -84,7 +82,7 @@ describe("resource deployment worker", () => {
         response.on("close", () => closed.resolve());
 
         if (mode === "http-error") {
-            response.writeHead(httpStatus, { "Content-Type": "application/json" });
+            response.writeHead(500, { "Content-Type": "application/json" });
             response.end(JSON.stringify({ error: httpError }));
 
             return;
@@ -103,7 +101,7 @@ describe("resource deployment worker", () => {
 
         if (mode === "pause") await finish.promise;
 
-        if (mode === "error" || failures-- > 0) {
+        if (mode === "error") {
             response.end(`data: ${JSON.stringify({ type: "error", error: sidecarError })}\n\n`);
 
             return;
@@ -180,8 +178,6 @@ describe("resource deployment worker", () => {
 
     afterEach(() => {
         mode = "success";
-        failures = 0;
-        httpStatus = 500;
         received = Promise.withResolvers<void>();
         closed = Promise.withResolvers<void>();
         finish.resolve();
@@ -279,7 +275,7 @@ describe("resource deployment worker", () => {
             [`DeployResource/${id}`],
         );
 
-        expect(jobs.rows).toEqual([{ payload: { deploymentId: id }, attempts_max: 5 }]);
+        expect(jobs.rows).toEqual([{ payload: { deploymentId: id }, attempts_max: 1 }]);
     });
 
     it("recovers a queued snapshot through the existing idempotent outbox sweep", async () => {
@@ -411,41 +407,17 @@ describe("resource deployment worker", () => {
         },
     );
 
-    it("does not retry input the sidecar rejects", async () => {
-        mode = "http-error";
-        httpStatus = 400;
+    it("fails on the first error without retrying", async () => {
+        mode = "error";
         const id = await snapshot();
         const count = requestCount;
         await Effect.runPromise(
-            DeployResource.enqueue(
-                { deploymentId: id },
-                { attempts: 3, backoff: { type: "fixed", delay: "100 millis" } },
-            ).pipe(Effect.provide(JobStoreLive)),
+            DeployResource.enqueue({ deploymentId: id }).pipe(Effect.provide(JobStoreLive)),
         );
         const outcome = await terminal(id);
         expect(outcome.status).toBe("failed");
         expect(outcome.logs.some((log) => log.metadata.event === "retry")).toBe(false);
         expect(requestCount).toBe(count + 1);
-    });
-
-    it("retries without publishing a terminal failure and then reaches ready", async () => {
-        failures = 1;
-        const id = await snapshot();
-        await Effect.runPromise(
-            DeployResource.enqueue(
-                { deploymentId: id },
-                {
-                    attempts: 2,
-                    backoff: { type: "fixed", delay: "100 millis" },
-                },
-            ).pipe(Effect.provide(JobStoreLive)),
-        );
-        const outcome = await terminal(id);
-        expect(outcome.status).toBe("ready");
-        expect(outcome.logs.filter((log) => log.metadata.event === "retry")).toHaveLength(1);
-        expect(
-            outcome.logs.filter((log) => log.text === "Formatting Compose snapshot."),
-        ).toHaveLength(2);
     });
 
     it("handles effect-mq timeouts through the failure hook and aborts the sidecar stream", async () => {

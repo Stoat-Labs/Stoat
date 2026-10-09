@@ -9,7 +9,7 @@ services:
         image: stoat-dev
         x-ports:
             - "${APP_URL:-stoat.example.com}:3001/https"
-        env_file: .env
+        env_file: .env.dev
         environment:
             APP_URL: https://${APP_URL:-stoat.example.com}
             DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
@@ -42,12 +42,14 @@ services:
             timeout: 5s
             retries: 5
         restart: unless-stopped
+
     stoat-cache:
         image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
         container_name: stoat-cache
         volumes:
             - stoat_cache_data:/data
         restart: unless-stopped
+
     sidecar:
         build:
             context: apps/sidecar

@@ -3,15 +3,7 @@ import { encodeComposeFile, UcApiError, type UcClient } from "@stoat/uncloud";
 import { Predicate } from "effect";
 import { parse } from "yaml";
 
-export class DeploymentError extends Error {
-    constructor(
-        message: string,
-        // False when the sidecar rejected the input itself, so a retry cannot succeed.
-        readonly retryable = true,
-    ) {
-        super(message);
-    }
-}
+export class DeploymentError extends Error {}
 
 export type DeploymentLogger = (
     text: string,
@@ -261,13 +253,7 @@ export async function deployCompose(
 
         await onLog(reason, "error", "error");
 
-        const rejected =
-            error instanceof UcApiError &&
-            error.status >= 400 &&
-            error.status < 500 &&
-            ![408, 429].includes(error.status);
-
-        throw new DeploymentError(reason, !rejected);
+        throw new DeploymentError(reason);
     }
 
     signal.throwIfAborted();

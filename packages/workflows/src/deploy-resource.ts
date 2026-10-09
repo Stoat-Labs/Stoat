@@ -1,7 +1,6 @@
 import type { Database } from "@stoat/db";
 import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
 import { ucClient, unwrap } from "@stoat/uncloud";
-import { Job } from "effect-mq";
 import { YAMLParseError } from "yaml";
 import {
     ComposeVariableError,
@@ -121,7 +120,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;
                 await log(error.message, "error", "attempt-failed");
-                throw new DeploymentError(error.message, false);
+                throw new DeploymentError(error.message);
             }
 
             const compose = formatComposeFile(spec, input.prefix ?? undefined);
@@ -130,7 +129,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 const reason = "Compose file defines no services.";
 
                 await log(reason, "error", "attempt-failed");
-                throw new DeploymentError(reason, false);
+                throw new DeploymentError(reason);
             }
 
             await log(`Formatted ${compose.serviceCount} service(s).`);
@@ -181,10 +180,6 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             }
         }
     } catch (error) {
-        const permanent =
-            error instanceof YAMLParseError ||
-            (error instanceof DeploymentError && !error.retryable);
-
         if (!signal.aborted) {
             const position = error instanceof YAMLParseError ? error.linePos?.[0] : undefined;
 
@@ -207,8 +202,6 @@ export async function deployResource(db: Database, deploymentId: string, signal:
         }
 
         // Includes DB, YAML parser, transport, and cleanup errors. No raw cause reaches effect-mq.
-        const failure = new Error(RESOURCE_FAILURE_MESSAGE);
-
-        throw permanent ? Job.unrecoverable(failure) : failure;
+        throw new Error(RESOURCE_FAILURE_MESSAGE);
     }
 }
