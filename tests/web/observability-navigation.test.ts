@@ -5,11 +5,7 @@ import {
     observabilityView,
     observabilityViews,
 } from "../../apps/web/src/lib/observability/navigation";
-import {
-    dnsMetricNames,
-    metricNames,
-    registryMetricNames,
-} from "../../packages/api/src/observability";
+import { dnsMetricNames, metricNames } from "../../packages/api/src/observability";
 
 it("resolves each observability page without marking overview active for every child", () => {
     for (const view of observabilityViews) {
@@ -44,7 +40,7 @@ it("preserves monitoring scope and time range between pages, excluding unrelated
 
 it("partitions the existing metrics into focused pages without dropping any", () => {
     const metrics = observabilityViews.flatMap((view) => observabilityMetrics(view.id));
-    const expected = [...new Set([...metricNames, ...dnsMetricNames, ...registryMetricNames])];
+    const expected = [...new Set([...metricNames, ...dnsMetricNames])];
     expect([...new Set(metrics)].toSorted()).toEqual(expected.toSorted());
     expect(observabilityMetrics("dns")).toEqual(["dnsQueries", "dnsErrors", "dnsAvailability"]);
     expect(observabilityMetrics("health")).toEqual(["dnsAvailability"]);

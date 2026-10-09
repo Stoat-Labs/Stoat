@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { MACHINE } from "./fake-sidecar";
 import { ids, resetSidecar, rpc, sql } from "./fixtures";
 
-const views = ["", "/health", "/http", "/dns", "/registry", "/services"];
+const views = ["", "/health", "/http", "/dns", "/services"];
 
 /** Opens a page and returns every failed request and uncaught error it caused. */
 async function problemsOn(page: Page, path: string) {

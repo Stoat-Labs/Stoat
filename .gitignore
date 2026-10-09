@@ -16,6 +16,7 @@ local.db-*
 
 # Environment variables
 .env
+.env.prod
 !templates/*/versions/*/.env
 .env*.local
 

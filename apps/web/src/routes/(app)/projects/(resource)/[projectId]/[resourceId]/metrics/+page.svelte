@@ -230,13 +230,25 @@
             ),
         },
         {
-            title: "Network · receive / send",
+            title: "Network · receive",
             unit: "rate" as const,
-            total: `↓ ${bandwidth(sum(rows.map((row) => row.networkIn)))} · ↑ ${bandwidth(sum(rows.map((row) => row.networkOut)))}`,
+            total: bandwidth(sum(rows.map((row) => row.networkIn))),
             series: serviceSeries(
                 [cluster],
                 rows,
-                ["serviceNetworkIn", "serviceNetworkOut"],
+                ["serviceNetworkIn"],
+                rankTraffic,
+                rows.length,
+            ),
+        },
+        {
+            title: "Network · send",
+            unit: "rate" as const,
+            total: bandwidth(sum(rows.map((row) => row.networkOut))),
+            series: serviceSeries(
+                [cluster],
+                rows,
+                ["serviceNetworkOut"],
                 rankTraffic,
                 rows.length,
             ),
@@ -330,19 +342,21 @@
                 series: errorRate,
             },
             {
-                title: "Latency · p50",
-                unit: "duration" as const,
-                series: httpSeries.latencyP50,
-            },
-            {
                 title: "Latency · p95",
                 unit: "duration" as const,
                 series: httpSeries.latency,
             },
             {
-                title: "Latency · p99",
+                title: "Latency · p50 / p99",
                 unit: "duration" as const,
-                series: httpSeries.latencyP99,
+                series: [
+                    ...httpSeries.latencyP50,
+                    ...httpSeries.latencyP99.map((item) => ({
+                        ...item,
+                        key: `${item.key}:p99`,
+                        dashed: true,
+                    })),
+                ],
             },
         ];
     });
@@ -765,7 +779,7 @@
     {#if pending}
         <Skeleton loading loading-label="Loading resource metrics">
             <div class="grid gap-4 lg:grid-cols-2">
-                {#each ["CPU", "Memory", "Network · receive / send"] as title (title)}<Frame
+                {#each ["CPU", "Memory", "Network · receive", "Network · send"] as title (title)}<Frame
                         class="min-w-0"
                     >
                         <FrameHeader>
@@ -862,8 +876,8 @@
         />
         <p class="text-xs text-muted-foreground" role="status">
             One line per service, all containers combined · 100% CPU =
-            one core · dotted lines mark deployments · network: solid
-            receive, dashed send · HTTP metrics cover ingress
+            one core · dotted lines mark deployments · dashed latency
+            lines are p99 · HTTP metrics cover ingress
             hostnames ·
             {#if selectedTime}
                 <a

@@ -80,20 +80,7 @@ export const dnsMetricNames = ["dnsQueries", "dnsErrors", "dnsAvailability"] as 
 
 export type DnsMetricName = (typeof dnsMetricNames)[number];
 
-export const registryMetricNames = [
-    "registryProxyHits",
-    "registryProxyMisses",
-    "registryProxyPulledBytes",
-    "registryProxyPushedBytes",
-    "registryProxyRequests",
-    "registryCacheErrors",
-    "registryCacheHits",
-    "registryCacheRequests",
-] as const;
-
-export type RegistryMetricName = (typeof registryMetricNames)[number];
-
-export type MachineMetricName = MetricName | DnsMetricName | RegistryMetricName;
+export type MachineMetricName = MetricName | DnsMetricName;
 
 export const postgresMetricNames = [
     "postgresConnections",
@@ -127,7 +114,8 @@ export function postgresMetricQueries(
     // Template databases are never connected to and only add noise to sizes.
     const databases = `${scope},datname!~"template.*"`;
     const window = `${Math.max(60, step * 2)}s`;
-    const rate = (metric: string) => `sum by (machine_id) (rate(${metric}{${databases}}[${window}]))`;
+    const rate = (metric: string) =>
+        `sum by (machine_id) (rate(${metric}{${databases}}[${window}]))`;
     const blocks = `${rate("pg_stat_database_blks_hit")} + ${rate("pg_stat_database_blks_read")}`;
 
     return {
@@ -137,26 +125,6 @@ export function postgresMetricQueries(
         // An idle database reads no blocks, which leaves a gap rather than a misleading 0%.
         postgresCacheHit: `100 * ${rate("pg_stat_database_blks_hit")} / (${blocks})`,
         postgresSize: `sum by (machine_id) (pg_database_size_bytes{${databases}})`,
-    };
-}
-
-export function registryMetricQueries(
-    clusterId: string,
-    step: number,
-): Record<RegistryMetricName, string> {
-    const window = `${Math.max(60, step * 2)}s`;
-    const scope = `{customer_id=${JSON.stringify(clusterId)}}`;
-    const rate = (name: string) => `sum by (machine_id) (rate(${name}${scope}[${window}]))`;
-
-    return {
-        registryProxyHits: rate("registry_proxy_hits_total"),
-        registryProxyMisses: rate("registry_proxy_misses_total"),
-        registryProxyPulledBytes: rate("registry_proxy_pulled_bytes_total"),
-        registryProxyPushedBytes: rate("registry_proxy_pushed_bytes_total"),
-        registryProxyRequests: rate("registry_proxy_requests_total"),
-        registryCacheErrors: rate("registry_storage_cache_errors_total"),
-        registryCacheHits: rate("registry_storage_cache_hits_total"),
-        registryCacheRequests: rate("registry_storage_cache_requests_total"),
     };
 }
 

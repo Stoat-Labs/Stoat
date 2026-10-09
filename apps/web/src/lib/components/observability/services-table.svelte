@@ -45,12 +45,14 @@
         start,
         end,
         expandAll = false,
+        hovered = $bindable(""),
     }: {
         data: ServiceRow[];
         search?: string;
         start: number;
         end: number;
         expandAll?: boolean;
+        hovered?: string;
     } = $props();
 
     let sorting = $state<SortingState>([{ id: "cpu", desc: true }]);
@@ -219,7 +221,7 @@
         </Badge>{/if}
 {/snippet}
 
-{#snippet usage(row: ServiceRow | ContainerRow)}
+{#snippet usage(row: ServiceRow | ContainerRow, color: string)}
     <TableCell class="tabular-nums">
         {percent(row.cpu)}{#if row.cpuLimit}<span
                 class="ml-1 text-xs text-muted-foreground"
@@ -258,7 +260,7 @@
                 {
                     key: row.key,
                     label: row.name,
-                    color: seriesColor(row.name),
+                    color,
                     points: row.trend,
                 },
             ]}
@@ -403,7 +405,10 @@
                                         )}
                                     </div>
                                 </TableCell>
-                                {@render usage(container)}
+                                {@render usage(
+                                    container,
+                                    line.service.color,
+                                )}
                             </TableRow>
                         {:else if line}
                             {@const row = line.service}
@@ -415,6 +420,9 @@
                                     ? 'cursor-pointer'
                                     : ''}"
                                 style={`transform: translateY(${item.start}px)`}
+                                onpointerenter={() =>
+                                    (hovered = row.key)}
+                                onpointerleave={() => (hovered = "")}
                                 onclick={() => {
                                     if (row.containers.length)
                                         toggle(row.key);
@@ -503,7 +511,7 @@
                                         )}
                                     </div>
                                 </TableCell>
-                                {@render usage(row)}
+                                {@render usage(row, row.color)}
                             </TableRow>
                         {/if}
                     {/each}

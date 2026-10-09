@@ -30,6 +30,7 @@
     } from "$lib/components/ui/popover";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
+        nameColors,
         seriesColor,
         type ChartSeries,
     } from "$lib/observability";
@@ -126,6 +127,8 @@
         ),
     );
 
+    const colors = $derived(nameColors([...serviceNames.values()]));
+
     function query(clusterIndex: number, name: HttpMetricName) {
         return queries[
             clusterIndex * httpMetricNames.length +
@@ -147,7 +150,8 @@
                         selection.length > 1
                             ? `${cluster.name} / ${service}`
                             : service,
-                    color: seriesColor(service),
+                    color:
+                        colors.get(service) ?? seriesColor(service),
                     points: series.points,
                 };
             }),
@@ -291,12 +295,6 @@
 {/snippet}
 
 <div class="min-w-0 w-full space-y-4 py-4 sm:space-y-6 sm:py-6">
-    <div>
-        <h1 class="text-2xl font-semibold">HTTP traffic</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-            Requests and latency recorded from ingress access logs.
-        </p>
-    </div>
     {#if list.isError}
         <Alert variant="error">
             <AlertDescription>

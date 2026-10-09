@@ -1,7 +1,5 @@
 name: stoat
 
-# for my personal cluster testing, blacksmith suspended me and i had to appeal, update: i got unsuspended
-
 services:
     stoat:
         build:
@@ -17,25 +15,12 @@ services:
             DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
             REDIS_URL: ${REDIS_URL:-redis://dragonfly.internal:6379}
         x-pre_deploy:
-            command:
-                [
-                    "node",
-                    "node_modules/drizzle-kit/bin.cjs",
-                    "migrate",
-                    "--config",
-                    "drizzle.config.ts",
-                ]
+            command: ["node", "node_modules/drizzle-kit/bin.cjs", "migrate", "--config", "drizzle.config.ts"]
         depends_on:
             stoat-db:
                 condition: service_healthy
         healthcheck:
-            test:
-                [
-                    "CMD",
-                    "node",
-                    "-e",
-                    "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
-                ]
+            test: ["CMD", "node", "-e", "fetch('http://localhost:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
             interval: 10s
             timeout: 5s
             retries: 5

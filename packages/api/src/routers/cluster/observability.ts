@@ -17,8 +17,6 @@ import {
     counterTotalQuery,
     dnsMetricNames,
     dnsMetricQueries,
-    registryMetricNames,
-    registryMetricQueries,
     httpMetricNames,
     httpQueries,
     metricNames,
@@ -33,7 +31,6 @@ import {
     serviceIdPattern,
     type DnsMetricName,
     type HttpMetricName,
-    type RegistryMetricName,
     type MetricName,
     type MetricSeries,
     type ObservabilityRange,
@@ -66,7 +63,7 @@ const containerInspect = z
 const unreachable = () => new ORPCError("BAD_GATEWAY", { message: "Monitoring is unreachable." });
 
 // Shown only as the latest value, never charted, so a single sample is enough.
-const latestOnly = new Set<MetricName | DnsMetricName | RegistryMetricName>([
+const latestOnly = new Set<MetricName | DnsMetricName>([
     "cores",
     "memoryTotal",
     "serviceMemory",
@@ -209,12 +206,7 @@ type MetricResponse = {
     status: "ok" | "no-routes" | "not-collecting";
 };
 
-type ObservabilityMetricName =
-    | MetricName
-    | HttpMetricName
-    | DnsMetricName
-    | RegistryMetricName
-    | PostgresMetricName;
+type ObservabilityMetricName = MetricName | HttpMetricName | DnsMetricName | PostgresMetricName;
 
 function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
     return httpMetricNames.some((item) => item === name);
@@ -458,7 +450,6 @@ export const observabilityRouter = {
                     ...metricNames,
                     ...httpMetricNames,
                     ...dnsMetricNames,
-                    ...registryMetricNames,
                     ...postgresMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
@@ -511,13 +502,9 @@ export const observabilityRouter = {
                             const query = {
                                 ...metricQueries(cluster.id, window.step, serviceIds),
                                 ...dnsMetricQueries(cluster.id, window.step),
-                                ...registryMetricQueries(cluster.id, window.step),
                             }[name];
 
-                            const counter =
-                                name === "dnsQueries" ||
-                                name === "dnsErrors" ||
-                                registryMetricNames.some((item) => item === name);
+                            const counter = name === "dnsQueries" || name === "dnsErrors";
 
                             const [series, totals] = await Promise.all([
                                 queryRange(cluster, uc, query, start, end, step),

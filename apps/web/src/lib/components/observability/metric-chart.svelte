@@ -27,6 +27,7 @@
     import { decorative } from "@tanstack/charts/mark/decorative";
     import { scaleLinear } from "@tanstack/charts/scales/linear";
     import { tooltip } from "@tanstack/charts/tooltip";
+    import { portal } from "@tanstack/charts/tooltip/portal";
 
     let {
         series,
@@ -35,6 +36,7 @@
         unit = "percent",
         max,
         compact = false,
+        tooltipRows = 16,
         markers = [],
         hoveredMachine = $bindable(""),
         onselecttime,
@@ -45,6 +47,7 @@
         unit?: MetricUnit;
         max?: number;
         compact?: boolean;
+        tooltipRows?: number;
         markers?: { key: string; time: number; label: string }[];
         hoveredMachine?: string;
         onselecttime?: (time: number) => void;
@@ -86,6 +89,34 @@
 
     function dimmed(item: ChartSeries) {
         return !!hoveredMachine && item.machineKey !== hoveredMachine;
+    }
+
+    type TooltipRow = {
+        label: string;
+        value: string;
+        color: string;
+        active: boolean;
+    };
+
+    // Dozens of rows overflow the screen, so keep the hovered line plus the highest ones.
+    function capRows(rows: TooltipRow[]) {
+        if (rows.length <= tooltipRows) return rows;
+
+        const kept = rows.slice(0, tooltipRows);
+        const active = rows.find((row) => row.active);
+
+        if (active && !kept.includes(active))
+            kept[kept.length - 1] = active;
+
+        return [
+            ...kept,
+            {
+                label: `+${rows.length - kept.length} more`,
+                value: "",
+                color: "transparent",
+                active: false,
+            },
+        ];
     }
 
     // Each series is its own mark so it keeps its own color, dash and hover opacity.
@@ -188,6 +219,7 @@
                     ? false
                     : {
                           use: tooltip,
+                          portal,
                           sticky: false,
                           anchor: "pointer",
                           placement: [
@@ -201,35 +233,38 @@
                               title: time(
                                   Number(points[0]?.xValue ?? 0),
                               ),
-                              rows: points
-                                  .toSorted(
-                                      (a, b) =>
-                                          Number(b.yValue) -
-                                          Number(a.yValue),
-                                  )
-                                  .flatMap((point) => {
-                                      const item = seriesByKey.get(
-                                          point.markId,
-                                      );
+                              rows: capRows(
+                                  points
+                                      .toSorted(
+                                          (a, b) =>
+                                              Number(b.yValue) -
+                                              Number(a.yValue),
+                                      )
+                                      .flatMap((point) => {
+                                          const item =
+                                              seriesByKey.get(
+                                                  point.markId,
+                                              );
 
-                                      return item
-                                          ? [
-                                                {
-                                                    label: item.label,
-                                                    value: format(
-                                                        Number(
-                                                            point.yValue,
+                                          return item
+                                              ? [
+                                                    {
+                                                        label: item.label,
+                                                        value: format(
+                                                            Number(
+                                                                point.yValue,
+                                                            ),
                                                         ),
-                                                    ),
-                                                    color: item.color,
-                                                    active:
-                                                        !!hoveredMachine &&
-                                                        item.machineKey ===
-                                                            hoveredMachine,
-                                                },
-                                            ]
-                                          : [];
-                                  }),
+                                                        color: item.color,
+                                                        active:
+                                                            !!hoveredMachine &&
+                                                            item.machineKey ===
+                                                                hoveredMachine,
+                                                    },
+                                                ]
+                                              : [];
+                                      }),
+                              ),
                           }),
                       },
         }),

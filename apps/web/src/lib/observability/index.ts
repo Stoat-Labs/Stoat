@@ -110,6 +110,7 @@ export type ContainerRow = Omit<ObservabilityContainer, "oomKilled"> & Usage & {
 export type ServiceRow = Omit<ObservabilityService, "containers"> &
     Usage & {
         key: string;
+        color: string;
         clusterId: string;
         clusterName: string;
         /** Machine ID when the rows are filtered to one machine, otherwise "". */
@@ -158,7 +159,14 @@ export function perSecond(value: number | null | undefined) {
         : `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 2 : 0 })}/s`;
 }
 
-export type MetricUnit = "percent" | "bytes" | "rate" | "requests" | "duration" | "count" | "perSecond";
+export type MetricUnit =
+    | "percent"
+    | "bytes"
+    | "rate"
+    | "requests"
+    | "duration"
+    | "count"
+    | "perSecond";
 
 export function duration(seconds: number | null | undefined) {
     if (seconds == null) return "—";
@@ -268,21 +276,37 @@ export function machineValue(machine: MachineData, name: MetricName) {
 }
 
 export function machineList(clusters: ClusterData[]): MachineData[] {
-    return clusters.flatMap((cluster) => {
-        const machines = new Map(cluster.machines.map((machine) => [machine.id, machine.name]));
+    const machines = clusters.flatMap((cluster) => {
+        const names = new Map(cluster.machines.map((machine) => [machine.id, machine.name]));
 
         for (const series of Object.values(cluster.metrics))
             for (const item of series ?? [])
-                if (!machines.has(item.machineId)) machines.set(item.machineId, item.machineId);
+                if (!names.has(item.machineId)) names.set(item.machineId, item.machineId);
 
-        return [...machines].map(([id, name]) => ({
+        return [...names].map(([id, name]) => ({
             key: `${cluster.id}:${id}`,
             id,
             name,
             cluster,
-            color: seriesColor(name),
         }));
     });
+    const colors = nameColors(machines.map((machine) => machine.name));
+
+    return machines.map((machine) => ({
+        ...machine,
+        color: colors.get(machine.name) ?? seriesColor(machine.name),
+    }));
+}
+
+/** Distinct colors for a set of names: hues are spread by sorted position (golden angle), so input order doesn't matter. */
+export function nameColors(names: string[]) {
+    return new Map(
+        [...new Set(names)].sort().map((name, index) => [name, hueColor(index * 137.5 + 265)]),
+    );
+}
+
+function hueColor(hue: number) {
+    return `oklch(var(--series-lightness) var(--series-chroma) ${hue % 360})`;
 }
 
 /** A color derived only from `name`, so a machine or service looks the same in every chart. */
@@ -292,7 +316,7 @@ export function seriesColor(name: string) {
 
     for (const character of name) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
 
-    return `oklch(var(--series-lightness) var(--series-chroma) ${(hash >>> 0) % 360})`;
+    return hueColor(hash >>> 0);
 }
 
 export function chartSeries(machines: MachineData[], name: MachineMetricName): ChartSeries[] {
@@ -395,11 +419,11 @@ export function filesystemRows(machines: MachineData[]) {
         .sort((a, b) => a.label.localeCompare(b.label) || a.device.localeCompare(b.device));
 }
 
-/** The busiest `limit` services by `rank`, so chart palettes stay distinguishable. */
+/** The busiest `limit` services by `rank`, so charts stay readable. */
 export function topServices(
     rows: ServiceRow[],
     rank: (row: ServiceRow) => number | null,
-    limit = 5,
+    limit = 16,
 ) {
     return [...rows].sort((a, b) => (rank(b) ?? -1) - (rank(a) ?? -1)).slice(0, limit);
 }
@@ -419,7 +443,7 @@ export function serviceSeries(
     rows: ServiceRow[],
     names: MetricName[],
     rank: (row: ServiceRow) => number | null,
-    limit = 5,
+    limit = 16,
 ): ChartSeries[] {
     const top = topServices(rows, rank, limit);
 
@@ -433,8 +457,9 @@ export function serviceSeries(
                           key: `${row.key}:${name}`,
                           machineKey: row.key,
                           label: row.name,
-                          color: seriesColor(row.name),
-                          dashed: name === "serviceNetworkOut",
+                          color: row.color,
+                          // Send is only dashed when it shares a chart with receive.
+                          dashed: name === "serviceNetworkOut" && names.length > 1,
                           points: metric(cluster, name, row.scope || undefined, row.id),
                       },
                   ]
@@ -466,6 +491,10 @@ function limit(values: (number | null)[]) {
  * Docker name; `machineKey` (cluster:machine) keeps only containers on that machine.
  */
 export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRow[] {
+    const colors = nameColors(
+        clusters.flatMap((cluster) => cluster.services.map((item) => item.name)),
+    );
+
     return clusters.flatMap((cluster) =>
         cluster.services.flatMap((service) => {
             const at = (points: MetricPoint[]) => current(points, cluster.end, cluster.step);
@@ -518,6 +547,7 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                     name: service.name,
                     href: service.href,
                     key: `${cluster.id}:${service.id}`,
+                    color: colors.get(service.name) ?? seriesColor(service.name),
                     clusterId: cluster.id,
                     clusterName: cluster.name,
                     scope,
