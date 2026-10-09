@@ -25,6 +25,9 @@ import {
     metricQueries,
     metricWindow,
     parseMetricSeries,
+    postgresMetricNames,
+    postgresMetricQueries,
+    postgresMetricTables,
     rangePresets,
     serviceHosts,
     serviceIdPattern,
@@ -34,6 +37,7 @@ import {
     type MetricName,
     type MetricSeries,
     type ObservabilityRange,
+    type PostgresMetricName,
     type ObservabilityContainer,
     type ObservabilityService,
 } from "../../observability";
@@ -138,21 +142,31 @@ async function queryRange(
     return parseMetricSeries(text, start, end, step);
 }
 
-/** Alloy only creates the HTTP tables after the first proxied request (and after a monitoring update). */
-function collectingHttp(cluster: MonitoringCluster, uc: UcClient) {
-    return swr(`http-tables:${cluster.id}`, Math.floor(Date.now() / 300_000), async () => {
+/**
+ * Alloy creates a metric's table with its first sample, and PromQL on a missing table fails.
+ * HTTP tables appear after the first proxied request, Postgres tables after an exporter's first
+ * scrape (both only once monitoring runs a config that collects them).
+ */
+function collecting(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    kind: string,
+    tables: readonly string[],
+) {
+    return swr(`${kind}-tables:${cluster.id}`, Math.floor(Date.now() / 300_000), async () => {
         const signal = AbortSignal.timeout(30_000);
         const { password, greptime } = monitoringAccess(cluster, uc, signal);
 
+        // Table names are constants from this codebase, never user input.
         const rows = await greptimeSql(
             uc,
             await greptime,
             password,
-            `SELECT table_name FROM information_schema.tables WHERE table_schema = '${MONITORING_DATABASE}' AND table_name IN ('loki_process_custom_http_requests_total', 'loki_process_custom_http_request_duration_seconds_bucket')`,
+            `SELECT table_name FROM information_schema.tables WHERE table_schema = '${MONITORING_DATABASE}' AND table_name IN (${tables.map((table) => `'${table}'`).join(", ")})`,
             signal,
         );
 
-        return rows.length === 2;
+        return rows.length === tables.length;
     });
 }
 
@@ -188,14 +202,59 @@ type MetricResponse = {
     step: number;
     series: MetricSeries[];
     totals?: MetricSeries[];
-    /** HTTP metrics only: whether the services have ingress hostnames and Alloy is recording traffic. */
+    /**
+     * HTTP metrics: whether the services have ingress hostnames and Alloy is recording traffic.
+     * Postgres metrics: whether any exporter has been scraped yet.
+     */
     status: "ok" | "no-routes" | "not-collecting";
 };
 
-function isHttpMetric(
-    name: MetricName | HttpMetricName | DnsMetricName | RegistryMetricName,
-): name is HttpMetricName {
+type ObservabilityMetricName =
+    | MetricName
+    | HttpMetricName
+    | DnsMetricName
+    | RegistryMetricName
+    | PostgresMetricName;
+
+function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
     return httpMetricNames.some((item) => item === name);
+}
+
+function isPostgresMetric(name: ObservabilityMetricName): name is PostgresMetricName {
+    return postgresMetricNames.some((item) => item === name);
+}
+
+async function postgresMetric(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    name: PostgresMetricName,
+    range: ObservabilityRange,
+    serviceIds: string[],
+): Promise<MetricResponse> {
+    const { start, end, step } = metricWindow(range);
+
+    return swr(
+        `postgres:${cluster.id}:${name}:${JSON.stringify(range)}:${serviceIds.toSorted().join(",")}`,
+        end,
+        async () => {
+            try {
+                if (!(await collecting(cluster, uc, "postgres", postgresMetricTables)))
+                    return { start, end, step, series: [], status: "not-collecting" as const };
+
+                const query = postgresMetricQueries(cluster.id, step, serviceIds)[name];
+
+                return {
+                    start,
+                    end,
+                    step,
+                    series: await queryRange(cluster, uc, query, start, end, step),
+                    status: "ok" as const,
+                };
+            } catch {
+                throw unreachable();
+            }
+        },
+    );
 }
 
 async function httpMetric(
@@ -233,7 +292,12 @@ async function httpMetric(
         end,
         async () => {
             try {
-                if (!(await collectingHttp(cluster, uc)))
+                if (
+                    !(await collecting(cluster, uc, "http", [
+                        "loki_process_custom_http_requests_total",
+                        "loki_process_custom_http_request_duration_seconds_bucket",
+                    ]))
+                )
                     return { start, end, step, series: [], status: "not-collecting" as const };
 
                 return {
@@ -386,7 +450,7 @@ export const observabilityRouter = {
                 },
             ),
         ),
-    // HTTP and DNS metrics share this procedure to stay within tsc's router type serialization limit.
+    // HTTP, DNS, and Postgres metrics share this procedure to stay within tsc's router type serialization limit.
     getObservabilityMetric: organizationProcedure
         .input(
             clusterInput.extend({
@@ -395,6 +459,7 @@ export const observabilityRouter = {
                     ...httpMetricNames,
                     ...dnsMetricNames,
                     ...registryMetricNames,
+                    ...postgresMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
                 serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
@@ -411,6 +476,17 @@ export const observabilityRouter = {
 
                 if (isHttpMetric(name))
                     return httpMetric(cluster, uc, name, range, serviceIds ?? []);
+
+                // Exporter series are only meaningful per resource, so they require a service scope.
+                if (isPostgresMetric(name)) {
+                    if (!serviceIds?.length)
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: "Postgres metrics need the services to scope them to.",
+                        });
+
+                    return postgresMetric(cluster, uc, name, range, serviceIds);
+                }
+
                 const { end, duration } = window;
                 const scoped = Boolean(serviceIds?.length);
 

@@ -95,6 +95,51 @@ export type RegistryMetricName = (typeof registryMetricNames)[number];
 
 export type MachineMetricName = MetricName | DnsMetricName | RegistryMetricName;
 
+export const postgresMetricNames = [
+    "postgresConnections",
+    "postgresMaxConnections",
+    "postgresTransactions",
+    "postgresCacheHit",
+    "postgresSize",
+] as const;
+
+export type PostgresMetricName = (typeof postgresMetricNames)[number];
+
+/** Tables postgres-exporter's default collectors create once Alloy scrapes the first sample. */
+export const postgresMetricTables = [
+    "pg_stat_database_numbackends",
+    "pg_settings_max_connections",
+    "pg_stat_database_xact_commit",
+    "pg_stat_database_xact_rollback",
+    "pg_stat_database_blks_hit",
+    "pg_stat_database_blks_read",
+    "pg_database_size_bytes",
+] as const;
+
+/** postgres-exporter series, scoped to the exporter services Alloy tagged with their Uncloud service ID. */
+export function postgresMetricQueries(
+    clusterId: string,
+    step: number,
+    serviceIds: string[],
+): Record<PostgresMetricName, string> {
+    // IDs are validated at the procedure boundary; JSON quoting also escapes PromQL strings.
+    const scope = `customer_id=${JSON.stringify(clusterId)},container_label_uncloud_service_id=~${JSON.stringify(serviceIds.join("|"))}`;
+    // Template databases are never connected to and only add noise to sizes.
+    const databases = `${scope},datname!~"template.*"`;
+    const window = `${Math.max(60, step * 2)}s`;
+    const rate = (metric: string) => `sum by (machine_id) (rate(${metric}{${databases}}[${window}]))`;
+    const blocks = `${rate("pg_stat_database_blks_hit")} + ${rate("pg_stat_database_blks_read")}`;
+
+    return {
+        postgresConnections: `sum by (machine_id) (pg_stat_database_numbackends{${databases}})`,
+        postgresMaxConnections: `max by (machine_id) (pg_settings_max_connections{${scope}})`,
+        postgresTransactions: `${rate("pg_stat_database_xact_commit")} + ${rate("pg_stat_database_xact_rollback")}`,
+        // An idle database reads no blocks, which leaves a gap rather than a misleading 0%.
+        postgresCacheHit: `100 * ${rate("pg_stat_database_blks_hit")} / (${blocks})`,
+        postgresSize: `sum by (machine_id) (pg_database_size_bytes{${databases}})`,
+    };
+}
+
 export function registryMetricQueries(
     clusterId: string,
     step: number,

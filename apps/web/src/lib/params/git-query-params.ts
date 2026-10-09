@@ -1,9 +1,20 @@
 import { createSerializer, parseAsBoolean, parseAsString, parseAsStringLiteral } from "nuqs-svelte";
 
+// Order drives the order of provider pickers.
+export const gitProviders = ["forgejo", "github", "generic"] as const;
+
+export type GitProvider = (typeof gitProviders)[number];
+
+export const gitProviderLabels: Record<GitProvider, string> = {
+    forgejo: "Forgejo",
+    github: "GitHub",
+    generic: "Generic Git",
+};
+
 // Only non-secret fields belong in the URL.
 export const connectionFormParsers = {
     name: parseAsString,
-    provider: parseAsStringLiteral(["github", "forgejo", "generic"]),
+    provider: parseAsStringLiteral(gitProviders),
     authMode: parseAsStringLiteral(["token", "oauth"]),
     credentialType: parseAsStringLiteral(["https", "ssh"]),
     oauthProviderId: parseAsString,

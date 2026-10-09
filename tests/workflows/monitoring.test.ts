@@ -359,3 +359,15 @@ it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identit
     expect(alloy.environment).not.toHaveProperty("MACHINE_ID");
     expect(compose.configs.alloy_config.content).toContain('sys.env("UNCLOUD_MACHINE_ID")');
 });
+
+it("scrapes exporters by their `-metrics` service name, as Uncloud names containers", () => {
+    const alloy = parse(template).configs.alloy_config.content;
+    const [, pattern] = /"__meta_docker_container_name"\]\s+regex\s+= "([^"]+)"/u.exec(alloy) ?? [];
+
+    // Relabel regexes are fully anchored; Docker container names start with a slash.
+    const matches = (name: string) => new RegExp(`^(?:${pattern})$`, "u").test(name);
+
+    expect(matches("/a1b2c3d4-e5f6a7b8-postgres-metrics-k3j9")).toBe(true);
+    expect(matches("/a1b2c3d4-e5f6a7b8-postgres-k3j9")).toBe(false);
+    expect(matches("/a1b2c3d4-e5f6a7b8-postgres-metrics-pre-deploy-k3j9")).toBe(false);
+});

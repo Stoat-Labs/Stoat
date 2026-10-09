@@ -55,6 +55,7 @@
     import {
         createMutation,
         createQuery,
+        partialMatchKey,
     } from "@tanstack/svelte-query";
     import { onDestroy, untrack } from "svelte";
     import { Debounced } from "runed";
@@ -117,21 +118,27 @@
 
     const containers = $derived(containersQuery.data ?? []);
 
-    const connectionQuery = createQuery(() =>
-        orpc.resources.getConnection.queryOptions({
-            input: { projectId, resourceId, clusterId },
-            queryKey: [
-                ...orpc.resources.getConnection.queryKey({
-                    input: { projectId, resourceId, clusterId },
-                }),
-                resource?.updatedAt,
-            ],
-            enabled:
-                !!resource &&
-                databaseEngine(resource) === "postgresql" &&
-                clusterId.length > 0,
-        }),
+    const isPostgres = $derived(
+        !!resource && databaseEngine(resource) === "postgresql",
     );
+
+    const connectionQuery = createQuery(() => {
+        const resourceKey = orpc.resources.getConnection.queryKey({
+            input: { projectId, resourceId, clusterId },
+        });
+
+        return orpc.resources.getConnection.queryOptions({
+            input: { projectId, resourceId, clusterId },
+            queryKey: [...resourceKey, resource?.updatedAt],
+            enabled: isPostgres && clusterId.length > 0,
+            // Keep the card on screen while a save refetches, but never show another resource's URLs.
+            placeholderData: (previous, previousQuery) =>
+                previousQuery &&
+                partialMatchKey(previousQuery.queryKey, resourceKey)
+                    ? previous
+                    : undefined,
+        });
+    });
 
     let compose = $state("");
 
@@ -671,6 +678,32 @@
                 <div
                     class="flex min-w-0 flex-col gap-6 xl:col-span-1 xl:row-span-2 xl:min-h-0"
                 >
+                    {#if isPostgres && connectionQuery.isPending}
+                        <Skeleton
+                            loading
+                            loading-label="Loading connection"
+                        >
+                            <Frame class="min-w-0">
+                                <FrameHeader>
+                                    <FrameTitle class="text-base">
+                                        <h2>Connection</h2>
+                                    </FrameTitle>
+                                    <FrameDescription class="mt-1">
+                                        Built from the saved Compose
+                                        draft and POSTGRES_*
+                                        variables.
+                                    </FrameDescription>
+                                </FrameHeader>
+                                <FramePanel class="grid gap-4">
+                                    <ConnectionField
+                                        label="Internal URL"
+                                        value="postgres://user:password@host:5432/db"
+                                        secret
+                                    />
+                                </FramePanel>
+                            </Frame>
+                        </Skeleton>
+                    {/if}
                     {#if connectionQuery.data}
                         <Frame
                             class="min-w-0"

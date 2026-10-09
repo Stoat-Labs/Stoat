@@ -3,10 +3,13 @@
         bandwidth,
         bridgeGaps,
         bytes,
+        count,
         duration,
         percent,
+        perSecond,
         requests,
         type ChartSeries,
+        type MetricUnit,
     } from "$lib/observability";
     import CanvasChart from "./canvas-chart.svelte";
     import { metricChartCursor } from "./chart-sync";
@@ -39,7 +42,7 @@
         series: ChartSeries[];
         start: number;
         end: number;
-        unit?: "percent" | "bytes" | "rate" | "requests" | "duration";
+        unit?: MetricUnit;
         max?: number;
         compact?: boolean;
         markers?: { key: string; time: number; label: string }[];
@@ -61,6 +64,8 @@
             rate: bandwidth,
             requests,
             duration,
+            count,
+            perSecond,
         }[unit],
     );
 

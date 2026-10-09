@@ -4,6 +4,7 @@ import {
     dnsMetricNames,
     dnsMetricQueries,
     parseMetricSeries,
+    postgresMetricQueries,
 } from "../../packages/api/src/observability";
 
 it("scopes DNS rates and scrape health to the cluster's Uncloud targets", () => {
@@ -86,4 +87,17 @@ it("uses observability's cluster-qualified machine identities and filters for DN
         )[0]?.points,
     ).toEqual([{ time: 240000, value: 2 }]);
     expect(chartSeries(machines, "dnsAvailability")[1]?.points).toEqual([]);
+});
+
+it("scopes Postgres exporter metrics to the resource's services and skips template databases", () => {
+    const queries = postgresMetricQueries("cluster-id", 15, ["service-a", "service-b"]);
+    const scope = 'customer_id="cluster-id",container_label_uncloud_service_id=~"service-a|service-b"';
+
+    expect(queries.postgresSize).toBe(
+        `sum by (machine_id) (pg_database_size_bytes{${scope},datname!~"template.*"})`,
+    );
+    expect(queries.postgresMaxConnections).toBe(
+        `max by (machine_id) (pg_settings_max_connections{${scope}})`,
+    );
+    expect(queries.postgresTransactions).toContain("[60s]");
 });

@@ -219,6 +219,46 @@ configs:
 
 
             // ----------------------------------------------------
+            // Prometheus exporters shipped with templates
+            // ----------------------------------------------------
+
+            // Exporters are found by service name: a `<name>-metrics` service runs in
+            // containers named `/<name>-metrics-<4 random characters>` (Uncloud's format).
+            // Docker discovery only sees this machine's containers, so each exporter is
+            // scraped once, at the port its image exposes on the Uncloud network.
+            discovery.relabel "exporters" {
+              targets = discovery.docker.containers.targets
+
+              rule {
+                source_labels = ["__meta_docker_container_name"]
+                regex         = "/.+-metrics-[a-z0-9]{4}"
+                action        = "keep"
+              }
+
+              rule {
+                source_labels = ["__meta_docker_network_name"]
+                regex         = "uncloud"
+                action        = "keep"
+              }
+
+              // Same service label cAdvisor series carry, so per-resource queries match both.
+              rule {
+                source_labels = ["__meta_docker_container_label_uncloud_service_id"]
+                target_label  = "container_label_uncloud_service_id"
+              }
+            }
+
+            prometheus.scrape "exporters" {
+              targets         = discovery.relabel.exporters.output
+              scrape_interval = "15s"
+
+              forward_to = [
+                prometheus.remote_write.greptime.receiver,
+              ]
+            }
+
+
+            // ----------------------------------------------------
             // Uncloud cluster metrics (via local sidecar)
             // ----------------------------------------------------
 

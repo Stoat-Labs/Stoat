@@ -13,14 +13,23 @@ services:
             interval: 5s
             timeout: 5s
             retries: 5
-        postgres-exporter:
-            image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
-            restart: unless-stopped
-            environment:
-                DATA_SOURCE_URI: ${POSTGRES_INTERNAL_HOST}:5432/${POSTGRES_DB}?sslmode=disable
-                DATA_SOURCE_USER: ${POSTGRES_USER}
-                DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
 
+    # Cluster monitoring scrapes services whose name ends in `-metrics`.
+    postgres-metrics:
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        restart: unless-stopped
+        environment:
+            DATA_SOURCE_URI: ${POSTGRES_INTERNAL_HOST}:5432/${POSTGRES_DB}?sslmode=disable
+            DATA_SOURCE_USER: ${POSTGRES_USER}
+            DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+        healthcheck:
+            test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9187/"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+        depends_on:
+            postgres:
+                condition: service_healthy
 
 volumes:
     postgres_data:

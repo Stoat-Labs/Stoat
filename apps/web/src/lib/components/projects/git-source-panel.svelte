@@ -14,19 +14,26 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { orpc } from "$lib/api/orpc";
+    import {
+        gitProviders,
+        type GitProvider,
+    } from "$lib/params/git-query-params";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
         parseAsString,
+        parseAsStringLiteral,
         useQueryStates,
     } from "nuqs-svelte";
 
     let {
+        provider,
         connectionId,
         source,
         busy,
         onaction,
     }: {
+        provider: GitProvider;
         connectionId: string | null;
         source: {
             repositoryUrl: string;
@@ -58,14 +65,35 @@
             !connectionsQuery.isError,
     );
 
+    const connections = $derived(
+        connectionsQuery.data?.connections ?? [],
+    );
+
+    const providerConnections = $derived(
+        connections.filter(
+            (connection) => connection.provider === provider,
+        ),
+    );
+
+    // A source bound to another provider belongs to that provider's tab.
+    const boundSource = $derived(
+        source &&
+            (!connectionsQuery.isSuccess ||
+                providerConnections.some(
+                    (connection) => connection.id === connectionId,
+                ))
+            ? source
+            : null,
+    );
+
     const name = $derived(
-        connectionsQuery.data?.connections.find(
+        connections.find(
             (connection) => connection.id === connectionId,
         )?.name ?? "Git repository",
     );
 
     const repositoryName = $derived(
-        source?.repositoryUrl
+        boundSource?.repositoryUrl
             .replace(/^[a-z]+:\/\/[^/]+\//, "")
             .replace(/\.git$/, "") ?? "",
     );
@@ -73,6 +101,7 @@
     const fields = useQueryStates(
         {
             changing: parseAsBoolean.withDefault(false),
+            provider: parseAsStringLiteral(gitProviders),
             connectionId: parseAsString.withDefault(""),
             repositoryUrl: parseAsString.withDefault(""),
             branch: parseAsString.withDefault(""),
@@ -81,14 +110,21 @@
         { history: "replace", shallow: true, scroll: false },
     );
 
+    // A draft started on another provider's tab must not open here.
+    const changing = $derived(
+        fields.changing.current &&
+            fields.provider.current === provider,
+    );
+
     let message = $state("");
 
     function changeSource() {
         void fields.set({
-            connectionId: connectionId ?? "",
-            repositoryUrl: source?.repositoryUrl ?? "",
-            branch: source?.branch ?? "",
-            path: source?.path ?? ".",
+            provider,
+            connectionId: boundSource ? (connectionId ?? "") : "",
+            repositoryUrl: boundSource?.repositoryUrl ?? "",
+            branch: boundSource?.branch ?? "",
+            path: boundSource?.path ?? ".",
             changing: true,
         });
     }
@@ -105,17 +141,20 @@
     >
         <div class="min-w-0">
             <h2 class="text-sm font-semibold">Git source</h2>
-            {#if source}
+            {#if boundSource}
                 <p
                     class="mt-1 break-all text-xs text-muted-foreground"
                 >
                     {name} /
-                    <span title={source.repositoryUrl}>
+                    <span title={boundSource.repositoryUrl}>
                         {repositoryName}
                     </span>
-                    / {source.branch} / {source.path}
-                    <span class="font-mono" title={source.revision}>
-                        ({source.revision.slice(0, 12)})
+                    / {boundSource.branch} / {boundSource.path}
+                    <span
+                        class="font-mono"
+                        title={boundSource.revision}
+                    >
+                        ({boundSource.revision.slice(0, 12)})
                     </span>
                 </p>
             {:else}
@@ -131,9 +170,9 @@
                 disabled={busy}
                 onclick={changeSource}
             >
-                {source ? "Change source" : "Connect source"}
+                {boundSource ? "Change source" : "Connect source"}
             </Button>
-            {#if source}
+            {#if boundSource}
                 <Button
                     size="sm"
                     variant="outline"
@@ -153,9 +192,9 @@
             {/if}
         </div>
     </CardHeader>
-    {#if fields.changing.current || source || connectionsQuery.isError}
+    {#if changing || boundSource || connectionsQuery.isError}
         <CardPanel class="space-y-3 p-4">
-            {#if fields.changing.current}
+            {#if changing}
                 <form
                     class="space-y-3"
                     onsubmit={async (event) => {
@@ -174,6 +213,7 @@
                     }}
                 >
                     <GitSourceFields
+                        {provider}
                         bind:connectionId={
                             fields.connectionId.current
                         }
@@ -207,7 +247,7 @@
                     </div>
                 </form>
             {/if}
-            {#if source}
+            {#if boundSource}
                 <p class="text-xs text-muted-foreground">
                     Save draft stays local to Stoat. Pull replaces the
                     local draft. Importing Compose does not deploy

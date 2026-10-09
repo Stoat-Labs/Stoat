@@ -148,6 +148,18 @@ export function requests(value: number | null | undefined) {
         : `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 2 : 0 })} req/s`;
 }
 
+export function count(value: number | null | undefined) {
+    return value == null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+export function perSecond(value: number | null | undefined) {
+    return value == null
+        ? "—"
+        : `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 2 : 0 })}/s`;
+}
+
+export type MetricUnit = "percent" | "bytes" | "rate" | "requests" | "duration" | "count" | "perSecond";
+
 export function duration(seconds: number | null | undefined) {
     if (seconds == null) return "—";
 

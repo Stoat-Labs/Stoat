@@ -1,12 +1,14 @@
 <script lang="ts">
     import GitSourcePanel from "./git-source-panel.svelte";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Card, CardPanel } from "$lib/components/ui/card";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         Tabs,
         TabsList,
@@ -14,6 +16,11 @@
         TabsTab,
     } from "$lib/components/ui/tabs";
     import { client, orpc, queryClient } from "$lib/api/orpc";
+    import {
+        gitProviderLabels,
+        gitProviders,
+    } from "$lib/params/git-query-params";
+    import FileCode2 from "@lucide/svelte/icons/file-code-2";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
 
@@ -33,6 +40,18 @@
 
     const resource = $derived(resourceQuery.data);
 
+    const connectionsQuery = createQuery(() =>
+        orpc.connections.list.queryOptions(),
+    );
+
+    // The active tab follows the provider of the connection the resource is bound to.
+    const savedProvider = $derived(
+        connectionsQuery.data?.connections.find(
+            (connection) =>
+                connection.id === resource?.gitConnectionId,
+        )?.provider ?? null,
+    );
+
     // Settings has no editor, so the saved draft is the only Compose to compare and push.
     const savedSpec = $derived(resource?.draftSpec ?? null);
 
@@ -45,18 +64,18 @@
             : null,
     );
 
+    const sourceTabs = ["raw", ...gitProviders] as const;
+
     const tab = useQueryState(
         "source",
-        parseAsStringLiteral(["raw", "git"]).withOptions({
+        parseAsStringLiteral(sourceTabs).withOptions({
             history: "replace",
             shallow: true,
             scroll: false,
         }),
     );
 
-    const activeTab = $derived(
-        tab.current ?? (savedSource ? "git" : "raw"),
-    );
+    const activeTab = $derived(tab.current ?? savedProvider ?? "raw");
 
     let pending = $state(false);
 
@@ -226,60 +245,103 @@
     </div>
 
     <div class="space-y-4 md:col-span-2">
-        <Tabs
-            value={activeTab}
-            onValueChange={(value) =>
-                void tab.set(value === "git" ? "git" : "raw")}
-        >
-            <TabsList>
-                <TabsTab value="raw">Raw</TabsTab>
-                <TabsTab value="git">Git</TabsTab>
-            </TabsList>
-            <TabsPanel value="raw">
-                <Card>
-                    <CardPanel class="space-y-3 p-5 sm:p-6">
-                        {#if savedSource}
-                            <p class="text-sm text-muted-foreground">
-                                This resource is bound to a Git
-                                repository. Detach it to manage
-                                Compose only in Stoat. The current
-                                draft is kept.
-                            </p>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                loading={pending}
-                                disabled={pending}
-                                onclick={() => gitAction("detach")}
+        {#if savedSource && connectionsQuery.isPending}
+            <Skeleton loading loading-label="Loading source settings">
+                <div class="space-y-4">
+                    <div class="h-9.5 w-64 rounded-lg bg-muted"></div>
+                    <Card>
+                        <CardPanel class="p-5 sm:p-6">
+                            <p class="text-sm">Git source</p>
+                            <p
+                                class="mt-1 text-xs text-muted-foreground"
                             >
-                                Detach Git source
-                            </Button>
-                        {:else}
-                            <p class="text-sm text-muted-foreground">
-                                Compose is edited directly in the
-                                resource editor and saved as a draft
-                                in Stoat.
+                                repository / main / compose.yaml
                             </p>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                href="/projects/{projectId}/{resourceId}"
-                            >
-                                Open editor
-                            </Button>
-                        {/if}
-                    </CardPanel>
-                </Card>
-            </TabsPanel>
-            <TabsPanel value="git">
-                <GitSourcePanel
-                    connectionId={savedSource?.connectionId ?? null}
-                    source={savedSource}
-                    busy={pending}
-                    onaction={gitAction}
-                />
-            </TabsPanel>
-        </Tabs>
+                        </CardPanel>
+                    </Card>
+                </div>
+            </Skeleton>
+        {:else}
+            <Tabs
+                value={activeTab}
+                onValueChange={(value) => {
+                    const next = sourceTabs.find(
+                        (candidate) => candidate === value,
+                    );
+                    if (next) void tab.set(next);
+                }}
+            >
+                <TabsList>
+                    <TabsTab value="raw">
+                        <FileCode2 aria-hidden="true" />
+                        <span class="sr-only sm:not-sr-only">
+                            Raw
+                        </span>
+                    </TabsTab>
+                    {#each gitProviders as provider (provider)}
+                        <TabsTab value={provider}>
+                            <ProviderIcon {provider} />
+                            <span class="sr-only sm:not-sr-only">
+                                {gitProviderLabels[provider]}
+                            </span>
+                        </TabsTab>
+                    {/each}
+                </TabsList>
+                <TabsPanel value="raw">
+                    <Card>
+                        <CardPanel class="space-y-3 p-5 sm:p-6">
+                            {#if savedSource}
+                                <p
+                                    class="text-sm text-muted-foreground"
+                                >
+                                    This resource is bound to a Git
+                                    repository. Detach it to manage
+                                    Compose only in Stoat. The current
+                                    draft is kept.
+                                </p>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    loading={pending}
+                                    disabled={pending}
+                                    onclick={() =>
+                                        gitAction("detach")}
+                                >
+                                    Detach Git source
+                                </Button>
+                            {:else}
+                                <p
+                                    class="text-sm text-muted-foreground"
+                                >
+                                    Compose is edited directly in the
+                                    resource editor and saved as a
+                                    draft in Stoat.
+                                </p>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    href="/projects/{projectId}/{resourceId}"
+                                >
+                                    Open editor
+                                </Button>
+                            {/if}
+                        </CardPanel>
+                    </Card>
+                </TabsPanel>
+                {#each gitProviders as provider (provider)}
+                    <TabsPanel value={provider}>
+                        <GitSourcePanel
+                            {provider}
+                            connectionId={savedSource?.connectionId ??
+                                null}
+                            source={savedSource}
+                            busy={pending}
+                            onaction={gitAction}
+                        />
+                    </TabsPanel>
+                {/each}
+            </Tabs>
+        {/if}
         {#if error}
             <Alert variant="error">
                 <AlertDescription>{error}</AlertDescription>

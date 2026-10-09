@@ -16,15 +16,21 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { orpc } from "$lib/api/orpc";
+    import {
+        gitProviderLabels,
+        type GitProvider,
+    } from "$lib/params/git-query-params";
     import { createQuery } from "@tanstack/svelte-query";
 
     let {
+        provider,
         connectionId = $bindable(""),
         repositoryUrl = $bindable(""),
         branch = $bindable(""),
         path = $bindable("."),
         disabled = false,
     }: {
+        provider?: GitProvider;
         connectionId?: string;
         repositoryUrl?: string;
         branch?: string;
@@ -38,8 +44,12 @@
         orpc.connections.list.queryOptions(),
     );
 
+    // Without a provider every connection is selectable.
     const connections = $derived(
-        connectionsQuery.data?.connections ?? [],
+        (connectionsQuery.data?.connections ?? []).filter(
+            (connection) =>
+                !provider || connection.provider === provider,
+        ),
     );
 
     const selectedConnection = $derived(
@@ -255,12 +265,11 @@
 </p>
 {#if !connectionsQuery.isPending && !connectionsQuery.isError && connections.length === 0}
     <p class="text-sm text-muted-foreground">
-        No Git connections available. Ask an administrator to <a
-            class="underline"
-            href="/git"
-        >
-            add a connection
-        </a>
+        {provider
+            ? `No ${gitProviderLabels[provider]} connections available.`
+            : "No Git connections available."}
+        Ask an administrator to
+        <a class="underline" href="/git">add a connection</a>
         .
     </p>
 {/if}

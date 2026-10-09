@@ -30,9 +30,11 @@
         assembleCluster,
         bandwidth,
         bytes,
+        count,
         current,
         duration,
         percent,
+        perSecond,
         rankCpu,
         rankMemory,
         rankTraffic,
@@ -41,10 +43,13 @@
         serviceSeries,
         sumPoints,
         type ChartSeries,
+        type MetricUnit,
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
+    import { databaseEngine } from "@stoat/api/databases";
     import {
         httpMetricNames,
+        postgresMetricNames,
         type MetricSeries,
     } from "@stoat/api/observability";
     import {
@@ -85,6 +90,18 @@
     );
 
     const clusterId = $derived(project.data?.clusterId ?? "");
+
+    const resource = createQuery(() =>
+        orpc.resources.getResource.queryOptions({
+            input: { projectId, resourceId },
+            enabled: browser && projectId.length > 0 && resourceId.length > 0,
+        }),
+    );
+
+    const isPostgres = $derived(
+        !!resource.data &&
+            databaseEngine(resource.data) === "postgresql",
+    );
 
     const options = $derived({
         enabled: browser && clusterId.length > 0,
@@ -141,6 +158,25 @@
                 },
                 ...options,
                 enabled: options.enabled && serviceIds.length > 0,
+            }),
+        ),
+    }));
+
+    // The template's exporter service is one of this resource's services, so the same scope applies.
+    const postgres = createQueries(() => ({
+        queries: postgresMetricNames.map((name) =>
+            orpc.cluster.getObservabilityMetric.queryOptions({
+                input: {
+                    clusterId,
+                    name,
+                    range: range.value,
+                    serviceIds,
+                },
+                ...options,
+                enabled:
+                    options.enabled &&
+                    isPostgres &&
+                    serviceIds.length > 0,
             }),
         ),
     }));
@@ -311,6 +347,55 @@
         ];
     });
 
+    // One line per metric: a moved exporter leaves per-machine series that never overlap in time.
+    const postgresPoints = $derived(
+        Object.fromEntries(
+            postgresMetricNames.map((name, index) => [
+                name,
+                sumPoints(
+                    (postgres[index]?.data?.series ?? []).map(
+                        (item) => item.points,
+                    ),
+                ),
+            ]),
+        ),
+    );
+
+    // `not-collecting` means no exporter was scraped yet; an empty result means not this one.
+    const postgresCollecting = $derived(
+        postgres[0]?.data?.status === "ok" &&
+            postgresPoints.postgresConnections.length > 0,
+    );
+
+    const postgresLatest = (name: (typeof postgresMetricNames)[number]) =>
+        current(postgresPoints[name], cluster.end, cluster.step);
+
+    const postgresCharts = $derived(
+        (
+            [
+                ["Connections", "count", "postgresConnections"],
+                ["Transactions", "perSecond", "postgresTransactions"],
+                ["Cache hit ratio", "percent", "postgresCacheHit"],
+                ["Database size", "bytes", "postgresSize"],
+            ] as const
+        ).map(([title, unit, name]) => ({
+            title,
+            unit,
+            total: { count, perSecond, percent, bytes }[unit](
+                postgresLatest(name),
+            ),
+            series: [
+                {
+                    key: name,
+                    machineKey: name,
+                    label: "PostgreSQL",
+                    color: "var(--chart-1)",
+                    points: postgresPoints[name] ?? [],
+                },
+            ],
+        })),
+    );
+
     // Services without traffic report gaps, so HTTP totals skip them instead of blanking the sum.
     const latest = (series: ChartSeries[]) =>
         series.flatMap((item) => {
@@ -394,6 +479,8 @@
 
         const cpu = sum(rows.map((row) => row.cpu));
         const memory = sum(rows.map((row) => row.memory));
+        const connections = postgresLatest("postgresConnections");
+        const maxConnections = postgresLatest("postgresMaxConnections");
 
         return [
             {
@@ -454,6 +541,23 @@
                       },
                   ]
                 : []),
+            ...(postgresCollecting
+                ? [
+                      {
+                          label: "Connections",
+                          value: count(connections),
+                          detail: maxConnections
+                              ? `of ${count(maxConnections)} max`
+                              : "Max connections unknown",
+                          tone:
+                              connections !== null &&
+                              maxConnections &&
+                              connections / maxConnections >= 0.8
+                                  ? "warning"
+                                  : "",
+                      },
+                  ]
+                : []),
             {
                 label: "Last deploy",
                 value: lastDeploy
@@ -504,7 +608,9 @@
 
     const fetching = $derived(
         services.isFetching ||
-            [...metrics, ...http].some((query) => query.isFetching),
+            [...metrics, ...http, ...postgres].some(
+                (query) => query.isFetching,
+            ),
     );
 
     function sum(values: (number | null)[]) {
@@ -564,7 +670,7 @@
             disabled={!clusterId}
             onrefresh={() => {
                 void services.refetch();
-                for (const query of [...metrics, ...http])
+                for (const query of [...metrics, ...http, ...postgres])
                     void query.refetch();
             }}
         />
@@ -573,7 +679,7 @@
 
 {#snippet chartFrame(chart: {
     title: string;
-    unit: "percent" | "bytes" | "rate" | "requests" | "duration";
+    unit: MetricUnit;
     total?: string;
     series: ChartSeries[];
 })}
@@ -723,7 +829,21 @@
             {#if httpStatus === "ok"}{#each httpCharts as chart (chart.title)}{@render chartFrame(
                         chart,
                     )}{/each}{/if}
+            {#if postgresCollecting}{#each postgresCharts as chart (chart.title)}{@render chartFrame(
+                        chart,
+                    )}{/each}{/if}
         </div>
+        {#if isPostgres && postgres[0]?.isSuccess && !postgresCollecting}
+            <Alert variant="info">
+                <AlertDescription>
+                    No database metrics yet. Databases created before
+                    metrics were added need the template's
+                    <code>postgres-metrics</code> service in their
+                    Compose file, and clusters initialized before then
+                    need monitoring re-initialized.
+                </AlertDescription>
+            </Alert>
+        {/if}
         {#if httpStatus === "not-collecting"}
             <Alert variant="info">
                 <AlertDescription>

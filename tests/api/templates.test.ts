@@ -60,6 +60,32 @@ describe("templates", () => {
         expect(engines.toSorted()).toEqual([...databaseEngines].toSorted());
     });
 
+    it("points the postgresql metrics exporter at the prefixed database service", () => {
+        const version = templates.find(({ appId }) => appId === "postgresql")?.versions["18"];
+        const env = expandSecrets(version!.env, "abc.uncld.dev");
+
+        const out = YAML.parse(
+            formatComposeFile(
+                interpolateCompose(version!.compose, env, "a1b2c3d4-e5f6a7b8", "abc.uncld.dev"),
+                "a1b2c3d4-e5f6a7b8",
+            ).yaml,
+        );
+
+        // Cluster monitoring discovers exporters by the `-metrics` service name suffix.
+        expect(Object.keys(out.services)).toEqual([
+            "a1b2c3d4-e5f6a7b8-postgres",
+            "a1b2c3d4-e5f6a7b8-postgres-metrics",
+        ]);
+        const database = out.services["a1b2c3d4-e5f6a7b8-postgres"].environment;
+
+        expect(out.services["a1b2c3d4-e5f6a7b8-postgres-metrics"].environment).toEqual({
+            DATA_SOURCE_URI: "a1b2c3d4-e5f6a7b8-postgres.internal:5432/app?sslmode=disable",
+            // Same credentials the database is created with, after the same hostname rewrite.
+            DATA_SOURCE_USER: database.POSTGRES_USER,
+            DATA_SOURCE_PASS: database.POSTGRES_PASSWORD,
+        });
+    });
+
     it("renders the jellyfin template with prefixed volumes and the cluster domain", () => {
         const version = templates.find(({ appId }) => appId === "jellyfin")?.versions.latest;
 
