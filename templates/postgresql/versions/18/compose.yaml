@@ -13,6 +13,14 @@ services:
             interval: 5s
             timeout: 5s
             retries: 5
+        postgres-exporter:
+            image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+            restart: unless-stopped
+            environment:
+                DATA_SOURCE_URI: ${POSTGRES_INTERNAL_HOST}:5432/${POSTGRES_DB}?sslmode=disable
+                DATA_SOURCE_USER: ${POSTGRES_USER}
+                DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+
 
 volumes:
     postgres_data:

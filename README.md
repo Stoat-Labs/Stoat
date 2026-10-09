@@ -19,18 +19,20 @@ Stoat sits between the simplicity of Docker and the complexity of Kubernetes: de
 
 - **Clusters** - Connect Uncloud clusters and manage every machine from one place.
 - **Projects & Resources** - Group your services into projects and deploy them from Compose files.
-- **Templates** - One-click deploys for common apps (PostgreSQL, Jellyfin, Seafile, ...). See [TEMPLATES.md](TEMPLATES.md).
+- **Templates** - One-click deploys for common apps and databases.
 - **Git** - Connect Forgejo, GitHub (incl. Enterprise) or any Git server via token, SSH or OAuth, then deploy and push Compose files straight from your repos.
 - **Variables** - Per-resource environment variables.
 - **Deployments** - Deployment history with live build/deploy logs.
 - **Logs** - Live log tailing and historical search per resource.
 - **Observability** - Cluster metrics and logs, powered by a monitoring stack (GreptimeDB + Alloy) Stoat deploys for you.
-- **Organizations** - Multi-tenant with team roles.
+- **S3 Buckets** - Rustfs and Cloudflare R2 integration to create buckets and isolated access keys.
+- **Multi Cluster** - You can use multiple uncloud clusters, each project gets its own clusters. (Multiple projects can still use the same cluster)
+- **Organizations** - Multi-tenant.
 - **Self-Hostable** - Your servers, your data.
 
 ## How it works
 
-Stoat does not talk to your servers directly. A small Go **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP (protected by a bearer token). The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
+Stoat does not talk to your servers directly. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
 
 ## Getting Started
 
