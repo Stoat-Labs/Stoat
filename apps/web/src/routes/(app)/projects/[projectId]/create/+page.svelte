@@ -112,16 +112,21 @@
             icon: GitBranch,
             tags: [],
         },
-        {
-            href: `/projects/${projectId}/create/bucket`,
-            name: "S3 bucket",
-            meta: "Storage",
-            description:
-                "Provision a bucket and its access keys from an S3 connection.",
-            logo: null,
-            icon: HardDrive,
-            tags: [],
-        },
+        // Provisioning buckets is for owners and admins.
+        ...(page.data.isOrganizationAdmin
+            ? [
+                  {
+                      href: `/projects/${projectId}/create/bucket`,
+                      name: "S3 bucket",
+                      meta: "Storage",
+                      description:
+                          "Provision a bucket and its access keys from an S3 connection.",
+                      logo: null,
+                      icon: HardDrive,
+                      tags: [],
+                  },
+              ]
+            : []),
     ]);
 
     function templateEntry(template: Template): Entry {

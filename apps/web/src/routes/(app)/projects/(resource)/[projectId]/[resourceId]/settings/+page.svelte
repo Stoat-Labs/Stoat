@@ -2,6 +2,8 @@
     import { page } from "$app/state";
     import BucketDangerZone from "$lib/components/s3/bucket-danger-zone.svelte";
     import BucketStorageLimit from "$lib/components/s3/bucket-storage-limit.svelte";
+    import ResourceDangerZone from "$lib/components/projects/resource-danger-zone.svelte";
+    import ResourceSourceSettings from "$lib/components/projects/resource-source-settings.svelte";
     import {
         Alert,
         AlertAction,
@@ -82,6 +84,14 @@
         orpc.resources.getResource.queryOptions({
             input: { projectId, resourceId },
             enabled: Boolean(projectId && resourceId),
+        }),
+    );
+
+    // Internal (system-managed) resources cannot be deleted.
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({
+            input: { projectId },
+            enabled: Boolean(projectId),
         }),
     );
 
@@ -225,10 +235,12 @@
 
         try {
             const max = 256;
+
             const scale = Math.min(
                 1,
                 max / Math.max(bitmap.width, bitmap.height),
             );
+
             const w = Math.max(1, Math.round(bitmap.width * scale));
             const h = Math.max(1, Math.round(bitmap.height * scale));
             const canvas = document.createElement("canvas");
@@ -877,6 +889,14 @@
                     </Card>
                 </div>
             </section>
+            {#if projectQuery.data && !projectQuery.data.isInternal}
+                <ResourceSourceSettings {projectId} {resourceId} />
+                <ResourceDangerZone
+                    {projectId}
+                    {resourceId}
+                    name={resourceQuery.data.name}
+                />
+            {/if}
         {/if}
     {/if}
 </div>

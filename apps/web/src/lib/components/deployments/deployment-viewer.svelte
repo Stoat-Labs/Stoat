@@ -227,11 +227,13 @@
             )
             .then((snapshot) => {
                 if (disposed) return;
+
                 const {
                     logs: snapshotLogs,
                     canCancel: snapshotCanCancel,
                     ...snapshotDeployment
                 } = snapshot;
+
                 deployment = snapshotDeployment;
                 cancelAllowed = snapshotCanCancel;
                 rows = snapshotLogs.map(toRow);
@@ -331,6 +333,7 @@
 
     function onStepsScroll() {
         if (!stepsViewport) return;
+
         const atBottom =
             stepsViewport.scrollHeight -
                 stepsViewport.scrollTop -
@@ -395,6 +398,7 @@
         const url = URL.createObjectURL(
             new Blob([plainText() + "\n"], { type: "text/plain" }),
         );
+
         const link = document.createElement("a");
         link.href = url;
         link.download = `deployment-${deploymentId}.log`;

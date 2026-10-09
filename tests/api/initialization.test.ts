@@ -9,6 +9,7 @@ import {
     projects,
     resources,
 } from "@stoat/db/schema/index";
+import * as uncloud from "@stoat/uncloud";
 import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -18,32 +19,31 @@ import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { projectsRouter } from "../../packages/api/src/routers/projects";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 
-vi.mock("@stoat/uncloud", async (importOriginal) => {
-    const original = await importOriginal<typeof import("@stoat/uncloud")>();
+// A healthy one-machine cluster; the sidecar's HTTP client is the only fake.
+const sidecar = {
+    GET: async (path: string) => {
+        const response = new Response(null, { status: 200 });
 
-    return {
-        ...original,
-        ucClient: () => ({
-            GET: async (path: string) => {
-                const response = new Response(null, { status: 200 });
+        if (path === "/api/v1/machines") {
+            return {
+                response,
+                data: { items: [{ id: "machine-1", name: "First", state: "up" }] },
+            };
+        }
 
-                if (path === "/api/v1/machines") {
-                    return {
-                        response,
-                        data: { items: [{ id: "machine-1", name: "First", state: "up" }] },
-                    };
-                }
+        if (path === "/api/v1/volumes") return { response, data: { items: [] } };
 
-                if (path === "/api/v1/volumes") return { response, data: { items: [] } };
+        return {
+            response,
+            data: { status: "healthy", machines: [], links: [], issues: [] },
+        };
+    },
+};
 
-                return {
-                    response,
-                    data: { status: "healthy", machines: [], links: [], issues: [] },
-                };
-            },
-        }),
-    };
-});
+// SAFETY: initialization only issues the GET requests answered above.
+vi.spyOn(uncloud, "ucClient").mockReturnValue(
+    sidecar as typeof sidecar & ReturnType<typeof uncloud.ucClient>,
+);
 
 describe("cluster initialization API (PostgreSQL)", () => {
     const databaseName = `stoat_initialization_test_${randomUUID().replaceAll("-", "")}`;

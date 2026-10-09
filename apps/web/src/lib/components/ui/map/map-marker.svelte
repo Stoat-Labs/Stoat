@@ -104,6 +104,7 @@
         const initialOffset = untrack(() => offset);
         const initialRotation = untrack(() => rotation);
         const initialPitchAlignment = untrack(() => pitchAlignment);
+
         const initialRotationAlignment = untrack(
             () => rotationAlignment,
         );

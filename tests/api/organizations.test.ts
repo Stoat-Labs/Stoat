@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { randomUUID } from "node:crypto";
 import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,7 +54,11 @@ describe("organization authentication (PostgreSQL)", () => {
         });
 
         expect(response.status).toBe(200);
-        const body = await response.json();
+
+        const body = v.parse(
+            v.object({ user: v.object({ id: v.string() }) }),
+            await response.json(),
+        );
 
         const cookie = response.headers
             .getSetCookie()
@@ -62,11 +67,11 @@ describe("organization authentication (PostgreSQL)", () => {
 
         const organizations = await listUserOrganizations(db, body.user.id);
         expect(organizations).toHaveLength(1);
-        expect(organizations[0].role).toBe("owner");
+        expect(organizations[0]!.role).toBe("owner");
         const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
-        expect(session?.session.activeOrganizationId).toBe(organizations[0].id);
+        expect(session?.session.activeOrganizationId).toBe(organizations[0]!.id);
 
-        return { userId: body.user.id, organizationId: organizations[0].id, cookie };
+        return { userId: body.user.id, organizationId: organizations[0]!.id, cookie };
     }
 
     beforeAll(async () => {
@@ -211,8 +216,8 @@ describe("organization authentication (PostgreSQL)", () => {
         expect(sameName).toHaveLength(1);
         expect(legacy[0]).toMatchObject({ name: "Same Name's organization", role: "owner" });
         expect(sameName[0]).toMatchObject({ name: "Same Name's organization", role: "owner" });
-        expect(legacy[0].id).not.toBe(sameName[0].id);
-        expect(legacy[0].slug).not.toBe(sameName[0].slug);
+        expect(legacy[0]!.id).not.toBe(sameName[0]!.id);
+        expect(legacy[0]!.slug).not.toBe(sameName[0]!.slug);
     });
 
     it.each(["legacy-empty", "legacy-blank"])(
@@ -250,10 +255,10 @@ describe("organization authentication (PostgreSQL)", () => {
                 [`${userId}-null`],
             );
 
-            expect(result.rows).toEqual([{ active_organization_id: organization.id }]);
+            expect(result.rows).toEqual([{ active_organization_id: organization!.id }]);
         }
 
-        expect((await listUserOrganizations(db, "existing"))[0].id).toBe("existing-old");
+        expect((await listUserOrganizations(db, "existing"))[0]!.id).toBe("existing-old");
     });
 
     it("preserves a nonnull session organization instead of replacing it with the earliest", async () => {
@@ -347,7 +352,7 @@ describe("organization authentication (PostgreSQL)", () => {
         });
 
         expect(result.items).toHaveLength(1);
-        expect(result.items[0].organizationId).toBe(first.organizationId);
+        expect(result.items[0]!.organizationId).toBe(first.organizationId);
         expect(result.items[0]).not.toHaveProperty("sidecarToken");
         expect(result.total).toBe(1);
         await expect(
@@ -379,25 +384,37 @@ describe("organization authentication (PostgreSQL)", () => {
         );
 
         expect(response.status).toBe(200);
-        const organization = await response.json();
+        const organization = v.parse(v.object({ id: v.string() }), await response.json());
 
-        const session = await auth.api.getSession({
-            headers: new Headers({ cookie: first.cookie }),
-        });
+        // The browser keeps the cookies reissued by create, including the session cache.
+        const cookie = response.headers
+            .getSetCookie()
+            .map((value) => value.split(";")[0])
+            .join("; ");
+
+        const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
 
         expect(session?.session.activeOrganizationId).toBe(organization.id);
 
         const switched = await request(
             "/organization/set-active",
             { organizationId: first.organizationId },
-            first.cookie,
+            cookie,
         );
 
         expect(switched.ok).toBe(true);
-        const logout = await request("/sign-out", {}, first.cookie);
+        const logout = await request("/sign-out", {}, cookie);
         expect(logout.ok).toBe(true);
+        // Sign-out expires the cached session cookie in the browser. A replayed copy stays valid
+        // until the cookie cache maxAge, so the live session is what must be gone.
+        expect(logout.headers.getSetCookie()).toContainEqual(
+            expect.stringMatching(/session_data=;.*Max-Age=0/u),
+        );
         expect(
-            await auth.api.getSession({ headers: new Headers({ cookie: first.cookie }) }),
+            await auth.api.getSession({
+                headers: new Headers({ cookie }),
+                query: { disableCookieCache: true },
+            }),
         ).toBeNull();
     });
 

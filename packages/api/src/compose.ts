@@ -87,6 +87,7 @@ export function publishedPortNumbers(spec: string): number[] {
         .at(-2);
 
     if (!published) return [];
+
     // Ingress hostnames (without a load-balancer port) do not reserve a numeric host port.
     if (/\/https?$/u.test(spec) && !/^\d/u.test(published)) return [];
     const match = /^(\d+)(?:-(\d+))?$/u.exec(published);
@@ -106,10 +107,12 @@ export function enablePostgresPort(compose: string, occupied: Set<number>): stri
     const service = postgresService(compose);
 
     if (!service) throw new Error("The Compose draft has no PostgreSQL service.");
+
     if (service.published) return compose;
     let port = 15432;
 
     while (port <= 65535 && occupied.has(port)) port++;
+
     if (port > 65535) throw new Error("No unused external TCP port is available.");
     const document = YAML.parseDocument(compose);
     const path = ["services", service.name];

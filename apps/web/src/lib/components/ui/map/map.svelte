@@ -225,6 +225,7 @@
 
         let observer: MutationObserver | undefined;
         let mediaQuery: MediaQueryList | undefined;
+
         let handleSystemChange:
             | ((e: MediaQueryListEvent) => void)
             | undefined;

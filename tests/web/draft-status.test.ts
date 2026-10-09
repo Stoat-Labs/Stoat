@@ -1,6 +1,10 @@
 import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/header-actions";
 import { orpc } from "../../apps/web/src/lib/api/orpc";
-import { QueryClient, setQueryClientContext } from "@tanstack/svelte-query";
+// Resolve the web package's dependency because these tests live outside that package.
+import {
+    QueryClient,
+    setQueryClientContext,
+} from "../../apps/web/node_modules/@tanstack/svelte-query";
 import { setContext } from "svelte";
 import { render } from "svelte/server";
 import { expect, it } from "vite-plus/test";
@@ -18,17 +22,18 @@ it("restores the saved-draft message from loaded data without a successful save 
         [null, null, false],
     ] as const) {
         const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-        cache.setQueryData(orpc.projects.listProjects.queryKey(), [
+        cache.setQueryData(
+            orpc.projects.getProject.queryKey({ input: { projectId: input.projectId } }),
             {
                 id: input.projectId,
                 name: "Project",
+                isInternal: false,
                 description: null,
                 clusterId: "cluster",
-                resourceCount: 1,
                 createdAt: timestamp,
                 updatedAt: timestamp,
             },
-        ]);
+        );
         cache.setQueryData(orpc.resources.getResource.queryKey({ input }), {
             id: input.resourceId,
             projectId: input.projectId,

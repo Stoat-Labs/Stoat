@@ -166,6 +166,7 @@
     let serverUrl = $state(
         untrack(() => {
             if (initial) return initial.serverUrl;
+
             const providers = oauthProviders.filter(
                 (option) =>
                     option.provider === fields.provider.current,
@@ -373,6 +374,7 @@
             )
                 return;
             const [provider, , , oauthProviderId] = current;
+
             const [previousProvider, , , previousOAuthProviderId] =
                 previous;
 
@@ -530,6 +532,7 @@
                     clientId: clientId.trim(),
                     clientSecret,
                 });
+
             void queryClient.invalidateQueries({
                 queryKey: orpc.connections.list.queryKey(),
             });
@@ -629,9 +632,11 @@
                             parsed.username)
                     )
                         throw new Error();
+
                     const stored = initial?.repositories.find(
                         (repo) => repo.url === raw,
                     );
+
                     repositories.push(
                         stored ?? {
                             url: raw,

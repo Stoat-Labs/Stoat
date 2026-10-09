@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/psviderski/uncloud/pkg/api"
 )
 
@@ -32,53 +32,51 @@ func (w *machineExecStreamWriter) Write(data []byte) (int, error) {
 	}
 }
 
-func (s *Server) execMachine(c *fiber.Ctx) error {
-	request, err := decodeMachineExecRequest(c)
-	if err != nil {
-		return writeError(c, err)
+func (s *Server) execMachine(ctx context.Context, input *machineExecInput) (*bodyOutput[MachineExecResponse], error) {
+	if err := validateCommand(input.Body.Command); err != nil {
+		return nil, err
 	}
 
-	machine, err := s.resolveMachineExecTarget(c)
+	machine, err := s.resolveMachineExecTarget(ctx, input.ID)
 	if err != nil {
-		return writeError(c, err)
+		return nil, err
 	}
 
 	stdout := &cappedBuffer{limit: maxExecOutputBytes}
 	stderr := &cappedBuffer{limit: maxExecOutputBytes}
-	execCtx, cancel := s.execContext(c)
+	execCtx, cancel := s.execContext(ctx)
 	defer cancel()
 
 	exitCode, err := s.backend.ExecMachine(
-		execCtx, machine.ID, machineExecOptions(request, stdout, stderr),
+		execCtx, machine.ID, machineExecOptions(input.Body, stdout, stderr),
 	)
 	if err != nil {
-		return writeError(c, err)
+		return nil, err
 	}
 
-	return c.JSON(MachineExecResponse{
+	return reply(MachineExecResponse{
 		MachineID:   machine.ID,
 		MachineName: machine.Name,
 		ExitCode:    exitCode,
 		Stdout:      stdout.String(),
 		Stderr:      stderr.String(),
 		Truncated:   stdout.Truncated() || stderr.Truncated(),
-	})
+	}), nil
 }
 
-func (s *Server) streamMachineExec(c *fiber.Ctx) error {
-	request, err := decodeMachineExecRequest(c)
-	if err != nil {
-		return writeError(c, err)
+func (s *Server) streamMachineExec(ctx context.Context, input *machineExecInput) (*huma.StreamResponse, error) {
+	if err := validateCommand(input.Body.Command); err != nil {
+		return nil, err
 	}
 
-	machine, err := s.resolveMachineExecTarget(c)
+	machine, err := s.resolveMachineExecTarget(ctx, input.ID)
 	if err != nil {
-		return writeError(c, err)
+		return nil, err
 	}
 
 	// The stream outlives the request handler, so it gets its own lifetime,
 	// bounded by the exec timeout rather than the per-request deadline.
-	execCtx, cancel := s.execContext(c)
+	execCtx, cancel := s.execContext(ctx)
 	events := make(chan MachineExecEvent, machineExecEventBufferSize)
 	go func() {
 		defer close(events)
@@ -90,7 +88,7 @@ func (s *Server) streamMachineExec(c *fiber.Ctx) error {
 			ctx: execCtx, events: events, eventType: "stderr",
 		}
 		exitCode, execErr := s.backend.ExecMachine(
-			execCtx, machine.ID, machineExecOptions(request, stdout, stderr),
+			execCtx, machine.ID, machineExecOptions(input.Body, stdout, stderr),
 		)
 		if execErr != nil {
 			emitMachineExecEvent(execCtx, events, MachineExecEvent{
@@ -104,32 +102,16 @@ func (s *Server) streamMachineExec(c *fiber.Ctx) error {
 		})
 	}()
 
-	return streamSSE(c, cancel, events, encodeMachineExecEvent)
+	return eventStream(cancel, events, encodeMachineExecEvent), nil
 }
 
-func decodeMachineExecRequest(c *fiber.Ctx) (MachineExecRequest, error) {
-	var request MachineExecRequest
-	if err := decodeJSON(c, &request); err != nil {
-		return request, err
-	}
-	if len(request.Command) == 0 {
-		return request, fiber.NewError(fiber.StatusBadRequest, "command must not be empty")
-	}
-	for _, argument := range request.Command {
-		if strings.ContainsRune(argument, '\x00') {
-			return request, fiber.NewError(fiber.StatusBadRequest, "command arguments must not contain NUL bytes")
-		}
-	}
-	return request, nil
-}
-
-func (s *Server) resolveMachineExecTarget(c *fiber.Ctx) (api.MachineMember, error) {
-	machineSelector := strings.TrimSpace(c.Params("id"))
+func (s *Server) resolveMachineExecTarget(ctx context.Context, id string) (api.MachineMember, error) {
+	machineSelector := strings.TrimSpace(id)
 	if machineSelector == "" {
-		return api.MachineMember{}, fiber.NewError(fiber.StatusBadRequest, "machine identifier must not be empty")
+		return api.MachineMember{}, huma.Error400BadRequest("machine identifier must not be empty")
 	}
 
-	machine, err := s.backend.InspectMachine(requestContext(c), machineSelector)
+	machine, err := s.backend.InspectMachine(ctx, machineSelector)
 	if err != nil {
 		return api.MachineMember{}, err
 	}

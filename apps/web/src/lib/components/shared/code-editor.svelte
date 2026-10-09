@@ -25,17 +25,18 @@
         label = "Docker Compose YAML",
         hideEnvValues = false,
         readOnly = false,
+        view = $bindable(),
     }: {
         value?: string;
         language?: "yaml" | "env";
         label?: string;
         hideEnvValues?: boolean;
         readOnly?: boolean;
+        // Exposed so callers can attach editor extensions (see env references).
+        view?: EditorView;
     } = $props();
 
     let container: HTMLDivElement;
-
-    let editor = $state<EditorView>();
 
     const editability = new Compartment();
 
@@ -105,7 +106,7 @@
     });
 
     onMount(() => {
-        const view = new EditorView({
+        const editor = new EditorView({
             parent: container,
             doc: value,
             extensions: [
@@ -191,13 +192,13 @@
             ],
         });
 
-        editor = view;
+        view = editor;
 
-        return () => view.destroy();
+        return () => editor.destroy();
     });
 
     $effect(() => {
-        editor?.dispatch({
+        view?.dispatch({
             effects: editability.reconfigure([
                 EditorState.readOnly.of(readOnly),
                 EditorView.editable.of(!readOnly),
@@ -210,11 +211,11 @@
     });
 
     $effect(() => {
-        if (editor && value !== editor.state.doc.toString()) {
-            editor.dispatch({
+        if (view && value !== view.state.doc.toString()) {
+            view.dispatch({
                 changes: {
                     from: 0,
-                    to: editor.state.doc.length,
+                    to: view.state.doc.length,
                     insert: value,
                 },
             });

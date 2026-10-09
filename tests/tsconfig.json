@@ -1,0 +1,8 @@
+{
+    "extends": "@stoat/config/tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    // tests/web is type-checked by svelte-check in apps/web.
+    "include": ["*.ts", "api/**/*.ts", "cache/**/*.ts", "uncloud/**/*.ts", "workflows/**/*.ts", "e2e/**/*.ts"]
+}

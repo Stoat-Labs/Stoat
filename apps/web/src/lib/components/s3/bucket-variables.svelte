@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import {
         Alert,
@@ -96,7 +97,7 @@
                     <EyeOff class="size-4" aria-hidden="true" />
                     Hide values
                 </Button>
-            {:else}
+            {:else if page.data.isOrganizationAdmin}
                 <Button
                     variant="outline"
                     size="sm"

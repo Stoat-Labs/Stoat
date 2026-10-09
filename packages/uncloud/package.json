@@ -20,7 +20,7 @@
         "test": "pnpm --dir ../.. exec vp test run tests/uncloud"
     },
     "dependencies": {
-        "ofetch": "catalog:",
+        "openapi-fetch": "^0.17.0",
         "zod": "catalog:"
     },
     "devDependencies": {

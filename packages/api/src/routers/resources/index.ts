@@ -17,6 +17,14 @@ import {
     GREPTIME_USERNAME,
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
+import { ComposeVariableError, composeVariables } from "@stoat/workflows/compose";
+import {
+    checkVariableReferences,
+    referencedResourceIds,
+    referenceTargets,
+    referenceVariables,
+    resolveReferences,
+} from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -59,6 +67,7 @@ import {
 import { gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
+import { removeResources } from "../../resource-removal";
 
 export const resourcesRouter = {
     ...resourceGitRouter,
@@ -114,6 +123,22 @@ export const resourcesRouter = {
                     });
                 }
 
+                // Fail fast on broken references; the worker resolves them again at deploy time.
+                const env = resourceEnv(resource);
+
+                try {
+                    await checkVariableReferences(
+                        db,
+                        clusterId,
+                        resource.id,
+                        resource.draftSpec,
+                        env,
+                    );
+                } catch (error) {
+                    if (!(error instanceof ComposeVariableError)) throw error;
+                    throw new ORPCError("BAD_REQUEST", { message: error.message });
+                }
+
                 const [active] = await tx
                     .select({ id: deployments.id })
                     .from(deployments)
@@ -143,7 +168,7 @@ export const resourcesRouter = {
                 await tx.insert(resourceDeploymentInputs).values({
                     deploymentId,
                     prefix,
-                    env: resourceEnv(resource),
+                    env,
                     recreate: input.recreate,
                 });
                 await tx.insert(deploymentLogs).values({
@@ -160,6 +185,38 @@ export const resourcesRouter = {
 
             return { id, status: "queued" as const };
         }),
+    // Removes the resource's services from the cluster (volumes stay), then the resource.
+    deleteResource: organizationAdminProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) =>
+            db.transaction(async (tx) => {
+                const [row] = await tx
+                    .select({ resource: resources, clusterId: projects.clusterId })
+                    .from(resources)
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                    .where(
+                        and(
+                            eq(resources.id, input.resourceId),
+                            eq(projects.id, input.projectId),
+                            sql`${projects.isInternal} is not true`,
+                            eq(clusters.organizationId, organizationId),
+                        ),
+                    )
+                    .for("update", { of: resources });
+
+                if (!row) throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+                await removeResources(tx, row.clusterId, [row.resource]);
+
+                return { id: row.resource.id };
+            }),
+        ),
     updateComposeSpec: organizationProcedure
         .input(
             v.object({
@@ -386,6 +443,54 @@ export const resourcesRouter = {
                 .orderBy(asc(resources.createdAt));
         }),
 
+    // Keys only: values never leave the server for autocomplete.
+    listVariableReferences: organizationProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [project] = await db
+                .select({ clusterId: projects.clusterId })
+                .from(projects)
+                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                .where(
+                    and(
+                        eq(projects.id, input.projectId),
+                        sql`${projects.isInternal} is not true`,
+                        eq(clusters.organizationId, organizationId),
+                    ),
+                )
+                .limit(1);
+
+            if (!project) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+
+            const targets = await referenceTargets(db, project.clusterId);
+
+            return targets.flatMap((target) => {
+                if (target.id === input.resourceId) return [];
+                let keys: string[];
+
+                try {
+                    keys = Object.keys(referenceVariables(target));
+                } catch {
+                    keys = Object.keys(parseEnv(resourceEnv(target)));
+                }
+
+                return [
+                    {
+                        id: target.id,
+                        name: target.name,
+                        projectId: target.projectId,
+                        projectName: target.projectName,
+                        keys: keys.toSorted(),
+                    },
+                ];
+            });
+        }),
+
     createResource: organizationProcedure
         .input(
             v.object({
@@ -547,11 +652,13 @@ export const resourcesRouter = {
                         signal: AbortSignal.timeout(15_000),
                     }),
                 );
+
                 const saved = await tx
                     .select({ draftSpec: resources.draftSpec, spec: resources.spec })
                     .from(resources)
                     .innerJoin(projects, eq(resources.projectId, projects.id))
                     .where(eq(projects.clusterId, input.clusterId));
+
                 const queued = await tx
                     .select({ spec: deployments.spec })
                     .from(deployments)
@@ -561,6 +668,7 @@ export const resourcesRouter = {
                             inArray(deployments.status, ["queued", "running"]),
                         ),
                     );
+
                 const occupied = new Set<number>();
                 let draftSpec: string;
 
@@ -571,10 +679,12 @@ export const resourcesRouter = {
                                 for (const port of composePublishedPorts(spec)) occupied.add(port);
                         }
                     }
+
                     for (const row of queued) {
                         if (row.spec?.trim())
                             for (const port of composePublishedPorts(row.spec)) occupied.add(port);
                     }
+
                     for (const service of items) {
                         for (const entry of [...service.containers, ...service.hookContainers]) {
                             const inspection = v.parse(
@@ -589,6 +699,7 @@ export const resourcesRouter = {
                                 }),
                                 entry.container,
                             );
+
                             const ports =
                                 inspection.Config?.Labels?.["uncloud.service.ports"] ?? "";
 
@@ -598,6 +709,7 @@ export const resourcesRouter = {
                             }
                         }
                     }
+
                     draftSpec = enablePostgresPort(resource.draftSpec, occupied);
                     formatComposeFile(draftSpec, resourceComposePrefix(resource));
                 } catch {
@@ -627,7 +739,7 @@ export const resourcesRouter = {
         )
         .use(uncloudMiddleware)
         .use(resourceReadMiddleware)
-        .handler(async ({ context: { resource, uc } }) => {
+        .handler(async ({ context: { db, resource, uc }, input }) => {
             if (databaseEngine(resource) !== "postgresql" || !resource.draftSpec) return null;
 
             let service;
@@ -640,12 +752,27 @@ export const resourcesRouter = {
 
             if (!service) return null;
 
-            const env = parseEnv(resourceEnv(resource));
+            const prefix = resourceComposePrefix(resource);
+            const envText = resourceEnv(resource);
+            let env: Record<string, string | undefined>;
+
+            // Resolved like a deploy would, so referenced and interpolated passwords are real.
+            try {
+                const ids = referencedResourceIds(envText);
+
+                const targets =
+                    ids.length > 0 ? await referenceTargets(db, input.clusterId, ids) : [];
+
+                const references = resolveReferences(envText, targets, undefined, resource.id);
+
+                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references);
+            } catch {
+                env = parseEnv(envText);
+            }
 
             const url = (host: string, port: number) =>
                 `postgresql://${encodeURIComponent(env.POSTGRES_USER ?? "postgres")}:${encodeURIComponent(env.POSTGRES_PASSWORD ?? "")}@${host}:${port}/${encodeURIComponent(env.POSTGRES_DB ?? env.POSTGRES_USER ?? "postgres")}`;
 
-            const prefix = resourceComposePrefix(resource);
             const internal = url(`${prefix ? `${prefix}-` : ""}${service.name}.internal`, 5432);
 
             if (!service.published)
@@ -797,13 +924,18 @@ export const resourcesRouter = {
                     .orderBy(desc(deployments.finishedAt), desc(deployments.createdAt))
                     .limit(1);
 
+                const deployed = snapshot?.spec ?? (resource.spec?.trim() ? resource.spec : null);
+
                 try {
                     serviceNames = formatComposeFile(
-                        snapshot?.spec ??
-                            (resource.spec?.trim() ? resource.spec : resource.draftSpec!),
+                        deployed ?? resource.draftSpec!,
                         snapshot?.prefix ?? resourceComposePrefix(resource),
                     ).serviceNames;
                 } catch (error) {
+                    // Before the first deploy the draft is only a guess at what runs, and an
+                    // unfinished one is not an error worth showing next to the editor.
+                    if (!deployed) return [];
+
                     throw new ORPCError("BAD_REQUEST", {
                         message: error instanceof Error ? error.message : "Invalid compose spec.",
                     });

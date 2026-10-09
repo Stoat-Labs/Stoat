@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { beforeNavigate } from "$app/navigation";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import { beforeNavigate, goto } from "$app/navigation";
     import { page } from "$app/state";
     import {
         Alert,
@@ -128,15 +129,29 @@
 
     const isDirty = $derived(compose !== (savedSpec ?? ""));
 
+    // Leaving with unsaved edits saves them first, then continues, so nothing is lost.
+    // Closing or reloading the tab cannot wait for a save, so the browser asks instead.
+    let resumedTo = "";
+
     beforeNavigate((navigation) => {
-        if (saveMutation.isPending || isDirty) {
-            if (
-                navigation.willUnload ||
-                saveMutation.isPending ||
-                !window.confirm("Discard unsaved Compose edits?")
-            )
-                navigation.cancel();
-        }
+        // The navigation this guard resumes after saving; query state may still read busy.
+        if (navigation.to?.url.href === resumedTo) return;
+
+        if (!saveMutation.isPending && !isDirty) return;
+        navigation.cancel();
+
+        if (
+            navigation.willUnload ||
+            saveMutation.isPending ||
+            !navigation.to
+        )
+            return;
+        const target = navigation.to.url;
+        void saveNow().then((saved) => {
+            if (!saved) return;
+            resumedTo = target.href;
+            void goto(target);
+        });
     });
 
     onDestroy(() => {
@@ -460,6 +475,29 @@
 
         return rows;
     });
+
+    /** Saves the Compose text without waiting for the autosave delay; false if it failed. */
+    async function saveNow() {
+        if (readOnly || loadedResourceId !== resourceId) return false;
+        debouncedCompose.cancel();
+
+        try {
+            await saveMutation.mutateAsync({
+                projectId,
+                resourceId,
+                spec: compose,
+                expectedSpec: savedSpec,
+                expectedSource: savedSource
+                    ? { ...savedSource }
+                    : null,
+            });
+
+            return true;
+        } catch {
+            // The page shows the save error.
+            return false;
+        }
+    }
 
     // Autosave the draft after edits instead of a save button.
     $effect(() => {
@@ -854,39 +892,40 @@
         dialogOpen = false;
     }
 
-    function deleteEntry(entry: HttpIngress | HostIngress) {
-        if (
-            !window.confirm(
-                `Remove "${entry.raw}" from service "${entry.service}"? The Compose file will be updated.`,
-            )
-        )
-            return;
+    // A removal waiting for confirmation; `edit` returns the Compose text without it.
+    let removal = $state<{
+        description: string;
+        edit: () => string;
+    } | null>(null);
 
-        try {
-            compose = removeIngressFromCompose(
-                compose,
-                entry.service,
-                entry.raw,
-            );
-            actionError = "";
-        } catch (cause) {
-            actionError =
-                cause instanceof Error
-                    ? cause.message
-                    : "Unable to update the Compose file.";
-        }
+    let removalOpen = $state(false);
+
+    function deleteEntry(entry: HttpIngress | HostIngress) {
+        removal = {
+            description: `Remove "${entry.raw}" from service "${entry.service}"? The Compose file will be updated.`,
+            edit: () =>
+                removeIngressFromCompose(
+                    compose,
+                    entry.service,
+                    entry.raw,
+                ),
+        };
+        removalOpen = true;
     }
 
     function deleteCaddy(entry: CaddyIngress) {
-        if (
-            !window.confirm(
-                `Remove the custom x-caddy config from service "${entry.service}"? The Compose file will be updated.`,
-            )
-        )
-            return;
+        removal = {
+            description: `Remove the custom x-caddy config from service "${entry.service}"? The Compose file will be updated.`,
+            edit: () => removeServiceCaddy(compose, entry.service),
+        };
+        removalOpen = true;
+    }
+
+    function confirmRemoval() {
+        if (!removal) return;
 
         try {
-            compose = removeServiceCaddy(compose, entry.service);
+            compose = removal.edit();
             actionError = "";
         } catch (cause) {
             actionError =
@@ -894,6 +933,8 @@
                     ? cause.message
                     : "Unable to update the Compose file.";
         }
+
+        removalOpen = false;
     }
 
     const dialogTitle = $derived(
@@ -1871,3 +1912,11 @@
         </DialogFooter>
     </DialogContent>
 </Dialog>
+
+<ConfirmDialog
+    bind:open={removalOpen}
+    title="Remove ingress?"
+    description={removal?.description ?? ""}
+    confirmLabel="Remove"
+    onconfirm={confirmRemoval}
+/>

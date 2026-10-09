@@ -12,7 +12,7 @@ import CatalogPage from "../../apps/web/src/routes/(app)/projects/[projectId]/cr
 const templates = [
     {
         appId: "cache",
-        type: "compose",
+        type: "compose" as const,
         name: "Cache template",
         description: "A cache service",
         logo: null,
@@ -34,7 +34,7 @@ const templates = [
     },
     {
         appId: "worker",
-        type: "compose",
+        type: "compose" as const,
         name: "Worker template",
         description: "A background worker",
         logo: null,
@@ -88,6 +88,7 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
         setQueryClientContext(cache);
         setContext("__request__", {
             page: {
+                data: { isOrganizationAdmin: true },
                 params: { projectId: "project", source },
                 url: new URL(`https://stoat.test/projects/project/create/${source}?${search}`),
             },

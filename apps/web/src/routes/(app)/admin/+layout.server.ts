@@ -1,10 +1,8 @@
 import { error, redirect } from "@sveltejs/kit";
-import { getAuth } from "../../../services";
 
-export const load = async ({ request }) => {
-    const session = await getAuth().api.getSession({ headers: request.headers });
-
-    if (!session) redirect(303, "/login");
+export const load = async ({ url, locals: { session } }) => {
+    // Come back here after logging in.
+    if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
 
     if (session.user.role !== "admin") error(403, "Admins only.");
 

@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
@@ -7,6 +8,7 @@ import { createDb } from "@stoat/db";
 import { listUserOrganizations } from "@stoat/db/organizations";
 import { createAuth } from "../../packages/auth/src";
 import { appRouter } from "../../packages/api/src/routers";
+import { dropTestDatabase } from "../database";
 
 describe("organization API keys (PostgreSQL)", () => {
     const databaseName = `stoat_apikey_test_${randomUUID().replaceAll("-", "")}`;
@@ -30,7 +32,8 @@ describe("organization API keys (PostgreSQL)", () => {
 
     afterAll(async () => {
         await db?.$client.end();
-        await admin?.$client.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+
+        if (admin) await dropTestDatabase(admin, databaseName);
         await admin?.$client.end();
     });
 
@@ -59,7 +62,11 @@ describe("organization API keys (PostgreSQL)", () => {
         );
 
         expect(response.status).toBe(200);
-        const { user } = await response.json();
+
+        const { user } = v.parse(
+            v.object({ user: v.object({ id: v.string() }) }),
+            await response.json(),
+        );
 
         const headers = new Headers({
             cookie: response.headers

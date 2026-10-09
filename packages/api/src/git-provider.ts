@@ -8,7 +8,7 @@ import { ORPCError } from "@orpc/server";
 import { Predicate } from "effect";
 import * as z from "zod";
 
-import { validateGitBranch, validateGitUrl } from "./git";
+import { isBlockedAddress, validateGitBranch, validateGitUrl } from "./git";
 
 export type GitProvider = "github" | "forgejo" | "generic";
 
@@ -96,58 +96,7 @@ export function validateGitServerUrl(value: string, provider: GitProvider): stri
     return url.toString().replace(/\/$/u, "");
 }
 
-// Keep the DNS policy aligned with git.ts: an allowlist only permits private ranges,
-// never metadata, loopback, link-local, transition or other special-use addresses.
-function addressKind(address: string): "public" | "private" | "blocked" {
-    if (isIP(address) === 4) {
-        const [a = 0, b = 0, c = 0] = address.split(".").map(Number);
-
-        if (address === "168.63.129.16") return "blocked";
-
-        if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168))
-            return "private";
-
-        if (
-            a === 0 ||
-            a === 127 ||
-            a >= 224 ||
-            (a === 100 && b >= 64 && b <= 127) ||
-            (a === 169 && b === 254) ||
-            (a === 192 && ((b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99))) ||
-            (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
-            (a === 203 && b === 0 && c === 113)
-        )
-            return "blocked";
-
-        return "public";
-    }
-
-    if (isIP(address) !== 6) return "blocked";
-    const normalized = new URL(`https://[${address}]/`).hostname.slice(1, -1);
-    const first = Number.parseInt(normalized.split(":")[0] || "0", 16);
-
-    if (normalized === "fd00:ec2::254" || normalized === "fd20:ce::254") return "blocked";
-
-    if ((first & 0xfe00) === 0xfc00) return "private";
-
-    if (first < 0x2000 || first > 0x3fff || first === 0x2002 || first === 0x3fff) return "blocked";
-    const second = Number.parseInt(normalized.split(":")[1] || "0", 16);
-
-    if (first === 0x2001 && (second < 0x200 || second === 0xdb8)) return "blocked";
-
-    return "public";
-}
-
 async function pinnedAddress(host: string): Promise<string> {
-    const allowPrivate = (process.env.STOAT_GIT_ALLOWED_HOSTS ?? "").split(",").some(
-        (entry) =>
-            entry
-                .trim()
-                .toLowerCase()
-                .replace(/^\[|\]$/gu, "")
-                .replace(/\.$/u, "") === host,
-    );
-
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     try {
@@ -162,11 +111,7 @@ async function pinnedAddress(host: string): Promise<string> {
 
         if (!addresses.length || addresses.length > 64) invalid();
 
-        for (const { address } of addresses) {
-            const kind = addressKind(address);
-
-            if (kind === "blocked" || (kind === "private" && !allowPrivate)) invalid();
-        }
+        if (addresses.some(({ address }) => isBlockedAddress(address))) invalid();
 
         return addresses[0]!.address;
     } catch (error) {

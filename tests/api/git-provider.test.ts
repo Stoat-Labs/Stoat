@@ -1,10 +1,12 @@
-import { lookup } from "node:dns/promises";
-import { Agent, request } from "node:https";
-import type { RequestOptions } from "node:https";
+import type { LookupAddress, LookupAllOptions } from "node:dns";
+import dns from "node:dns/promises";
+import { EventEmitter } from "node:events";
+import https, { Agent, type RequestOptions } from "node:https";
 import type { IncomingMessage } from "node:http";
+import { syncBuiltinESMExports } from "node:module";
 import assert from "node:assert/strict";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 type Reply = {
     data?: unknown;
@@ -14,7 +16,7 @@ type Reply = {
     behavior?: "hang" | "error" | "aborted" | "close" | "throw";
 };
 
-const network = vi.hoisted(() => ({
+const network = {
     addresses: [{ address: "93.184.216.34", family: 4 }],
     reply: (_url: URL): Reply => ({ data: {} }),
     // SAFETY: only the transport mock below appends these request records.
@@ -24,78 +26,90 @@ const network = vi.hoisted(() => ({
         body?: string;
         destroy: ReturnType<typeof vi.fn>;
     }[],
-}));
+};
 
-vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
+// The provider adapter resolves hosts with { all: true }; answer with the configured addresses.
+function fakeLookup(hostname: string): Promise<LookupAddress>;
+function fakeLookup(hostname: string, options: LookupAllOptions): Promise<LookupAddress[]>;
+async function fakeLookup(_hostname: string, options?: LookupAllOptions) {
+    return options?.all ? network.addresses : network.addresses[0]!;
+}
 
-vi.mock("node:https", async () => {
-    const actual = await vi.importActual<typeof import("node:https")>("node:https");
-    const { EventEmitter } = await import("node:events");
-
-    return {
-        ...actual,
-        request: vi.fn(
-            (
-                url: URL,
-                options: RequestOptions,
-                callback: (
-                    res: Pick<
-                        IncomingMessage,
-                        "on" | "destroy" | "statusCode" | "headers" | "complete"
-                    >,
-                ) => void,
-            ) => {
-                const reply = network.reply(url);
-
-                if (reply.behavior === "throw") throw new Error("secret-token request URL");
-
-                const req = Object.assign(new EventEmitter(), {
-                    destroy: vi.fn(),
-                    end: (_body?: string) => {},
-                });
-
-                req.end = (body) => {
-                    network.calls.push({ url, options, body, destroy: req.destroy });
-                    void Promise.resolve().then(() => {
-                        if (reply.behavior === "hang") return;
-
-                        if (reply.behavior === "error") {
-                            req.emit("error", new Error("secret-token TLS error URL"));
-
-                            return;
-                        }
-
-                        const res = Object.assign(new EventEmitter(), {
-                            statusCode: reply.status ?? 200,
-                            headers: { "content-type": "application/json", ...reply.headers },
-                            complete: false,
-                            destroy: vi.fn(),
-                        });
-
-                        callback(res);
-
-                        if (reply.behavior === "aborted" || reply.behavior === "close") {
-                            res.emit(reply.behavior);
-
-                            return;
-                        }
-
-                        for (const chunk of reply.chunks ?? [
-                            Buffer.from(JSON.stringify(reply.data ?? {})),
-                        ]) {
-                            res.emit("data", chunk);
-                        }
-
-                        res.complete = true;
-                        res.emit("end");
-                        res.emit("close");
-                    });
-                };
-
-                return req;
+// Answers each HTTPS request from network.reply without opening a socket.
+const fakeRequest = (
+    url: URL,
+    options: RequestOptions,
+    // The fake response below; production code only reads these IncomingMessage fields.
+    callback: (
+        res: InstanceType<typeof EventEmitter> &
+            Pick<IncomingMessage, "statusCode" | "headers" | "complete"> & {
+                destroy: () => void;
             },
-        ),
+    ) => void,
+) => {
+    const reply = network.reply(url);
+
+    if (reply.behavior === "throw") throw new Error("secret-token request URL");
+
+    const req = Object.assign(new EventEmitter(), {
+        destroy: vi.fn(),
+        end: (_body?: string) => {},
+    });
+
+    req.end = (body) => {
+        network.calls.push({ url, options, body, destroy: req.destroy });
+        void Promise.resolve().then(() => {
+            if (reply.behavior === "hang") return;
+
+            if (reply.behavior === "error") {
+                req.emit("error", new Error("secret-token TLS error URL"));
+
+                return;
+            }
+
+            const res = Object.assign(new EventEmitter(), {
+                statusCode: reply.status ?? 200,
+                headers: { "content-type": "application/json", ...reply.headers },
+                complete: false,
+                destroy: vi.fn(),
+            });
+
+            callback(res);
+
+            if (reply.behavior === "aborted" || reply.behavior === "close") {
+                res.emit(reply.behavior);
+
+                return;
+            }
+
+            for (const chunk of reply.chunks ?? [Buffer.from(JSON.stringify(reply.data ?? {}))]) {
+                res.emit("data", chunk);
+            }
+
+            res.complete = true;
+            res.emit("end");
+            res.emit("close");
+        });
     };
+
+    return req;
+};
+
+// Built-ins are spied through their default export; syncing republishes the spies to the
+// named imports the provider adapter uses, without replacing whole modules.
+const lookup = vi.spyOn(dns, "lookup");
+
+// SAFETY: the adapter only uses the request/response surface that fakeRequest implements.
+const request = vi
+    .spyOn(https, "request")
+    .mockImplementation(fakeRequest as typeof fakeRequest & typeof https.request);
+
+syncBuiltinESMExports();
+
+afterAll(() => {
+    lookup.mockRestore();
+    request.mockRestore();
+    syncBuiltinESMExports();
 });
 
 import {
@@ -129,15 +143,11 @@ function repo(index: number, server = "https://github.com") {
 }
 
 beforeEach(() => {
-    vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "");
     network.addresses = [{ address: "93.184.216.34", family: 4 }];
     network.reply = () => ({ data: {} });
     network.calls = [];
-    // SAFETY: production always requests { all: true }; vi.mocked exposes the last overload.
-    vi.mocked(lookup)
-        .mockReset()
-        .mockImplementation(async () => network.addresses as never);
-    vi.mocked(request).mockClear();
+    lookup.mockReset().mockImplementation(fakeLookup);
+    request.mockClear();
 });
 
 afterEach(() => {
@@ -234,8 +244,7 @@ describe("Git server validation", () => {
         "[fd20:ce::254]",
         "[64:ff9b::7f00:1]",
         "[2002:7f00:1::]",
-    ])("blocks special host %s even when allowlisted", (host) => {
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", host);
+    ])("blocks special host %s", (host) => {
         expect(() => validateGitServerUrl(`https://${host}`, "forgejo")).toThrow();
     });
 });
@@ -289,27 +298,10 @@ describe("Pinned HTTPS JSON transport", () => {
         });
     });
 
-    it.each(["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd12::1"])(
-        "requires an exact allowlist for private DNS %s",
-        async (address) => {
-            network.addresses = [{ address, family: address.includes(":") ? 6 : 4 }];
-
-            for (const allow of [
-                "",
-                "*.example.com",
-                "example.com",
-                address,
-                "git.example.com:443",
-            ]) {
-                vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", allow);
-                await expect(gitProviderRequest("https://git.example.com/user")).rejects.toThrow();
-            }
-
-            expect(request).not.toHaveBeenCalled();
-            vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "other.example, GIT.EXAMPLE.COM.");
-            await expect(gitProviderRequest("https://git.example.com/user")).resolves.toEqual({});
-        },
-    );
+    it.each(["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd12::1"])("allows private DNS %s", async (address) => {
+        network.addresses = [{ address, family: address.includes(":") ? 6 : 4 }];
+        await expect(gitProviderRequest("https://git.example.com/user")).resolves.toEqual({});
+    });
 
     it.each([
         "127.0.0.1",
@@ -336,7 +328,6 @@ describe("Pinned HTTPS JSON transport", () => {
         "3fff::1",
         "not-an-address",
     ])("rejects all DNS records if any answer is unsafe: %s", async (address) => {
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "git.example.com");
         network.addresses.push({ address, family: address.includes(":") ? 6 : 4 });
         await expect(gitProviderRequest("https://git.example.com/user")).rejects.toThrow();
         expect(request).not.toHaveBeenCalled();
@@ -432,7 +423,7 @@ describe("Pinned HTTPS JSON transport", () => {
 
     it("bounds DNS resolution and sanitizes DNS failures", async () => {
         vi.useFakeTimers();
-        vi.mocked(lookup).mockImplementation(() => new Promise(() => {}));
+        lookup.mockImplementation(() => new Promise(() => {}));
 
         const pending = expect(
             gitProviderRequest("https://git.example.com/user"),
@@ -444,7 +435,7 @@ describe("Pinned HTTPS JSON transport", () => {
         await vi.advanceTimersByTimeAsync(5000);
         await pending;
         expect(request).not.toHaveBeenCalled();
-        vi.mocked(lookup).mockRejectedValueOnce(new Error("secret-token"));
+        lookup.mockRejectedValueOnce(new Error("secret-token"));
         await expect(gitProviderRequest("https://git.example.com/user")).rejects.toThrow(
             "Unable to resolve Git provider host",
         );

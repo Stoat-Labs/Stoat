@@ -8,7 +8,6 @@ export const databaseEngines = [
     "mariadb",
     "clickhouse",
     "redis",
-    "valkey",
     "dragonfly",
 ] as const;
 

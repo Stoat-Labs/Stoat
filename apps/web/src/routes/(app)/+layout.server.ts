@@ -1,11 +1,11 @@
 import { redirect } from "@sveltejs/kit";
+import { isOrganizationAdmin } from "@stoat/api";
 import { listUserOrganizations } from "@stoat/db/organizations";
 import { getAuth, getDb } from "../../services";
 
-export const load = async ({ request }) => {
-    const session = await getAuth().api.getSession({ headers: request.headers });
-
-    if (!session) redirect(303, "/login");
+export const load = async ({ url, request, locals: { session } }) => {
+    // Come back here after logging in.
+    if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
     const organizations = await listUserOrganizations(getDb(), session.user.id);
     let activeOrganizationId = session.session.activeOrganizationId;
 
@@ -26,5 +26,10 @@ export const load = async ({ request }) => {
         },
         organizations,
         activeOrganizationId,
+        // Pages hide actions the API would refuse; the API still enforces them.
+        isOrganizationAdmin: isOrganizationAdmin(
+            organizations.find((organization) => organization.id === activeOrganizationId)?.role ??
+                "",
+        ),
     };
 };

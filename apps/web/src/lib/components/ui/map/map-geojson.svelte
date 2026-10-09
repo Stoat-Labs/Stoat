@@ -205,9 +205,11 @@
         const isLoaded = mapCtx.isLoaded;
 
         if (!isLoaded || !map) return;
+
         const source = map.getSource(sourceId) as
             | MapLibreGL.GeoJSONSource
             | undefined;
+
         source?.setData(data as GeoJSON.GeoJSON | string);
     });
 

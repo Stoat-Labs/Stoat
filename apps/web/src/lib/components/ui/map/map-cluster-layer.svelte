@@ -73,9 +73,11 @@
         const initialClusterMaxZoom = untrack(() => clusterMaxZoom);
         const initialClusterRadius = untrack(() => clusterRadius);
         const initialClusterColors = untrack(() => clusterColors);
+
         const initialClusterThresholds = untrack(
             () => clusterThresholds,
         );
+
         const initialPointColor = untrack(() => pointColor);
 
         // Add clustered GeoJSON source
@@ -242,10 +244,13 @@
             if (!features.length) return;
 
             const feature = features[0];
+
             const clusterId = feature.properties
                 ?.cluster_id as number;
+
             const pointCount = feature.properties
                 ?.point_count as number;
+
             const coordinates = (feature.geometry as GeoJSON.Point)
                 .coordinates as [number, number];
 
@@ -256,8 +261,10 @@
                 const source = map.getSource(
                     sourceId,
                 ) as MapLibreGL.GeoJSONSource;
+
                 const zoom =
                     await source.getClusterExpansionZoom(clusterId);
+
                 map.easeTo({
                     center: coordinates,
                     zoom,

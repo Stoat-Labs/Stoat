@@ -53,6 +53,7 @@
         if (isInteractive) return;
         e.preventDefault();
         const parent = e.currentTarget.parentElement;
+
         const input = parent?.querySelector<
             HTMLInputElement | HTMLTextAreaElement
         >("input, textarea");

@@ -14,6 +14,7 @@ import (
 	"github.com/acarl005/stripansi"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
 	"github.com/docker/docker/api/types/container"
+	"github.com/psviderski/uncloud/api/pb"
 	"github.com/psviderski/uncloud/pkg/api"
 	"github.com/psviderski/uncloud/pkg/client"
 	"github.com/psviderski/uncloud/pkg/client/compose"
@@ -52,8 +53,9 @@ func (b *clientBackend) Ready(ctx context.Context) error {
 	return err
 }
 
-// ListServices replaces uncloud's implementation, which re-broadcasts a container
-// listing to every machine once per service (N+1). This groups a single broadcast.
+// ListServices replaces uncloud's implementation, which broadcasts to down
+// machines too, prints their failures to stdout, and returns services in map
+// order. This only asks reachable machines and keeps the listing order stable.
 func (b *clientBackend) ListServices(ctx context.Context) ([]api.Service, error) {
 	machines, err := b.Client.ListMachines(ctx, nil)
 	if err != nil {
@@ -115,7 +117,7 @@ func (b *clientBackend) ClusterDiagnostics(ctx context.Context) (ClusterDiagnost
 	if err != nil {
 		return ClusterDiagnosticsResponse{}, fmt.Errorf("inspect cluster machines: %w", err)
 	}
-	detailsByID := make(map[string]map[string]int64, len(detailsResponse.Machines))
+	detailsByID := make(map[string]api.StoreVersion, len(detailsResponse.Machines))
 	links := make([]ClusterLinkResponse, 0)
 	issues := make([]string, 0)
 	for _, details := range detailsResponse.Machines {
@@ -142,7 +144,7 @@ func (b *clientBackend) ClusterDiagnostics(ctx context.Context) (ClusterDiagnost
 	machines := make([]DiagnosticMachineResponse, 0, len(members))
 	daemonVersions := make(map[string]struct{})
 	dockerVersions := make(map[string]struct{})
-	var baselineStoreVersion map[string]int64
+	var baselineStoreVersion api.StoreVersion
 	nativeMembers := members.ToNative()
 	wireGuards := b.inspectWireGuard(ctx, nativeMembers)
 	for i, member := range nativeMembers {
@@ -202,18 +204,15 @@ func (b *clientBackend) ListCaddyConfigs(ctx context.Context) (CaddyConfigsRespo
 	for i, member := range members {
 		group.Go(func() error {
 			item := CaddyConfigResponse{MachineID: member.Machine.Id, MachineName: member.Machine.Name}
-			config, configErr := b.Client.Caddy.GetConfig(
-				b.Client.ProxySingleMachineContext(ctx, member.Machine.Id), &emptypb.Empty{},
-			)
+			config, configErr := b.Client.Caddy.Config(ctx, client.CaddyConfigOptions{Machine: member.Machine.Id})
 			if configErr != nil {
 				item.Error = configErr.Error()
 			} else {
 				item.Caddyfile = config.Caddyfile
 				digest := sha256.Sum256([]byte(config.Caddyfile))
 				item.SHA256 = hex.EncodeToString(digest[:])
-				if config.ModifiedAt != nil {
-					item.ModifiedAt = config.ModifiedAt.AsTime()
-				}
+				item.ModifiedAt = config.ModifiedAt
+				item.LastReconciliationError = config.LastReconciliationError
 			}
 			configs[i] = item
 			return nil
@@ -229,6 +228,54 @@ func (b *clientBackend) ListCaddyConfigs(ctx context.Context) (CaddyConfigsRespo
 		}
 	}
 	return CaddyConfigsResponse{Items: configs, Drift: len(hashes) > 1}, nil
+}
+
+// ListCaddyCertificates reads Caddy's certificate storage from one replica of
+// the cluster store: the connected machine, or machine when it is set. Stored
+// certificates that fail to parse are reported in Errors instead of failing
+// the whole listing.
+func (b *clientBackend) ListCaddyCertificates(ctx context.Context, machine string) (CaddyCertificatesResponse, error) {
+	if machine != "" {
+		ctx = client.ProxySingleMachineContext(ctx, machine)
+	}
+	stored, err := b.Client.Caddy.Storage.ListCertificates(ctx, &emptypb.Empty{})
+	if err != nil {
+		return CaddyCertificatesResponse{}, fmt.Errorf("list Caddy certificates: %w", err)
+	}
+
+	response := CaddyCertificatesResponse{Items: []CaddyCertificateResponse{}, Errors: []string{}}
+	for _, item := range stored.Certificates {
+		cert, parseErr := api.IssuedCertificateFromProto(item)
+		if parseErr != nil {
+			response.Errors = append(response.Errors, parseErr.Error())
+			continue
+		}
+		response.Items = append(response.Items, caddyCertificateResponse(cert))
+	}
+	sort.Slice(response.Items, func(i, j int) bool { return response.Items[i].SAN < response.Items[j].SAN })
+	return response, nil
+}
+
+// SetClusterDomain sets an externally managed cluster domain. The daemon
+// validates the name and refuses to replace a domain that is already set.
+func (b *clientBackend) SetClusterDomain(ctx context.Context, name string) error {
+	_, err := b.Client.ClusterClient.SetDomain(ctx, &pb.SetDomainRequest{Name: name})
+	return err
+}
+
+// ClearClusterDomain removes the cluster domain however it was configured.
+// Releasing a reserved domain only forgets it in the cluster store: Uncloud DNS
+// does not support giving the name back yet.
+func (b *clientBackend) ClearClusterDomain(ctx context.Context) error {
+	domain, err := b.Client.GetDomain(ctx)
+	if err != nil {
+		return err
+	}
+	if domain.Reserved {
+		_, err = b.Client.ClusterClient.ReleaseDomain(ctx, &emptypb.Empty{})
+		return err
+	}
+	return b.SetClusterDomain(ctx, "")
 }
 
 // wireGuardResult is one machine's WireGuard status, or the reason it could not

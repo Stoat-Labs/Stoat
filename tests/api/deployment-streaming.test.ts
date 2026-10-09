@@ -137,7 +137,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             expect(listeners.rows).toEqual([]);
         } finally {
             controller.abort();
-            await stream.return();
+            await stream.return(undefined);
         }
     });
 
@@ -254,7 +254,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
 
             expect(await getDeploymentWithLogs(db, deployment.id)).toEqual(frozen);
         } finally {
-            await stream.return();
+            await stream.return(undefined);
         }
     });
 
@@ -288,7 +288,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             });
             expect((await stream.next()).done).toBe(true);
         } finally {
-            await stream.return();
+            await stream.return(undefined);
         }
 
         const changes = watchDeploymentChanges(db);
@@ -303,7 +303,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             );
             await disconnected;
         } finally {
-            await changes.return();
+            await changes.return(undefined);
         }
     });
 
@@ -395,7 +395,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
             expect((await deleted).value).toEqual({ deploymentId: own.id });
         } finally {
             controller.abort();
-            await changes.return();
+            await changes.return(undefined);
         }
 
         const alreadyAborted = watchDeploymentChanges(db, { signal: controller.signal });
@@ -440,7 +440,7 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
                 deployment: { resourceId },
             });
         } finally {
-            await stream.return();
+            await stream.return(undefined);
         }
 
         await call(

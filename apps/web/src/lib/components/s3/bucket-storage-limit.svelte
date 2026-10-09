@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import {
         Alert,
         AlertDescription,
@@ -112,13 +113,17 @@
                                 : `Display only: ${bucket.connection.providerName} cannot enforce a limit.`}
                         </p>
                     </div>
-                    <Button
-                        variant="outline"
-                        disabled={bucket.status !== "ready"}
-                        onclick={openDialog}
-                    >
-                        {bucket.quota ? "Edit limit" : "Set limit"}
-                    </Button>
+                    {#if page.data.isOrganizationAdmin}
+                        <Button
+                            variant="outline"
+                            disabled={bucket.status !== "ready"}
+                            onclick={openDialog}
+                        >
+                            {bucket.quota
+                                ? "Edit limit"
+                                : "Set limit"}
+                        </Button>
+                    {/if}
                 {:else}
                     <Skeleton
                         loading

@@ -54,12 +54,12 @@ await writeFile(outPath, `${JSON.stringify(spec, null, 4)}\n`);
 // wrapping, so a refresh never leaves the working tree dirty. The binary is
 // resolved directly instead of through `pnpm exec`, which would re-run install
 // hooks as a side effect.
-const oxfmt = join(packageDir, "..", "..", "node_modules", ".bin", "oxfmt");
+const vp = join(packageDir, "..", "..", "node_modules", ".bin", "vp");
 
 try {
-    await execFileAsync(oxfmt, [outPath]);
+    await execFileAsync(vp, ["fmt", "--write", outPath]);
 } catch (error) {
-    console.error(`Failed to format the generated spec with ${oxfmt}`);
+    console.error(`Failed to format the generated spec with ${vp} fmt`);
     console.error(error.stderr || error.message);
     process.exit(1);
 }

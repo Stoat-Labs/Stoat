@@ -9,7 +9,7 @@
     "scripts": {
         "build": "vp run -r build",
         "check": "vp lint && vp fmt --write",
-        "check-types": "vp run -r check-types",
+        "check-types": "vp run -r check-types && tsc -p tests",
         "db:down": "docker compose down postgres",
         "db:generate": "vp run --filter @stoat/db db:generate",
         "db:migrate": "vp run --filter @stoat/db db:migrate",
@@ -32,14 +32,18 @@
         "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./packages/db/",
         "staged": "vp staged",
         "test": "vp test run && pnpm --dir apps/web exec vp test run",
+        "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
         "uc:refresh": "pnpm --filter @stoat/uncloud generate-spec && pnpm --filter @stoat/uncloud generate"
     },
     "dependencies": {
         "zod": "catalog:"
     },
     "devDependencies": {
+        "@aws-sdk/client-s3": "^3.1146.0",
+        "@orpc/client": "catalog:",
         "@orpc/server": "catalog:",
         "@oxlint/plugins": "1.81.0",
+        "@playwright/test": "1.62.1",
         "@stoat/config": "workspace:*",
         "@stoat/db": "workspace:*",
         "@stoat/s3": "workspace:*",
@@ -51,7 +55,9 @@
         "effect": "4.0.0-rc.116",
         "oxlint": "1.81.0",
         "rolldown": "1.2.7",
+        "selfsigned": "^5.5.0",
         "svelte": "^5.57.0",
+        "testcontainers": "^12.1.0",
         "typescript": "catalog:",
         "valibot": "catalog:",
         "varlock": "catalog:",

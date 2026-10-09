@@ -5,6 +5,7 @@ import YAML, { isAlias, isMap, isNode, isScalar, isSeq } from "yaml";
 import type { Node, YAMLMap } from "yaml";
 import { Predicate } from "effect";
 import { parseEnv } from "node:util";
+import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 
 export interface FormattedCompose {
     serviceCount: number;
@@ -569,22 +570,84 @@ export class ComposeVariableError extends Error {}
 
 const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*/u;
 
+/** Resolved reference values keyed by `<resourceId>.<KEY>`. */
+export type VariableReferences = Record<string, string>;
+
 /**
  * Compose-spec interpolation of `$VAR`, `${VAR}`, and `${VAR[:]-|?|+...}` in YAML values.
  * Output keeps `$` escaped as `$$`, so Uncloud's own interpolation pass is a no-op
  * and never falls back to the sidecar's process environment.
- * Built-ins, each overridable by a same-named user variable:
- * `<SERVICE>_SERVICE_NAME` / `<SERVICE>_INTERNAL_HOST` (deployed name, prefixed when
- * `prefix` is set), `STOAT_PREFIX`, and `STOAT_DOMAIN` when the cluster domain is known.
  */
 export function interpolateCompose(
     compose: string,
     envText: string,
     prefix?: string,
     domain?: string,
+    references?: VariableReferences,
 ): string {
-    const env: Record<string, string> = {};
     const doc = YAML.parseDocument(compose);
+    const { expand } = composeEnvironment(doc, envText, prefix, domain, references);
+    assertNoComposeReference(compose);
+
+    YAML.visit(doc, {
+        Scalar(key, node) {
+            if (key !== "key" && Predicate.isString(node.value)) node.value = expand(node.value);
+        },
+    });
+
+    return doc.toString();
+}
+
+/**
+ * References belong in Variables; one written in Compose (not in a comment) would deploy as
+ * literal text. Only real resource ids count here, so templating such as
+ * `{{ $labels.instance }}` in configs keeps working.
+ */
+export function assertNoComposeReference(compose: string) {
+    let found: string | undefined;
+
+    YAML.visit(YAML.parseDocument(compose), {
+        Scalar(_, node) {
+            if (!Predicate.isString(node.value)) return;
+
+            for (const [reference, id = ""] of node.value.matchAll(VARIABLE_REFERENCE))
+                if (referenceResourceId(id)) found ??= reference;
+
+            if (found) return YAML.visit.BREAK;
+        },
+    });
+
+    if (found)
+        throw new ComposeVariableError(
+            `Variable references only work in the resource's Variables, not in Compose: ${found}. Add NAME=${found} to Variables and use \${NAME} in Compose.`,
+        );
+}
+
+/** Every variable a resource's Compose sees: built-ins plus its resolved `.env`. */
+export function composeVariables(
+    compose: string,
+    envText: string,
+    prefix?: string,
+    domain?: string,
+    references?: VariableReferences,
+): Record<string, string> {
+    return composeEnvironment(YAML.parseDocument(compose), envText, prefix, domain, references).env;
+}
+
+/**
+ * Built-ins, each overridable by a same-named user variable:
+ * `<SERVICE>_SERVICE_NAME` / `<SERVICE>_INTERNAL_HOST` (deployed name, prefixed when
+ * `prefix` is set), `STOAT_PREFIX`, and `STOAT_DOMAIN` when the cluster domain is known.
+ * Without `references`, `{{ ... }}` reference text is kept as-is.
+ */
+function composeEnvironment(
+    doc: YAML.Document,
+    envText: string,
+    prefix?: string,
+    domain?: string,
+    references?: VariableReferences,
+) {
+    const env: Record<string, string> = {};
 
     if (doc.errors.length > 0) throw new Error("Invalid compose YAML");
 
@@ -676,18 +739,36 @@ export function interpolateCompose(
         return out;
     };
 
+    // Referenced values are literal, so `$` is escaped before `expand` sees it.
+    const substitute = (value: string) =>
+        references
+            ? value.replaceAll(VARIABLE_REFERENCE, (reference, id: string, key: string) => {
+                  const resolved = references[`${referenceResourceId(id)}.${key}`];
+
+                  if (resolved === undefined)
+                      throw new ComposeVariableError(`Unresolved variable reference ${reference}.`);
+
+                  return resolved.replaceAll("$", "$$$$");
+              })
+            : value;
+
     // Like Compose, .env values may reference variables defined above them.
+    // parseEnv returns keys sorted, so walk them in file order instead.
     // ponytail: parseEnv drops quotes, so single-quoted values expand too; Compose keeps them literal.
-    for (const [name, value] of Object.entries(parseEnv(envText)))
-        env[name] = expand(value ?? "").replaceAll("$$", "$");
+    const values = parseEnv(envText);
+    const fileOrder = envText.matchAll(/^[ \t]*(?:export[ \t]+)?([\w.-]+)[ \t]*=/gmu);
+    // Keys the line scan misses still resolve, after the ordered ones.
 
-    YAML.visit(doc, {
-        Scalar(key, node) {
-            if (key !== "key" && Predicate.isString(node.value)) node.value = expand(node.value);
-        },
-    });
+    const names = new Set([
+        ...Array.from(fileOrder, ([, name = ""]) => name),
+        ...Object.keys(values),
+    ]);
 
-    return doc.toString();
+    for (const name of names)
+        if (values[name] !== undefined)
+            env[name] = expand(substitute(values[name])).replaceAll("$$", "$");
+
+    return { env, expand };
 }
 
 /** Undo only the transformations made by formatComposeFile; keep user YAML intact. */

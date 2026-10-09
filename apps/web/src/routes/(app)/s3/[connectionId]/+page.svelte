@@ -49,6 +49,11 @@
 
     const connection = $derived(connectionQuery.data);
 
+    // Members see the connection; only admins change, test, or delete it.
+    const canManage = $derived(
+        page.data.isOrganizationAdmin === true,
+    );
+
     let name = $state("");
 
     let draft = $state<S3ConnectionDraft>({
@@ -325,13 +330,13 @@
                                 bind:value={name}
                                 autocomplete="off"
                                 maxlength={100}
-                                disabled={pending}
+                                disabled={pending || !canManage}
                             />
                         </Field>
                         <ConnectionFields
                             provider={connection.provider}
                             editing
-                            disabled={pending}
+                            disabled={pending || !canManage}
                             bind:endpoint={draft.endpoint}
                             bind:region={draft.region}
                             bind:forcePathStyle={draft.forcePathStyle}
@@ -341,39 +346,41 @@
                             bind:apiToken={draft.apiToken}
                         />
                     </div>
-                    <FrameFooter
-                        class="mt-auto flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                    >
-                        <Button
-                            variant="destructive-outline"
-                            onclick={() => {
-                                removeState.reset();
-                                deleteOpen = true;
-                            }}
-                            disabled={pending}
+                    {#if canManage}
+                        <FrameFooter
+                            class="mt-auto flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                         >
-                            Delete
-                        </Button>
-                        <div class="flex flex-wrap gap-2">
                             <Button
-                                variant="outline"
-                                onclick={test}
-                                loading={testState.isPending}
-                                disabled={!complete || pending}
+                                variant="destructive-outline"
+                                onclick={() => {
+                                    removeState.reset();
+                                    deleteOpen = true;
+                                }}
+                                disabled={pending}
                             >
-                                Test connection
+                                Delete
                             </Button>
-                            <Button
-                                type="submit"
-                                loading={saveState.isPending}
-                                disabled={!complete ||
-                                    !name.trim() ||
-                                    pending}
-                            >
-                                Save
-                            </Button>
-                        </div>
-                    </FrameFooter>
+                            <div class="flex flex-wrap gap-2">
+                                <Button
+                                    variant="outline"
+                                    onclick={test}
+                                    loading={testState.isPending}
+                                    disabled={!complete || pending}
+                                >
+                                    Test connection
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    loading={saveState.isPending}
+                                    disabled={!complete ||
+                                        !name.trim() ||
+                                        pending}
+                                >
+                                    Save
+                                </Button>
+                            </div>
+                        </FrameFooter>
+                    {/if}
                 </Frame>
             </form>
 

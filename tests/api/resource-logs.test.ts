@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
 import {
@@ -30,6 +31,9 @@ import {
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import type { ResourceLog, ResourceLogEvent } from "../../packages/api/src/routers/resources/logs";
+
+// Greptime's SQL API reports failures in the body.
+const greptimeResult = v.looseObject({ error: v.optional(v.string()) });
 
 const exec = promisify(execFile);
 
@@ -96,7 +100,7 @@ describe("resource logs backend", () => {
             signal: AbortSignal.timeout(15_000),
         });
 
-        const result = await response.json();
+        const result = v.parse(greptimeResult, await response.json());
 
         if (result.error) throw new Error(result.error);
 
@@ -152,7 +156,6 @@ describe("resource logs backend", () => {
             clusterId,
             projectId: monitoringProject,
             resourceId: monitoringResource,
-            machineId: "machine",
             encryptedPassword: encryptMonitoringPassword(password, secret, clusterId),
         });
         await db
@@ -160,7 +163,7 @@ describe("resource logs backend", () => {
             .set({
                 initializedAt: new Date(),
                 initializationConfiguration: {
-                    machineId: "machine",
+                    machine: "machine",
                     retentionDays: 14,
                     alloyStorage: { type: "volume", source: "a" },
                     greptimeStorage: { type: "volume", source: "g" },
@@ -290,12 +293,10 @@ describe("resource logs backend", () => {
             );
         vi.stubGlobal(
             "fetch",
-            vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                const url = new URL(String(request));
+            vi.fn(async (request: Request) => {
+                const url = new URL(request.url);
                 expect(url.origin).toBe("http://sidecar.logs.test");
-                expect(new Headers(options?.headers).get("authorization")).toBe(
-                    "Bearer sidecar-secret",
-                );
+                expect(request.headers.get("authorization")).toBe("Bearer sidecar-secret");
                 const id = decodeURIComponent(url.pathname.split("/")[4]!);
 
                 if (url.pathname.endsWith("/api/v1/machines"))
@@ -309,12 +310,12 @@ describe("resource logs backend", () => {
 
                     openedStreams.push(id);
 
-                    return openStream(id, options?.signal);
+                    return openStream(id, request.signal);
                 }
 
                 if (url.pathname.endsWith("/exec")) {
                     expect(id).toBe("greptime-id");
-                    const body = JSON.parse(String(options?.body));
+                    const body = await request.json();
                     expect(body.stdin).toBe(`user = "stoat:${password}"\n`);
                     expect(body.command.at(-1)).toBe("http://127.0.0.1:4000/v1/sql?db=public");
                     expect(body.command).toContain("--max-time");
@@ -325,7 +326,7 @@ describe("resource logs backend", () => {
 
                     queries.push(query);
 
-                    return sqlHandler(query, options?.signal);
+                    return sqlHandler(query, request.signal);
                 }
 
                 inspected.push(id);
@@ -1178,10 +1179,10 @@ describe("resource logs backend", () => {
             const original = globalThis.fetch;
             vi.stubGlobal(
                 "fetch",
-                vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                    const response = await original(request, options);
+                vi.fn(async (request: Request) => {
+                    const response = await original(request);
                     await new Promise<void>((resolve) => {
-                        options!.signal!.addEventListener("abort", () => resolve(), { once: true });
+                        request.signal.addEventListener("abort", () => resolve(), { once: true });
                         entered.resolve();
                     });
 
@@ -1529,8 +1530,8 @@ describe("resource logs backend", () => {
                     const original = globalThis.fetch;
                     vi.stubGlobal(
                         "fetch",
-                        vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                            await original(request, options);
+                        vi.fn(async (request: Request) => {
+                            await original(request);
 
                             return Response.json({
                                 id: "web-id",
@@ -1804,12 +1805,12 @@ describe("resource logs backend", () => {
             let inspections = 0;
             vi.stubGlobal(
                 "fetch",
-                vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                    const response = await original(request, options);
+                vi.fn(async (request: Request) => {
+                    const response = await original(request);
 
                     // The first web inspection detects the new ID; the second rechecks deployed scope.
                     if (
-                        new URL(String(request)).pathname.endsWith("/services/web") &&
+                        new URL(request.url).pathname.endsWith("/services/web") &&
                         ++inspections === 2
                     )
                         return Response.json({ error: "private rediscovery failure" }, { status });
@@ -1882,14 +1883,14 @@ describe("resource logs backend", () => {
                 await stream.next();
                 vi.stubGlobal(
                     "fetch",
-                    vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-                        const response = await original(request, options);
+                    vi.fn(async (request: Request) => {
+                        const response = await original(request);
 
                         if (
-                            new URL(String(request)).pathname.endsWith("/services/web") &&
+                            new URL(request.url).pathname.endsWith("/services/web") &&
                             ++inspections === 2
                         ) {
-                            entered.resolve(options!.signal!);
+                            entered.resolve(request.signal);
                             await waiting.promise;
                         }
 

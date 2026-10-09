@@ -44,7 +44,9 @@
     let clusterId = $state("");
 
     const clustersQuery = createQuery(() =>
-        orpc.cluster.listClusters.queryOptions(),
+        orpc.cluster.listClusters.queryOptions({
+            input: { limit: 100, includeDiagnostics: false },
+        }),
     );
 
     const clusters = $derived(clustersQuery.data?.items ?? []);

@@ -138,6 +138,7 @@
 
     const oauthError = $derived.by(() => {
         if (!oauthStatus || oauthStatus === "success") return "";
+
         const reason =
             oauthStatus === "error"
                 ? (page.url.searchParams.get("reason") ?? "failed")
@@ -177,6 +178,7 @@
                 edit,
                 saved,
             );
+
             await goto(url, {
                 replaceState: dialog === null,
                 noScroll: true,

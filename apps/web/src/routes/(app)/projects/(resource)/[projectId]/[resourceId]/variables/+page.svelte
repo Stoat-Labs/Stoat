@@ -2,6 +2,7 @@
     import { page } from "$app/state";
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import BucketVariables from "$lib/components/s3/bucket-variables.svelte";
+    import VariableReferencePicker from "$lib/components/variables/variable-reference-picker.svelte";
     import {
         Alert,
         AlertDescription,
@@ -34,6 +35,7 @@
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { watch } from "runed";
+    import type { EditorView } from "@codemirror/view";
     import { z } from "zod";
 
     const projectId = $derived(page.params.projectId ?? "");
@@ -57,6 +59,20 @@
             enabled: projectId.length > 0 && resourceId.length > 0,
         }),
     );
+
+    // Other resources whose variables this one can reference with {{ <id>.KEY }}.
+    // Waits for the project: internal (read-only) resources have none to offer.
+    const referencesQuery = createQuery(() =>
+        orpc.resources.listVariableReferences.queryOptions({
+            input: { projectId, resourceId },
+            enabled:
+                resourceId.length > 0 &&
+                project !== undefined &&
+                !readOnly,
+        }),
+    );
+
+    let editorView = $state<EditorView>();
 
     const envSchema = z
         .object({ env: z.string().catch("") })
@@ -323,11 +339,21 @@
                     >
                         {#key loadedResourceId}<CodeEditor
                                 bind:value={env}
+                                bind:view={editorView}
                                 language="env"
                                 label="Environment variables (.env)"
                                 hideEnvValues={!variablesVisible}
                                 {readOnly}
                             />{/key}
+                        {#if !readOnly}
+                            <VariableReferencePicker
+                                view={editorView}
+                                targets={referencesQuery.data ?? []}
+                                {projectId}
+                                loading={referencesQuery.isPending}
+                                error={referencesQuery.error?.message}
+                            />
+                        {/if}
                     </div>
                 {/if}
             </FramePanel>

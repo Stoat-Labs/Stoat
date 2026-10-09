@@ -174,9 +174,11 @@ it("retries opted-in log discovery failures but still stops on revoked access", 
     vi.useFakeTimers();
     const gateway = new ORPCError("BAD_GATEWAY");
     const forbidden = new ORPCError("FORBIDDEN");
+
     const connect = vi.fn(async (): Promise<AsyncIterable<never>> => {
         throw gateway;
     });
+
     const onError = vi.fn();
     const stop = subscribeToStream(connect, vi.fn(), onError, () => false, ["BAD_GATEWAY"]);
 

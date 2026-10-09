@@ -184,12 +184,14 @@ describe("ucClient", () => {
         });
 
         const result = await uc.GET("/api/v1/machines");
+        const thrown = new UcApiError(result.response, result.error);
 
-        expect(result.error).toEqual({ error: "Sidecar request failed: 502 " });
-        expect(
-            new UcApiError(result.response, { error: { token: "private" } }).body,
-        ).toBeUndefined();
-        await expect(unwrap(Promise.resolve(result))).rejects.toMatchObject({ status: 502 });
+        expect(thrown.body).toBeUndefined();
+        expect(thrown.message).not.toContain("private");
+        await expect(unwrap(Promise.resolve(result))).rejects.toMatchObject({
+            status: 502,
+            message: expect.stringContaining("Sidecar request failed: 502"),
+        });
     });
 
     it("unwrap() throws UcApiError carrying the status and message", async () => {

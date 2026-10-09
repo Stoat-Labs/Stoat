@@ -14,10 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/goccy/go-yaml"
+	"github.com/gofiber/fiber/v2"
 	"github.com/psviderski/uncloud/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,9 +32,10 @@ type fakeBackend struct {
 	services     []api.Service
 	volumes      []api.MachineVolume
 	images       []api.MachineImages
-	domain       string
+	domain       api.ClusterDomain
 	diagnostics  ClusterDiagnosticsResponse
 	caddyConfigs CaddyConfigsResponse
+	certificates CaddyCertificatesResponse
 	attachments  []VolumeAttachmentResponse
 	remoteImages []RemoteImageResponse
 	imageUpdates []ImageUpdateResponse
@@ -52,6 +55,7 @@ type fakeBackend struct {
 	listImagesErr       error
 	inspectImageErr     error
 	domainErr           error
+	setDomainErr        error
 	readyErr            error
 	containerErr        error
 	execErr             error
@@ -87,6 +91,8 @@ type fakeBackend struct {
 
 	deployComposeErr      error
 	lastComposeDeployment ComposeDeployment
+
+	lastCertificatesMachine string
 }
 
 func (f *fakeBackend) Ready(context.Context) error { return f.readyErr }
@@ -298,8 +304,27 @@ func (f *fakeBackend) InspectImageUpdate(context.Context, string) ([]ImageUpdate
 	return f.imageUpdates, nil
 }
 
-func (f *fakeBackend) GetDomain(context.Context) (string, error) {
+func (f *fakeBackend) GetDomain(context.Context) (api.ClusterDomain, error) {
 	return f.domain, f.domainErr
+}
+
+func (f *fakeBackend) SetClusterDomain(_ context.Context, name string) error {
+	if f.setDomainErr != nil {
+		return f.setDomainErr
+	}
+	f.domain = api.ClusterDomain{Name: name}
+	return nil
+}
+
+func (f *fakeBackend) ClearClusterDomain(context.Context) error {
+	f.domain = api.ClusterDomain{}
+	f.domainErr = api.ErrNotFound
+	return nil
+}
+
+func (f *fakeBackend) ListCaddyCertificates(_ context.Context, machine string) (CaddyCertificatesResponse, error) {
+	f.lastCertificatesMachine = machine
+	return f.certificates, nil
 }
 
 func (f *fakeBackend) DeployCompose(_ context.Context, deployment ComposeDeployment) (<-chan DeployComposeEvent, error) {
@@ -351,7 +376,7 @@ func newTestServerWithConfig(t *testing.T, cfg Config) (*Server, *fakeBackend) {
 		images: []api.MachineImages{{
 			Images: []image.Summary{{ID: "sha256:image", RepoTags: []string{"nginx:latest"}}},
 		}},
-		domain:       "example.uncld.dev",
+		domain:       api.ClusterDomain{Name: "example.uncld.dev", Reserved: true},
 		diagnostics:  ClusterDiagnosticsResponse{Status: "healthy", Issues: []string{}, Machines: []DiagnosticMachineResponse{}, Links: []ClusterLinkResponse{}},
 		caddyConfigs: CaddyConfigsResponse{Items: []CaddyConfigResponse{{MachineID: "machine-1", MachineName: "node-1", SHA256: "abc"}}, Drift: true},
 		attachments:  []VolumeAttachmentResponse{{MachineID: "machine-1", MachineName: "node-1", VolumeName: "data", Attached: true}},
@@ -415,7 +440,7 @@ func TestBearerTokenIsRequired(t *testing.T) {
 			response := doRequestWithToken(t, server, http.MethodGet, "/api/v1/machines", nil, "", token)
 			assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
 			assert.Contains(t, response.Header.Get("WWW-Authenticate"), "Bearer")
-			assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "bearer token")
+			assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "bearer token")
 		})
 	}
 
@@ -504,20 +529,20 @@ func TestHealthOpenAPIScalarAndCORS(t *testing.T) {
 	response = doRequest(t, server, http.MethodGet, "/openapi.json", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "application/json", response.Header.Get("Content-Type"))
-	var document OpenAPIDocument
+	var document map[string]any
 	require.NoError(t, json.Unmarshal([]byte(readBody(t, response)), &document))
-	assert.Equal(t, "3.0.3", document.OpenAPI)
-	assert.Equal(t, "Uncloud API", document.Info.Title)
+	assert.Equal(t, "3.1.0", document["openapi"])
+	assert.Equal(t, "Uncloud API", document["info"].(map[string]any)["title"])
 
 	response = doRequest(t, server, http.MethodGet, "/openapi.yaml", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "application/yaml; charset=utf-8", response.Header.Get("Content-Type"))
 	yamlSpec := readBody(t, response)
-	assert.Contains(t, yamlSpec, "openapi: 3.0.3")
+	assert.Contains(t, yamlSpec, "openapi: 3.1.0")
 	assert.Contains(t, yamlSpec, "/api/v1/services")
 	yamlJSON, err := yaml.YAMLToJSON([]byte(yamlSpec))
 	require.NoError(t, err)
-	var yamlDocument OpenAPIDocument
+	var yamlDocument map[string]any
 	require.NoError(t, json.Unmarshal(yamlJSON, &yamlDocument))
 	assert.Equal(t, document, yamlDocument)
 
@@ -560,7 +585,7 @@ func TestInternalMetricsRequiresLocalMachineID(t *testing.T) {
 
 	response := doRequest(t, server, http.MethodGet, "/ucinternal/metrics", nil, "")
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "machine ID")
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "machine ID")
 	assert.Empty(t, fake.lastMachineID)
 }
 
@@ -637,27 +662,25 @@ func TestInternalMetricsRequiresIPv4Subnet(t *testing.T) {
 
 	response := doRequest(t, server, http.MethodGet, "/ucinternal/metrics", nil, "")
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "IPv4 subnet")
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "IPv4 subnet")
 }
 
 // TestOpenAPICoversEveryRoute compares the document against the routes the
-
-// server actually registers, in both directions. The document is written by
-// hand, so a list of expected paths maintained next to it would go stale
-// together with it.
+// server actually registers, in both directions. Huma documents every
+// operation it registers, so this guards against plain Fiber routes added
+// next to it.
 func TestOpenAPICoversEveryRoute(t *testing.T) {
 	server, _ := newTestServer(t)
 	documented := documentedOperations(t)
 
+	// The spec and its reference page are served next to the API rather than
+	// documented in it.
+	undocumented := map[string]bool{"/openapi.json": true, "/openapi.yaml": true, "/docs": true, "/docs/*": true}
+
 	registered := make(map[string]map[string]bool)
 	for _, route := range server.App().GetRoutes(true) {
 		method := strings.ToLower(route.Method)
-		if method == "head" || method == "options" {
-			continue
-		}
-		// The wildcard route only serves the Scalar page under a sub-path; it is
-		// documented once as /docs.
-		if route.Path == "/docs/*" {
+		if method == "head" || method == "options" || undocumented[route.Path] {
 			continue
 		}
 
@@ -679,37 +702,29 @@ func TestOpenAPICoversEveryRoute(t *testing.T) {
 }
 
 func TestOpenAPIDeclaresBearerSecurity(t *testing.T) {
-	data, err := OpenAPIDocumentJSON()
-	require.NoError(t, err)
-	var document OpenAPIDocument
-	require.NoError(t, json.Unmarshal(data, &document))
+	humaAPI := newAPI(fiber.New())
+	(&Server{}).registerOperations(humaAPI)
+	document := humaAPI.OpenAPI()
 
 	require.Len(t, document.Security, 1)
 	_, ok := document.Security[0][bearerSchemeName]
 	assert.True(t, ok)
 	assert.Equal(t, "bearer", document.Components.SecuritySchemes[bearerSchemeName].Scheme)
 
-	// The health probe and the reference page must stay reachable without
-	// credentials, and must say so by clearing the document-level requirement.
-	public := map[string]bool{"/healthz": true, "/docs": true}
-	for path := range public {
-		operation := document.Paths[path].Get
-		require.NotNilf(t, operation, "%s is not documented", path)
-		require.NotNilf(t, operation.Security, "%s does not opt out of authentication", path)
-		assert.Emptyf(t, *operation.Security, "%s must clear the bearer requirement", path)
-		assert.NotContainsf(t, operation.Responses, "401",
-			"%s is public and must not document a 401", path)
-	}
-
-	// Everything else inherits the document-level requirement.
 	for path, item := range document.Paths {
-		if public[path] {
-			continue
-		}
-		for _, operation := range []*OpenAPIOperation{item.Get, item.Post, item.Patch, item.Delete} {
+		for _, operation := range []*huma.Operation{item.Get, item.Post, item.Put, item.Patch, item.Delete} {
 			if operation == nil {
 				continue
 			}
+			// The health probe must stay reachable without credentials, and must
+			// say so by clearing the document-level requirement.
+			if path == healthPath {
+				require.NotNilf(t, operation.Security, "%s does not opt out of authentication", path)
+				assert.Emptyf(t, operation.Security, "%s must clear the bearer requirement", path)
+				assert.NotContainsf(t, operation.Responses, "401", "%s is public and must not document a 401", path)
+				continue
+			}
+			// Everything else inherits the document-level requirement.
 			assert.Nilf(t, operation.Security, "%s %s opts out of authentication", path, operation.OperationID)
 			assert.Containsf(t, operation.Responses, "401", "%s %s does not document a 401", path, operation.OperationID)
 		}
@@ -812,7 +827,7 @@ func TestContainerControlAndExecRoutes(t *testing.T) {
 	}
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/services/web/containers/abc123/actions", ContainerActionRequest{Action: "invalid"}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/services/web/containers/abc123/exec", ExecContainerRequest{
 		Command: []string{"sh", "-lc", "cat"}, Stdin: "hello",
@@ -825,13 +840,13 @@ func TestContainerControlAndExecRoutes(t *testing.T) {
 	assert.Equal(t, []string{"sh", "-lc", "cat"}, fake.lastExecOptions.Command)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/services/web/containers/abc123/exec", ExecContainerRequest{}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/services/web/containers/abc123/exec", ExecContainerRequest{Command: []string{"bad\x00argument"}}, "")
 	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/machines/node-1/exec", MachineExecRequest{}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/machines/node-1/exec/stream", MachineExecRequest{Command: []string{"bad\x00argument"}}, "")
 	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
@@ -882,12 +897,59 @@ func TestCappedBuffer(t *testing.T) {
 	assert.True(t, buffer.Truncated())
 }
 
+func TestClusterDomainRoutes(t *testing.T) {
+	server, fake := newTestServer(t)
+
+	response := doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain", SetDomainRequest{Name: "  "}, "")
+	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	fake.setDomainErr = status.Error(codes.AlreadyExists, "cluster domain already configured")
+	response = doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain", SetDomainRequest{Name: "apps.example.com"}, "")
+	assert.Equal(t, http.StatusConflict, response.StatusCode)
+
+	fake.setDomainErr = status.Error(codes.InvalidArgument, "invalid cluster domain")
+	response = doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain", SetDomainRequest{Name: "localhost"}, "")
+	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	fake.setDomainErr = nil
+	response = doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain", SetDomainRequest{Name: " apps.example.com "}, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.JSONEq(t, `{"domain":"apps.example.com","reserved":false}`, readBody(t, response))
+
+	response = doRequest(t, server, http.MethodDelete, "/api/v1/cluster/domain", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.JSONEq(t, `{"status":"cleared"}`, readBody(t, response))
+
+	response = doRequest(t, server, http.MethodGet, "/api/v1/cluster/domain", nil, "")
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+}
+
+func TestCaddyCertificatesRoute(t *testing.T) {
+	server, fake := newTestServer(t)
+	fake.certificates = CaddyCertificatesResponse{
+		Items:  []CaddyCertificateResponse{{SAN: "app.example.com", SHA256: "abc"}},
+		Errors: []string{"parse certificate 'broken.example.com': empty certificate chain"},
+	}
+
+	response := doRequest(t, server, http.MethodGet, "/api/v1/caddy/certificates", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	certificates := decodeResponse[CaddyCertificatesResponse](t, response)
+	require.Len(t, certificates.Items, 1)
+	assert.Equal(t, "app.example.com", certificates.Items[0].SAN)
+	assert.Len(t, certificates.Errors, 1)
+	assert.Empty(t, fake.lastCertificatesMachine)
+
+	response = doRequest(t, server, http.MethodGet, "/api/v1/caddy/certificates?machine=node-1", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, "node-1", fake.lastCertificatesMachine)
+}
+
 func TestClusterMachineAndServiceRoutes(t *testing.T) {
 	server, fake := newTestServer(t)
 
 	response := doRequest(t, server, http.MethodGet, "/api/v1/cluster/domain", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
-	assert.JSONEq(t, `{"domain":"example.uncld.dev"}`, readBody(t, response))
+	assert.JSONEq(t, `{"domain":"example.uncld.dev","reserved":true}`, readBody(t, response))
 
 	response = doRequest(t, server, http.MethodGet, "/api/v1/machines?available=true&names=machine-1,node-1", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
@@ -1016,32 +1078,34 @@ func TestVolumeAndImageRoutes(t *testing.T) {
 	assert.Equal(t, "sha256:image", inspected.Items[0].Image.ID)
 }
 
+// Requests that break the schema are rejected by Huma with 422 before a
+// handler runs. Checks the schema cannot express are answered with 400.
 func TestValidationAndErrorResponses(t *testing.T) {
 	server, fake := newTestServer(t)
 
 	response := doRequest(t, server, http.MethodGet, "/api/v1/machines?available=maybe", nil, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "available")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "available")
 
 	response = doRequest(t, server, http.MethodPatch, "/api/v1/machines/machine-1", map[string]string{"unknown": "field"}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPatch, "/api/v1/machines/machine-1", map[string]string{}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/volumes", map[string]string{"name": "data"}, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/services/deploy/compose", map[string]string{
 		"compose": "not-base64",
 	}, "")
 	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "base64")
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "base64")
 
 	response = doRequest(t, server, http.MethodGet, "/api/v1/services/svc-1/logs?tail=not-an-integer", nil, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 	response = doRequest(t, server, http.MethodGet, "/api/v1/machines/node-1/logs", nil, "")
-	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 
 	fake.inspectMachineErr = api.ErrNotFound
 	response = doRequest(t, server, http.MethodGet, "/api/v1/machines/missing", nil, "")
@@ -1051,12 +1115,27 @@ func TestValidationAndErrorResponses(t *testing.T) {
 	fake.listServicesErr = status.Error(codes.Unavailable, "cluster unavailable")
 	response = doRequest(t, server, http.MethodGet, "/api/v1/services", nil, "")
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "cluster unavailable")
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "cluster unavailable")
 	fake.listServicesErr = nil
 
 	response = doRequest(t, server, http.MethodGet, "/does-not-exist", nil, "")
 	assert.Equal(t, http.StatusNotFound, response.StatusCode)
-	assert.NotEmpty(t, decodeResponse[ErrorResponse](t, response).Error)
+	assert.NotEmpty(t, decodeResponse[ErrorResponse](t, response).Message)
+}
+
+// TestValidationErrorsDoNotEchoTheBody guards secrets in request bodies, such as
+// exec stdin, from being reflected into error messages that callers may log.
+func TestValidationErrorsDoNotEchoTheBody(t *testing.T) {
+	server, fake := newTestServer(t)
+
+	response := doRequest(t, server, http.MethodPost, "/api/v1/machines/node-1/exec", map[string]any{
+		"command": []string{"id"}, "stdin": "s3cret", "extra": 1,
+	}, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	message := decodeResponse[ErrorResponse](t, response).Message
+	assert.Contains(t, message, "body.extra")
+	assert.NotContains(t, message, "s3cret")
+	assert.Empty(t, fake.lastMachineExecID)
 }
 
 func TestComposeRequestSizeLimit(t *testing.T) {
@@ -1068,7 +1147,7 @@ func TestComposeRequestSizeLimit(t *testing.T) {
 	}, "")
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
-	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Error, "4 MiB")
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "4 MiB")
 	assert.Empty(t, fake.lastComposeDeployment.Content)
 }
 

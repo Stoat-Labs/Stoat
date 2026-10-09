@@ -82,11 +82,13 @@
 
         if (!open) return;
         const now = Math.floor(Date.now() / 1000);
+
         const seconds =
             parseInt(range.filters.range.current, 10) *
             (range.filters.range.current.endsWith("h")
                 ? 3600
                 : 86400);
+
         draftFrom = toLocalInput(range.custom?.from ?? now - seconds);
         draftTo = toLocalInput(range.custom?.to ?? now);
     }

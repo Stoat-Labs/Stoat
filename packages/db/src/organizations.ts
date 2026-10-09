@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import type { Database } from "./index";
-import { member, organization } from "./schema";
+import { clusters, member, organization, s3Connections } from "./schema";
 
 export function listUserOrganizations(db: Database, userId: string) {
     return db
@@ -28,4 +28,25 @@ export async function getOrganizationMembership(
         .limit(1);
 
     return membership;
+}
+
+/**
+ * Whether the organization still owns clusters or S3 connections. Deleting it would cascade
+ * those rows away without stopping their jobs or revoking provider keys, so they must be
+ * removed first through their own guarded flows.
+ */
+export async function organizationHasInfrastructure(db: Database, organizationId: string) {
+    const [cluster] = await db
+        .select({ id: clusters.id })
+        .from(clusters)
+        .where(eq(clusters.organizationId, organizationId))
+        .limit(1);
+
+    const [connection] = await db
+        .select({ id: s3Connections.id })
+        .from(s3Connections)
+        .where(eq(s3Connections.organizationId, organizationId))
+        .limit(1);
+
+    return Boolean(cluster ?? connection);
 }

@@ -58,10 +58,9 @@ const apiHandler = new OpenAPIHandler(appRouter, {
     ],
 });
 
-const handle: RequestHandler = async ({ request }) => {
-    const context = await createContext({
-        headers: request.headers,
-    });
+const handle: RequestHandler = async (event) => {
+    const { request } = event;
+    const context = await createContext(event);
 
     const rpcResult = await rpcHandler.handle(request, {
         prefix: "/rpc",

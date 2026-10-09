@@ -1,40 +1,81 @@
-import { expect, it, vi } from "vite-plus/test";
-import { render } from "svelte/server";
+// Resolve the web package's dependency because these tests live outside that package.
+import {
+    QueryClient,
+    setQueryClientContext,
+} from "../../apps/web/node_modules/@tanstack/svelte-query";
 import { setContext } from "svelte";
+import { render } from "svelte/server";
+import { expect, it } from "vite-plus/test";
+import { orpc } from "../../apps/web/src/lib/api/orpc";
 import ResourceLogs from "../../apps/web/src/lib/components/projects/resource-logs.svelte";
 
-const { createQuery } = vi.hoisted(() => ({ createQuery: vi.fn() }));
+const input = { projectId: "project", resourceId: "resource" };
 
-vi.mock("@tanstack/svelte-query", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("@tanstack/svelte-query")>()),
-    createQuery,
-}));
+const timestamp = new Date("2026-10-06T00:00:00Z");
 
-it("keeps the logs workspace skeleton until both queries are ready", () => {
-    for (const [resourcePending, servicesPending] of [
-        [true, true],
-        [true, false],
-        [false, true],
-        [false, false],
-    ]) {
-        createQuery.mockReturnValueOnce({ isPending: resourcePending });
-        createQuery.mockReturnValueOnce({ isPending: servicesPending, data: { services: [] } });
-        createQuery.mockReturnValueOnce({ data: [] });
-        createQuery.mockReturnValueOnce({ data: [] });
+const resource = {
+    id: input.resourceId,
+    projectId: input.projectId,
+    name: "Resource",
+    description: null,
+    icon: null,
+    type: "compose",
+    spec: null,
+    draftSpec: null,
+    settings: null,
+    gitConnectionId: null,
+    gitSource: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+} as const;
 
-        function LogsWithContext(...args: Parameters<typeof ResourceLogs>) {
-            setContext(Symbol.for("nuqs-svelte-adapter"), {
-                useAdapter: () => ({ searchParams: () => new URLSearchParams() }),
-            });
+type LogServices = Awaited<
+    ReturnType<ReturnType<typeof orpc.resources.listLogServices.queryOptions>["queryFn"]>
+>;
 
-            return ResourceLogs(...args);
-        }
+const oneService: LogServices = {
+    services: [{ id: "service-1", name: "api" }],
+    historyAvailable: true,
+    retentionDays: 14,
+};
 
-        const { body } = render(LogsWithContext, {
-            props: { projectId: "project", resourceId: "resource" },
+// Seeded queries render as loaded; anything left unseeded stays pending, as on first load.
+function renderLogs(search: string, loadedResource: boolean, services: LogServices | null) {
+    const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
+
+    if (loadedResource)
+        cache.setQueryData(orpc.resources.getResource.queryKey({ input }), resource);
+
+    if (services) cache.setQueryData(orpc.resources.listLogServices.queryKey({ input }), services);
+
+    function LogsWithContext(...args: Parameters<typeof ResourceLogs>) {
+        setQueryClientContext(cache);
+        setContext(Symbol.for("nuqs-svelte-adapter"), {
+            useAdapter: () => ({ searchParams: () => new URLSearchParams(search) }),
         });
 
-        if (resourcePending || servicesPending) {
+        return ResourceLogs(...args);
+    }
+
+    try {
+        return render(LogsWithContext, { props: input }).body;
+    } finally {
+        cache.clear();
+    }
+}
+
+it("keeps the logs workspace skeleton until both queries are ready", () => {
+    const noServices: LogServices = { services: [], historyAvailable: false, retentionDays: null };
+
+    for (const [resourceLoaded, servicesLoaded] of [
+        [false, false],
+        [false, true],
+        [true, false],
+        [true, true],
+    ]) {
+        const body = renderLogs("", resourceLoaded, servicesLoaded ? noServices : null);
+
+        if (!resourceLoaded || !servicesLoaded) {
             expect(body).toContain('loading-label="Loading logs"');
             expect(body).toContain('data-slot="frame"');
             expect(body).toContain('aria-label="Filter loaded logs"');
@@ -49,30 +90,11 @@ it("keeps the logs workspace skeleton until both queries are ready", () => {
 });
 
 it("restores the search controls from a shared URL", () => {
-    createQuery.mockReturnValueOnce({ isPending: false });
-    createQuery.mockReturnValueOnce({
-        isPending: false,
-        data: { services: [{ id: "service-1", name: "api" }], historyAvailable: true },
-    });
-    createQuery.mockReturnValueOnce({ data: [] });
-    createQuery.mockReturnValueOnce({ data: [] });
-
-    function LogsWithUrl(...args: Parameters<typeof ResourceLogs>) {
-        setContext(Symbol.for("nuqs-svelte-adapter"), {
-            useAdapter: () => ({
-                searchParams: () =>
-                    new URLSearchParams(
-                        "logMode=search&logRange=custom&logLevel=error&logWrap=true",
-                    ),
-            }),
-        });
-
-        return ResourceLogs(...args);
-    }
-
-    const { body } = render(LogsWithUrl, {
-        props: { projectId: "project", resourceId: "resource" },
-    });
+    const body = renderLogs(
+        "logMode=search&logRange=custom&logLevel=error&logWrap=true",
+        true,
+        oneService,
+    );
 
     expect(body).toContain('aria-label="Search log messages"');
     expect(body).toContain('id="log-start"');
@@ -81,55 +103,14 @@ it("restores the search controls from a shared URL", () => {
 });
 
 it("restores pause and scroll controls from a shared URL", () => {
-    createQuery.mockReturnValueOnce({ isPending: false });
-    createQuery.mockReturnValueOnce({
-        isPending: false,
-        data: { services: [{ id: "service-1", name: "api" }], historyAvailable: true },
-    });
-    createQuery.mockReturnValueOnce({ data: [] });
-    createQuery.mockReturnValueOnce({ data: [] });
-
-    function LogsWithUrl(...args: Parameters<typeof ResourceLogs>) {
-        setContext(Symbol.for("nuqs-svelte-adapter"), {
-            useAdapter: () => ({
-                searchParams: () =>
-                    new URLSearchParams("logPaused=true&logFollowing=false&logScroll=42"),
-            }),
-        });
-
-        return ResourceLogs(...args);
-    }
-
-    const { body } = render(LogsWithUrl, {
-        props: { projectId: "project", resourceId: "resource" },
-    });
+    const body = renderLogs("logPaused=true&logFollowing=false&logScroll=42", true, oneService);
 
     expect(body).toContain("Resume");
     expect(body).toContain("Jump to latest");
 });
 
 it("restores a fixed time bucket from a shared URL", () => {
-    createQuery.mockReturnValueOnce({ isPending: false });
-    createQuery.mockReturnValueOnce({
-        isPending: false,
-        data: { services: [{ id: "service-1", name: "api" }], historyAvailable: true },
-    });
-    createQuery.mockReturnValueOnce({ data: [] });
-    createQuery.mockReturnValueOnce({ data: [] });
-
-    function LogsWithUrl(...args: Parameters<typeof ResourceLogs>) {
-        setContext(Symbol.for("nuqs-svelte-adapter"), {
-            useAdapter: () => ({
-                searchParams: () => new URLSearchParams("logBucket=0%3A0%3A24000"),
-            }),
-        });
-
-        return ResourceLogs(...args);
-    }
-
-    const { body } = render(LogsWithUrl, {
-        props: { projectId: "project", resourceId: "resource" },
-    });
+    const body = renderLogs("logBucket=0%3A0%3A24000", true, oneService);
 
     expect(body).toContain("Show all times");
 });

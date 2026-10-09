@@ -131,10 +131,12 @@
         return visualLinks.map((link) => {
             const from = positions.get(link.from)!;
             const to = positions.get(link.to)!;
+
             const key =
                 link.from === link.to
                     ? link.from
                     : JSON.stringify([link.from, link.to].sort());
+
             const occurrence = occurrences.get(key) ?? 0;
             occurrences.set(key, occurrence + 1);
 
@@ -163,10 +165,12 @@
             ) {
                 const vx = cx - node.x;
                 const vy = cy - node.y;
+
                 const scale = Math.min(
                     76 / Math.abs(vx),
                     28 / Math.abs(vy),
                 );
+
                 const distance = Math.hypot(vx, vy);
 
                 return {

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import BucketDetail from "$lib/components/s3/bucket-detail.svelte";
     import BucketFiles from "$lib/components/s3/bucket-files.svelte";
@@ -292,15 +293,17 @@
                                 {bucket.error ??
                                     "The last operation failed."}
                             </span>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                loading={retryState.isPending}
-                                onclick={() =>
-                                    retryState.mutate(input)}
-                            >
-                                Retry provisioning
-                            </Button>
+                            {#if page.data.isOrganizationAdmin}
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    loading={retryState.isPending}
+                                    onclick={() =>
+                                        retryState.mutate(input)}
+                                >
+                                    Retry provisioning
+                                </Button>
+                            {/if}
                         </AlertDescription>
                     </Alert>
                 {/if}

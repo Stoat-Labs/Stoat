@@ -117,8 +117,10 @@
         const [xTo, y2] = to;
         // Unwrap destination longitude so antimeridian arcs use the short path.
         const rawDx = xTo - x0;
+
         const x2 =
             rawDx > 180 ? xTo - 360 : rawDx < -180 ? xTo + 360 : xTo;
+
         const dx = x2 - x0;
         const dy = y2 - y0;
         const distance = Math.hypot(dx, dy);
@@ -213,6 +215,7 @@
     const hitWidth = $derived(() => {
         const w =
             paint?.["line-width"] ?? DEFAULT_PAINT["line-width"];
+
         const base = typeof w === "number" ? w : ARC_HIT_MIN_WIDTH;
 
         return Math.max(
@@ -313,6 +316,7 @@
         const isLoaded = mapCtx.isLoaded;
 
         if (!map || !isLoaded) return;
+
         const source = map.getSource(sourceId) as
             | MapLibreGL.GeoJSONSource
             | undefined;
@@ -346,6 +350,7 @@
 
         const handleClick = (e: MapLibreGL.MapMouseEvent) => {
             if (!onclick) return;
+
             const features = map.queryRenderedFeatures(e.point, {
                 layers: [targetLayer],
             });
@@ -369,6 +374,7 @@
             const features = map.queryRenderedFeatures(e.point, {
                 layers: [targetLayer],
             });
+
             const arcId = features.length
                 ? features[0].properties?._arc_id
                 : null;

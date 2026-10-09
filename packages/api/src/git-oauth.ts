@@ -59,43 +59,6 @@ export class GitOAuthError extends Error {
     }
 }
 
-/** Server-only configuration. Never serialize this result to a browser. */
-export function getGitOAuthProviders(): GitOAuthProvider[] {
-    const raw = process.env.GIT_OAUTH_PROVIDERS;
-
-    if (!raw) return [];
-
-    try {
-        if (raw.length > 128 * 1024) throw new Error();
-        const providers = z.array(providerSchema).max(32).parse(JSON.parse(raw));
-
-        // Stored apps have a reserved namespace and can never shadow a global app.
-        if (providers.some((provider) => provider.id.startsWith("db_"))) throw new Error();
-
-        if (new Set(providers.map((provider) => provider.id)).size !== providers.length)
-            throw new Error();
-
-        return providers.map((provider) => ({
-            ...provider,
-            serverUrl: validateGitServerUrl(provider.serverUrl, provider.provider),
-        }));
-    } catch {
-        throw new GitOAuthError(
-            "configuration",
-            "Set GIT_OAUTH_PROVIDERS to a JSON array of unique id, name, provider (github/forgejo), serverUrl, clientId and clientSecret configurations.",
-        );
-    }
-}
-
-export function getPublicGitOAuthProviders() {
-    return getGitOAuthProviders().map(({ id, name, provider, serverUrl }) => ({
-        id,
-        name,
-        provider,
-        serverUrl,
-    }));
-}
-
 const publicProviderColumns = {
     id: gitOAuthProviders.id,
     name: gitOAuthProviders.name,
@@ -119,7 +82,7 @@ export async function getPublicOrganizationGitOAuthProviders(
             )
             .orderBy(asc(gitOAuthProviders.name));
 
-        return [...getPublicGitOAuthProviders(), ...stored];
+        return stored;
     } catch {
         throw new GitOAuthError("configuration", "Unable to load Git OAuth applications.");
     }
@@ -142,24 +105,18 @@ export async function getOrganizationGitOAuthProviders(
             )
             .orderBy(asc(gitOAuthProviders.name));
 
-        return [
-            ...getGitOAuthProviders(),
-            ...stored.map((row) => {
-                const provider = providerSchema.parse({
-                    id: row.id,
-                    name: row.name,
-                    provider: row.provider,
-                    serverUrl: validateGitServerUrl(row.serverUrl, row.provider),
-                    clientId: row.clientId,
-                    clientSecret: decryptGitOAuthClientSecret(row.encryptedClientSecret, row),
-                });
+        return stored.map((row) => {
+            if (row.organizationId !== organizationId) throw new Error();
 
-                if (!provider.id.startsWith("db_") || row.organizationId !== organizationId)
-                    throw new Error();
-
-                return provider;
-            }),
-        ];
+            return providerSchema.parse({
+                id: row.id,
+                name: row.name,
+                provider: row.provider,
+                serverUrl: validateGitServerUrl(row.serverUrl, row.provider),
+                clientId: row.clientId,
+                clientSecret: decryptGitOAuthClientSecret(row.encryptedClientSecret, row),
+            });
+        });
     } catch {
         throw new GitOAuthError("configuration", "Unable to load Git OAuth applications.");
     }
@@ -464,7 +421,7 @@ export function createGitOAuthFlow(
         name: string;
         connectionId?: string;
     },
-    providers: GitOAuthProvider[] = getGitOAuthProviders(),
+    providers: GitOAuthProvider[],
 ) {
     const provider = providers.find((entry) => entry.id === input.providerId);
 
@@ -518,7 +475,7 @@ export function readGitOAuthFlow(
     cookie: string | undefined,
     state: string | null,
     identity: GitOAuthIdentity,
-    providers: GitOAuthProvider[] = getGitOAuthProviders(),
+    providers: GitOAuthProvider[],
 ): GitOAuthFlow {
     try {
         if (!cookie || cookie.length > 3800 || !state || !/^[a-zA-Z0-9_-]{43}$/.test(state))
@@ -645,7 +602,7 @@ async function requestToken(provider: GitOAuthProvider, parameters: Record<strin
 export async function exchangeGitOAuthCode(
     flow: GitOAuthFlow,
     code: string,
-    providers: GitOAuthProvider[] = getGitOAuthProviders(),
+    providers: GitOAuthProvider[],
 ) {
     const provider = providers.find((entry) => entry.id === flow.providerId);
 
@@ -686,7 +643,7 @@ export async function exchangeGitOAuthCode(
 /** Caller must check provider/server binding, lock the connection, and persist the replacement before use. */
 export async function refreshGitOAuthCredentials(
     credentials: GitCredentials,
-    providers: GitOAuthProvider[] = getGitOAuthProviders(),
+    providers: GitOAuthProvider[],
 ): Promise<GitCredentials> {
     if (!credentials.oauthProviderId) {
         if (credentials.expiresAt || credentials.refreshToken)
@@ -700,7 +657,7 @@ export async function refreshGitOAuthCredentials(
     if (!provider)
         throw new GitOAuthError(
             "configuration",
-            "Restore this connection's OAuth application (GIT_OAUTH_PROVIDERS for global apps) or reconnect the Git account.",
+            "Restore this connection's OAuth application or reconnect the Git account.",
         );
 
     if (!credentials.expiresAt) {

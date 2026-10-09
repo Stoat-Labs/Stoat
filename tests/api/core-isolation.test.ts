@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, createRouterClient } from "@orpc/server";
 import { createDb } from "@stoat/db";
+import { referenceTargets } from "@stoat/workflows/references";
 import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
 import {
     clusterMonitoring,
@@ -12,7 +13,7 @@ import {
     resources,
     resourceDeploymentInputs,
 } from "@stoat/db/schema/index";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import {
     afterAll,
@@ -57,7 +58,8 @@ describe("core project and resource isolation (PostgreSQL)", () => {
     let db: ReturnType<typeof createDb>;
     let context: Context;
     const client = createRouterClient(resourcesRouter, { context: () => context });
-    const fetch = vi.fn<typeof globalThis.fetch>();
+    // The sidecar client calls fetch with a single Request.
+    const fetch = vi.fn<(request: Request) => Promise<Response>>();
 
     beforeAll(async () => {
         admin = createDb({ DATABASE_URL: process.env.DATABASE_URL! });
@@ -191,6 +193,48 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         const [row] = await db.select().from(resources).where(eq(resources.id, id));
 
         return row!;
+    }
+
+    it("offers and resolves variable references only within the resource cluster", async () => {
+        const sibling = await resource({
+            name: "Sibling",
+            settings: { env: "SECRET=leak-canary-7f3\n" },
+        });
+
+        const otherCluster = await resource({ projectId: otherProjectId, name: "Elsewhere" });
+
+        try {
+            await expectReferenceScope(sibling.id, otherCluster.id);
+        } finally {
+            await db.delete(resources).where(inArray(resources.id, [sibling.id, otherCluster.id]));
+        }
+    });
+
+    async function expectReferenceScope(siblingId: string, elsewhereId: string) {
+        const listed = await call(
+            resourcesRouter.listVariableReferences,
+            { projectId, resourceId },
+            { context },
+        );
+
+        const ids = listed.map((target) => target.id);
+        expect(ids).toContain(siblingId);
+        expect(ids).not.toContain(resourceId);
+        expect(ids).not.toContain(foreignResourceId);
+        expect(ids).not.toContain(internalResourceId);
+        expect(ids).not.toContain(elsewhereId);
+        expect(listed.find((target) => target.id === siblingId)).toEqual(
+            expect.objectContaining({ keys: expect.arrayContaining(["SECRET"]) }),
+        );
+        expect(JSON.stringify(listed)).not.toContain("leak-canary-7f3");
+
+        const targets = await referenceTargets(db, clusterId, [
+            foreignResourceId,
+            internalResourceId,
+            elsewhereId,
+        ]);
+
+        expect(targets).toEqual([]);
     }
 
     it("lists only public projects in the active organization, including legacy null flags and zero counts", async () => {
@@ -579,7 +623,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                         resourceId: internalResourceId,
                     }),
                 ).toHaveLength(2);
-                expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+                expect(fetch.mock.calls.map(([request]) => request.url)).toEqual([
                     expect.stringContaining("/api/v1/services/stoat-monitoring-greptimedb"),
                     expect.stringContaining("/api/v1/services/stoat-monitoring-alloy"),
                 ]);
@@ -845,7 +889,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             fetch.mockImplementation(async (request) =>
                 Response.json({
                     containers:
-                        String(request).endsWith("-web") || String(request).endsWith("/web")
+                        request.url.endsWith("-web") || request.url.endsWith("/web")
                             ? webContainers
                             : workerContainers,
                 }),
@@ -854,16 +898,14 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 await client.getContainers({ clusterId, projectId, resourceId: row.id }),
             ).toEqual([...webContainers, ...workerContainers]);
             const prefix = prefixNames ? `${projectId.slice(0, 8)}-${row.id.slice(0, 8)}-` : "";
-            expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual([
+            expect(fetch.mock.calls.map(([request]) => request.url).sort()).toEqual([
                 `http://owned.test/api/v1/services/${prefix}web`,
                 `http://owned.test/api/v1/services/${prefix}worker`,
             ]);
 
-            for (const [, options] of fetch.mock.calls) {
-                expect(new Headers(options?.headers).get("authorization")).toBe(
-                    "Bearer owned-token",
-                );
-                expect(options?.method).toBe("GET");
+            for (const [request] of fetch.mock.calls) {
+                expect(request.headers.get("authorization")).toBe("Bearer owned-token");
+                expect(request.method).toBe("GET");
             }
 
             expect(await storedResource(row.id)).toEqual(row);
@@ -876,13 +918,14 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             draftSpec: spec,
             settings: { prefixNames: false },
         });
+
         const containers = [{ id: "draft-web-1" }];
         fetch.mockResolvedValue(Response.json({ containers }));
 
         await expect(
             client.getContainers({ clusterId, projectId, resourceId: row.id }),
         ).resolves.toEqual(containers);
-        expect(String(fetch.mock.calls[0]?.[0])).toContain("/api/v1/services/web");
+        expect(fetch.mock.calls[0]?.[0].url).toContain("/api/v1/services/web");
         expect(
             await db
                 .select({ id: deployments.id })
@@ -997,7 +1040,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(
                 await client.getContainers({ clusterId, projectId, resourceId: row.id }),
             ).toEqual([{ id: "deployed-web" }]);
-            expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+            expect(fetch.mock.calls.map(([request]) => request.url)).toEqual([
                 `http://owned.test/api/v1/services/${prefix ? `${prefix}-` : ""}web`,
             ]);
             expect(await storedResource(row.id)).toMatchObject({
@@ -1032,7 +1075,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         });
 
         fetch.mockImplementation(async (request) =>
-            String(request).endsWith("/missing")
+            request.url.endsWith("/missing")
                 ? Response.json({ error: "Service not found" }, { status: 404 })
                 : Response.json({ containers: [{ id: "web-1" }] }),
         );

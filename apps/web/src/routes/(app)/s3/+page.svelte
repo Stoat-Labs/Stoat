@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import CreateConnectionDialog from "$lib/components/s3/create-connection-dialog.svelte";
     import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
     import {
@@ -64,10 +65,12 @@
                 from.
             </p>
         </div>
-        <Button disabled={!ready} onclick={openCreate}>
-            <Plus aria-hidden="true" />
-            Add connection
-        </Button>
+        {#if page.data.isOrganizationAdmin}
+            <Button disabled={!ready} onclick={openCreate}>
+                <Plus aria-hidden="true" />
+                Add connection
+            </Button>
+        {/if}
     </div>
 
     {#if listQuery.isError}
@@ -120,15 +123,17 @@
                     projects.
                 </EmptyDescription>
             </EmptyHeader>
-            <EmptyContent>
-                <Button
-                    size="sm"
-                    disabled={!ready}
-                    onclick={openCreate}
-                >
-                    Add connection
-                </Button>
-            </EmptyContent>
+            {#if page.data.isOrganizationAdmin}
+                <EmptyContent>
+                    <Button
+                        size="sm"
+                        disabled={!ready}
+                        onclick={openCreate}
+                    >
+                        Add connection
+                    </Button>
+                </EmptyContent>
+            {/if}
         </Empty>
     {:else}
         <Frame role="region" aria-labelledby="connections-heading">

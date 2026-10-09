@@ -3,9 +3,9 @@
 Typed TypeScript client for the [Uncloud](https://uncloud.run) HTTP API exposed by
 the sidecar in [`apps/sidecar`](../../apps/sidecar).
 
-Types are generated from the sidecar's OpenAPI spec; the client itself is a thin
-layer over `fetch`, plus hand-written helpers for the endpoints that stream
-Server-Sent Events.
+Types are generated from the sidecar's OpenAPI spec with `openapi-typescript`; the
+client is [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/), plus small
+helpers for the endpoints that stream Server-Sent Events.
 
 ## Usage
 
@@ -175,16 +175,14 @@ Commit both `openapi.json` and `src/generated/schema.ts`.
 
 ### Two things worth knowing
 
-**Spec bugs belong upstream now.** The OpenAPI document lives in this repo at
-`apps/sidecar/internal/httpapi/openapi.go`, and a Go test compares it against the
-routes the server actually registers in both directions, so a drifting path fails
-the build. `scripts/generate-spec.mjs` still supports post-generation patches, but
-the list is empty and should stay that way — fix the Go document instead.
+**Spec bugs belong in the sidecar.** Huma generates the OpenAPI document from the
+sidecar's Go handlers and types, so fix the Go types instead of patching the spec.
 
-**`--empty-objects-unknown` is required.** Seventeen schemas are bare
-`{"type": "object"}` with no properties. Without the flag they generate as
-`Record<string, never>` — meaning you could not pass `ContainerSpec.env` or read
-anything off `Volume.volume`. The flag renders them as `Record<string, unknown>`.
+**`--empty-objects-unknown` is required.** Docker and Uncloud models (`ServiceSpec`,
+the container in `ServiceContainer`, `Volume.volume`, image summaries) are passed
+through as plain objects. Without the flag they would generate as
+`Record<string, never>`; with it they are `Record<string, unknown>`, so parse the
+fields you need.
 
 ## Layout
 

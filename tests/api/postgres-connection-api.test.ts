@@ -27,18 +27,24 @@ describe("external connection API", () => {
     let organizationId: string;
     let failSidecar = false;
     let sidecarRequests = 0;
+
     const server = createServer((request, response) => {
         sidecarRequests++;
         response.setHeader("Content-Type", "application/json");
+
         if (failSidecar) {
             response.writeHead(503);
             response.end(JSON.stringify({ error: "offline" }));
+
             return;
         }
+
         if (request.url === "/api/v1/machines") {
             response.end(JSON.stringify({ items: [{ id: "machine", publicIp: "203.0.113.10" }] }));
+
             return;
         }
+
         response.end(
             JSON.stringify({
                 items: [
@@ -67,6 +73,7 @@ describe("external connection API", () => {
     beforeAll(async () => {
         await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
         const address = server.address();
+
         if (!address || address instanceof String) throw new Error("Missing server address");
         // SAFETY: listen(0, '127.0.0.1') creates a TCP server, never a Unix socket.
         const port = (address as import("node:net").AddressInfo).port;
@@ -79,9 +86,11 @@ describe("external connection API", () => {
         await db.$client.query(
             `INSERT INTO "user" (id, name, email) VALUES ('connections', 'Connections', 'connections@example.test')`,
         );
+
         const membership = await db.$client.query(
             `SELECT organization_id FROM member WHERE user_id = 'connections'`,
         );
+
         organizationId = membership.rows[0].organization_id;
         // SAFETY: these procedures only read the session identity and organization.
         context = {
@@ -112,6 +121,7 @@ describe("external connection API", () => {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
         await db?.$client.end();
+
         if (admin) {
             await admin.$client.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
             await admin.$client.end();
@@ -129,6 +139,7 @@ describe("external connection API", () => {
             draftSpec,
             spec,
         });
+
         return { clusterId, projectId, resourceId, expectedSpec: draftSpec, expectedSource: null };
     }
 
@@ -162,11 +173,13 @@ describe("external connection API", () => {
         expect(await call(resourcesRouter.getConnection, input, { context })).toMatchObject({
             pendingDeployment: false,
         });
+
         const again = await call(
             resourcesRouter.enableExternalConnection,
             { ...input, expectedSpec: updated.draftSpec },
             { context },
         );
+
         expect(again.draftSpec).toBe(updated.draftSpec);
     });
 
@@ -176,10 +189,12 @@ describe("external connection API", () => {
             externalPort: null,
             pendingDeployment: false,
         });
+
         const unrelatedEdit = await resource(
             `${published(15432)}# unrelated edit\n`,
             published(15432),
         );
+
         expect(await call(resourcesRouter.getConnection, unrelatedEdit, { context })).toMatchObject(
             { externalPort: 15432, pendingDeployment: false },
         );
@@ -192,10 +207,12 @@ describe("external connection API", () => {
     it("allocates different ports for simultaneous requests in the same cluster", async () => {
         const first = await resource();
         const second = await resource();
+
         const results = await Promise.all([
             call(resourcesRouter.enableExternalConnection, first, { context }),
             call(resourcesRouter.enableExternalConnection, second, { context }),
         ]);
+
         expect(
             new Set(results.map((row) => postgresService(row.draftSpec!)?.published?.port)).size,
         ).toBe(2);
@@ -212,7 +229,7 @@ describe("external connection API", () => {
         ).rejects.toMatchObject({ code: "CONFLICT" });
         expect(sidecarRequests).toBe(0);
         const [saved] = await db.select().from(resources).where(eq(resources.id, input.resourceId));
-        expect(saved.draftSpec).toBe(draft);
+        expect(saved!.draftSpec).toBe(draft);
     });
 
     it("does not choose a port if the sidecar is unavailable", async () => {
@@ -222,7 +239,7 @@ describe("external connection API", () => {
             call(resourcesRouter.enableExternalConnection, input, { context }),
         ).rejects.toThrow();
         const [saved] = await db.select().from(resources).where(eq(resources.id, input.resourceId));
-        expect(saved.draftSpec).toBe(draft);
+        expect(saved!.draftSpec).toBe(draft);
     });
 
     it("rejects mismatched clusters, internal resources and non-PostgreSQL resources", async () => {
@@ -271,6 +288,7 @@ describe("external connection API", () => {
             { projectId, resourceId, prefixNames: false },
             { context },
         );
+
         const updated = await call(
             resourcesRouter.updateDetails,
             { projectId, resourceId, name: "Main database" },

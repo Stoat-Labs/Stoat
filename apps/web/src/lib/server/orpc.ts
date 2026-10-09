@@ -9,13 +9,7 @@ if (typeof window !== "undefined") {
 }
 
 const serverClient: AppRouterClient = createRouterClient(appRouter, {
-    context: async () => {
-        const event = getRequestEvent();
-
-        return createContext({
-            headers: event.request.headers,
-        });
-    },
+    context: () => createContext(getRequestEvent()),
 });
 
 // oRPC's SvelteKit SSR setup loads this from hooks.server.ts so $lib/orpc can

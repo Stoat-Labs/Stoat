@@ -20,6 +20,9 @@
         alignOffset?: ComponentProps<
             typeof AutocompletePrimitive.Positioner
         >["alignOffset"];
+        anchor?: ComponentProps<
+            typeof AutocompletePrimitive.Positioner
+        >["anchor"];
         portalProps?: WithoutChildren<
             ComponentProps<typeof AutocompletePrimitive.Portal>
         >;
@@ -33,6 +36,7 @@
         sideOffset = 4,
         alignOffset = 0,
         align = "start",
+        anchor,
         portalProps,
         ...restProps
     }: Props = $props();
@@ -44,6 +48,7 @@
         {align}
         {sideOffset}
         {alignOffset}
+        {anchor}
         class="z-50 select-none"
     >
         <AutocompletePrimitive.Popup

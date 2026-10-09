@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"time"
 
 	"github.com/docker/docker/api/types/image"
@@ -16,9 +17,11 @@ type ItemResponse[T any] struct {
 	Items []T `json:"items"`
 }
 
-// ErrorResponse is returned for every failed HTTP request.
+// ErrorResponse is returned for every failed HTTP request. Its status is the
+// HTTP status code, set when the error is raised (see newError).
 type ErrorResponse struct {
-	Error string `json:"error"`
+	status  int
+	Message string `json:"error"`
 }
 
 // StatusResponse is returned by operations that do not have a resource body.
@@ -26,9 +29,16 @@ type StatusResponse struct {
 	Status string `json:"status"`
 }
 
-// DomainResponse contains the cluster's reserved DNS domain.
+// DomainResponse contains the cluster's DNS domain. Reserved is true when the
+// domain is managed by Uncloud DNS and false when it was set externally.
 type DomainResponse struct {
-	Domain string `json:"domain"`
+	Domain   string `json:"domain"`
+	Reserved bool   `json:"reserved"`
+}
+
+// SetDomainRequest sets an externally managed cluster domain.
+type SetDomainRequest struct {
+	Name string `json:"name"`
 }
 
 // ReadinessResponse reports whether the sidecar can reach the Uncloud control plane.
@@ -39,7 +49,7 @@ type ReadinessResponse struct {
 
 // ClusterDiagnosticsResponse is a read-only health snapshot assembled from every machine.
 type ClusterDiagnosticsResponse struct {
-	Status       string                      `json:"status"`
+	Status       string                      `json:"status" enum:"healthy,degraded"`
 	Issues       []string                    `json:"issues"`
 	Machines     []DiagnosticMachineResponse `json:"machines"`
 	Links        []ClusterLinkResponse       `json:"links"`
@@ -52,7 +62,7 @@ type DiagnosticMachineResponse struct {
 	State         string             `json:"state"`
 	DaemonVersion string             `json:"daemonVersion,omitempty"`
 	DockerVersion string             `json:"dockerVersion,omitempty"`
-	StoreVersion  map[string]int64   `json:"storeVersion,omitempty"`
+	StoreVersion  api.StoreVersion   `json:"storeVersion,omitempty"`
 	WireGuard     *WireGuardResponse `json:"wireGuard,omitempty"`
 	Error         string             `json:"error,omitempty"`
 }
@@ -82,14 +92,45 @@ type CaddyConfigResponse struct {
 	MachineID   string    `json:"machineId"`
 	MachineName string    `json:"machineName"`
 	Caddyfile   string    `json:"caddyfile,omitempty"`
-	ModifiedAt  time.Time `json:"modifiedAt,omitempty"`
+	ModifiedAt  time.Time `json:"modifiedAt,omitzero"`
 	SHA256      string    `json:"sha256,omitempty"`
-	Error       string    `json:"error,omitempty"`
+	// LastReconciliationError is why the machine last failed to load a
+	// generated config. Caddy keeps serving the previous config meanwhile.
+	LastReconciliationError string `json:"lastReconciliationError,omitempty" doc:"Why the machine last failed to load a generated config."`
+	Error                   string `json:"error,omitempty"`
 }
 
 type CaddyConfigsResponse struct {
 	Items []CaddyConfigResponse `json:"items"`
 	Drift bool                  `json:"drift"`
+}
+
+// CaddyCertificatesResponse lists certificates in Caddy's cluster storage.
+// Errors holds stored certificates that could not be parsed.
+type CaddyCertificatesResponse struct {
+	Items  []CaddyCertificateResponse `json:"items"`
+	Errors []string                   `json:"errors" doc:"Stored certificates that could not be parsed."`
+}
+
+type CaddyCertificateResponse struct {
+	SAN                string                        `json:"san"`
+	DNSNames           []string                      `json:"dnsNames"`
+	Issuer             string                        `json:"issuer"`
+	IssuerOrganization string                        `json:"issuerOrganization,omitempty"`
+	SerialNumber       string                        `json:"serialNumber" doc:"Hexadecimal serial number."`
+	NotBefore          time.Time                     `json:"notBefore"`
+	NotAfter           time.Time                     `json:"notAfter"`
+	SHA256             string                        `json:"sha256" doc:"SHA-256 fingerprint of the leaf certificate."`
+	ACME               *CaddyCertificateACMEResponse `json:"acme,omitempty"`
+}
+
+// CaddyCertificateACMEResponse is the ACME metadata Caddy stored with a
+// certificate. The renewal window is the CA's suggestion, not a schedule.
+type CaddyCertificateACMEResponse struct {
+	CA                 string    `json:"ca"`
+	URL                string    `json:"url"`
+	RenewalWindowStart time.Time `json:"renewalWindowStart,omitzero"`
+	RenewalWindowEnd   time.Time `json:"renewalWindowEnd,omitzero"`
 }
 
 type RemoteImageResponse struct {
@@ -123,7 +164,7 @@ type VolumeAttachmentResponse struct {
 }
 
 type ContainerActionRequest struct {
-	Action string `json:"action"`
+	Action string `json:"action" enum:"start,stop,restart,remove"`
 }
 
 type ExecContainerRequest struct {
@@ -158,7 +199,7 @@ type MachineExecResponse struct {
 // MachineExecEvent is emitted by the streaming host command endpoint.
 // Type is one of stdout, stderr, complete, or error.
 type MachineExecEvent struct {
-	Type     string `json:"type"`
+	Type     string `json:"type" enum:"stdout,stderr,complete,error"`
 	Data     string `json:"data,omitempty"`
 	ExitCode *int   `json:"exitCode,omitempty"`
 	Error    string `json:"error,omitempty"`
@@ -187,7 +228,7 @@ type RunServiceResponse struct {
 // DeployComposeRequest is the request body for deploying services from a Compose file.
 // The Compose file content is provided base64-encoded to keep the JSON body text-safe.
 type DeployComposeRequest struct {
-	Compose string               `json:"compose"`
+	Compose string               `json:"compose" format:"byte" doc:"Base64-encoded Docker Compose file content."`
 	Options DeployComposeOptions `json:"options,omitempty"`
 }
 
@@ -203,24 +244,24 @@ type ComposeDeployment struct {
 // DeployComposeOptions mirrors the flags of the 'uc deploy' command.
 type DeployComposeOptions struct {
 	// Profiles enables one or more Compose profiles.
-	Profiles []string `json:"profiles,omitempty"`
+	Profiles []string `json:"profiles,omitempty" doc:"Compose profiles to enable."`
 	// Services selects the Compose services to deploy. Dependencies are included automatically.
-	Services []string `json:"services,omitempty"`
+	Services []string `json:"services,omitempty" doc:"Compose services to deploy. Dependencies are included automatically."`
 	// Recreate forces the recreation of containers even if their configuration and image haven't changed.
-	Recreate bool `json:"recreate,omitempty"`
+	Recreate bool `json:"recreate,omitempty" doc:"Recreate containers even if their configuration and image haven't changed."`
 	// SkipHealth skips the monitoring period and health checks after starting new containers.
-	SkipHealth bool `json:"skipHealth,omitempty"`
+	SkipHealth bool `json:"skipHealth,omitempty" doc:"Skip the monitoring period and health checks after starting new containers."`
 }
 
 // DeployComposeEvent is streamed as a Server-Sent Event while a Compose deployment runs.
 type DeployComposeEvent struct {
-	Type string `json:"type"` // plan, progress, complete, error
+	Type string `json:"type" enum:"plan,progress,complete,error"`
 
 	Operations []DeployComposePlanOperation `json:"operations,omitempty"`
 
 	ID         string `json:"id,omitempty"`
 	ParentID   string `json:"parentId,omitempty"`
-	Phase      string `json:"phase,omitempty"`
+	Phase      string `json:"phase,omitempty" enum:"working,done,warning,error,unknown"`
 	StatusText string `json:"statusText,omitempty"`
 	Text       string `json:"text,omitempty"`
 	Percent    int    `json:"percent,omitempty"`
@@ -263,7 +304,7 @@ type MachineNetworkResponse struct {
 	Subnet       string   `json:"subnet,omitempty"`
 	ManagementIP string   `json:"managementIp,omitempty"`
 	Endpoints    []string `json:"endpoints"`
-	PublicKey    string   `json:"publicKey,omitempty"`
+	PublicKey    string   `json:"publicKey,omitempty" format:"byte"`
 }
 
 // ServiceResponse is the JSON representation of a service and its containers.
@@ -331,7 +372,7 @@ type LogMetadataResponse struct {
 // LogEventResponse is serialized as an SSE data payload.
 type LogEventResponse struct {
 	Metadata  *LogMetadataResponse `json:"metadata,omitempty"`
-	Stream    string               `json:"stream"`
+	Stream    string               `json:"stream" enum:"stdout,stderr,heartbeat,unknown"`
 	Timestamp time.Time            `json:"timestamp"`
 	Message   string               `json:"message,omitempty"`
 	Error     string               `json:"error,omitempty"`
@@ -436,6 +477,36 @@ func machineImageResponse(machineImage api.MachineImage) MachineImageResponse {
 			MachineName: meta.MachineName,
 			MachineAddr: meta.MachineAddr,
 			Error:       meta.Error,
+		}
+	}
+	return response
+}
+
+// caddyCertificateResponse describes the leaf of a stored certificate chain.
+// IssuedCertificateFromProto guarantees the chain is not empty.
+func caddyCertificateResponse(cert api.IssuedCertificate) CaddyCertificateResponse {
+	leaf := cert.Chain[0]
+	fingerprint := cert.Fingerprint()
+	response := CaddyCertificateResponse{
+		SAN:          cert.SAN,
+		DNSNames:     leaf.DNSNames,
+		Issuer:       leaf.Issuer.CommonName,
+		SerialNumber: leaf.SerialNumber.Text(16),
+		NotBefore:    leaf.NotBefore,
+		NotAfter:     leaf.NotAfter,
+		SHA256:       hex.EncodeToString(fingerprint[:]),
+	}
+	if len(leaf.Issuer.Organization) > 0 {
+		response.IssuerOrganization = leaf.Issuer.Organization[0]
+	}
+	if response.DNSNames == nil {
+		response.DNSNames = []string{}
+	}
+	if acme := cert.IssuerData.ACME; acme != nil {
+		response.ACME = &CaddyCertificateACMEResponse{CA: acme.CA, URL: acme.URL}
+		if acme.RenewalInfo != nil {
+			response.ACME.RenewalWindowStart = acme.RenewalInfo.SuggestedWindow.Start
+			response.ACME.RenewalWindowEnd = acme.RenewalInfo.SuggestedWindow.End
 		}
 	}
 	return response

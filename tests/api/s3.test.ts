@@ -18,6 +18,7 @@ import {
 import { getR2BucketUsage } from "@stoat/s3/providers/r2";
 import { parseRustfsBucketUsage } from "@stoat/s3/providers/rustfs";
 import { decryptS3Secret, encryptS3Secret } from "@stoat/s3/secrets";
+import { reconcileBucket } from "@stoat/workflows/reconcile-bucket";
 import * as runtime from "@stoat/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -64,12 +65,19 @@ describe("S3 secrets and input", () => {
     it.each([
         "http://s3.example.com",
         "https://127.0.0.1",
-        "https://10.0.0.5",
+        "https://169.254.169.254",
         "https://s3.example.com/bucket",
         "https://user:pass@s3.example.com",
-    ])("rejects the non-public or non-root endpoint %s", (endpoint) => {
+    ])("rejects the unsafe or non-root endpoint %s", (endpoint) => {
         expect(v.safeParse(s3ConnectionInput, { ...generic, endpoint }).success).toBe(false);
     });
+
+    it.each(["https://10.0.0.5", "https://192.168.1.20:9000"])(
+        "accepts the private network endpoint %s",
+        (endpoint) => {
+            expect(v.safeParse(s3ConnectionInput, { ...generic, endpoint }).success).toBe(true);
+        },
+    );
 
     it("requires a Cloudflare account ID for R2", () => {
         expect(
@@ -608,6 +616,62 @@ describe("S3 connections and buckets API", () => {
         expect(
             await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, resourceId)),
         ).toEqual([]);
+    });
+
+    it("lets a superseded reconcile job finish without touching the provider or the row", async () => {
+        const connection = await createConnection();
+
+        const { id } = await call(
+            bucketsRouter.create,
+            { projectId, connectionId: connection.id, name: "Stale", bucket: "stale" },
+            { context: ownerContext },
+        );
+
+        const [before] = await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id));
+        const staleRequest = new Date(before!.requestedAt.getTime() - 1_000).toISOString();
+        const signal = new AbortController().signal;
+
+        // The connection's endpoint is not reachable, so any provider call would reject.
+        await reconcileBucket(db, id, staleRequest, signal);
+        await reconcileBucket(db, randomUUID(), before!.requestedAt.toISOString(), signal);
+
+        const [after] = await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id));
+        expect(after).toEqual(before);
+    });
+
+    it("leaves a settled bucket alone when its own job is redelivered", async () => {
+        const connection = await createConnection();
+
+        const { id } = await call(
+            bucketsRouter.create,
+            { projectId, connectionId: connection.id, name: "Settled", bucket: "settled" },
+            { context: ownerContext },
+        );
+
+        const [provisioning] = await db
+            .select()
+            .from(s3Buckets)
+            .where(eq(s3Buckets.resourceId, id));
+
+        await markBucketReady(db, provisioning!, null);
+        await reconcileBucket(
+            db,
+            id,
+            provisioning!.requestedAt.toISOString(),
+            new AbortController().signal,
+        );
+
+        const [after] = await db.select().from(s3Buckets).where(eq(s3Buckets.resourceId, id));
+        expect(after).toMatchObject({ status: "ready" });
+    });
+
+    it("does no reconcile work once the job is interrupted", async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+            reconcileBucket(db, randomUUID(), new Date().toISOString(), controller.signal),
+        ).rejects.toThrow();
     });
 
     it("keeps a cluster with buckets so their keys can still be revoked", async () => {

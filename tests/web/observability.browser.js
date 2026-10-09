@@ -132,16 +132,19 @@ async function checkServiceChartRefresh() {
     const heights = panels.map(
         (panel) => panel.querySelector('[data-slot="frame-panel"]').getBoundingClientRect().height,
     );
+
     if (Math.max(...heights) - Math.min(...heights) > 1)
         throw new Error("Service chart panels must have equal heights");
 
     for (const panel of panels) {
         const legend = panel.querySelector('[aria-label$=" legend"]');
+
         if (getComputedStyle(legend).display !== "grid")
             throw new Error("Service legends must use aligned rows instead of wrapping");
 
         for (const button of legend.querySelectorAll("button")) {
             const label = button.querySelector(".truncate");
+
             if (getComputedStyle(label).whiteSpace !== "nowrap" || !button.title)
                 throw new Error("Legend names must stay on one line with full names available");
         }

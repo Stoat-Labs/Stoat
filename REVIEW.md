@@ -33,7 +33,7 @@ The application compiles and the main architecture is coherent, but it is not pr
 
 ### R-01: The production worker cannot load the monitoring template
 
-Status: Confirmed.
+Status: Fixed. The template is a bundled `?raw` import; cluster initialization runs in the production bundle in `tests/e2e/clusters.spec.ts`.
 
 Evidence: `packages/workflows/src/initialize-cluster.ts:234-236` reads `../../../internal/monitoring/compose.yaml` relative to `import.meta.url`. The adapter-node bundle preserves that lookup in `apps/web/build/server/chunks/chunks/context.js-Y4hJmIJj.js:9605`, but no `compose.yaml` is included under `apps/web/build`. `apps/web/Dockerfile:15-16` runs that bundle from `/app/apps/web`.
 
@@ -59,7 +59,7 @@ Regression test: Attempt loopback, IPv6 loopback, link-local, private, encoded-a
 
 ### R-03: Organization members can create and permanently delete clusters
 
-Status: Confirmed.
+Status: Fixed. `createCluster` and `deleteCluster` require an owner or admin, and the clusters page hides those actions from members (`tests/e2e/clusters.spec.ts`).
 
 Evidence: `createCluster` and `deleteCluster` use `organizationProcedure` at `packages/api/src/routers/cluster/index.ts:145` and `:179`, which checks membership only (`packages/api/src/index.ts:27-35`). Initialization and cancellation already use `organizationAdminProcedure`, proving an owner/admin boundary exists. Cluster deletion cascades into projects, resources, monitoring state, and deployments through `packages/db/src/schema/index.ts:18-21,44-47,68-71,117-130,143-147`.
 
@@ -107,7 +107,7 @@ Regression test: Fail each state write independently after a successful mocked d
 
 ### R-07: Better Auth organization deletion bypasses cluster/job lifecycle guards
 
-Status: Confirmed.
+Status: Fixed. `beforeDeleteOrganization` refuses while the organization still has clusters or S3 connections (`tests/e2e/settings.spec.ts`).
 
 Evidence: `packages/auth/src/index.ts:39` enables `organization()` with default deletion behavior. Better Auth 1.7.3 exposes deletion unless `disableOrganizationDeletion` is set (`packages/auth/node_modules/better-auth/dist/plugins/organization/routes/crud-org.mjs:237-290`). Organization deletion cascades clusters, while effect-mq jobs have no organization/cluster foreign key.
 
@@ -211,7 +211,7 @@ Regression test: Initialize with key A, switch to key B, rotate credentials, and
 
 ### R-16: Guarded cluster deletion reports success after deleting zero rows
 
-Status: Confirmed race.
+Status: Fixed. A delete that removes no row returns CONFLICT instead of success.
 
 Evidence: `packages/api/src/routers/cluster/index.ts:182-212` reads status, deletes with that old status as a predicate, ignores the result, and always returns the ID.
 
@@ -283,7 +283,7 @@ Regression test: Change one Go operation/schema and assert `check-generated` fai
 
 ### R-23: The hand-written `ServiceSpec` schema does not match the decoded Go type
 
-Status: Confirmed contract mismatch.
+Status: Resolved. Huma now generates the spec from the Go types, and `ServiceSpec` is documented as an opaque object rather than a wrong shape. The body is still decoded straight into `api.ServiceSpec` without rejecting unknown fields; a local DTO that documents and validates the supported fields remains a follow-up. No TS caller uses this route today.
 
 Evidence: `apps/sidecar/internal/httpapi/server.go:596-606,977-994` strictly decodes directly into upstream `api.ServiceSpec`. `apps/sidecar/internal/httpapi/openapi.go:475-505` advertises `tty` and `openStdin`, which are not fields on the pinned Uncloud v0.20.0 container type, and omits accepted fields such as capabilities, healthcheck, init, log driver, resources, sysctls, and user. Map fields are emitted as unconstrained objects.
 
@@ -295,7 +295,7 @@ Regression test: Send every documented property through the real decoder and com
 
 Status: Confirmed source mismatch.
 
-Evidence: Image routes use one Fiber segment at `apps/sidecar/internal/httpapi/server.go:352-355,837-862`. The SDK percent-encodes slash-containing IDs at `packages/uncloud/src/index.ts:158-169`, while Fiber is not configured with `UnescapePath` at `apps/sidecar/internal/httpapi/server.go:226-234`.
+Evidence: Image routes use one Fiber segment at `apps/sidecar/internal/httpapi/server.go:352-355,837-862`. The SDK (`openapi-fetch`'s default path serializer) percent-encodes slash-containing IDs, while Fiber is not configured with `UnescapePath` at `apps/sidecar/internal/httpapi/server.go:226-234`.
 
 Potential fix: Explicitly path-unescape and validate after matching, or move image references to query/body values.
 
@@ -417,7 +417,7 @@ Regression test: Cover healthy, failed, and loading states and assert one meanin
 
 ### R-36: Primary navigation includes a guaranteed 404
 
-Status: Confirmed.
+Status: Fixed. The `/monitoring` link is gone; `tests/e2e/smoke.spec.ts` crawls every reachable page as owner and as member.
 
 Evidence: `apps/web/src/lib/components/sidebar/sidebar.svelte:73-78` links to `/monitoring`, but no matching route exists.
 
@@ -427,7 +427,7 @@ Regression test: Crawl every sidebar link and assert a non-404 application page.
 
 ### R-37: Several prominent controls do nothing
 
-Status: Confirmed.
+Status: Fixed. The inert project-card and cluster-list buttons are gone.
 
 Evidence: Project-card Add resource and Project settings buttons have no handler/link at `apps/web/src/lib/components/projects/project-card.svelte:62-80`. Cluster Initialize has no handler/link at `apps/web/src/routes/(app)/clusters/+page.svelte:231-236`.
 
@@ -457,7 +457,7 @@ Regression test: Compare UI state and formatted Compose for null, empty, true, a
 
 ### R-40: Compose and `.env` edits are lost without warning
 
-Status: Confirmed.
+Status: Fixed. Leaving the Compose or Ingress editor saves pending edits first, then continues; only closing the tab asks (`tests/e2e/projects.spec.ts`).
 
 Evidence: Dirty state exists in the Compose and variables pages (`.../[resourceId]/+page.svelte:49-53`, `.../[resourceId]/variables/+page.svelte:40-43`), but there is no `beforeNavigate` or `beforeunload` guard anywhere in app source.
 

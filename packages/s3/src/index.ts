@@ -55,7 +55,7 @@ const endpoint = v.pipe(
         } catch {
             return false;
         }
-    }, "Use a public HTTPS endpoint without a path, credentials, query, or fragment."),
+    }, "Use an HTTPS endpoint without a path, credentials, query, or fragment."),
     v.transform(normalizeS3Endpoint),
 );
 

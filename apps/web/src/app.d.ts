@@ -1,3 +1,4 @@
+import type { Context } from "@stoat/api/context";
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import type { RequestLogger } from "evlog";
 
@@ -10,6 +11,8 @@ declare global {
         // interface Error {}
         interface Locals {
             log: RequestLogger;
+            /** Resolved once per request in hooks.server.ts. */
+            session: Context["session"];
         }
         // interface PageData {}
         // interface PageState {}

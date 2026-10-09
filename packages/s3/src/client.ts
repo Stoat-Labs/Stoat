@@ -21,12 +21,9 @@ const blocked = new BlockList();
 
 for (const [address, prefix] of [
     ["0.0.0.0", 8],
-    ["10.0.0.0", 8],
     ["100.64.0.0", 10],
     ["127.0.0.0", 8],
     ["169.254.0.0", 16],
-    ["172.16.0.0", 12],
-    ["192.168.0.0", 16],
     ["192.0.0.0", 24],
     ["192.0.2.0", 24],
     ["198.18.0.0", 15],
@@ -39,13 +36,19 @@ for (const [address, prefix] of [
 
 blocked.addAddress("168.63.129.16");
 
-export function isPublicS3Address(address: string) {
+// Private networks (RFC1918, IPv6 ULA) are allowed: self-hosted S3 often lives on the LAN.
+// Loopback, link-local, cloud metadata, transition and special-use ranges never are.
+export function isAllowedS3Address(address: string) {
     if (isIP(address) === 4) return !blocked.check(address);
 
     if (isIP(address) !== 6) return false;
     const normalized = new URL(`https://[${address}]`).hostname.slice(1, -1);
     const first = Number.parseInt(normalized.split(":")[0]!, 16);
     const second = Number.parseInt(normalized.split(":")[1] || "0", 16);
+
+    if (normalized === "fd00:ec2::254" || normalized === "fd20:ce::254") return false;
+
+    if ((first & 0xfe00) === 0xfc00) return true;
 
     return (
         first >= 0x2000 &&
@@ -66,10 +69,10 @@ export function normalizeS3Endpoint(value: string) {
         url.search ||
         url.hash ||
         url.pathname !== "/" ||
-        (isIP(hostname) && !isPublicS3Address(hostname))
+        (isIP(hostname) && !isAllowedS3Address(hostname))
     ) {
         throw new Error(
-            "Use a public HTTPS endpoint without a bucket path, credentials, query, or fragment.",
+            "Use an HTTPS endpoint without a bucket path, credentials, query, or fragment.",
         );
     }
 
@@ -84,9 +87,9 @@ export function guardedHttpsAgent() {
                 if (
                     error ||
                     !addresses.length ||
-                    addresses.some(({ address }) => !isPublicS3Address(address))
+                    addresses.some(({ address }) => !isAllowedS3Address(address))
                 ) {
-                    callback(new Error("S3 endpoint is not publicly reachable"), [], undefined);
+                    callback(new Error("S3 endpoint address is not permitted"), [], undefined);
 
                     return;
                 }

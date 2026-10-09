@@ -192,6 +192,7 @@
 
     function onViewportScroll() {
         if (!viewport) return;
+
         const atBottom =
             viewport.scrollHeight -
                 viewport.scrollTop -
@@ -200,6 +201,7 @@
 
         if (follow && !bucket && following !== atBottom)
             following = atBottom;
+
         const next =
             follow && !bucket && atBottom
                 ? 0

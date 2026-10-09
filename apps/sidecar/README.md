@@ -80,7 +80,7 @@ This builds without an additional Docker context. The container mounts `/run/unc
 
 ## OpenAPI
 
-The document in `internal/httpapi/openapi.go` is written by hand, and a test compares it against the routes the server registers in both directions, so a new route or a removed path fails the build.
+Handlers are registered through [Huma](https://huma.rocks) (see `internal/httpapi/api.go`), which generates the document from the operations and the Go types they accept and return, so it cannot drift from the code. A test still compares the document against every route Fiber serves, so a plain Fiber route added next to Huma fails the build.
 
 `packages/uncloud` vendors the generated spec. Refresh it from this source rather than from a running server:
 

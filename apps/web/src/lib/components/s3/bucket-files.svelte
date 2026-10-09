@@ -41,6 +41,7 @@
     );
 
     const data = $derived(filesQuery.data);
+
     // S3 may return the folder's own marker object; it isn't a file.
     const files = $derived(
         data?.items.filter(

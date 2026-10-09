@@ -3,6 +3,7 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
+            network: host
         image: ghcr.io/irazvan2745/sidecar
         # Uncloud does not propagate Compose group_add. The sidecar needs
         # root-equivalent access to the host's Uncloud control socket.

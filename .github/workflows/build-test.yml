@@ -112,6 +112,23 @@ jobs:
               if: always() && steps.install.conclusion == 'success'
               run: pnpm run test
 
+            - name: Install Playwright Chromium
+              id: playwright
+              if: always() && steps.install.conclusion == 'success'
+              run: pnpm exec playwright install --with-deps chromium
+
+            - name: Run E2E Tests
+              id: e2e
+              if: always() && steps.playwright.conclusion == 'success'
+              run: pnpm run test:e2e
+
+            - name: Upload E2E Artifacts
+              if: failure() && steps.e2e.conclusion == 'failure'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: e2e-results
+                  path: test-results/e2e
+
             - name: Setup Go
               id: setup-go
               if: always()

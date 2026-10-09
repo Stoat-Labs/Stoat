@@ -3,8 +3,14 @@ import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments
 import { ucClient, unwrap } from "@stoat/uncloud";
 import { Job } from "effect-mq";
 import { YAMLParseError } from "yaml";
-import { ComposeVariableError, formatComposeFile, interpolateCompose } from "./compose";
+import {
+    ComposeVariableError,
+    formatComposeFile,
+    interpolateCompose,
+    resourceEnv,
+} from "./compose";
 import { deployCompose, DeploymentError } from "./deploy-compose";
+import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
 
 export const RESOURCE_FAILURE_MESSAGE =
     "Resource deployment failed. Check the Compose configuration and sidecar connectivity, then retry.";
@@ -82,10 +88,20 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             signal.throwIfAborted();
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
-            // Only ask the sidecar when STOAT_DOMAIN is actually referenced.
+            const referencedIds = referencedResourceIds(input.env);
+
+            const targets = referencedIds.length
+                ? await referenceTargets(db, deployment.clusterId, referencedIds)
+                : [];
+
+            // Only ask the sidecar when STOAT_DOMAIN is used, including by referenced resources.
+            const variableSources = [deployedSpec, input.env].concat(
+                targets.map((target) => target.spec + resourceEnv(target)),
+            );
+
             let domain: string | undefined;
 
-            if (/STOAT_DOMAIN/u.test(deployedSpec + input.env)) {
+            if (/STOAT_DOMAIN/u.test(variableSources.join("\n"))) {
                 step = "Loading the cluster domain.";
                 ({ domain } = await unwrap(uc.GET("/api/v1/cluster/domain")));
             }
@@ -100,6 +116,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     input.env,
                     input.prefix ?? undefined,
                     domain,
+                    resolveReferences(input.env, targets, domain, deployment.resourceId),
                 );
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;

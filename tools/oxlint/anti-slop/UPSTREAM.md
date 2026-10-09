@@ -7,7 +7,7 @@
 - Verification: recursive file comparison of the installation source against the source directory at the commit above found no differences.
 - Installed generic plugin: `tools/oxlint/anti-slop/index.ts`
 - Installed Effect plugin: `tools/oxlint/anti-slop/effect/index.ts`
-- Intentional deviations: this provenance file only; plugin source is unchanged.
+- Intentional deviations: this provenance file, and `rules/no-module-mocking.ts` also recognizes `vi` imported from `vite-plus/test` (Vite+ re-exports Vitest there; upstream only checks `vitest`, so the ban never fired here).
 
 The nested `vendor/eslint-stylistic/LICENSE` and `vendor/eslint-stylistic/UPSTREAM.md` are retained unchanged.
 

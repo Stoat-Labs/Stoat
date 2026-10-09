@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/caddy/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List certificates in Caddy's cluster storage
+         * @description Requires Uncloud 0.21+ and a Caddy image with the caddy-uncloud storage module configured (`storage uncloud`); with the default image Caddy stores certificates locally and this list is empty. Lists what is stored, not what Caddy serves, and may include expired certificates. Private keys are never read.
+         */
+        get: operations["listCaddyCertificates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/caddy/configs": {
         parameters: {
             query?: never;
@@ -47,9 +67,17 @@ export interface paths {
         };
         /** Get cluster domain */
         get: operations["getDomain"];
-        put?: never;
+        /**
+         * Set an externally managed cluster domain
+         * @description Requires Uncloud 0.21+. Returns 409 when a domain is already configured; clear it first.
+         */
+        put: operations["setDomain"];
         post?: never;
-        delete?: never;
+        /**
+         * Clear the cluster domain
+         * @description Unsets an external domain or releases a domain reserved in Uncloud DNS. Uncloud DNS cannot give a released name back yet, so it only forgets it in the cluster store.
+         */
+        delete: operations["clearDomain"];
         options?: never;
         head?: never;
         patch?: never;
@@ -416,23 +444,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/docs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Scalar API reference */
-        get: operations["docs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -442,40 +453,6 @@ export interface paths {
         };
         /** Health check */
         get: operations["health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/openapi.json": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get this OpenAPI document as JSON */
-        get: operations["openapiJSON"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/openapi.yaml": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get this OpenAPI document as YAML */
-        get: operations["openapiYAML"];
         put?: never;
         post?: never;
         delete?: never;
@@ -522,28 +499,58 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        CaddyConfig: {
+        CaddyCertificateACMEResponse: {
+            ca: string;
+            /** Format: date-time */
+            renewalWindowEnd?: string;
+            /** Format: date-time */
+            renewalWindowStart?: string;
+            url: string;
+        };
+        CaddyCertificateResponse: {
+            acme?: components["schemas"]["CaddyCertificateACMEResponse"];
+            dnsNames: string[];
+            issuer: string;
+            issuerOrganization?: string;
+            /** Format: date-time */
+            notAfter: string;
+            /** Format: date-time */
+            notBefore: string;
+            san: string;
+            /** @description Hexadecimal serial number. */
+            serialNumber: string;
+            /** @description SHA-256 fingerprint of the leaf certificate. */
+            sha256: string;
+        };
+        CaddyCertificatesResponse: {
+            /** @description Stored certificates that could not be parsed. */
+            errors: string[];
+            items: components["schemas"]["CaddyCertificateResponse"][];
+        };
+        CaddyConfigResponse: {
             caddyfile?: string;
             error?: string;
+            /** @description Why the machine last failed to load a generated config. */
+            lastReconciliationError?: string;
             machineId: string;
             machineName: string;
             /** Format: date-time */
             modifiedAt?: string;
             sha256?: string;
         };
-        CaddyConfigs: {
+        CaddyConfigsResponse: {
             drift: boolean;
-            items: components["schemas"]["CaddyConfig"][];
+            items: components["schemas"]["CaddyConfigResponse"][];
         };
-        ClusterDiagnostics: {
+        ClusterDiagnosticsResponse: {
             issues: string[];
-            links: components["schemas"]["ClusterLink"][];
-            machines: components["schemas"]["DiagnosticMachine"][];
+            links: components["schemas"]["ClusterLinkResponse"][];
+            machines: components["schemas"]["DiagnosticMachineResponse"][];
             /** @enum {string} */
             status: "healthy" | "degraded";
             versionDrift: boolean;
         };
-        ClusterLink: {
+        ClusterLinkResponse: {
             from: string;
             /** Format: double */
             medianMs: number;
@@ -551,31 +558,18 @@ export interface components {
             standardDevMs: number;
             to: string;
         };
-        ConfigSpec: {
-            /** Format: byte */
-            content?: string;
-            name?: string;
-        };
         ContainerActionRequest: {
             /** @enum {string} */
             action: "start" | "stop" | "restart" | "remove";
         };
-        ContainerSpec: {
-            command?: string[];
-            entrypoint?: string[];
-            env?: Record<string, unknown>;
-            image: string;
-            openStdin?: boolean;
-            privileged?: boolean;
-            /** @enum {string} */
-            pullPolicy?: "always" | "missing" | "never";
-            tty?: boolean;
-            volumeMounts?: components["schemas"]["VolumeMount"][];
-        };
         CreateVolumeRequest: {
             driver?: string;
-            driverOpts?: Record<string, unknown>;
-            labels?: Record<string, unknown>;
+            driverOpts?: {
+                [key: string]: string;
+            };
+            labels?: {
+                [key: string]: string;
+            };
             machine: string;
             name: string;
         };
@@ -586,7 +580,7 @@ export interface components {
             id?: string;
             operations?: components["schemas"]["DeployComposePlanOperation"][];
             parentId?: string;
-            /** Format: int32 */
+            /** Format: int64 */
             percent?: number;
             /** @enum {string} */
             phase?: "working" | "done" | "warning" | "error" | "unknown";
@@ -626,18 +620,21 @@ export interface components {
             compose: string;
             options?: components["schemas"]["DeployComposeOptions"];
         };
-        DiagnosticMachine: {
+        DiagnosticMachineResponse: {
             daemonVersion?: string;
             dockerVersion?: string;
             error?: string;
             id: string;
             name: string;
             state: string;
-            storeVersion?: Record<string, unknown>;
-            wireGuard?: components["schemas"]["WireGuard"];
+            storeVersion?: {
+                [key: string]: number;
+            };
+            wireGuard?: components["schemas"]["WireGuardResponse"];
         };
         DomainResponse: {
             domain: string;
+            reserved: boolean;
         };
         ErrorResponse: {
             error: string;
@@ -648,18 +645,20 @@ export interface components {
             tty?: boolean;
         };
         ExecContainerResponse: {
-            /** Format: int32 */
+            /** Format: int64 */
             exitCode: number;
             stderr: string;
             stdout: string;
             truncated: boolean;
         };
-        ImageGroup: {
-            containerdStore?: boolean;
-            images?: Record<string, unknown>[];
-            metadata?: Record<string, unknown>;
+        ImageGroupResponse: {
+            containerdStore: boolean;
+            images: {
+                [key: string]: unknown;
+            }[];
+            metadata?: components["schemas"]["MachineMetadataResponse"];
         };
-        ImageUpdate: {
+        ImageUpdateResponse: {
             error?: string;
             imageId?: string;
             localDigests: string[];
@@ -668,16 +667,40 @@ export interface components {
             remoteDigest?: string;
             updateAvailable?: boolean;
         };
-        LogEvent: {
+        ItemResponseImageGroupResponse: {
+            items: components["schemas"]["ImageGroupResponse"][];
+        };
+        ItemResponseImageUpdateResponse: {
+            items: components["schemas"]["ImageUpdateResponse"][];
+        };
+        ItemResponseMachineImageResponse: {
+            items: components["schemas"]["MachineImageResponse"][];
+        };
+        ItemResponseMachineResponse: {
+            items: components["schemas"]["MachineResponse"][];
+        };
+        ItemResponseRemoteImageResponse: {
+            items: components["schemas"]["RemoteImageResponse"][];
+        };
+        ItemResponseServiceResponse: {
+            items: components["schemas"]["ServiceResponse"][];
+        };
+        ItemResponseVolumeAttachmentResponse: {
+            items: components["schemas"]["VolumeAttachmentResponse"][];
+        };
+        ItemResponseVolumeResponse: {
+            items: components["schemas"]["VolumeResponse"][];
+        };
+        LogEventResponse: {
             error?: string;
             message?: string;
-            metadata?: components["schemas"]["LogMetadata"];
+            metadata?: components["schemas"]["LogMetadataResponse"];
             /** @enum {string} */
             stream: "stdout" | "stderr" | "heartbeat" | "unknown";
             /** Format: date-time */
             timestamp: string;
         };
-        LogMetadata: {
+        LogMetadataResponse: {
             containerId?: string;
             hook?: string;
             machineId?: string;
@@ -685,23 +708,10 @@ export interface components {
             serviceId?: string;
             serviceName?: string;
         };
-        Machine: {
-            arch?: string;
-            daemonVersion?: string;
-            dockerVersion?: string;
-            hostname?: string;
-            id: string;
-            kernelVersion?: string;
-            name: string;
-            network?: components["schemas"]["MachineNetwork"];
-            osPrettyName?: string;
-            publicIp?: string;
-            state: string;
-        };
         MachineExecEvent: {
             data?: string;
             error?: string;
-            /** Format: int32 */
+            /** Format: int64 */
             exitCode?: number;
             /** @enum {string} */
             type: "stdout" | "stderr" | "complete" | "error";
@@ -711,7 +721,7 @@ export interface components {
             stdin?: string;
         };
         MachineExecResponse: {
-            /** Format: int32 */
+            /** Format: int64 */
             exitCode: number;
             machineId: string;
             machineName: string;
@@ -719,39 +729,47 @@ export interface components {
             stdout: string;
             truncated: boolean;
         };
-        MachineImage: {
-            image?: Record<string, unknown>;
-            metadata?: Record<string, unknown>;
+        MachineImageResponse: {
+            image: {
+                [key: string]: unknown;
+            };
+            metadata?: components["schemas"]["MachineMetadataResponse"];
         };
         MachineInfoResponse: {
             id: string;
             name: string;
         };
-        MachineNetwork: {
-            endpoints?: string[];
+        MachineMetadataResponse: {
+            error?: string;
+            machineAddr?: string;
+            machineId?: string;
+            machineName?: string;
+        };
+        MachineNetworkResponse: {
+            endpoints: string[];
             managementIp?: string;
             /** Format: byte */
             publicKey?: string;
             subnet?: string;
         };
-        PortSpec: {
-            /** Format: int32 */
-            containerPort?: number;
-            hostIp?: string;
-            hostPrefix?: string;
+        MachineResponse: {
+            arch?: string;
+            daemonVersion?: string;
+            dockerVersion?: string;
             hostname?: string;
-            /** @enum {string} */
-            mode?: "ingress" | "host";
-            /** @enum {string} */
-            protocol?: "http" | "https" | "tcp" | "udp";
-            /** Format: int32 */
-            publishedPort?: number;
+            id: string;
+            kernelVersion?: string;
+            name: string;
+            network?: components["schemas"]["MachineNetworkResponse"];
+            osPrettyName?: string;
+            publicIp?: string;
+            state: string;
         };
         ReadinessResponse: {
             message?: string;
             status: string;
         };
-        RemoteImage: {
+        RemoteImageResponse: {
             canonicalReference?: string;
             digest?: string;
             error?: string;
@@ -765,44 +783,27 @@ export interface components {
             id: string;
             name: string;
         };
-        Service: {
-            containers: components["schemas"]["ServiceContainer"][];
-            hookContainers: components["schemas"]["ServiceContainer"][];
+        ServiceContainerResponse: {
+            container: {
+                [key: string]: unknown;
+            };
+            machineId: string;
+            machineName: string;
+        };
+        ServiceResponse: {
+            containers: components["schemas"]["ServiceContainerResponse"][];
+            hookContainers: components["schemas"]["ServiceContainerResponse"][];
             id: string;
             mode: string;
             name: string;
         };
-        ServiceContainer: {
-            /** @description Docker inspection and Uncloud service metadata. */
-            container: Record<string, unknown>;
-            machineId: string;
-            machineName: string;
-        };
-        ServiceSpec: {
-            caddy?: Record<string, unknown>;
-            configs?: components["schemas"]["ConfigSpec"][];
-            container: components["schemas"]["ContainerSpec"];
-            /** @enum {string} */
-            mode?: "replicated" | "global";
-            name?: string;
-            placement?: Record<string, unknown>;
-            ports?: components["schemas"]["PortSpec"][];
-            preDeploy?: Record<string, unknown>;
-            /** Format: int32 */
-            replicas?: number;
-            updateConfig?: Record<string, unknown>;
-            volumes?: components["schemas"]["VolumeSpec"][];
+        SetDomainRequest: {
+            name: string;
         };
         StatusResponse: {
             status: string;
         };
-        Volume: {
-            machineId: string;
-            machineName: string;
-            /** @description Docker volume metadata. */
-            volume: Record<string, unknown>;
-        };
-        VolumeAttachment: {
+        VolumeAttachmentResponse: {
             attached: boolean;
             containerId?: string;
             containerName?: string;
@@ -813,26 +814,14 @@ export interface components {
             serviceName?: string;
             volumeName: string;
         };
-        VolumeMount: {
-            containerPath?: string;
-            readOnly?: boolean;
-            volumeName?: string;
+        VolumeResponse: {
+            machineId: string;
+            machineName: string;
+            volume: {
+                [key: string]: unknown;
+            };
         };
-        VolumeSpec: {
-            bindOptions?: Record<string, unknown>;
-            name?: string;
-            tmpfsOptions?: Record<string, unknown>;
-            /** @enum {string} */
-            type?: "bind" | "volume" | "tmpfs";
-            volumeOptions?: Record<string, unknown>;
-        };
-        WireGuard: {
-            interfaceName: string;
-            /** Format: int32 */
-            listenPort: number;
-            peers: components["schemas"]["WireGuardPeer"][];
-        };
-        WireGuardPeer: {
+        WireGuardPeerResponse: {
             allowedIps: string[];
             endpoint?: string;
             /** Format: date-time */
@@ -841,6 +830,12 @@ export interface components {
             receiveBytes: number;
             /** Format: int64 */
             transmitBytes: number;
+        };
+        WireGuardResponse: {
+            interfaceName: string;
+            /** Format: int32 */
+            listenPort: number;
+            peers: components["schemas"]["WireGuardPeerResponse"][];
         };
     };
     responses: never;
@@ -851,6 +846,74 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listCaddyCertificates: {
+        parameters: {
+            query?: {
+                /** @description Machine name or ID whose store replica is read. Defaults to the connected machine. */
+                machine?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaddyCertificatesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listCaddyConfigs: {
         parameters: {
             query?: never;
@@ -860,16 +923,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Caddy configurations and drift status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CaddyConfigs"];
+                    "application/json": components["schemas"]["CaddyConfigsResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -878,7 +941,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -887,7 +950,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -896,7 +959,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -916,16 +979,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cluster diagnostics */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClusterDiagnostics"];
+                    "application/json": components["schemas"]["ClusterDiagnosticsResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -934,7 +997,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -943,7 +1006,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -952,7 +1015,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -972,7 +1035,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cluster domain */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -981,7 +1044,7 @@ export interface operations {
                     "application/json": components["schemas"]["DomainResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -990,7 +1053,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -999,7 +1062,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1008,7 +1071,141 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDomainRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clearDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1033,18 +1230,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Image list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["ImageGroup"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseImageGroupResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1053,7 +1248,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1062,7 +1257,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1071,7 +1266,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1093,18 +1297,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Image inspection list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["MachineImage"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseMachineImageResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1113,7 +1315,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1122,7 +1324,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1131,7 +1333,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1153,18 +1364,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Remote image inspection list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["RemoteImage"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseRemoteImageResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1173,7 +1382,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1182,7 +1391,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1191,7 +1400,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1213,18 +1431,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Image update status per machine */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["ImageUpdate"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseImageUpdateResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1233,7 +1449,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1242,7 +1458,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1251,7 +1467,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1276,18 +1501,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Machine list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["Machine"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseMachineResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1296,7 +1519,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1305,7 +1528,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1314,7 +1537,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1336,16 +1568,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Machine */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Machine"];
+                    "application/json": components["schemas"]["MachineResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1354,7 +1586,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1363,7 +1595,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1372,7 +1604,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1392,14 +1633,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Machine name */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RenameMachineRequest"];
             };
         };
         responses: {
-            /** @description Updated machine */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1408,7 +1648,7 @@ export interface operations {
                     "application/json": components["schemas"]["MachineInfoResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1417,7 +1657,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1426,7 +1666,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1435,7 +1675,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1455,14 +1704,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Host command */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MachineExecRequest"];
             };
         };
         responses: {
-            /** @description Completed command */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1471,7 +1719,7 @@ export interface operations {
                     "application/json": components["schemas"]["MachineExecResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1480,7 +1728,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1489,7 +1737,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1498,7 +1746,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1518,7 +1775,6 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Host command */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MachineExecRequest"];
@@ -1534,7 +1790,7 @@ export interface operations {
                     "text/event-stream": components["schemas"]["MachineExecEvent"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1543,7 +1799,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1552,7 +1808,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1561,7 +1817,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1602,10 +1867,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["LogEvent"];
+                    "text/event-stream": components["schemas"]["LogEventResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1614,7 +1879,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1623,7 +1888,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1632,7 +1897,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1655,7 +1929,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Operation status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1664,7 +1938,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1673,7 +1947,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1682,7 +1956,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1691,7 +1965,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1711,18 +1994,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Service list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["Service"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseServiceResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1731,7 +2012,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1740,7 +2021,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1749,7 +2030,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1767,14 +2048,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description Service specification */
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ServiceSpec"];
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
-            /** @description Created service */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1783,7 +2065,7 @@ export interface operations {
                     "application/json": components["schemas"]["RunServiceResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1792,7 +2074,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1801,7 +2083,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1810,7 +2092,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1828,7 +2119,6 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description Base64-encoded Compose file and deployment options */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeployComposeRequest"];
@@ -1844,7 +2134,7 @@ export interface operations {
                     "text/event-stream": components["schemas"]["DeployComposeEvent"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1853,7 +2143,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1862,7 +2152,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1871,7 +2161,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Compose file exceeds the size limit */
+            /** @description Request Entity Too Large */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -1880,7 +2170,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1902,16 +2201,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Service */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Service"];
+                    "application/json": components["schemas"]["ServiceResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1920,7 +2219,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1929,7 +2228,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1938,7 +2237,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1960,7 +2268,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Operation status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1969,7 +2277,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1978,7 +2286,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1987,7 +2295,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1996,7 +2304,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2012,23 +2329,25 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Service name or ID. */
                 id: string;
+                /** @description Container name or ID. */
                 container: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Container */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServiceContainer"];
+                    "application/json": components["schemas"]["ServiceContainerResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2037,7 +2356,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2046,7 +2365,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2055,7 +2374,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2071,19 +2399,20 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Service name or ID. */
                 id: string;
+                /** @description Container name or ID. */
                 container: string;
             };
             cookie?: never;
         };
-        /** @description Container action */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ContainerActionRequest"];
             };
         };
         responses: {
-            /** @description Operation status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2092,7 +2421,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2101,7 +2430,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2110,7 +2439,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2119,7 +2448,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2135,19 +2473,20 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Service name or ID. */
                 id: string;
+                /** @description Container name or ID. */
                 container: string;
             };
             cookie?: never;
         };
-        /** @description Command */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExecContainerRequest"];
             };
         };
         responses: {
-            /** @description Command result */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2156,7 +2495,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExecContainerResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2165,7 +2504,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2174,7 +2513,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2183,7 +2522,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2224,10 +2572,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["LogEvent"];
+                    "text/event-stream": components["schemas"]["LogEventResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2236,7 +2584,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2245,7 +2593,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2254,7 +2602,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2276,7 +2633,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Operation status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2285,7 +2642,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2294,7 +2651,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2303,7 +2660,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2312,7 +2669,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2334,7 +2700,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Operation status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2343,7 +2709,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2352,7 +2718,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2361,7 +2727,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2370,7 +2736,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2397,18 +2772,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Volume list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["Volume"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseVolumeResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2417,7 +2790,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2426,7 +2799,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2435,7 +2808,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2453,23 +2835,22 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description Volume creation request */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateVolumeRequest"];
             };
         };
         responses: {
-            /** @description Created volume */
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Volume"];
+                    "application/json": components["schemas"]["VolumeResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2478,7 +2859,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2487,7 +2868,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2496,7 +2877,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -2516,18 +2906,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Volume attachments */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["VolumeAttachment"][];
-                    };
+                    "application/json": components["schemas"]["ItemResponseVolumeAttachmentResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2536,7 +2924,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2545,7 +2933,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Resource not found */
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2554,37 +2942,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    docs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description HTML API reference */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": string;
-                };
-            };
-            /** @description Missing or invalid bearer token */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2612,7 +2971,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2621,8 +2980,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
-            401: {
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2630,66 +2989,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    openapiJSON: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OpenAPI document */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, unknown>;
-                };
-            };
-            /** @description Missing or invalid bearer token */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    openapiYAML: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OpenAPI document */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/yaml": string;
-                };
-            };
-            /** @description Missing or invalid bearer token */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2708,7 +3009,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Ready */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2717,7 +3018,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
-            /** @description Invalid request */
+            /** @description Bad Request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2726,7 +3027,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2735,13 +3036,31 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The Uncloud control plane is unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };
@@ -2758,13 +3077,24 @@ export interface operations {
             /** @description Prometheus exposition format */
             200: {
                 headers: {
+                    "Cache-Control"?: string;
+                    "Content-Type"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "text/plain": string;
                 };
             };
-            /** @description Missing or invalid bearer token */
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2773,7 +3103,34 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Local machine or its metrics endpoint is unavailable */
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

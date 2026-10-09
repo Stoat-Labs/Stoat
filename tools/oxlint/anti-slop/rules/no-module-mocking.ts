@@ -33,7 +33,11 @@ function isTestFrameworkObject(
     }
     const source = definition.parent.source.value;
     const name = importedName(definition.node);
-    return (source === "vitest" && name === "vi") || (source === "@jest/globals" && name === "jest");
+    // Local deviation: Vite+ re-exports Vitest as `vite-plus/test`.
+    return (
+      ((source === "vitest" || source === "vite-plus/test") && name === "vi") ||
+      (source === "@jest/globals" && name === "jest")
+    );
   });
 }
 

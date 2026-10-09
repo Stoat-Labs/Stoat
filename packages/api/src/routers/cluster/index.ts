@@ -51,7 +51,7 @@ export const clusterRouter = {
                 }),
             ),
         )
-        .handler(async ({ context: { db, organizationId }, input }) => {
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
             const q = input?.q;
@@ -108,7 +108,12 @@ export const clusterRouter = {
                 }),
             );
 
-            return { items: itemsWithDiagnostics, total: row?.count ?? 0 };
+            return {
+                items: itemsWithDiagnostics,
+                total: row?.count ?? 0,
+                // Only owners and admins can create or delete clusters.
+                canManage: isOrganizationAdmin(organizationRole),
+            };
         }),
 
     getCluster: organizationProcedure
@@ -181,7 +186,7 @@ export const clusterRouter = {
             };
         }),
 
-    createCluster: organizationProcedure
+    createCluster: organizationAdminProcedure
         .input(
             v.object({
                 name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
@@ -215,7 +220,7 @@ export const clusterRouter = {
             return { ...cluster, projectCount: 0 };
         }),
 
-    deleteCluster: organizationProcedure
+    deleteCluster: organizationAdminProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
@@ -255,14 +260,21 @@ export const clusterRouter = {
                 });
             }
 
-            await db
+            const deleted = await db
                 .delete(clusters)
                 .where(
                     and(
                         eq(clusters.id, cluster.id),
                         eq(clusters.initializationStatus, cluster.initializationStatus),
                     ),
-                );
+                )
+                .returning({ id: clusters.id });
+
+            // Initialization started between the check and the delete.
+            if (!deleted.length)
+                throw new ORPCError("CONFLICT", {
+                    message: "The cluster changed while deleting it. Try again.",
+                });
 
             return { id: cluster.id };
         }),
@@ -290,14 +302,22 @@ export const clusterRouter = {
     healthz: organizationProcedure
         .input(clusterInput)
         .use(uncloudMiddleware)
-        .handler(({ context: { uc }, signal }) =>
-            unwrap(
-                uc.GET("/api/v1/cluster/diagnostics", {
-                    signal: AbortSignal.any([
-                        ...(signal ? [signal] : []),
-                        AbortSignal.timeout(10_000),
-                    ]),
-                }),
-            ),
-        ),
+        .handler(async ({ context: { uc }, signal }) => {
+            try {
+                return await unwrap(
+                    uc.GET("/api/v1/cluster/diagnostics", {
+                        signal: AbortSignal.any([
+                            ...(signal ? [signal] : []),
+                            AbortSignal.timeout(10_000),
+                        ]),
+                    }),
+                );
+            } catch (error) {
+                if (signal?.aborted) throw error;
+
+                // An unreachable sidecar is a cluster state, not a server error; like the
+                // cluster list, report no diagnostics and let the page show it as unknown.
+                return null;
+            }
+        }),
 };

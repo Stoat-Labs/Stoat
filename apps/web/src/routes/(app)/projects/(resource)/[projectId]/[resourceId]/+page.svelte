@@ -44,7 +44,7 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { containerInfo } from "$lib/resources/container-info";
     import ImageIcon from "$lib/components/shared/image-icon.svelte";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Box from "@lucide/svelte/icons/box";
     import Boxes from "@lucide/svelte/icons/boxes";
@@ -56,7 +56,6 @@
         createMutation,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { Match } from "effect";
     import { onDestroy, untrack } from "svelte";
     import { Debounced } from "runed";
 
@@ -151,27 +150,28 @@
         revision: string;
     } | null>(null);
 
-    let gitPending = $state(false);
-
-    let gitError = $state("");
-
-    let gitStatus = $state("");
-
-    let generation = 0;
-
     let active = true;
 
     const isDirty = $derived(compose !== (savedSpec ?? ""));
 
+    // Leaving with unsaved edits saves them first, then continues, so nothing typed is lost.
+    // Closing or reloading the tab cannot wait for a save, so the browser asks instead.
+    let resumedTo = "";
+
     beforeNavigate((navigation) => {
-        if (busy || isDirty) {
-            if (
-                navigation.willUnload ||
-                busy ||
-                !window.confirm("Discard unsaved Compose edits?")
-            )
-                navigation.cancel();
-        }
+        // The navigation this guard resumes after saving; query state may still read busy.
+        if (navigation.to?.url.href === resumedTo) return;
+
+        if (!busy && !isDirty) return;
+        navigation.cancel();
+
+        if (navigation.willUnload || busy || !navigation.to) return;
+        const target = navigation.to.url;
+        void saveNow().then((saved) => {
+            if (!saved) return;
+            resumedTo = target.href;
+            void goto(target);
+        });
     });
 
     onDestroy(() => {
@@ -181,16 +181,14 @@
 
     $effect(() => {
         // Route components are reused when switching between resources.
-        const identity = `${projectId}/${resourceId}`;
+        void projectId;
+        void resourceId;
         untrack(() => {
-            if (identity) generation++;
             debouncedCompose.cancel();
             loadedResourceId = "";
             compose = "";
             savedSpec = null;
             savedSource = null;
-            gitError = gitStatus = "";
-            gitPending = false;
             saveMutation.reset();
             externalConnectionMutation.reset();
             deployMutation.reset();
@@ -294,6 +292,7 @@
                         input: { projectId: input.projectId },
                     }),
                 });
+
                 if (
                     !active ||
                     projectId !== input.projectId ||
@@ -345,8 +344,7 @@
     );
 
     const busy = $derived(
-        gitPending ||
-            saveMutation.isPending ||
+        saveMutation.isPending ||
             externalConnectionMutation.isPending ||
             deployMutation.isPending,
     );
@@ -386,6 +384,29 @@
         deployMutation.mutate({ projectId, resourceId, recreate });
     }
 
+    /** Saves the editor text without waiting for the autosave delay; false if it failed. */
+    async function saveNow() {
+        if (readOnly || loadedResourceId !== resourceId) return false;
+        debouncedCompose.cancel();
+
+        try {
+            await saveMutation.mutateAsync({
+                projectId,
+                resourceId,
+                spec: compose,
+                expectedSpec: savedSpec,
+                expectedSource: savedSource
+                    ? { ...savedSource }
+                    : null,
+            });
+
+            return true;
+        } catch {
+            // The editor shows the save error.
+            return false;
+        }
+    }
+
     // Autosave the draft after the user stops typing instead of a save button.
     $effect(() => {
         const target = debouncedCompose.current;
@@ -396,14 +417,16 @@
         const loaded = loadedResourceId;
         const pid = projectId;
         const rid = resourceId;
+
         const locked =
             readOnly ||
-            gitPending ||
             deployMutation.isPending ||
             externalConnectionMutation.isPending ||
             saveMutation.isPending;
+
         const settled = !debouncePending && currentText === target;
         const dirty = target !== (baseline ?? "");
+
         const ready =
             !locked && pid !== "" && rid !== "" && loaded === rid;
 
@@ -421,140 +444,6 @@
             });
         });
     });
-
-    async function gitAction(
-        action: "source" | "pull" | "detach" | "push",
-        source?: {
-            connectionId: string;
-            repositoryUrl: string;
-            branch: string;
-            path: string;
-        },
-        message?: string,
-    ) {
-        if (busy || !resource || loadedResourceId !== resourceId)
-            return false;
-
-        if (
-            (action === "source" || action === "pull") &&
-            (isDirty || savedSpec !== null) &&
-            !window.confirm(
-                "Replace the current Compose draft with the Git version? Saved local drafts and unsaved edits will be replaced.",
-            )
-        )
-            return false;
-
-        if (
-            action === "detach" &&
-            !window.confirm(
-                "Detach the Git source? The current Compose spec and editor text will be retained.",
-            )
-        )
-            return false;
-        const input = { projectId, resourceId };
-        const currentGeneration = generation;
-        const submitted = compose;
-        const expectedSpec = savedSpec;
-        const expectedSource = savedSource
-            ? { ...savedSource }
-            : null;
-        const expectedRevision = expectedSource?.revision;
-        gitPending = true;
-        gitError = gitStatus = "";
-
-        try {
-            let updated;
-
-            if (action === "source" && source) {
-                updated = await client.resources.setGitSource({
-                    ...input,
-                    ...source,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (action === "pull") {
-                updated = await client.resources.pullGitSource({
-                    ...input,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (action === "detach") {
-                updated = await client.resources.detachGitSource({
-                    ...input,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (
-                action === "push" &&
-                expectedRevision &&
-                message?.trim()
-            ) {
-                updated = await client.resources.pushGitSource({
-                    ...input,
-                    spec: submitted,
-                    expectedSpec,
-                    expectedSource,
-                    expectedRevision,
-                    message: message.trim(),
-                });
-            } else return false;
-            queryClient.setQueryData(
-                orpc.resources.getResource.queryKey({ input }),
-                updated,
-            );
-            void queryClient.invalidateQueries({
-                queryKey: orpc.resources.listResources.queryKey({
-                    input: { projectId: input.projectId },
-                }),
-            });
-            void queryClient.invalidateQueries({
-                queryKey: orpc.resources.getContainers.key({ input }),
-            });
-
-            if (
-                !active ||
-                generation !== currentGeneration ||
-                projectId !== input.projectId ||
-                resourceId !== input.resourceId
-            )
-                return false;
-
-            // Do not overwrite text typed while a request was in flight, or a draft on detach.
-            if (action !== "detach" && compose === submitted)
-                compose = updated.draftSpec ?? "";
-            savedSpec = updated.draftSpec;
-            debouncedCompose.setImmediately(compose);
-            savedSource =
-                updated.gitConnectionId && updated.gitSource
-                    ? {
-                          connectionId: updated.gitConnectionId,
-                          ...updated.gitSource,
-                      }
-                    : null;
-            saveMutation.reset();
-            gitStatus = Match.value(action).pipe(
-                Match.when(
-                    "push",
-                    () => "Commit pushed and draft saved.",
-                ),
-                Match.when(
-                    "detach",
-                    () => "Git source detached. Compose retained.",
-                ),
-                Match.orElse(() => "Compose imported from Git."),
-            );
-
-            return true;
-        } catch (cause) {
-            if (active && generation === currentGeneration)
-                gitError = `${cause instanceof Error ? cause.message : "Git operation failed."} Your editor text has been kept.`;
-
-            return false;
-        } finally {
-            if (active && generation === currentGeneration)
-                gitPending = false;
-        }
-    }
 </script>
 
 <svelte:head>
@@ -562,7 +451,7 @@
 </svelte:head>
 
 {#snippet deployAction()}
-    {#if !readOnly && resource?.type !== "bucket"}
+    {#if !readOnly && resource?.type !== "bucket" && page.data.isOrganizationAdmin}
         <ButtonGroup>
             <Button
                 onclick={() => deploySavedDraft()}
@@ -1128,7 +1017,6 @@
                                     bind:value={compose}
                                     readOnly={readOnly ||
                                         externalConnectionMutation.isPending ||
-                                        gitPending ||
                                         deployMutation.isPending ||
                                         loadedResourceId !==
                                             resource.id}

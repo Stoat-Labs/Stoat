@@ -9,7 +9,8 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { isOrganizationAdmin, organizationProcedure } from "../..";
+import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure } from "../..";
+import { removeResources } from "../../resource-removal";
 
 export const projectsRouter = {
     listProjects: organizationProcedure.handler(({ context: { db, organizationId } }) =>
@@ -237,4 +238,37 @@ export const projectsRouter = {
 
             return project;
         }),
+    // Removes every resource's services from the cluster, then the project. Buckets go first,
+    // through their own flow, so their provider keys are revoked.
+    deleteProject: organizationAdminProcedure
+        .input(z.object({ projectId: z.string().uuid() }))
+        .handler(async ({ context: { db, organizationId }, input }) =>
+            db.transaction(async (tx) => {
+                const [project] = await tx
+                    .select({ id: projects.id, clusterId: projects.clusterId })
+                    .from(projects)
+                    .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                    .where(
+                        and(
+                            eq(projects.id, input.projectId),
+                            sql`${projects.isInternal} is not true`,
+                            eq(clusters.organizationId, organizationId),
+                        ),
+                    )
+                    .for("update", { of: projects });
+
+                if (!project) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+
+                const owned = await tx
+                    .select()
+                    .from(resources)
+                    .where(eq(resources.projectId, project.id))
+                    .for("update");
+
+                await removeResources(tx, project.clusterId, owned);
+                await tx.delete(projects).where(eq(projects.id, project.id));
+
+                return { id: project.id };
+            }),
+        ),
 };

@@ -1,14 +1,11 @@
 import type { Context as ApiContext } from "@stoat/api/context";
+import type { RequestEvent } from "@sveltejs/kit";
 
 import { getAuth, getDb } from "./services";
 
-export type CreateContextOptions = {
-    headers: Headers;
-};
-
-export async function createContext({ headers }: CreateContextOptions): Promise<ApiContext> {
-    const db = await getDb();
-    const key = headers.get("x-api-key");
+export async function createContext(event: RequestEvent): Promise<ApiContext> {
+    const db = getDb();
+    const key = event.request.headers.get("x-api-key");
 
     if (key) {
         const { valid, key: apiKey } = await getAuth().api.verifyApiKey({ body: { key } });
@@ -20,11 +17,9 @@ export async function createContext({ headers }: CreateContextOptions): Promise<
         };
     }
 
-    const session = await getAuth().api.getSession({ headers });
-
     return {
         db,
-        session,
+        session: event.locals.session,
     };
 }
 

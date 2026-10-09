@@ -15,42 +15,13 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Context } from "../../packages/api/src/context";
-import {
-    inspectGitRemote,
-    listGitFiles,
-    pushGitFile,
-    readGitFile,
-} from "../../packages/api/src/git";
-import { getGitAccount, listGitRepositories } from "../../packages/api/src/git-provider";
-import {
-    getOrganizationGitOAuthProviders,
-    refreshGitOAuthCredentials,
-} from "../../packages/api/src/git-oauth";
+import * as git from "../../packages/api/src/git";
+import * as gitOAuth from "../../packages/api/src/git-oauth";
+import * as gitProvider from "../../packages/api/src/git-provider";
 import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
 import { connectionsRouter } from "../../packages/api/src/routers/connections";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { resolveComposePath } from "../../packages/api/src/routers/resources/git";
-
-// Keep validation, credential encryption, authorization, and database I/O real.
-vi.mock("../../packages/api/src/git", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../packages/api/src/git")>()),
-    inspectGitRemote: vi.fn(),
-    listGitFiles: vi.fn(),
-    readGitFile: vi.fn(),
-    pushGitFile: vi.fn(),
-}));
-
-vi.mock("../../packages/api/src/git-provider", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../packages/api/src/git-provider")>()),
-    getGitAccount: vi.fn(),
-    listGitRepositories: vi.fn(),
-}));
-
-vi.mock("../../packages/api/src/git-oauth", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../packages/api/src/git-oauth")>()),
-    getOrganizationGitOAuthProviders: vi.fn(),
-    refreshGitOAuthCredentials: vi.fn(),
-}));
 
 const revision = "a".repeat(40);
 
@@ -134,14 +105,16 @@ describe("Git connections/resources (PostgreSQL)", () => {
     let foreignProjectId: string;
     let foreignResourceId: string;
 
-    const inspect = vi.mocked(inspectGitRemote);
-    const account = vi.mocked(getGitAccount);
-    const discover = vi.mocked(listGitRepositories);
-    const oauthProviders = vi.mocked(getOrganizationGitOAuthProviders);
-    const refresh = vi.mocked(refreshGitOAuthCredentials);
-    const list = vi.mocked(listGitFiles);
-    const read = vi.mocked(readGitFile);
-    const push = vi.mocked(pushGitFile);
+    // Only the remote Git and provider calls are faked; validation, credential encryption,
+    // authorization, and database I/O stay real. Every spy gets its behavior in beforeEach.
+    const inspect = vi.spyOn(git, "inspectGitRemote");
+    const account = vi.spyOn(gitProvider, "getGitAccount");
+    const discover = vi.spyOn(gitProvider, "listGitRepositories");
+    const oauthProviders = vi.spyOn(gitOAuth, "getOrganizationGitOAuthProviders");
+    const refresh = vi.spyOn(gitOAuth, "refreshGitOAuthCredentials");
+    const list = vi.spyOn(git, "listGitFiles");
+    const read = vi.spyOn(git, "readGitFile");
+    const push = vi.spyOn(git, "pushGitFile");
     const source = () => ({ connectionId, repositoryUrl, branch: "release", path: "deploy/" });
 
     const expectedSource = () => ({
@@ -202,7 +175,6 @@ describe("Git connections/resources (PostgreSQL)", () => {
         if (!process.env.DATABASE_URL)
             throw new Error("Testcontainers setup must provide DATABASE_URL");
         vi.stubEnv("APP_SECRET", "git-integration-test-secret-at-least-32-bytes");
-        vi.stubEnv("GIT_OAUTH_PROVIDERS", "[]");
         admin = createDb({ DATABASE_URL: process.env.DATABASE_URL });
         await admin.$client.query(`CREATE DATABASE "${databaseName}"`);
         databaseCreated = true;

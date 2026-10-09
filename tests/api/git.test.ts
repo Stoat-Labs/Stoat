@@ -1,11 +1,14 @@
-import { execFileSync } from "node:child_process";
+import childProcess, { execFileSync } from "node:child_process";
+import type { LookupAddress, LookupAllOptions } from "node:dns";
+import dns from "node:dns/promises";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const network = vi.hoisted(() => ({
+const network = {
     fixture: "",
     addresses: [{ address: "93.184.216.34", family: 4 }],
     // SAFETY: the empty log is populated only with the command records below.
@@ -23,121 +26,130 @@ const network = vi.hoisted(() => ({
     // SAFETY: tests optionally supply raw ls-remote output bytes.
     headOutput: undefined as Buffer | undefined,
     version: "",
-}));
+};
 
-vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => network.addresses) }));
+// Built-ins are spied through their default export; syncing republishes the spies to the
+// named imports the Git adapter uses, without replacing whole modules.
+const actual = { spawn: childProcess.spawn };
 
-vi.mock("node:child_process", async () => {
-    const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+// The Git adapter resolves hosts with { all: true }; answer with the configured addresses.
+function fakeLookup(hostname: string): Promise<LookupAddress>;
+function fakeLookup(hostname: string, options: LookupAllOptions): Promise<LookupAddress[]>;
+async function fakeLookup(_hostname: string, options?: LookupAllOptions) {
+    return options?.all ? network.addresses : network.addresses[0]!;
+}
 
-    return {
-        ...actual,
-        spawn: vi.fn(
-            (file: string, args: string[], options: import("node:child_process").SpawnOptions) => {
-                const env = options.env!;
-                const directory = String(options.cwd);
-                const config = readFileSync(join(directory, "transport.config"), "utf8");
-                const sshPath = join(directory, "ssh_config");
-                const sshConfig = existsSync(sshPath) ? readFileSync(sshPath, "utf8") : undefined;
+const lookup = vi.spyOn(dns, "lookup").mockImplementation(fakeLookup);
 
-                const modes = [
-                    "transport.config",
-                    ...(sshConfig ? ["identity", "known_hosts", "ssh_config"] : []),
-                ].map((name) => statSync(join(directory, name)).mode & 0o777);
+const spawn = vi
+    .spyOn(childProcess, "spawn")
+    .mockImplementation(
+        (file: string, spawnArgs: readonly string[], options: childProcess.SpawnOptions) => {
+            let args = [...spawnArgs];
+            const env = options.env!;
+            const directory = String(options.cwd);
+            const config = readFileSync(join(directory, "transport.config"), "utf8");
+            const sshPath = join(directory, "ssh_config");
+            const sshConfig = existsSync(sshPath) ? readFileSync(sshPath, "utf8") : undefined;
 
-                network.calls.push({ args: [...args], env: { ...env }, config, sshConfig, modes });
-                network.beforeCommand?.(args);
-                expect(options.shell).toBe(false);
-                expect(options.detached).toBe(true);
+            const modes = [
+                "transport.config",
+                ...(sshConfig ? ["identity", "known_hosts", "ssh_config"] : []),
+            ].map((name) => statSync(join(directory, name)).mode & 0o777);
 
-                if (network.version && args.includes("--version")) {
-                    return actual.spawn(
-                        process.execPath,
-                        ["-e", "process.stdout.write(process.env.VERSION)"],
-                        { ...options, env: { VERSION: network.version } },
-                    );
-                }
+            network.calls.push({ args: [...args], env: { ...env }, config, sshConfig, modes });
+            network.beforeCommand?.(args);
+            expect(options.shell).toBe(false);
+            expect(options.detached).toBe(true);
 
-                const remote = args.includes("fetch") || args.includes("ls-remote");
-
-                if (network.failTransport && remote) {
-                    return actual.spawn(
-                        process.execPath,
-                        [
-                            "-e",
-                            'process.stdout.write("secret-token"); process.stderr.write("secret-token PRIVATE KEY https://secret@host"); process.exit(1)',
-                        ],
-                        options,
-                    );
-                }
-
-                if (network.transportBehavior && remote) {
-                    const scripts = new Map([
-                        ["hang", "setInterval(() => {}, 1000)"],
-                        [
-                            "stdout",
-                            'process.stdout.write("a".repeat(5 * 1024 * 1024)); setInterval(() => {}, 1000)',
-                        ],
-                        [
-                            "stderr",
-                            'process.stderr.write("secret".repeat(256 * 1024)); setInterval(() => {}, 1000)',
-                        ],
-                        [
-                            "disk",
-                            'const fs = require("node:fs"); fs.ftruncateSync(fs.openSync("huge.pack", "w"), 129 * 1024 * 1024);',
-                        ],
-                    ]);
-
-                    return actual.spawn(
-                        process.execPath,
-                        ["-e", scripts.get(network.transportBehavior)!],
-                        options,
-                    );
-                }
-
-                if (network.headOutput !== undefined && args.includes("ls-remote")) {
-                    return actual.spawn(
-                        process.execPath,
-                        [
-                            "-e",
-                            'process.stdout.write(Buffer.from(process.env.HEAD_OUTPUT, "base64"))',
-                        ],
-                        {
-                            ...options,
-                            env: { ...env, HEAD_OUTPUT: network.headOutput.toString("base64") },
-                        },
-                    );
-                }
-
-                // Only the test transport is replaced. All init/tree/blob/index/commit operations
-                // and the leased fetch/push are real Git against an isolated bare fixture.
-                const transport = args.findIndex(
-                    (arg) =>
-                        arg.startsWith("https://") ||
-                        arg.startsWith("ssh://") ||
-                        /^(?:[a-z0-9.-]+|\[[a-f0-9:]+\]):[^/]/u.test(arg),
+            if (network.version && args.includes("--version")) {
+                return actual.spawn(
+                    process.execPath,
+                    ["-e", "process.stdout.write(process.env.VERSION)"],
+                    { ...options, env: { VERSION: network.version } },
                 );
+            }
 
-                if (transport !== -1) {
-                    if (!network.fixture) throw new Error("Unexpected network operation in test");
-                    args = [...args];
-                    args[transport] = network.fixture;
-                    args.unshift("-c", "protocol.file.allow=always");
+            const remote = args.includes("fetch") || args.includes("ls-remote");
 
-                    return actual.spawn(file, args, {
+            if (network.failTransport && remote) {
+                return actual.spawn(
+                    process.execPath,
+                    [
+                        "-e",
+                        'process.stdout.write("secret-token"); process.stderr.write("secret-token PRIVATE KEY https://secret@host"); process.exit(1)',
+                    ],
+                    options,
+                );
+            }
+
+            if (network.transportBehavior && remote) {
+                const scripts = new Map([
+                    ["hang", "setInterval(() => {}, 1000)"],
+                    [
+                        "stdout",
+                        'process.stdout.write("a".repeat(5 * 1024 * 1024)); setInterval(() => {}, 1000)',
+                    ],
+                    [
+                        "stderr",
+                        'process.stderr.write("secret".repeat(256 * 1024)); setInterval(() => {}, 1000)',
+                    ],
+                    [
+                        "disk",
+                        'const fs = require("node:fs"); fs.ftruncateSync(fs.openSync("huge.pack", "w"), 129 * 1024 * 1024);',
+                    ],
+                ]);
+
+                return actual.spawn(
+                    process.execPath,
+                    ["-e", scripts.get(network.transportBehavior)!],
+                    options,
+                );
+            }
+
+            if (network.headOutput !== undefined && args.includes("ls-remote")) {
+                return actual.spawn(
+                    process.execPath,
+                    ["-e", 'process.stdout.write(Buffer.from(process.env.HEAD_OUTPUT, "base64"))'],
+                    {
                         ...options,
-                        env: { ...env, GIT_ALLOW_PROTOCOL: "file" },
-                    });
-                }
+                        env: { ...env, HEAD_OUTPUT: network.headOutput.toString("base64") },
+                    },
+                );
+            }
 
-                return actual.spawn(file, args, options);
-            },
-        ),
-    };
+            // Only the test transport is replaced. All init/tree/blob/index/commit operations
+            // and the leased fetch/push are real Git against an isolated bare fixture.
+            const transport = args.findIndex(
+                (arg) =>
+                    arg.startsWith("https://") ||
+                    arg.startsWith("ssh://") ||
+                    /^(?:[a-z0-9.-]+|\[[a-f0-9:]+\]):[^/]/u.test(arg),
+            );
+
+            if (transport !== -1) {
+                if (!network.fixture) throw new Error("Unexpected network operation in test");
+                args = [...args];
+                args[transport] = network.fixture;
+                args.unshift("-c", "protocol.file.allow=always");
+
+                return actual.spawn(file, args, {
+                    ...options,
+                    env: { ...env, GIT_ALLOW_PROTOCOL: "file" },
+                });
+            }
+
+            return actual.spawn(file, args, options);
+        },
+    );
+
+syncBuiltinESMExports();
+
+afterAll(() => {
+    lookup.mockRestore();
+    spawn.mockRestore();
+    syncBuiltinESMExports();
 });
-
-import { lookup } from "node:dns/promises";
-import { spawn } from "node:child_process";
 
 import {
     inspectGitRemote,
@@ -152,7 +164,6 @@ import type { GitRepository } from "../../packages/api/src/git";
 import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
 
 beforeEach(() => {
-    vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "");
     network.addresses = [{ address: "93.184.216.34", family: 4 }];
     network.calls = [];
     network.beforeCommand = undefined;
@@ -160,8 +171,8 @@ beforeEach(() => {
     network.transportBehavior = "";
     network.headOutput = undefined;
     network.version = "";
-    vi.mocked(lookup).mockClear();
-    vi.mocked(spawn).mockClear();
+    lookup.mockClear();
+    spawn.mockClear();
 });
 
 afterEach(() => {
@@ -172,6 +183,7 @@ describe("Git validation", () => {
     it("exports only the requested runtime adapter and encryption functions", async () => {
         expect(Object.keys(await import("../../packages/api/src/git")).sort()).toEqual([
             "inspectGitRemote",
+            "isBlockedAddress",
             "listGitFiles",
             "pushGitFile",
             "readGitFile",
@@ -257,19 +269,14 @@ describe("Git validation", () => {
         "[64:ff9b::7f00:1]",
         "[2002:7f00:1::]",
         "metadata.google.internal",
-    ])("never allows restricted address %s, even explicitly allowlisted", (host) => {
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", host);
+    ])("never allows restricted address %s", (host) => {
         expect(() => validateGitUrl(`https://${host}/repo`)).toThrow();
     });
 
-    it("allows only exact RFC1918/ULA hosts from the comma list", () => {
-        expect(() => validateGitUrl("https://10.2.3.4/repo")).toThrow();
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", " 10.2.3.4, [fd12::1], GIT.INTERNAL. ");
+    it("allows RFC1918/ULA hosts", () => {
         expect(validateGitUrl("https://10.2.3.4/repo")).toBe("https://10.2.3.4/repo");
+        expect(validateGitUrl("https://192.168.1.10/repo")).toBe("https://192.168.1.10/repo");
         expect(validateGitUrl("https://[fd12::1]/repo")).toBe("https://[fd12::1]/repo");
-        expect(() => validateGitUrl("https://10.2.3.5/repo")).toThrow();
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "10.0.0.0/8,*");
-        expect(() => validateGitUrl("https://10.2.3.4/repo")).toThrow();
     });
 
     it.each([
@@ -981,7 +988,7 @@ describe("Git plumbing and transport isolation", () => {
     );
 
     it.each([listGitFiles, inspectGitRemote])(
-        "%s rejects mixed public/private DNS and metadata answers, even when allowlisted",
+        "%s rejects loopback, metadata and mixed unsafe DNS answers",
         async (operation) => {
             for (const address of [
                 "127.0.0.1",
@@ -991,30 +998,21 @@ describe("Git plumbing and transport isolation", () => {
                 "::1",
                 "::ffff:10.1.2.3",
             ]) {
-                vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "git.example.com");
                 network.addresses = [{ address, family: address.includes(":") ? 6 : 4 }];
                 await expect(operation(repo)).rejects.toMatchObject({ code: "BAD_REQUEST" });
             }
 
-            vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "");
             network.addresses = [
-                { address: "93.184.216.34", family: 4 },
                 { address: "10.1.2.3", family: 4 },
+                { address: "127.0.0.1", family: 4 },
             ];
             await expect(operation(repo)).rejects.toMatchObject({ code: "BAD_REQUEST" });
             expect(spawn).not.toHaveBeenCalled();
         },
     );
 
-    it("allows private DNS only by exact URL host, not suffix or resolved IP", async () => {
+    it("allows and pins private DNS answers", async () => {
         network.addresses = [{ address: "10.1.2.3", family: 4 }];
-
-        for (const allowed of ["example.com", "*.example.com", "10.1.2.3", "git.example.com:443"]) {
-            vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", allowed);
-            await expect(listGitFiles(repo)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-        }
-
-        vi.stubEnv("STOAT_GIT_ALLOWED_HOSTS", "other.internal, GIT.EXAMPLE.COM.");
         await listGitFiles(repo);
         expect(network.calls[0]!.config).toContain(
             'curloptResolve = "git.example.com:443:10.1.2.3"',

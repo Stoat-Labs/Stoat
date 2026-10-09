@@ -71,6 +71,11 @@ Stoat does not talk to your servers directly. A small Go **sidecar** runs global
 
 4. Open `http://localhost:3001`, create your account and add your cluster. Enjoy :D
 
+### Optional settings
+
+- **Behind a reverse proxy:** set `ADDRESS_HEADER=x-forwarded-for` (and `XFF_DEPTH` if there is more than one proxy) so login rate limits apply per client instead of to the proxy's address.
+- **Private Git or S3 servers:** Hosts on private networks (10/8, 172.16/12, 192.168/16, IPv6 ULA) work out of the box. Loopback, link-local and cloud metadata addresses are always blocked.
+
 <!--## Project Structure
 
 ```bash

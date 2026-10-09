@@ -157,7 +157,7 @@ it.each([
     ["bind", "volume"],
     ["bind", "bind"],
 ] as const)("renders Greptime %s and Alloy %s storage", (greptimeType, alloyType) => {
-    const settings: ClusterInitializationConfiguration = {
+    const settings = {
         ...config,
         greptimeStorage: {
             type: greptimeType,
@@ -167,7 +167,7 @@ it.each([
             type: alloyType,
             source: alloyType === "bind" ? "/srv/alloy" : "chosen-alloy",
         },
-    };
+    } satisfies ClusterInitializationConfiguration;
 
     const compose = parse(
         renderMonitoringCompose(template, settings, "password", "cluster-1", "sidecar-token"),

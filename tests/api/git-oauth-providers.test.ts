@@ -27,35 +27,38 @@ import {
     decryptGitOAuthClientSecret,
     encryptGitOAuthClientSecret,
 } from "../../packages/api/src/git-oauth-secrets";
-import { gitProviderRequest } from "../../packages/api/src/git-provider";
+import * as gitProvider from "../../packages/api/src/git-provider";
 import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
 import { connectionsRouter, getGitConnection } from "../../packages/api/src/routers/connections";
 import { POST } from "../../apps/web/src/routes/git/oauth/start/+server";
 import { GET } from "../../apps/web/src/routes/git/oauth/callback/+server";
+import * as webServices from "../../apps/web/src/services";
 
 type TestServices = { db: Context["db"] | null; session: Context["session"] };
 
-const services = vi.hoisted(() => {
-    const state: TestServices = { db: null, session: null };
+const services: TestServices = { db: null, session: null };
 
-    return state;
+vi.spyOn(webServices, "getDb").mockImplementation(() => services.db!);
+
+vi.spyOn(webServices, "getAuth").mockImplementation(
+    () =>
+        // SAFETY: the OAuth routes only call auth.api.getSession.
+        ({ api: { getSession: async () => services.session } }) as ReturnType<
+            typeof webServices.getAuth
+        >,
+);
+
+const gitProviderRequest = vi.spyOn(gitProvider, "gitProviderRequest");
+
+vi.spyOn(gitProvider, "getGitAccount").mockResolvedValue({
+    id: "42",
+    login: "octocat",
+    name: "Octocat",
 });
 
-vi.mock("../../apps/web/src/services", () => ({
-    getDb: () => services.db,
-    getAuth: () => ({ api: { getSession: async () => services.session } }),
-}));
-
-vi.mock("../../packages/api/src/git-provider", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../../packages/api/src/git-provider")>()),
-    gitProviderRequest: vi.fn(),
-    getGitAccount: vi.fn(async () => ({ id: "42", login: "octocat", name: "Octocat" })),
-    listGitRepositories: vi.fn(async ({ serverUrl }: { serverUrl: string }) => ({
-        repositories: [
-            { url: `${serverUrl}/team/app.git`, name: "team/app", defaultBranch: "main" },
-        ],
-        truncated: false,
-    })),
+vi.spyOn(gitProvider, "listGitRepositories").mockImplementation(async ({ serverUrl }) => ({
+    repositories: [{ url: `${serverUrl}/team/app.git`, name: "team/app", defaultBranch: "main" }],
+    truncated: false,
 }));
 
 const input = {
@@ -67,8 +70,6 @@ const input = {
 };
 
 const scope = { ...input, organizationId: "org-1", id: `db_${randomUUID()}` };
-
-const globalApp = { ...input, id: "env-forge", name: "Global Forge" };
 
 describe("Git OAuth app secret boundaries", () => {
     beforeEach(() => vi.stubEnv("APP_SECRET", "oauth-app-test-secret-at-least-32-bytes"));
@@ -126,72 +127,6 @@ describe("Git OAuth app secret boundaries", () => {
             "Unable to encrypt",
         );
     });
-
-    it("sanitizes validation input and database exceptions, including their causes", async () => {
-        // SAFETY: this failure-path test exercises only the select and transaction stubs.
-        const db = {
-            select: () => ({
-                from: () => ({ where: () => ({ limit: async () => [{ role: "owner" }] }) }),
-            }),
-            transaction: vi
-                .fn()
-                .mockRejectedValue(new Error(`SQL parameters: ${input.clientSecret}`)),
-        } as Context["db"];
-
-        // SAFETY: authorization only reads these user and active-organization identifiers.
-        const context = {
-            db,
-            session: { user: { id: "user" }, session: { activeOrganizationId: "org" } },
-        } as Context;
-
-        for (const invalid of [
-            { ...input, name: "" },
-            { ...input, clientSecret: "x".repeat(8193) },
-            input,
-        ]) {
-            const error = await call(
-                connectionsRouter.createOAuthProvider,
-                { ...invalid, organizationId: "org" },
-                {
-                    context,
-                },
-            ).catch((cause: unknown) => cause);
-
-            expect(error).toMatchObject({
-                code: invalid === input ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST",
-            });
-            expect(error).not.toHaveProperty("cause", expect.anything());
-            expect(inspect(error, { depth: null })).not.toContain(input.clientSecret);
-            expect(inspect(error, { depth: null })).not.toContain("SQL parameters");
-        }
-    });
-
-    it.each([undefined, "", "stale-org"])(
-        "rejects missing or stale setup organization %s before writing",
-        async (organizationId) => {
-            const transaction = vi.fn();
-
-            // SAFETY: rejected requests only read this identity and membership query fixture.
-            const context = {
-                db: {
-                    select: () => ({
-                        from: () => ({ where: () => ({ limit: async () => [{ role: "owner" }] }) }),
-                    }),
-                    transaction,
-                },
-                session: { user: { id: "user" }, session: { activeOrganizationId: "org" } },
-            } as Context;
-
-            await expect(
-                call(
-                    connectionsRouter.createOAuthProvider,
-                    { ...input, organizationId: organizationId! },
-                    { context },
-                ),
-            ).rejects.toMatchObject({ code: organizationId ? "FORBIDDEN" : "BAD_REQUEST" });
-            expect(transaction).not.toHaveBeenCalled();
-        },
-    );
 });
 
 // Only the uniquely named disposable database is migrated. DATABASE_URL is an admin connection.
@@ -273,11 +208,10 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
     beforeEach(async () => {
         vi.stubEnv("APP_SECRET", "oauth-app-test-secret-at-least-32-bytes");
         vi.stubEnv("APP_URL", "https://stoat.example.com");
-        vi.stubEnv("GIT_OAUTH_PROVIDERS", JSON.stringify([globalApp]));
         await db.delete(gitConnections);
         await db.delete(gitOAuthProviders);
         services.session = ownerContext.session;
-        vi.mocked(gitProviderRequest).mockReset().mockResolvedValue({
+        gitProviderRequest.mockReset().mockResolvedValue({
             access_token: "access-token",
             token_type: "bearer",
             expires_in: 3600,
@@ -319,8 +253,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
 
         if (connectionId) form.set("connectionId", connectionId);
 
-        // SAFETY: POST reads request and cookies only, not framework-internal event fields.
-        const response = await POST({
+        const event = {
             url: new URL(url),
             request: new Request(url, {
                 method: "POST",
@@ -328,7 +261,10 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
                 body: form,
             }),
             cookies,
-        } as Parameters<typeof POST>[0]);
+        };
+
+        // SAFETY: POST reads request and cookies only, not framework-internal event fields.
+        const response = await POST(event as typeof event & Parameters<typeof POST>[0]);
 
         return { response, cookies };
     }
@@ -340,16 +276,69 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             `https://stoat.example.com/git/oauth/callback?code=code&state=${authorization.searchParams.get("state")}`,
         );
 
-        // SAFETY: GET reads only request, url and these cookie methods.
-        return GET({
+        const event = {
             request: new Request(url),
             url,
             cookies: {
                 get: () => started.cookies.set.mock.calls[0]![1],
                 delete: vi.fn(),
             },
-        } as Parameters<typeof GET>[0]);
+        };
+
+        // SAFETY: GET reads only request, url and these cookie methods.
+        return GET(event as typeof event & Parameters<typeof GET>[0]);
     }
+
+    it("sanitizes validation input and database exceptions, including their causes", async () => {
+        const transaction = vi
+            .spyOn(db, "transaction")
+            .mockRejectedValue(new Error(`SQL parameters: ${input.clientSecret}`));
+
+        try {
+            for (const invalid of [
+                { ...input, name: "" },
+                { ...input, clientSecret: "x".repeat(8193) },
+                input,
+            ]) {
+                const error = await call(
+                    connectionsRouter.createOAuthProvider,
+                    { ...invalid, organizationId: orgId(ownerContext) },
+                    { context: ownerContext },
+                ).catch((cause: unknown) => cause);
+
+                expect(error).toMatchObject({
+                    code: invalid === input ? "INTERNAL_SERVER_ERROR" : "BAD_REQUEST",
+                });
+                expect(error).not.toHaveProperty("cause", expect.anything());
+                expect(inspect(error, { depth: null })).not.toContain(input.clientSecret);
+                expect(inspect(error, { depth: null })).not.toContain("SQL parameters");
+            }
+
+            expect(transaction).toHaveBeenCalledOnce();
+        } finally {
+            transaction.mockRestore();
+        }
+    });
+
+    it.each([undefined, "", "stale-org"])(
+        "rejects missing or stale setup organization %s before writing",
+        async (organizationId) => {
+            const transaction = vi.spyOn(db, "transaction");
+
+            try {
+                await expect(
+                    call(
+                        connectionsRouter.createOAuthProvider,
+                        { ...input, organizationId: organizationId! },
+                        { context: ownerContext },
+                    ),
+                ).rejects.toMatchObject({ code: organizationId ? "FORBIDDEN" : "BAD_REQUEST" });
+                expect(transaction).not.toHaveBeenCalled();
+            } finally {
+                transaction.mockRestore();
+            }
+        },
+    );
 
     it("allows only current org owners/admins to configure apps and returns the exact callback", async () => {
         for (const context of [ownerContext, adminContext]) {
@@ -437,7 +426,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
                 ),
             ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
-            const started = await start(globalApp.id, switched, undefined, opened.organizationId);
+            const started = await start("db_unknown", switched, undefined, opened.organizationId);
 
             expect(started.response.headers.get("location")).toBe("/git?oauth=forbidden");
             expect(started.cookies.set).not.toHaveBeenCalled();
@@ -449,7 +438,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         }
     });
 
-    it("encrypts secrets, lists only safe global + active org metadata, and creates replacements without mutation", async () => {
+    it("encrypts secrets, lists only safe active org metadata, and creates replacements without mutation", async () => {
         const created = await register();
 
         const replacement = await register(adminContext, {
@@ -482,8 +471,8 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             expect(listed.organizationId).toBe(orgId(context));
             expect(listed.oauthProviders.map((app) => app.id).sort()).toEqual(
                 (context === foreignContext
-                    ? [globalApp.id, foreign.id]
-                    : [globalApp.id, created.id, replacement.id]
+                    ? [foreign.id]
+                    : [created.id, replacement.id]
                 ).sort(),
             );
 
@@ -499,7 +488,6 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         expect(resolved.find((app) => app.id === created.id)?.clientSecret).toBe(
             input.clientSecret,
         );
-        expect(process.env.GIT_OAUTH_PROVIDERS).toBe(JSON.stringify([globalApp]));
     });
 
     it.each([
@@ -507,7 +495,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         "https://localhost",
         "https://127.0.0.1",
         "https://169.254.169.254",
-        "https://10.0.0.1",
+        "https://[::1]",
         "https://secret@git.example.com",
         "https://git.example.com/../admin",
         "https://git.example.com?token=secret",
@@ -557,9 +545,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             expect(credentials.oauthProviderId).toBe(created.id);
             expect(credentials.refreshToken).toBe("refresh-token");
 
-            const exchange = new URLSearchParams(
-                vi.mocked(gitProviderRequest).mock.calls[0]![1]?.body,
-            );
+            const exchange = new URLSearchParams(gitProviderRequest.mock.calls[0]![1]?.body);
 
             expect(exchange.get("client_secret")).toBe(input.clientSecret);
             expect(exchange.get("grant_type")).toBe("authorization_code");
@@ -572,7 +558,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
                     ),
                 })
                 .where(eq(gitConnections.id, connection!.id));
-            vi.mocked(gitProviderRequest).mockResolvedValueOnce({
+            gitProviderRequest.mockResolvedValueOnce({
                 access_token: "rotated-access",
                 token_type: "bearer",
                 expires_in: 3600,
@@ -589,9 +575,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
 
             expect(repo.credentials.password).toBe("rotated-access");
 
-            const refresh = new URLSearchParams(
-                vi.mocked(gitProviderRequest).mock.calls[1]![1]?.body,
-            );
+            const refresh = new URLSearchParams(gitProviderRequest.mock.calls[1]![1]?.body);
 
             expect(refresh.get("grant_type")).toBe("refresh_token");
             expect(refresh.get("client_secret")).toBe(input.clientSecret);
@@ -634,12 +618,14 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             `https://stoat.example.com/git/oauth/callback?state=${state}&code=secret`,
         );
 
-        // SAFETY: GET reads only request, url and these cookie methods.
-        const response = await GET({
+        const event = {
             request: new Request(url),
             url,
             cookies: { get: () => forged.cookie, delete: vi.fn() },
-        } as Parameters<typeof GET>[0]);
+        };
+
+        // SAFETY: GET reads only request, url and these cookie methods.
+        const response = await GET(event as typeof event & Parameters<typeof GET>[0]);
 
         expect(response.headers.get("location")).toBe("/git?oauth=invalid_state");
         const connectionId = randomUUID();
@@ -703,8 +689,9 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         expect(gitProviderRequest).not.toHaveBeenCalled();
     });
 
-    it("keeps env apps usable and reconnects their persisted connections to replacement org apps", async () => {
-        expect((await callback(await start(globalApp.id))).headers.get("location")).toBe(
+    it("reconnects persisted connections to replacement org apps", async () => {
+        const original = await register();
+        expect((await callback(await start(original.id))).headers.get("location")).toBe(
             "/git?oauth=success",
         );
         const [before] = await db.select().from(gitConnections);
@@ -723,11 +710,6 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
                 connectionId: before!.id,
             }).oauthProviderId,
         ).toBe(replacement.id);
-        expect(
-            (await getOrganizationGitOAuthProviders(db, orgId(foreignContext))).find(
-                (app) => app.id === globalApp.id,
-            ),
-        ).toEqual(globalApp);
     });
 
     it("cascades org apps when the organization is removed", async () => {

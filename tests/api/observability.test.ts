@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
 import { clusterMonitoring, clusters, projects, resources } from "@stoat/db/schema/index";
@@ -18,6 +19,9 @@ import {
 } from "../../packages/api/src/observability";
 import { observabilityRouter } from "../../packages/api/src/routers/cluster/observability";
 import { metricsRouter } from "../../packages/api/src/routers/cluster/metrics";
+
+// Greptime's SQL API reports failures in the body.
+const greptimeResult = v.looseObject({ error: v.optional(v.string()) });
 
 const exec = promisify(execFile);
 
@@ -53,10 +57,8 @@ async function sql(query: string) {
         body: new URLSearchParams({ sql: query }),
     });
 
-    const result = await response.json();
+    const result = v.parse(greptimeResult, await response.json());
     expect(result.error).toBeUndefined();
-
-    return result;
 }
 
 beforeAll(async () => {
@@ -248,13 +250,13 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     vi.stubEnv("APP_SECRET", secret);
     vi.spyOn(Date, "now").mockReturnValue(end * 1000);
 
-    const fetch = vi.fn(async (request: RequestInfo | URL, options?: RequestInit) => {
-        const url = new URL(String(request));
+    const fetch = vi.fn(async (request: Request) => {
+        const url = new URL(request.url);
         expect(url.origin).toBe("http://metrics.test");
-        expect(new Headers(options?.headers).get("authorization")).toBe("Bearer private");
+        expect(request.headers.get("authorization")).toBe("Bearer private");
 
         if (url.pathname.endsWith("/exec")) {
-            const body = JSON.parse(String(options?.body));
+            const body = await request.json();
             const command: string[] = body.command;
             expect(command.slice(0, 8)).toEqual([
                 "curl",
@@ -405,7 +407,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         },
     ]);
     expect(JSON.stringify(result)).not.toContain("password");
-    const execs = fetch.mock.calls.filter(([request]) => String(request).endsWith("/exec"));
+    const execs = fetch.mock.calls.filter(([request]) => request.url.endsWith("/exec"));
     expect(execs).toHaveLength(metricNames.length);
     const uncached = fetch.mock.calls.length;
     await expect(metric("cpu", range)).resolves.toEqual(metrics[0]);

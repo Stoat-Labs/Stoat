@@ -94,6 +94,10 @@
 
     const items = $derived(clustersQuery.data?.items ?? []);
 
+    const canManage = $derived(
+        clustersQuery.data?.canManage === true,
+    );
+
     const total = $derived(clustersQuery.data?.total ?? 0);
 
     const totalPages = $derived(
@@ -200,15 +204,17 @@
                 <Search aria-hidden="true" />
             </InputGroupAddon>
         </InputGroup>
-        <Button
-            size="sm"
-            disabled={!ready}
-            onclick={() =>
-                void list.set({ dialog: "create-cluster" })}
-        >
-            <Plus class="size-4" aria-hidden="true" />
-            Create cluster
-        </Button>
+        {#if canManage}
+            <Button
+                size="sm"
+                disabled={!ready}
+                onclick={() =>
+                    void list.set({ dialog: "create-cluster" })}
+            >
+                <Plus class="size-4" aria-hidden="true" />
+                Create cluster
+            </Button>
+        {/if}
     </div>
 {/snippet}
 
@@ -292,45 +298,53 @@
                             {formatDate(cluster.updatedAt)}
                         </TableCell>
                         <TableCell>
-                            <Menu>
-                                <MenuTrigger
-                                    class={buttonVariants({
-                                        variant: "ghost",
-                                        size: "icon-xs",
-                                        class: "md:opacity-0 md:opacity-100 md:focus-visible:opacity-100",
-                                    })}
-                                    aria-label={`Actions for ${cluster.name}`}
-                                >
-                                    <Ellipsis
-                                        class="size-4"
-                                        aria-hidden="true"
-                                    />
-                                </MenuTrigger>
-                                <MenuPopup align="end">
-                                    <MenuItem
-                                        variant="destructive"
-                                        onclick={() =>
-                                            askDelete(cluster)}
+                            {#if canManage}
+                                <Menu>
+                                    <MenuTrigger
+                                        class={buttonVariants({
+                                            variant: "ghost",
+                                            size: "icon-xs",
+                                            class: "md:opacity-0 md:opacity-100 md:focus-visible:opacity-100",
+                                        })}
+                                        aria-label={`Actions for ${cluster.name}`}
                                     >
-                                        <Trash2 aria-hidden="true" />
-                                        Delete
-                                    </MenuItem>
-                                </MenuPopup>
-                            </Menu>
+                                        <Ellipsis
+                                            class="size-4"
+                                            aria-hidden="true"
+                                        />
+                                    </MenuTrigger>
+                                    <MenuPopup align="end">
+                                        <MenuItem
+                                            variant="destructive"
+                                            onclick={() =>
+                                                askDelete(cluster)}
+                                        >
+                                            <Trash2
+                                                aria-hidden="true"
+                                            />
+                                            Delete
+                                        </MenuItem>
+                                    </MenuPopup>
+                                </Menu>
+                            {/if}
                         </TableCell>
                     </TableRow>
                 {/each}
             {/snippet}
             {#snippet emptyAction()}
-                <Button
-                    size="sm"
-                    disabled={!ready}
-                    onclick={() =>
-                        void list.set({ dialog: "create-cluster" })}
-                >
-                    <Plus class="size-4" aria-hidden="true" />
-                    New cluster
-                </Button>
+                {#if canManage}
+                    <Button
+                        size="sm"
+                        disabled={!ready}
+                        onclick={() =>
+                            void list.set({
+                                dialog: "create-cluster",
+                            })}
+                    >
+                        <Plus class="size-4" aria-hidden="true" />
+                        New cluster
+                    </Button>
+                {/if}
             {/snippet}
         </DataTable>
     {/if}

@@ -17,6 +17,9 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Textarea } from "$lib/components/ui/textarea";
+    import { goto } from "$app/navigation";
+    import { page } from "$app/state";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { createMutation } from "@tanstack/svelte-query";
     import { watch } from "runed";
@@ -57,6 +60,26 @@
             },
         }),
     );
+
+    let deleteOpen = $state(false);
+
+    const deleteMutation = createMutation(() =>
+        orpc.projects.deleteProject.mutationOptions({
+            onSuccess: async () => {
+                deleteOpen = false;
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.projects.key(),
+                });
+                await goto("/projects");
+            },
+        }),
+    );
+
+    function askDelete() {
+        deleteMutation.reset();
+        open = false;
+        deleteOpen = true;
+    }
 
     function submit(event: SubmitEvent) {
         event.preventDefault();
@@ -122,6 +145,16 @@
             </form>
         </DialogPanel>
         <DialogFooter>
+            {#if page.data.isOrganizationAdmin}
+                <Button
+                    variant="destructive-outline"
+                    class="sm:mr-auto"
+                    disabled={mutation.isPending}
+                    onclick={askDelete}
+                >
+                    Delete project
+                </Button>
+            {/if}
             <Button
                 variant="outline"
                 disabled={mutation.isPending}
@@ -140,3 +173,13 @@
         </DialogFooter>
     </DialogContent>
 </Dialog>
+
+<ConfirmDialog
+    bind:open={deleteOpen}
+    title={`Delete ${project.name}?`}
+    description="Every resource's services are removed from the cluster and the project is deleted. Volumes stay on the machines. Delete its S3 buckets first. This cannot be undone."
+    confirmLabel="Delete project"
+    pending={deleteMutation.isPending}
+    error={deleteMutation.error?.message ?? ""}
+    onconfirm={() => deleteMutation.mutate({ projectId: project.id })}
+/>
