@@ -1,0 +1,6 @@
+{
+    "name": "Grafana",
+    "description": "Platform for data analytics and monitoring",
+    "type": "compose",
+    "tags": ["observability", "dashboard"]
+}

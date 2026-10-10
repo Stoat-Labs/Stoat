@@ -284,7 +284,7 @@
                 <Separator orientation="vertical" class="mx-2 h-4" />
                 <BreadcrumbTrail {trail}>
                     {#snippet trailing()}
-                        {#if isProjectDetail && !deploymentId && project && !project.isInternal && !projectTab}
+                        {#if page.route.id === "/(app)/projects/[projectId]" && project && !project.isInternal}
                             <Button
                                 variant="ghost"
                                 size="icon-xs"

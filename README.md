@@ -56,22 +56,24 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
 2. **Download `compose.yml` and `.env.example`**
 
     ```bash
-    git clone https://github.com/iRazvan2745/Stoat.git && cd Stoat
+    git clone https://github.com/Stoat-labs/Stoat.git && cd Stoat
     ```
 
     ```bash
-    APP_SECRET=change_me_to_a_secure_secret # openssl rand -hex 32
-    APP_URL=http://localhost:3001
-    DATABASE_URL=postgresql://postgres:password@localhost:5435/stoat
+    APP_URL=stoat.example.com
+    APP_SECRET=changeme                   # openssl rand -hex 32
+    POSTGRES_PASSWORD=changeme            # openssl rand -hex 32
+    SIDECAR_TOKEN=changeme                # openssl rand -hex 32 # please remember this one you'll need to use it when adding your cluster
+    REDIS_URL=redis://stoat-cache.internal:6379
     ```
 
 3. **Start Stoat**
 
     ```bash
-    docker compose up -d
+    uc deploy
     ```
 
-4. Open `http://localhost:3001` and follow the setup wizard: the first account becomes the instance admin, then you name your organization and optionally connect your cluster. Public sign-ups stay closed unless you turn them on. Enjoy :D
+4. Open `https://stoat.example` and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster. Enjoy :D
 
 ### Optional settings
 

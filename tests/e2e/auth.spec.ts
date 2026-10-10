@@ -182,7 +182,7 @@ test.describe("instance sign-up setting", () => {
         const toggle = page.getByRole("switch", { name: "Allow user signups" });
         // The page has a second form (private network access) with the same button label.
         const signupsForm = page.locator("form").filter({ has: toggle });
-        const save = signupsForm.getByRole("button", { name: "Save Changes" });
+        const save = signupsForm.getByRole("button", { name: "Save changes" });
         const saved = signupsForm.getByText("Settings saved.");
 
         await expect(toggle).toBeChecked();

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import Container from "@lucide/svelte/icons/container";
+    import Boxes from "@lucide/svelte/icons/boxes";
+    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { orpc } from "$lib/api/orpc";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
@@ -43,7 +44,7 @@
         loading-label="Loading resources"
     >
         <div class="flex h-7 items-center gap-2 rounded-lg px-2">
-            <Container class="size-4" aria-hidden="true" />
+            <Boxes class="size-4" aria-hidden="true" />
             <span class="truncate text-sm">Resource service</span>
         </div>
     </Skeleton>
@@ -76,8 +77,10 @@
                                     alt=""
                                     class="size-4 shrink-0 rounded object-contain"
                                 />
+                            {:else if resource.type === "bucket"}
+                                <BucketIcon aria-hidden="true" />
                             {:else}
-                                <Container aria-hidden="true" />
+                                <Boxes aria-hidden="true" />
                             {/if}
                             <span>{resource.name}</span>
                         </a>

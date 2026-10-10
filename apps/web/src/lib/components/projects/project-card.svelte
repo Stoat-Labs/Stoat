@@ -29,7 +29,7 @@
     data-slot="project-card"
 >
     <CardHeader class="min-h-9 space-y-0 p-0">
-        <div class="flex items-start gap-3">
+        <div class="flex items-center gap-3">
             <span
                 class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/50"
                 aria-hidden="true"

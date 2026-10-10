@@ -42,12 +42,12 @@
     );
 
     const prefixNamesSchema = z
-        .object({ prefixNames: z.boolean().catch(false) })
-        .catch({ prefixNames: false });
+        .object({ prefixNames: z.boolean().catch(true) })
+        .catch({ prefixNames: true });
 
-    let prefixNames = $state(false);
+    let prefixNames = $state(true);
 
-    let savedPrefixNames = $state(false);
+    let savedPrefixNames = $state(true);
 
     let loadedResourceId = $state("");
 

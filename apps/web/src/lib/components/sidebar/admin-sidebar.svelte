@@ -54,7 +54,7 @@
             <SidebarMenuItem>
                 <SidebarMenuButton
                     size="lg"
-                    tooltipContent="Back to App"
+                    tooltipContent="Back to app"
                 >
                     {#snippet child({ props })}
                         <a
@@ -71,7 +71,7 @@
                                 class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
                             >
                                 <span class="font-semibold">
-                                    Back to App
+                                    Back to app
                                 </span>
                                 <span class="text-xs">
                                     Exit admin area

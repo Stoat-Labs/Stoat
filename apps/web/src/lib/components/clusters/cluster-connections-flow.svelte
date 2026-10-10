@@ -197,9 +197,9 @@
         class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-muted-foreground sm:px-5"
     >
         <span>
-            {nodes.length} machines
+            {nodes.length} {nodes.length === 1 ? "machine" : "machines"}
             <span class="mx-1 opacity-40">/</span>
-            {links.length} measured paths
+            {links.length} measured {links.length === 1 ? "path" : "paths"}
         </span>
         <span>Median latency / Hover a path for variation</span>
     </div>

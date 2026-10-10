@@ -17,12 +17,12 @@ export const load = async ({ parent }) => {
     return {
         stats: [
             {
-                title: "Total Users",
+                title: "Users",
                 count: users.count,
                 description: "Registered users on the platform",
             },
             {
-                title: "Total Organizations",
+                title: "Organizations",
                 count: organizations.count,
                 description: "Active workspaces",
             },

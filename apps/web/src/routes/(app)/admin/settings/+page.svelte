@@ -25,11 +25,11 @@
     });
 </script>
 
-<svelte:head><title>System Settings / Stoat</title></svelte:head>
+<svelte:head><title>System settings / Stoat</title></svelte:head>
 <div class="mx-auto w-full max-w-6xl space-y-4 pt-6">
     <Card class="w-full max-w-3xl">
         <CardHeader>
-            <CardTitle>General Settings</CardTitle>
+            <CardTitle>General settings</CardTitle>
             <CardDescription>
                 Instance-wide configuration.
             </CardDescription>
@@ -81,7 +81,7 @@
                         disabled={!ready}
                         loading={pending}
                     >
-                        Save Changes
+                        Save changes
                     </Button>
                     <p
                         class="text-sm"

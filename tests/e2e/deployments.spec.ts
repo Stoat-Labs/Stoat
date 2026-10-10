@@ -319,6 +319,7 @@ test.describe("as a member", () => {
         await expect(page.getByRole("textbox", { name: /^Name/u })).toBeVisible();
         await expect(page.getByRole("button", { name: "Delete resource" })).toHaveCount(0);
 
+        await page.goto(`/projects/${api!.project_id}`);
         await page.getByRole("button", { name: "Edit project" }).click();
         await expect(
             page.getByRole("dialog").getByRole("button", { name: "Delete project" }),

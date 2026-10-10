@@ -13,6 +13,7 @@
     import {
         Alert,
         AlertDescription,
+        AlertTitle,
     } from "$lib/components/ui/alert";
     import { buttonVariants } from "$lib/components/ui/button/button-variants";
     import { Checkbox } from "$lib/components/ui/checkbox";
@@ -569,13 +570,15 @@
     {#each data as cluster (cluster.id)}
         {#if cluster.reason}
             <Alert variant="warning">
+                <AlertTitle>{cluster.name}</AlertTitle>
                 <AlertDescription>
-                    <span class="font-medium">{cluster.name}:</span>
-                    {cluster.reason === "uninitialized"
-                        ? "Initialize monitoring to collect metrics."
-                        : "Monitoring is unreachable. Other clusters remain available."}
+                    <p>
+                        {cluster.reason === "uninitialized"
+                            ? "Initialize monitoring to collect metrics."
+                            : "Monitoring is unreachable. Other clusters remain available."}
+                    </p>
                     <a
-                        class="underline underline-offset-2"
+                        class="w-fit underline underline-offset-2"
                         href={`/clusters/${cluster.id}`}
                     >
                         Open cluster

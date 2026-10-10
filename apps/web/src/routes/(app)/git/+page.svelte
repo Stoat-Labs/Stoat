@@ -30,6 +30,7 @@
     import { orpc } from "$lib/api/orpc";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import GitBranch from "@lucide/svelte/icons/git-branch";
+    import Plus from "@lucide/svelte/icons/plus";
     import { createQuery } from "@tanstack/svelte-query";
     import { useQueryStates } from "nuqs-svelte";
     import { onDestroy, untrack } from "svelte";
@@ -208,6 +209,7 @@
             {disabled}
             onclick={() => changeDialog("add-connection")}
         >
+            <Plus aria-hidden="true" />
             Add connection
         </Button>{/if}
 {/snippet}
@@ -287,8 +289,9 @@
                 </EmptyMedia>
                 <EmptyTitle>No Git connections yet</EmptyTitle>
                 <EmptyDescription>
-                    An administrator can add a connection using OAuth
-                    or an access token.
+                    {canManage
+                        ? "Add a connection using OAuth or an access token."
+                        : "An administrator can add a connection using OAuth or an access token."}
                 </EmptyDescription>
             </EmptyHeader>
         </Empty>

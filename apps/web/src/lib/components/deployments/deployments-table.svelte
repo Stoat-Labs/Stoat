@@ -262,9 +262,6 @@
     }
 </script>
 
-colSpan={(resourceId || latest !== undefined ? 5 : 7) +
-    (canDelete ? 1 : 0)}
-
 {#snippet statusFilters()}
     <div
         class="flex max-w-full flex-wrap items-center gap-2"
@@ -318,7 +315,8 @@ colSpan={(resourceId || latest !== undefined ? 5 : 7) +
             {meta}
             loading={deploymentsQuery.isPending}
             loadingRows={limit}
-            colSpan={resourceId || latest !== undefined ? 5 : 7}
+            colSpan={(resourceId || latest !== undefined ? 5 : 7) +
+                (canDelete ? 1 : 0)}
             isEmpty={items.length === 0}
             emptyTitle={status === "all"
                 ? "No deployments yet"
