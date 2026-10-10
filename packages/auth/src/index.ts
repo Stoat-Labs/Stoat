@@ -45,6 +45,17 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
         }),
         secondaryStorage: redisUrl ? createSessionStorage(redisUrl) : undefined,
         databaseHooks: {
+            user: {
+                create: {
+                    // The first account of a fresh install becomes the instance admin.
+                    before: async (user) => ({
+                        data: {
+                            ...user,
+                            ...((await isSetupRequired(database)) && { role: "admin" }),
+                        },
+                    }),
+                },
+            },
             session: {
                 create: {
                     before: async (session) => {
@@ -122,7 +133,7 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
 }
 
 /**
- * Closed sign-ups still admit the first account of a fresh install (the database makes it the
+ * Closed sign-ups still admit the first account of a fresh install (the user hook makes it the
  * instance admin) and anyone holding a pending invitation.
  */
 async function canSignUp(database: Database, email: string | undefined) {

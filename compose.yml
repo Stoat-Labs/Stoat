@@ -16,7 +16,8 @@ services:
                 [
                     "node",
                     "node_modules/drizzle-kit/bin.cjs",
-                    "migrate",
+                    "push",
+                    "--force",
                     "--config",
                     "drizzle.config.ts",
                 ]
