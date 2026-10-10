@@ -1,4 +1,5 @@
 import { fail, redirect } from "@sveltejs/kit";
+import { isOrganizationAdmin } from "@stoat/api";
 import { listUserOrganizations } from "@stoat/db/organizations";
 import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
 import { isSetupRequired } from "@stoat/db/setup";
@@ -7,8 +8,8 @@ import { getDb } from "../../services";
 
 /**
  * The required step comes from the database: no accounts yet means creating the admin, and an
- * account without an organization creates one. The optional cluster steps that follow are the
- * instance admin's and live in the URL.
+ * account without an organization creates one. The optional cluster steps that follow belong to
+ * whoever owns or administers the organization, and live in the URL.
  */
 export const load = async ({ locals: { session } }) => {
     const db = getDb();
@@ -23,9 +24,18 @@ export const load = async ({ locals: { session } }) => {
 
     if (organizations.length === 0) return { step: "organization" as const, isAdmin };
 
-    if (!isAdmin) redirect(303, "/");
+    // Clusters belong to an organization, so members who merely joined one have nothing to set up.
+    const activeOrganization =
+        organizations.find(({ id }) => id === session.session.activeOrganizationId) ??
+        organizations[0];
 
-    return { step: "cluster" as const, isAdmin, signupsEnabled: await getSignupsEnabled(db) };
+    if (!isOrganizationAdmin(activeOrganization?.role ?? "")) redirect(303, "/");
+
+    return {
+        step: "cluster" as const,
+        isAdmin,
+        signupsEnabled: isAdmin ? await getSignupsEnabled(db) : undefined,
+    };
 };
 
 export const actions = {

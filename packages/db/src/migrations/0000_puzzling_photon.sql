@@ -424,3 +424,20 @@ CREATE INDEX "effect_mq_jobs_active_idx" ON "effect_mq_jobs" USING btree ("lock_
 CREATE INDEX "effect_mq_jobs_history_idx" ON "effect_mq_jobs" USING btree ("name","state","finished_at");--> statement-breakpoint
 CREATE INDEX "effect_mq_jobs_listing_idx" ON "effect_mq_jobs" USING btree ("enqueued_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "effect_mq_jobs_metadata_idx" ON "effect_mq_jobs" USING gin ("metadata" jsonb_path_ops);
+--> statement-breakpoint
+-- The very first account becomes the instance admin. The lock lasts until the inserting
+-- transaction commits, so racing first sign-ups serialize and only one of them sees no users.
+CREATE FUNCTION promote_first_user() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('stoat:first-user-admin'));
+    IF NOT EXISTS (SELECT 1 FROM "user") THEN
+        NEW.role := 'admin';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER user_first_is_admin
+BEFORE INSERT ON "user"
+FOR EACH ROW EXECUTE FUNCTION promote_first_user();

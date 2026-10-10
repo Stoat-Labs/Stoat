@@ -40,11 +40,11 @@
         parseAsString.withOptions(urlOptions),
     );
 
-    // Only the instance admin walks the full account → organization → cluster path.
+    // Only the instance admin creates the account; everyone else starts at the organization.
     const eyebrow = $derived(
         data.isAdmin
             ? `Step ${{ account: 1, organization: 2, cluster: 3 }[data.step]} of 3`
-            : undefined,
+            : `Step ${{ account: 1, organization: 1, cluster: 2 }[data.step]} of 2`,
     );
 
     let signupsEnabled = $state(false);
@@ -56,15 +56,9 @@
     let canSubmit = $state(false);
 
     async function organizationCreated() {
-        if (!data.isAdmin) {
-            window.location.assign("/");
-
-            return;
-        }
-
         // Sign-ups are closed by default; only record a change. If this fails the done step
         // shows the saved value, and /admin/settings can change it later.
-        if (signupsEnabled) {
+        if (data.isAdmin && signupsEnabled) {
             const body = new FormData();
             body.set("signupsEnabled", "true");
             await fetch("/setup?/signups", {
@@ -161,11 +155,13 @@
               ? "Your cluster is connected. Set up monitoring any time from its page."
               : "Your workspace is ready. Connect a cluster any time from the Clusters page."}
     >
-        <p class="text-sm text-muted-foreground">
-            Public sign-ups are {data.signupsEnabled
-                ? "open"
-                : "closed"}. Change it in instance settings.
-        </p>
+        {#if data.isAdmin}
+            <p class="text-sm text-muted-foreground">
+                Public sign-ups are {data.signupsEnabled
+                    ? "open"
+                    : "closed"}. Change it in instance settings.
+            </p>
+        {/if}
         <div class="flex flex-col gap-2">
             <Button href="/" class="w-full" size="sm">
                 Go to dashboard
@@ -198,7 +194,7 @@
         <p class="text-sm text-muted-foreground">
             No sidecar yet? Deploy it with
             <span class="font-mono">uc deploy</span>
-             as the README shows.
+            as the README shows.
         </p>
         <div class="flex justify-end gap-2">
             <Button
