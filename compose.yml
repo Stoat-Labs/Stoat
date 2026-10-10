@@ -9,8 +9,8 @@ services:
         env_file: .env
         environment:
             APP_URL: https://${APP_URL:-stoat.example.com}
-            DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/${POSTGRES_DB:-stoat}}
-            REDIS_URL: ${REDIS_URL:-redis://dragonfly.internal:6379}
+            DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
+            REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
         x-pre_deploy:
             command:
                 [
@@ -39,10 +39,8 @@ services:
 
     stoat-db:
         image: postgres:18
-        container_name: stoat-db
         environment:
             POSTGRES_DB: stoat
-            POSTGRES_USER: postgres
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
         volumes:
             - stoat_db_data:/var/lib/postgresql
@@ -53,40 +51,29 @@ services:
             retries: 5
         restart: unless-stopped
 
-    # optional but heavily recommended, if a redis compatible database isnt provided it will use RAM
+    # Optional but recommended. Without a Redis-compatible cache, Stoat caches in memory.
     stoat-cache:
         image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
-        container_name: stoat-cache
         volumes:
             - stoat_cache_data:/data
         restart: unless-stopped
 
     sidecar:
         image: ghcr.io/irazvan2745/sidecar:latest
-        # Uncloud does not propagate Compose group_add. The sidecar needs
-        # root-equivalent access to the host's Uncloud control socket.
-        user: root
         env_file: .env
         environment:
-            # Bearer token required by every endpoint except /healthz. The sidecar
-            # refuses to start without it, so deployment fails loudly rather than
-            # exposing a privileged API.
+            # Required by every endpoint except /healthz; the sidecar won't start without it.
             SIDECAR_TOKEN: ${SIDECAR_TOKEN:?set SIDECAR_TOKEN to a random secret, e.g. openssl rand -hex 32}
         volumes:
-            # Bind-mount host's Uncloud socket directory so both
-            # /run/uncloud/api/uncloud.sock and the legacy
-            # /run/uncloud/uncloud.sock are visible.
             - /run/uncloud:/run/uncloud:ro
-            # Required for host namespace access from the sidecar.
-            - /:/host
-        restart: unless-stopped
+        # Root + privileged + host PID: the sidecar talks to the Uncloud socket and
+        # runs host commands via nsenter into PID 1. Uncloud ignores group_add.
+        user: root
         privileged: true
-        # Required: host command execution enters the namespaces of PID 1, and the
-        # sidecar refuses to exec on a machine whose container is not in the host
-        # PID namespace.
         pid: host
         deploy:
             mode: global
+        restart: unless-stopped
 
 volumes:
     stoat_db_data:

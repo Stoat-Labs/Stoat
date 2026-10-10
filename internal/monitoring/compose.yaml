@@ -14,7 +14,6 @@ services:
         image: greptime/greptimedb:v1.2.1
         restart: unless-stopped
 
-        # InitializeCluster replaces this with the selected machine name. GreptimeDB owns the
         # persistent volume and must not move away from the machine that owns that data.
         x-machines: ["${MONITORING_MACHINE:?rendered by InitializeCluster}"]
 
