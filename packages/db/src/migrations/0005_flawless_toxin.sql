@@ -1,1 +1,0 @@
-ALTER TABLE "clusters" ADD COLUMN "initialised_at" timestamp with time zone;

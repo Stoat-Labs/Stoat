@@ -1,1 +1,0 @@
-ALTER TABLE "resource_deployment_inputs" ADD COLUMN "env" text DEFAULT '' NOT NULL;

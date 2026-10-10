@@ -1,1 +1,0 @@
-ALTER TABLE "s3_buckets" ADD COLUMN "quota" bigint;
