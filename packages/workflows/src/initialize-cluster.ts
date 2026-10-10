@@ -347,8 +347,10 @@ export function createInitializeClusterHandler(
             }
 
             throw new Error("Monitoring ingestion could not be verified.");
-        } catch {
+        } catch (error) {
             signal.throwIfAborted();
+            // The UI gets a redacted message; the server log keeps the real cause.
+            console.error(`[initialize] cluster ${clusterId} failed:`, error);
             // Intentionally redact underlying database, Compose and HTTP errors.
             throw new Error(
                 "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.",

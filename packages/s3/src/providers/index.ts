@@ -1,6 +1,6 @@
 // Client-safe provider catalog. Provider API clients live beside it; `../index.ts` wires them up.
 
-export const S3_PROVIDER_IDS = ["generic", "rustfs", "r2"] as const;
+export const S3_PROVIDER_IDS = ["rustfs", "generic", "r2"] as const;
 
 export type S3ProviderId = (typeof S3_PROVIDER_IDS)[number];
 

@@ -8,7 +8,6 @@
         "build": "vp build",
         "preview": "vp preview",
         "start": "node build/index.js",
-        "db:push": "drizzle-kit push --config drizzle.config.ts",
         "prepare": "svelte-kit sync",
         "check-types": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
         "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

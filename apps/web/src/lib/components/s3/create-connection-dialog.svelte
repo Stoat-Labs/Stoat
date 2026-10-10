@@ -46,7 +46,7 @@
 
     let { open = $bindable(false) }: { open?: boolean } = $props();
 
-    let provider = $state<S3ProviderId>("generic");
+    let provider = $state<S3ProviderId>("rustfs");
 
     let name = $state("");
 
@@ -75,7 +75,7 @@
         (isOpen, wasOpen) => {
             if (!isOpen || wasOpen === true) return;
 
-            provider = "generic";
+            provider = "rustfs";
             name = "";
             draft = emptyDraft();
             createState.reset();

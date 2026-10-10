@@ -14,7 +14,6 @@
         "db:down": "docker compose down postgres",
         "db:generate": "vp run --filter @stoat/db db:generate",
         "db:migrate": "vp run --filter @stoat/db db:migrate",
-        "db:push": "vp run --filter @stoat/db db:push",
         "db:start": "docker compose up -d postgres",
         "db:stop": "docker compose stop postgres",
         "db:studio": "vp run --filter @stoat/db db:studio",
