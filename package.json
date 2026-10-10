@@ -21,7 +21,7 @@
         "db:watch": "docker compose up postgres",
         "dev": "vp run -r dev",
         "dev:types": "tsc -b packages/api --watch",
-        "dev:web": "vp run --filter web dev",
+        "dev:web": "vp run --filter stoat dev",
         "docker:build": "docker compose build",
         "docker:down": "docker compose down",
         "docker:logs": "docker compose logs -f",

@@ -45,7 +45,7 @@ services:
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
         volumes:
-            - stoat_postgres_data:/var/lib/postgresql
+            - stoat_db_data:/var/lib/postgresql
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U postgres"]
             interval: 10s
@@ -90,4 +90,4 @@ services:
 
 volumes:
     stoat_db_data:
-    stoat_dragonfly_data:
+    stoat_cache_data:

@@ -85,25 +85,30 @@ jobs:
               run: |
                   PACKAGES="[]"
 
-                  # Find all package.json files in apps and packages directories
-                  PACKAGE_JSONS=$(find apps packages -maxdepth 2 -name "package.json" 2>/dev/null || true)
+                  # Find every app/package directory that has a Dockerfile
+                  for DOCKERFILE in $(find apps packages -maxdepth 2 -name "Dockerfile" | sort); do
+                    DIR=$(dirname "$DOCKERFILE")
 
-                  for PKG_FILE in $PACKAGE_JSONS; do
-                    DIR=$(dirname "$PKG_FILE")
-                    
-                    # Only include packages that have a Dockerfile
-                    if [ -f "$DIR/Dockerfile" ]; then
-                      NAME=$(jq -r '.name // empty' "$PKG_FILE" 2>/dev/null || echo "")
-                      
-                      if [ -n "$NAME" ]; then
-                        ITEM=$(jq -n \
-                          --arg name "$NAME" \
-                          --arg dir "$DIR" \
-                          '{name: $name, dir: $dir}')
-                        
-                        PACKAGES=$(echo "$PACKAGES" | jq -c --argjson item "$ITEM" '. + [$item]')
-                        echo "Found: $NAME (dir: $DIR)"
-                      fi
+                    # Node apps are named by package.json and build from the repo root.
+                    # Go apps (the sidecar) have no package.json, so use the directory
+                    # name and build from their own directory.
+                    if [ -f "$DIR/package.json" ]; then
+                      NAME=$(jq -r '.name // empty' "$DIR/package.json")
+                      CONTEXT="."
+                    else
+                      NAME=$(basename "$DIR")
+                      CONTEXT="$DIR"
+                    fi
+
+                    if [ -n "$NAME" ]; then
+                      ITEM=$(jq -n \
+                        --arg name "$NAME" \
+                        --arg dir "$DIR" \
+                        --arg context "$CONTEXT" \
+                        '{name: $name, dir: $dir, context: $context}')
+
+                      PACKAGES=$(echo "$PACKAGES" | jq -c --argjson item "$ITEM" '. + [$item]')
+                      echo "Found: $NAME (dir: $DIR, context: $CONTEXT)"
                     fi
                   done
 
@@ -189,7 +194,7 @@ jobs:
             - name: Docker Image Publish
               uses: useblacksmith/build-push-action@v2
               with:
-                  context: .
+                  context: ${{ matrix.package.context }}
                   file: ${{ steps.prep.outputs.app_dir }}/Dockerfile
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
