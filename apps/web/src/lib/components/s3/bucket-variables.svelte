@@ -5,6 +5,7 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
+    import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
     import {
         Frame,
@@ -15,6 +16,8 @@
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
+    import Check from "@lucide/svelte/icons/check";
+    import Copy from "@lucide/svelte/icons/copy";
     import Eye from "@lucide/svelte/icons/eye";
     import EyeOff from "@lucide/svelte/icons/eye-off";
     import {
@@ -52,6 +55,24 @@
               ].join("\n")
             : "",
     );
+
+    let copied = $state(false);
+
+    let timer: ReturnType<typeof setTimeout> | undefined = undefined;
+
+    async function copy() {
+        try {
+            await navigator.clipboard.writeText(env);
+        } catch {
+            // Leave the text selectable without claiming a failed copy succeeded.
+            return;
+        }
+
+        copied = true;
+
+        if (timer !== undefined) clearTimeout(timer);
+        timer = setTimeout(() => (copied = false), 1500);
+    }
 </script>
 
 {#if bucketQuery.isError}
@@ -81,22 +102,42 @@
             class="flex-row flex-wrap shrink-0 items-center justify-between gap-3 px-3 py-2"
         >
             <div class="min-w-0">
-                <FrameTitle class="text-sm">
+                <FrameTitle class="flex items-center gap-2 text-sm">
                     <h2>.env</h2>
+                    <Badge variant="secondary">Read-only</Badge>
                 </FrameTitle>
                 <FrameDescription class="mt-0.5">
-                    Paste these into a resource's variables.
+                    Copy them into the variables of the resource that
+                    uses the bucket.
                 </FrameDescription>
             </div>
             {#if credentialsState.data}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onclick={() => credentialsState.reset()}
-                >
-                    <EyeOff class="size-4" aria-hidden="true" />
-                    Hide values
-                </Button>
+                <div class="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onclick={copy}
+                    >
+                        {#if copied}
+                            <Check
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                            Copied
+                        {:else}
+                            <Copy class="size-4" aria-hidden="true" />
+                            Copy
+                        {/if}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onclick={() => credentialsState.reset()}
+                    >
+                        <EyeOff class="size-4" aria-hidden="true" />
+                        Hide values
+                    </Button>
+                </div>
             {:else if page.data.isOrganizationAdmin}
                 <Button
                     variant="outline"

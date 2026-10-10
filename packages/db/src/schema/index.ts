@@ -8,7 +8,7 @@ export const instanceSettings = t.pgTable(
     "instance_settings",
     {
         id: t.integer("id").primaryKey().default(1),
-        signupsEnabled: t.boolean("signups_enabled").notNull().default(true),
+        signupsEnabled: t.boolean("signups_enabled").notNull().default(false),
     },
     (table) => [t.check("instance_settings_singleton", sql`${table.id} = 1`)],
 );

@@ -22,9 +22,10 @@
                 deleteOpen = false;
                 await Promise.all([
                     queryClient.invalidateQueries({
-                        queryKey: orpc.resources.listResources.queryKey({
-                            input: { projectId },
-                        }),
+                        queryKey:
+                            orpc.resources.listResources.queryKey({
+                                input: { projectId },
+                            }),
                     }),
                     queryClient.invalidateQueries({
                         queryKey: orpc.projects.key(),
@@ -65,8 +66,8 @@
                             Delete resource
                         </h3>
                         <p class="text-sm text-muted-foreground">
-                            Stop its services on the cluster and remove
-                            it from the project.
+                            Stop its services on the cluster and
+                            remove it from the project.
                         </p>
                     </div>
                     <Button

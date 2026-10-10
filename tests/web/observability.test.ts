@@ -242,7 +242,6 @@ it("combines a service's containers across machines and keeps each container's o
         ["web-1", 30, 40],
         ["web-2", 20, 50],
     ]);
-    expect(row?.trend).toEqual([{ time: 60000, value: 50 }]);
 
     // The machine filter narrows both the containers and the service totals.
     const [scoped] = serviceRows([cluster], "a:other");

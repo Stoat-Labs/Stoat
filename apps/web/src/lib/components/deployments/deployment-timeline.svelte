@@ -56,16 +56,6 @@
         <DeploymentStep {step} {now} {startedAt} />
     {/each}
 </ol>
-{#if active && !retrying}
-    <p
-        class="ml-[calc(5ch+1.75rem)] flex h-5 items-center"
-        aria-hidden="true"
-    >
-        <span
-            class="h-3.5 w-1.5 rounded-[1px] bg-info-foreground motion-safe:animate-pulse"
-        ></span>
-    </p>
-{/if}
 {#if showOutcome}
     <p
         class="grid grid-cols-[5ch_1rem_minmax(0,1fr)] gap-x-3"

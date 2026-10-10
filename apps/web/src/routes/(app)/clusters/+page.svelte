@@ -249,13 +249,17 @@
         >
             {#snippet header()}
                 <TableRow>
-                    <TableHead>Status</TableHead>
+                    <TableHead class="text-center">Status</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Projects</TableHead>
-                    <TableHead class="hidden md:table-cell">
+                    <TableHead class="text-center">
+                        Projects
+                    </TableHead>
+                    <TableHead
+                        class="hidden text-center md:table-cell"
+                    >
                         Updated
                     </TableHead>
-                    <TableHead>
+                    <TableHead class="text-center">
                         <span class="sr-only">Actions</span>
                     </TableHead>
                 </TableRow>
@@ -263,7 +267,7 @@
             {#snippet children()}
                 {#each items as cluster (cluster.id)}
                     <TableRow class="group">
-                        <TableCell>
+                        <TableCell class="text-center">
                             {#if cluster.diagnostics?.status === "healthy"}
                                 <Badge variant="success">
                                     Healthy
@@ -293,11 +297,15 @@
                                 )}
                             </span>
                         </TableCell>
-                        <TableCell>{cluster.projectCount}</TableCell>
-                        <TableCell class="hidden md:table-cell">
+                        <TableCell class="text-center">
+                            {cluster.projectCount}
+                        </TableCell>
+                        <TableCell
+                            class="hidden text-center md:table-cell"
+                        >
                             {formatDate(cluster.updatedAt)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell class="text-center">
                             {#if canManage}
                                 <Menu>
                                     <MenuTrigger

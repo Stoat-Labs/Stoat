@@ -67,7 +67,10 @@ function configure(value: GitOAuthProvider[] = [provider]) {
 }
 
 function start() {
-    const result = createGitOAuthFlow({ ...identity, providerId: "github", name: "Work" }, providers);
+    const result = createGitOAuthFlow(
+        { ...identity, providerId: "github", name: "Work" },
+        providers,
+    );
     const url = new URL(result.authorizationUrl);
 
     return { ...result, state: url.searchParams.get("state")!, url };
@@ -134,7 +137,9 @@ beforeEach(() => {
             }),
         }),
     );
-    vi.spyOn(gitOAuth, "getOrganizationGitOAuthProviders").mockImplementation(async () => providers);
+    vi.spyOn(gitOAuth, "getOrganizationGitOAuthProviders").mockImplementation(
+        async () => providers,
+    );
     vi.spyOn(gitProvider, "gitProviderRequest").mockResolvedValue({
         access_token: "access-token-secret",
         token_type: "bearer",
@@ -237,11 +242,15 @@ describe("Git OAuth state and authorization", () => {
             flow.cookie.slice(0, -4),
             flow.cookie.replace(/^v1/, "v2"),
         ]) {
-            expect(() => readGitOAuthFlow(cookie, flow.state, identity, providers)).toThrow("invalid_state");
+            expect(() => readGitOAuthFlow(cookie, flow.state, identity, providers)).toThrow(
+                "invalid_state",
+            );
         }
 
         for (const state of [null, "x", "x".repeat(43), "x".repeat(10000)]) {
-            expect(() => readGitOAuthFlow(flow.cookie, state, identity, providers)).toThrow("invalid_state");
+            expect(() => readGitOAuthFlow(flow.cookie, state, identity, providers)).toThrow(
+                "invalid_state",
+            );
         }
     });
 
@@ -257,15 +266,23 @@ describe("Git OAuth state and authorization", () => {
         const now = Date.now();
         const flow = start();
         vi.setSystemTime(now + 600_000);
-        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow("invalid_state");
+        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow(
+            "invalid_state",
+        );
         vi.setSystemTime(now - 1);
-        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow("invalid_state");
+        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow(
+            "invalid_state",
+        );
         vi.setSystemTime(now);
         configure([{ ...provider, serverUrl: "https://github.example.com" }]);
-        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow("invalid_state");
+        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow(
+            "invalid_state",
+        );
         configure();
         vi.stubEnv("APP_URL", "https://other.example.com");
-        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow("invalid_state");
+        expect(() => readGitOAuthFlow(flow.cookie, flow.state, identity, providers)).toThrow(
+            "invalid_state",
+        );
     });
 
     it("requires an active session and current owner/admin membership", async () => {
@@ -420,16 +437,22 @@ describe("Git OAuth exchange and refresh", () => {
         vi.mocked(gitProvider.gitProviderRequest).mockRejectedValueOnce(
             new Error("token and client-secret"),
         );
-        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow("token_exchange_failed");
+        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow(
+            "token_exchange_failed",
+        );
         vi.mocked(gitProvider.getGitAccount).mockRejectedValueOnce(
             new Error("token and account details"),
         );
-        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow("account_failed");
+        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow(
+            "account_failed",
+        );
         expect(gitProvider.listGitRepositories).not.toHaveBeenCalled();
         vi.mocked(gitProvider.listGitRepositories).mockRejectedValueOnce(
             new Error("token and repository details"),
         );
-        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow("account_failed");
+        await expect(exchangeGitOAuthCode(state, "code", providers)).rejects.toThrow(
+            "account_failed",
+        );
     });
 
     it("refreshes only within 60 seconds and returns rotated credentials without mutating input", async () => {
@@ -477,21 +500,27 @@ describe("Git OAuth exchange and refresh", () => {
         }
 
         await expect(
-            refreshGitOAuthCredentials({ oauthProviderId: "github", expiresAt: "invalid" }, providers),
+            refreshGitOAuthCredentials(
+                { oauthProviderId: "github", expiresAt: "invalid" },
+                providers,
+            ),
         ).rejects.toThrow("invalid_token");
         await expect(
-            refreshGitOAuthCredentials({
-                oauthProviderId: "github",
-                expiresAt: new Date(0).toISOString(),
-            }, providers),
+            refreshGitOAuthCredentials(
+                {
+                    oauthProviderId: "github",
+                    expiresAt: new Date(0).toISOString(),
+                },
+                providers,
+            ),
         ).rejects.toThrow("invalid_token");
-        await expect(refreshGitOAuthCredentials({ oauthProviderId: "removed" }, providers)).rejects.toThrow(
-            "Restore this connection's OAuth application",
-        );
+        await expect(
+            refreshGitOAuthCredentials({ oauthProviderId: "removed" }, providers),
+        ).rejects.toThrow("Restore this connection's OAuth application");
         configure([{ ...provider, provider: "forgejo" }]);
-        await expect(refreshGitOAuthCredentials({ oauthProviderId: "github" }, providers)).rejects.toThrow(
-            "invalid_token",
-        );
+        await expect(
+            refreshGitOAuthCredentials({ oauthProviderId: "github" }, providers),
+        ).rejects.toThrow("invalid_token");
     });
 });
 
@@ -756,12 +785,15 @@ describe("Git OAuth endpoints", () => {
             name: "Original",
         };
 
-        const flow = createGitOAuthFlow({
-            ...identity,
-            providerId: "github",
-            name: "Updated",
-            connectionId,
-        }, providers);
+        const flow = createGitOAuthFlow(
+            {
+                ...identity,
+                providerId: "github",
+                name: "Updated",
+                connectionId,
+            },
+            providers,
+        );
 
         const state = new URL(flow.authorizationUrl).searchParams.get("state");
 

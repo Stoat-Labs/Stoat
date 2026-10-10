@@ -20,7 +20,6 @@
         bandwidth,
         bytes,
         percent,
-        seriesColor,
         type ContainerRow,
         type ServiceRow,
     } from "$lib/observability";
@@ -37,20 +36,15 @@
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import MetricChart from "./metric-chart.svelte";
 
     let {
         data,
         search = $bindable(""),
-        start,
-        end,
         expandAll = false,
         hovered = $bindable(""),
     }: {
         data: ServiceRow[];
         search?: string;
-        start: number;
-        end: number;
         expandAll?: boolean;
         hovered?: string;
     } = $props();
@@ -99,7 +93,6 @@
             header: "Network ↑",
             sortUndefined: "last",
         },
-        { id: "trend", header: "CPU trend", enableSorting: false },
     ];
 
     const table = $derived.by(() => {
@@ -158,7 +151,7 @@
 
     // Share flexible tracks across the header and virtual rows, preserving readable minimums.
     const tableGrid =
-        "grid-cols-[minmax(15rem,2fr)_minmax(7rem,1fr)_minmax(9rem,1fr)_minmax(12rem,1fr)_minmax(8rem,1fr)_minmax(10rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)]";
+        "grid-cols-[minmax(15rem,2fr)_minmax(7rem,1fr)_minmax(9rem,1fr)_minmax(12rem,1fr)_minmax(8rem,1fr)_minmax(10rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)]";
 
     const virtualizer = createVirtualizer<
         HTMLDivElement,
@@ -221,8 +214,8 @@
         </Badge>{/if}
 {/snippet}
 
-{#snippet usage(row: ServiceRow | ContainerRow, color: string)}
-    <TableCell class="tabular-nums">
+{#snippet usage(row: ServiceRow | ContainerRow)}
+    <TableCell class="flex items-center justify-center tabular-nums">
         {percent(row.cpu)}{#if row.cpuLimit}<span
                 class="ml-1 text-xs text-muted-foreground"
             >
@@ -230,7 +223,7 @@
             </span>{/if}
     </TableCell>
     <TableCell
-        class="tabular-nums"
+        class="flex items-center justify-center tabular-nums"
         title={row.memoryLimit
             ? `Limit ${bytes(row.memoryLimit)}`
             : undefined}
@@ -245,26 +238,11 @@
             {percent(row.memoryPercent)}
         </span>
     </TableCell>
-    <TableCell class="tabular-nums">
+    <TableCell class="flex items-center justify-center tabular-nums">
         {bandwidth(row.networkIn)}
     </TableCell>
-    <TableCell class="tabular-nums">
+    <TableCell class="flex items-center justify-center tabular-nums">
         {bandwidth(row.networkOut)}
-    </TableCell>
-    <TableCell>
-        <MetricChart
-            compact
-            {start}
-            {end}
-            series={[
-                {
-                    key: row.key,
-                    label: row.name,
-                    color,
-                    points: row.trend,
-                },
-            ]}
-        />
     </TableCell>
 {/snippet}
 
@@ -306,7 +284,7 @@
             aria-label="Services usage table"
         >
             <table
-                class="grid w-full min-w-[82rem] text-sm"
+                class="grid w-full min-w-[75rem] text-sm"
                 aria-rowcount={lines.length + 1}
             >
                 <caption class="sr-only">
@@ -319,9 +297,11 @@
                     class="sticky top-0 z-10 grid bg-background"
                 >
                     <TableRow class="grid h-11 {tableGrid}">
-                        {#each table.getHeaderGroups()[0]?.headers ?? [] as header (header.id)}
+                        {#each table.getHeaderGroups()[0]?.headers ?? [] as header, index (header.id)}
                             <TableHead
-                                class="flex h-full min-w-0 items-center"
+                                class="flex h-full min-w-0 items-center {index
+                                    ? 'justify-center'
+                                    : ''}"
                                 aria-sort={sorting[0]?.id ===
                                 header.id
                                     ? sorting[0].desc
@@ -333,7 +313,9 @@
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        class="-ml-2 h-8 px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                                        class="h-8 px-2 text-sm font-medium text-muted-foreground hover:text-foreground {index
+                                            ? ''
+                                            : '-ml-2'}"
                                         onclick={header.column.getToggleSortingHandler()}
                                     >
                                         {header.column.columnDef
@@ -365,22 +347,26 @@
                                 style={`transform: translateY(${item.start}px)`}
                             >
                                 <TableCell
-                                    class="truncate pl-10 font-mono text-xs"
+                                    class="flex min-w-0 items-center pl-10 font-mono text-xs"
                                     title={container.name}
                                 >
-                                    {container.name ||
-                                        container.id.slice(0, 12)}
+                                    <span class="truncate">
+                                        {container.name ||
+                                            container.id.slice(0, 12)}
+                                    </span>
                                 </TableCell>
                                 <TableCell></TableCell>
                                 <TableCell
-                                    class="truncate"
+                                    class="flex min-w-0 items-center justify-center"
                                     title={container.machineName}
                                 >
-                                    {container.machineName}
+                                    <span class="truncate">
+                                        {container.machineName}
+                                    </span>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell class="flex items-center">
                                     <div
-                                        class="flex flex-wrap items-center gap-1"
+                                        class="flex w-full flex-wrap items-center justify-center gap-1"
                                     >
                                         <span
                                             class="text-xs {container.running
@@ -405,10 +391,7 @@
                                         )}
                                     </div>
                                 </TableCell>
-                                {@render usage(
-                                    container,
-                                    line.service.color,
-                                )}
+                                {@render usage(container)}
                             </TableRow>
                         {:else if line}
                             {@const row = line.service}
@@ -428,7 +411,9 @@
                                         toggle(row.key);
                                 }}
                             >
-                                <TableCell class="font-medium">
+                                <TableCell
+                                    class="flex min-w-0 items-center font-medium"
+                                >
                                     <div
                                         class="flex min-w-0 items-center gap-1"
                                     >
@@ -475,23 +460,27 @@
                                     </div>
                                 </TableCell>
                                 <TableCell
-                                    class="truncate"
+                                    class="flex min-w-0 items-center justify-center"
                                     title={row.clusterName}
                                 >
-                                    {row.clusterName}
+                                    <span class="truncate">
+                                        {row.clusterName}
+                                    </span>
                                 </TableCell>
                                 <TableCell
-                                    class="truncate"
+                                    class="flex min-w-0 items-center justify-center"
                                     title={row.machines.join(", ")}
                                 >
-                                    {row.machines.length > 1
-                                        ? `${row.machines.length} machines`
-                                        : (row.machines[0] ??
-                                          "Unscheduled")}
+                                    <span class="truncate">
+                                        {row.machines.length > 1
+                                            ? `${row.machines.length} machines`
+                                            : (row.machines[0] ??
+                                              "Unscheduled")}
+                                    </span>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell class="flex items-center">
                                     <div
-                                        class="flex flex-wrap items-center gap-1"
+                                        class="flex w-full flex-wrap items-center justify-center gap-1"
                                     >
                                         <span
                                             class="text-xs tabular-nums {row.running <
@@ -511,7 +500,7 @@
                                         )}
                                     </div>
                                 </TableCell>
-                                {@render usage(row, row.color)}
+                                {@render usage(row)}
                             </TableRow>
                         {/if}
                     {/each}
@@ -519,8 +508,8 @@
                             class="grid h-32 {tableGrid}"
                         >
                             <TableCell
-                                colspan={9}
-                                class="col-span-9 flex items-center justify-center text-center text-muted-foreground"
+                                colspan={8}
+                                class="col-span-8 flex items-center justify-center text-center text-muted-foreground"
                             >
                                 {search
                                     ? "No services match your search."

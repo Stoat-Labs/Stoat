@@ -52,13 +52,13 @@
                     <TableRow>
                         <TableHead>
                             Machine / mount
-                        </TableHead><TableHead>
+                        </TableHead><TableHead class="text-center">
                             Device
-                        </TableHead><TableHead>
+                        </TableHead><TableHead class="text-center">
                             Type
-                        </TableHead><TableHead class="text-right">
+                        </TableHead><TableHead class="text-center">
                             Used / capacity
-                        </TableHead><TableHead class="text-right">
+                        </TableHead><TableHead class="text-center">
                             Usage
                         </TableHead>
                     </TableRow>
@@ -75,17 +75,21 @@
                                     {row.label}
                                 </span>
                             </TableCell>
-                            <TableCell class="font-mono text-xs">
+                            <TableCell
+                                class="font-mono text-center text-xs"
+                            >
                                 {row.device}
                             </TableCell>
-                            <TableCell>{row.fstype}</TableCell>
+                            <TableCell class="text-center">
+                                {row.fstype}
+                            </TableCell>
                             <TableCell
-                                class="text-right tabular-nums"
+                                class="text-center tabular-nums"
                             >
                                 {bytes(row.used)} / {bytes(row.total)}
                             </TableCell>
                             <TableCell
-                                class="text-right tabular-nums"
+                                class="text-center tabular-nums"
                             >
                                 <span
                                     class:text-warning-foreground={row.percent !==

@@ -31,6 +31,7 @@ import {
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import type { ResourceLog, ResourceLogEvent } from "../../packages/api/src/routers/resources/logs";
+import { insertUserWithOrganization } from "../users";
 
 // Greptime's SQL API reports failures in the body.
 const greptimeResult = v.looseObject({ error: v.optional(v.string()) });
@@ -179,15 +180,12 @@ describe("resource logs backend", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('logger', 'Logger', 'logger@example.test')`,
+        organizationId = await insertUserWithOrganization(
+            db,
+            "logger",
+            "Logger",
+            "logger@example.test",
         );
-
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'logger'`,
-        );
-
-        organizationId = membership.rows[0].organization_id;
         // SAFETY: these are the real DB-backed session fields read by authorization.
         context = {
             db,

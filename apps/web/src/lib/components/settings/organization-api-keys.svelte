@@ -313,7 +313,11 @@
                 </Button>
             </DialogFooter>
         {:else}
-            <form onsubmit={createKey} aria-busy={pending}>
+            <form
+                class="contents"
+                onsubmit={createKey}
+                aria-busy={pending}
+            >
                 <DialogPanel class="space-y-4">
                     <Field>
                         <Label for="api-key-name">Name</Label>

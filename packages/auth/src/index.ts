@@ -5,6 +5,7 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { getSignupsEnabled } from "@stoat/db/settings";
+import { hasPendingInvitation, isSetupRequired } from "@stoat/db/setup";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
@@ -62,7 +63,10 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
         trustedOrigins: [appUrl],
         hooks: {
             before: createAuthMiddleware(async (ctx) => {
-                if (ctx.path === "/sign-up/email" && !(await getSignupsEnabled(database))) {
+                if (
+                    ctx.path === "/sign-up/email" &&
+                    !(await canSignUp(database, ctx.body?.email))
+                ) {
                     throw new APIError("FORBIDDEN", { message: "User signups are disabled." });
                 }
             }),
@@ -115,4 +119,16 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
             ...(cookiePlugin ? [cookiePlugin] : []),
         ],
     });
+}
+
+/**
+ * Closed sign-ups still admit the first account of a fresh install (the database makes it the
+ * instance admin) and anyone holding a pending invitation.
+ */
+async function canSignUp(database: Database, email: string | undefined) {
+    if (await getSignupsEnabled(database)) return true;
+
+    if (await isSetupRequired(database)) return true;
+
+    return email !== undefined && (await hasPendingInvitation(database, email));
 }

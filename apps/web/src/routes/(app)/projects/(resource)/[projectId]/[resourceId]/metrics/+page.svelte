@@ -78,8 +78,6 @@
         parseAsBoolean.withDefault(false),
     );
 
-    let hovered = $state("");
-
     let selectedTime = $state<number | null>(null);
 
     const project = createQuery(() =>
@@ -94,7 +92,10 @@
     const resource = createQuery(() =>
         orpc.resources.getResource.queryOptions({
             input: { projectId, resourceId },
-            enabled: browser && projectId.length > 0 && resourceId.length > 0,
+            enabled:
+                browser &&
+                projectId.length > 0 &&
+                resourceId.length > 0,
         }),
     );
 
@@ -190,7 +191,7 @@
 
     const cluster = $derived(
         assembleCluster(
-            { id: clusterId, name: "" },
+            { id: clusterId, name: project.data?.clusterName ?? "" },
             { data: [], error: null, isPending: false },
             services,
             metrics,
@@ -381,8 +382,9 @@
             postgresPoints.postgresConnections.length > 0,
     );
 
-    const postgresLatest = (name: (typeof postgresMetricNames)[number]) =>
-        current(postgresPoints[name], cluster.end, cluster.step);
+    const postgresLatest = (
+        name: (typeof postgresMetricNames)[number],
+    ) => current(postgresPoints[name], cluster.end, cluster.step);
 
     const postgresCharts = $derived(
         (
@@ -494,7 +496,10 @@
         const cpu = sum(rows.map((row) => row.cpu));
         const memory = sum(rows.map((row) => row.memory));
         const connections = postgresLatest("postgresConnections");
-        const maxConnections = postgresLatest("postgresMaxConnections");
+
+        const maxConnections = postgresLatest(
+            "postgresMaxConnections",
+        );
 
         return [
             {
@@ -684,7 +689,11 @@
             disabled={!clusterId}
             onrefresh={() => {
                 void services.refetch();
-                for (const query of [...metrics, ...http, ...postgres])
+                for (const query of [
+                    ...metrics,
+                    ...http,
+                    ...postgres,
+                ])
                     void query.refetch();
             }}
         />
@@ -716,24 +725,8 @@
                 end={cluster.end}
                 unit={chart.unit}
                 {markers}
-                bind:hoveredMachine={hovered}
                 onselecttime={(time) => (selectedTime = time)}
             />
-            <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-                {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<span
-                        class="flex items-center gap-2 text-xs"
-                        style:opacity={hovered &&
-                        hovered !== item.machineKey
-                            ? 0.4
-                            : 1}
-                    >
-                        <span
-                            class="size-2 rounded-full"
-                            style:background={item.color}
-                        ></span>
-                        {item.label}
-                    </span>{/each}
-            </div>
         </FramePanel>
     </Frame>
 {/snippet}
@@ -852,9 +845,9 @@
                 <AlertDescription>
                     No database metrics yet. Databases created before
                     metrics were added need the template's
-                    <code>postgres-metrics</code> service in their
-                    Compose file, and clusters initialized before then
-                    need monitoring re-initialized.
+                    <code>postgres-metrics</code>
+                    service in their Compose file, and clusters initialized
+                    before then need monitoring re-initialized.
                 </AlertDescription>
             </Alert>
         {/if}
@@ -868,17 +861,11 @@
                 </AlertDescription>
             </Alert>
         {/if}
-        <ServicesTable
-            data={rows}
-            start={cluster.start}
-            end={cluster.end}
-            expandAll
-        />
+        <ServicesTable data={rows} expandAll />
         <p class="text-xs text-muted-foreground" role="status">
             One line per service, all containers combined · 100% CPU =
             one core · dotted lines mark deployments · dashed latency
-            lines are p99 · HTTP metrics cover ingress
-            hostnames ·
+            lines are p99 · HTTP metrics cover ingress hostnames ·
             {#if selectedTime}
                 <a
                     class="font-medium text-foreground underline underline-offset-4"

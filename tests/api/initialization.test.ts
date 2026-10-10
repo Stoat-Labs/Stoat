@@ -18,6 +18,7 @@ import type { Context } from "../../packages/api/src/context";
 import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { projectsRouter } from "../../packages/api/src/routers/projects";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
+import { insertUserWithOrganization } from "../users";
 
 // A healthy one-machine cluster; the sidecar's HTTP client is the only fake.
 const sidecar = {
@@ -66,15 +67,12 @@ describe("cluster initialization API (PostgreSQL)", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('initializer', 'Initializer', 'initialize@example.test')`,
+        organizationId = await insertUserWithOrganization(
+            db,
+            "initializer",
+            "Initializer",
+            "initialize@example.test",
         );
-
-        const member = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'initializer'`,
-        );
-
-        organizationId = member.rows[0].organization_id;
         // SAFETY: router authorization reads only the identity and active organization.
         context = {
             db,

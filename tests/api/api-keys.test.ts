@@ -75,6 +75,10 @@ describe("organization API keys (PostgreSQL)", () => {
                 .join("; "),
         });
 
+        await auth.api.createOrganization({
+            body: { name: "Owner workspace", slug: "owner-workspace" },
+            headers,
+        });
         const [organization] = await listUserOrganizations(db, user.id);
 
         const created = await auth.api.createApiKey({

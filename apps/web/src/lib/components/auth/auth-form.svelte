@@ -17,15 +17,44 @@
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
     import AtSign from "@lucide/svelte/icons/at-sign";
-    import Boxes from "@lucide/svelte/icons/boxes";
     import Lock from "@lucide/svelte/icons/lock";
     import User from "@lucide/svelte/icons/user";
     import { onMount } from "svelte";
+    import AuthShell from "./auth-shell.svelte";
 
-    let { signup = false }: { signup?: boolean } = $props();
+    // "setup" is the first account of a fresh install; it becomes the instance admin.
+    let {
+        mode = "login",
+        eyebrow,
+    }: { mode?: "login" | "signup" | "setup"; eyebrow?: string } =
+        $props();
+
+    const signup = $derived(mode !== "login");
+
+    const copy = $derived(
+        {
+            login: {
+                title: "Welcome back",
+                description: "Log into your Stoat workspace.",
+                submit: "Log in",
+            },
+            signup: {
+                title: "Create your account",
+                description: "Get started with Stoat.",
+                submit: "Create account",
+            },
+            setup: {
+                title: "Set up Stoat",
+                description:
+                    "This account becomes the instance administrator.",
+                submit: "Create admin account",
+            },
+        }[mode],
+    );
 
     // Only same-site paths, so a crafted link can't redirect off-site.
     const next = $derived.by(() => {
+        if (mode === "setup") return "/setup";
         const value = page.url.searchParams.get("next");
 
         return value?.startsWith("/") && !value.startsWith("//")
@@ -86,150 +115,132 @@
 </script>
 
 <svelte:head>
-    <title>{signup ? "Create your account" : "Log in"} / Stoat</title>
+    <title>{copy.title} / Stoat</title>
     <meta
         name="description"
         content="Your infrastructure, together. Access your Stoat organization."
     />
 </svelte:head>
 
-<main
-    class="relative mx-auto flex min-h-svh w-full max-w-sm flex-col justify-center gap-8 p-6 md:p-8"
+<AuthShell
+    title={copy.title}
+    description={copy.description}
+    {eyebrow}
 >
-    <div
-        class="flex flex-col gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-600"
-    >
-        <a
-            href="/"
-            class="flex w-fit items-center gap-2"
-            aria-label="Stoat home"
+    {#if mode === "signup" && !page.data.signupsEnabled}
+        <Alert>
+            <AlertDescription>
+                User signups are currently disabled. Contact your
+                instance administrator.
+            </AlertDescription>
+        </Alert>
+    {:else}
+        <form
+            method="POST"
+            onsubmit={submit}
+            class="flex flex-col gap-2"
+            aria-busy={pending}
         >
-            <Boxes class="size-10" aria-hidden="true" />
-            <span class="text-lg font-semibold">Stoat</span>
-        </a>
-        <div class="flex flex-col gap-1">
-            <h1 class="text-2xl font-bold tracking-wide">
-                {signup ? "Create your account" : "Welcome back"}
-            </h1>
-            <p class="text-base text-muted-foreground">
-                {signup
-                    ? "Get started with your own organization."
-                    : "Log in to your Stoat workspace."}
-            </p>
-        </div>
-        {#if signup && !page.data.signupsEnabled}
-            <Alert>
-                <AlertDescription>
-                    User signups are currently disabled. Contact your
-                    instance administrator.
-                </AlertDescription>
-            </Alert>
-        {:else}
-            <form
-                method="POST"
-                onsubmit={submit}
-                class="flex flex-col gap-2"
-                aria-busy={pending}
-            >
-                {#if signup}
-                    <Field>
-                        <Label for="name" class="sr-only">
-                            Full name
-                        </Label>
-                        <InputGroup>
-                            <InputGroupInput
-                                id="name"
-                                name="name"
-                                autocomplete="name"
-                                placeholder="Full name"
-                                bind:value={name}
-                                required
-                                maxlength={100}
-                                pattern=".*\S.*"
-                                disabled={!ready || pending}
-                            />
-                            <InputGroupAddon align="inline-start">
-                                <User aria-hidden="true" />
-                            </InputGroupAddon>
-                        </InputGroup>
-                    </Field>
-                {/if}
+            {#if signup}
                 <Field>
-                    <Label for="email" class="sr-only">Email</Label>
-                    <InputGroup>
-                        <InputGroupInput
-                            id="email"
-                            name="email"
-                            type="email"
-                            autocomplete="email"
-                            placeholder="your.email@example.com"
-                            bind:value={email}
-                            required
-                            disabled={!ready || pending}
-                        />
-                        <InputGroupAddon align="inline-start">
-                            <AtSign aria-hidden="true" />
-                        </InputGroupAddon>
-                    </InputGroup>
-                </Field>
-                <Field>
-                    <Label for="password" class="sr-only">
-                        Password
+                    <Label for="name" class="sr-only">
+                        Full name
                     </Label>
                     <InputGroup>
                         <InputGroupInput
-                            id="password"
-                            name="password"
-                            type="password"
-                            placeholder="Password"
-                            autocomplete={signup
-                                ? "new-password"
-                                : "current-password"}
-                            bind:value={password}
+                            id="name"
+                            name="name"
+                            autocomplete="name"
+                            placeholder="Full name"
+                            bind:value={name}
                             required
-                            minlength={signup ? 8 : undefined}
-                            maxlength={128}
+                            maxlength={100}
+                            pattern=".*\S.*"
                             disabled={!ready || pending}
-                            aria-describedby={signup
-                                ? "password-hint"
-                                : undefined}
                         />
                         <InputGroupAddon align="inline-start">
-                            <Lock aria-hidden="true" />
+                            <User aria-hidden="true" />
                         </InputGroupAddon>
                     </InputGroup>
-                    {#if signup}<FieldDescription id="password-hint">
-                            Use at least 8 characters.
-                        </FieldDescription>{/if}
                 </Field>
-                {#if error}
-                    <Alert variant="error">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                {/if}
-                <Button
-                    type="submit"
-                    disabled={!ready}
-                    class="mt-3 w-full"
-                    size="sm"
-                    loading={pending}
-                >
-                    {signup ? "Create account" : "Log in"}
-                </Button>
-            </form>
-        {/if}
-    </div>
-    {#if signup || page.data.signupsEnabled}
-        <p class="text-center text-sm text-muted-foreground">
-            {signup ? "Already have an account?" : "New to Stoat?"}
-            <a
-                class="ml-1 underline underline-offset-4 hover:text-primary"
-                href="{signup ? '/login' : '/signup'}{next === '/'
-                    ? ''
-                    : `?next=${encodeURIComponent(next)}`}"
+            {/if}
+            <Field>
+                <Label for="email" class="sr-only">Email</Label>
+                <InputGroup>
+                    <InputGroupInput
+                        id="email"
+                        name="email"
+                        type="email"
+                        autocomplete="email"
+                        placeholder="your.email@example.com"
+                        bind:value={email}
+                        required
+                        disabled={!ready || pending}
+                    />
+                    <InputGroupAddon align="inline-start">
+                        <AtSign aria-hidden="true" />
+                    </InputGroupAddon>
+                </InputGroup>
+            </Field>
+            <Field>
+                <Label for="password" class="sr-only">Password</Label>
+                <InputGroup>
+                    <InputGroupInput
+                        id="password"
+                        name="password"
+                        type="password"
+                        placeholder="Password"
+                        autocomplete={signup
+                            ? "new-password"
+                            : "current-password"}
+                        bind:value={password}
+                        required
+                        minlength={signup ? 8 : undefined}
+                        maxlength={128}
+                        disabled={!ready || pending}
+                        aria-describedby={signup
+                            ? "password-hint"
+                            : undefined}
+                    />
+                    <InputGroupAddon align="inline-start">
+                        <Lock aria-hidden="true" />
+                    </InputGroupAddon>
+                </InputGroup>
+                {#if signup}<FieldDescription id="password-hint">
+                        Use at least 8 characters.
+                    </FieldDescription>{/if}
+            </Field>
+            {#if error}
+                <Alert variant="error">
+                    <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            {/if}
+            <Button
+                type="submit"
+                disabled={!ready}
+                class="mt-3 w-full"
+                size="sm"
+                loading={pending}
             >
-                {signup ? "Log in" : "Create an account"}
-            </a>
-        </p>
+                {copy.submit}
+            </Button>
+        </form>
     {/if}
-</main>
+    {#snippet footer()}
+        {#if mode === "signup" || (mode === "login" && page.data.signupsEnabled)}
+            <p class="text-center text-sm text-muted-foreground">
+                {signup
+                    ? "Already have an account?"
+                    : "New to Stoat?"}
+                <a
+                    class="ml-1 underline underline-offset-4 hover:text-primary"
+                    href="{signup ? '/login' : '/signup'}{next === '/'
+                        ? ''
+                        : `?next=${encodeURIComponent(next)}`}"
+                >
+                    {signup ? "Log in" : "Create an account"}
+                </a>
+            </p>
+        {/if}
+    {/snippet}
+</AuthShell>

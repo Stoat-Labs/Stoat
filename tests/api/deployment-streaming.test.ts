@@ -25,6 +25,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { Context } from "../../packages/api/src/context";
 import { deploymentsRouter } from "../../packages/api/src/routers/cluster/deployments";
+import { insertUserWithOrganization } from "../users";
 
 describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
     const databaseName = `stoat_stream_test_${randomUUID().replaceAll("-", "")}`;
@@ -43,16 +44,15 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
         db = createDb({ DATABASE_URL: url.toString() });
         writer = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('streamer', 'Streamer', 'streamer@example.test')`,
-        );
 
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'streamer'`,
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "streamer",
+            "Streamer",
+            "streamer@example.test",
         );
-
-        const organizationId: string = membership.rows[0].organization_id;
         // SAFETY: authorization only reads the user identity and active organization.
+
         context = {
             db,
             session: {

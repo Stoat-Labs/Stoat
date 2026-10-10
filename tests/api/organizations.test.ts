@@ -60,7 +60,22 @@ describe("organization authentication (PostgreSQL)", () => {
             await response.json(),
         );
 
-        const cookie = response.headers
+        // Sign-up no longer provisions an organization; the app sends the user to /setup.
+        expect(await listUserOrganizations(db, body.user.id)).toHaveLength(0);
+
+        const created = await request(
+            "/organization/create",
+            { name: "Same Name's workspace", slug: `org-${randomUUID()}` },
+            response.headers
+                .getSetCookie()
+                .map((value) => value.split(";")[0])
+                .join("; "),
+        );
+
+        expect(created.status).toBe(200);
+
+        // Creating reissues the session cookie with the new active organization.
+        const cookie = created.headers
             .getSetCookie()
             .map((value) => value.split(";")[0])
             .join("; ");
@@ -155,6 +170,9 @@ describe("organization authentication (PostgreSQL)", () => {
             },
             db,
         );
+        // Sign-ups start closed; these tests register users freely.
+        expect(await getSignupsEnabled(db)).toBe(false);
+        await setSignupsEnabled(db, true);
     }, 30000);
 
     afterAll(async () => {
@@ -443,27 +461,5 @@ describe("organization authentication (PostgreSQL)", () => {
                 context: { db, session: staleSession },
             }),
         ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    });
-
-    it("rolls back the user when organization provisioning fails", async () => {
-        const client = await db.$client.connect();
-        await client.query("BEGIN");
-
-        try {
-            await client.query(
-                "ALTER TABLE organization ADD CONSTRAINT reject_test_org CHECK (name <> 'Reject''s organization')",
-            );
-            await expect(
-                client.query(
-                    `INSERT INTO "user" (id, name, email) VALUES ('reject', 'Reject', 'reject@example.test')`,
-                ),
-            ).rejects.toBeDefined();
-        } finally {
-            await client.query("ROLLBACK");
-            client.release();
-        }
-
-        const result = await db.$client.query(`SELECT id FROM "user" WHERE id = 'reject'`);
-        expect(result.rows).toHaveLength(0);
     });
 });

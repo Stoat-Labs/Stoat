@@ -298,10 +298,13 @@ describe("Pinned HTTPS JSON transport", () => {
         });
     });
 
-    it.each(["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd12::1"])("allows private DNS %s", async (address) => {
-        network.addresses = [{ address, family: address.includes(":") ? 6 : 4 }];
-        await expect(gitProviderRequest("https://git.example.com/user")).resolves.toEqual({});
-    });
+    it.each(["10.1.2.3", "172.16.0.1", "192.168.1.1", "fd12::1"])(
+        "allows private DNS %s",
+        async (address) => {
+            network.addresses = [{ address, family: address.includes(":") ? 6 : 4 }];
+            await expect(gitProviderRequest("https://git.example.com/user")).resolves.toEqual({});
+        },
+    );
 
     it.each([
         "127.0.0.1",

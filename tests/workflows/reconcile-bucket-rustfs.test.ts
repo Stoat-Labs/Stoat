@@ -23,6 +23,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-
 import type { Context } from "../../packages/api/src/context";
 import { bucketsRouter } from "../../packages/api/src/routers/buckets";
 import { s3Router } from "../../packages/api/src/routers/s3";
+import { insertUserWithOrganization } from "../users";
 
 const root: S3Credentials = { accessKey: "stoat-root", secretKey: "stoat-root-secret-key" };
 
@@ -151,15 +152,13 @@ describe("bucket reconciliation against RustFS", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('owner', 'Owner', 'owner@example.test')`,
-        );
 
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'owner'`,
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "owner",
+            "Owner",
+            "owner@example.test",
         );
-
-        const organizationId: string = membership.rows[0].organization_id;
 
         // SAFETY: authorization reads only identity and active organization.
         owner = {

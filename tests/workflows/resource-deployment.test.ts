@@ -38,6 +38,7 @@ import {
     pollInitializationOutbox,
     queueResourceDeployment,
 } from "../../packages/workflows/src/runtime";
+import { insertUserWithOrganization } from "../users";
 
 describe("resource deployment worker", () => {
     const databaseName = `stoat_resource_test_${randomUUID().replaceAll("-", "")}`;
@@ -134,12 +135,12 @@ describe("resource deployment worker", () => {
         db = createDb({ DATABASE_URL: url.toString() });
         other = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('deployer', 'Deployer', 'deployer@example.test')`,
-        );
 
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'deployer'`,
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "deployer",
+            "Deployer",
+            "deployer@example.test",
         );
 
         server.listen(0, "127.0.0.1");
@@ -152,7 +153,7 @@ describe("resource deployment worker", () => {
             name: "Resource worker",
             sidecarUrl: `http://127.0.0.1:${address.port}`,
             sidecarToken: token,
-            organizationId: membership.rows[0].organization_id,
+            organizationId,
             initializationStatus: "ready",
         });
         await db.insert(projects).values({ id: projectId, clusterId, name: "Project" });

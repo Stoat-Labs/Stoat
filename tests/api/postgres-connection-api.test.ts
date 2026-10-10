@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus
 import { postgresService } from "../../packages/api/src/compose";
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
+import { insertUserWithOrganization } from "../users";
 
 const draft = "# Database\nservices:\n  db:\n    image: postgres:18\n";
 
@@ -83,15 +84,12 @@ describe("external connection API", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('connections', 'Connections', 'connections@example.test')`,
+        organizationId = await insertUserWithOrganization(
+            db,
+            "connections",
+            "Connections",
+            "connections@example.test",
         );
-
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'connections'`,
-        );
-
-        organizationId = membership.rows[0].organization_id;
         // SAFETY: these procedures only read the session identity and organization.
         context = {
             db,

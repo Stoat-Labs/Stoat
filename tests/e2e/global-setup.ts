@@ -95,7 +95,6 @@ async function startRustfs() {
 
     writeFileSync(rustfsCaFile, pems.cert);
 
-
     return {
         container,
         endpoint: `https://${gateway}:${container.getMappedPort(9000)}`,
@@ -191,25 +190,28 @@ export default async function globalSetup() {
     try {
         await waitFor(`${baseUrl}/login`, 60_000);
 
-        // The owner is also the instance admin. Signing in after the role change keeps the
-        // cached session cookie from carrying the old role.
+        // The first account of a fresh install is the instance admin, even with sign-ups closed.
         await signUp(baseUrl, user);
-        await db.$client.query(`UPDATE "user" SET role = 'admin' WHERE email = $1`, [user.email]);
+        await assertInstanceAdmin(db, user.email);
+        const organizationId = await createOrganization(db, user.email);
+        // Signing in after the organization exists makes it the session's active one.
         await signIn(baseUrl, user, storageState);
-        const organizationId = await organizationOf(db, user.email);
         await seed(db, organizationId, sidecar.url);
         await seedBucket(baseUrl, rustfs.endpoint);
 
-        // A plain member of the owner's organization, for permission checks. Sign-up gives
-        // them their own organization; drop it so the owner's is the only one they see.
+        // Specs sign up throwaway accounts; the sign-up setting spec turns this off and back on.
+        await db.$client.query(
+            `INSERT INTO instance_settings (id, signups_enabled) VALUES (1, true)
+             ON CONFLICT (id) DO UPDATE SET signups_enabled = true`,
+        );
+
+        // A plain member of the owner's organization, for permission checks.
         await signUp(baseUrl, member);
-        const ownOrganizationId = await organizationOf(db, member.email);
         await db.$client.query(
             `INSERT INTO member (id, organization_id, user_id, role, created_at)
              SELECT gen_random_uuid()::text, $1, id, 'member', now() FROM "user" WHERE email = $2`,
             [organizationId, member.email],
         );
-        await db.$client.query("DELETE FROM organization WHERE id = $1", [ownOrganizationId]);
         await signIn(baseUrl, member, memberStorageState);
 
         process.env.E2E_BASE_URL = baseUrl;
@@ -289,19 +291,31 @@ async function seedBucket(baseUrl: string, endpoint: string) {
     await api.dispose();
 }
 
-/** The organization sign-up created for this account. */
-async function organizationOf(db: ReturnType<typeof createDb>, email: string) {
-    const [row] = (
-        await db.$client.query<{ organization_id: string }>(
-            `SELECT m.organization_id FROM member m JOIN "user" u ON u.id = m.user_id
-             WHERE u.email = $1 ORDER BY m.created_at LIMIT 1`,
-            [email],
-        )
-    ).rows;
+async function assertInstanceAdmin(db: ReturnType<typeof createDb>, email: string) {
+    const { rows } = await db.$client.query<{ role: string | null }>(
+        `SELECT role FROM "user" WHERE email = $1`,
+        [email],
+    );
 
-    if (!row) throw new Error(`Sign-up did not create an organization for ${email}`);
+    if (rows[0]?.role !== "admin") throw new Error(`The first account ${email} is not the admin`);
+}
 
-    return row.organization_id;
+/** The owner's organization, as the setup wizard would create it. */
+async function createOrganization(db: ReturnType<typeof createDb>, email: string) {
+    const { rows } = await db.$client.query<{ id: string }>(
+        `WITH created AS (
+             INSERT INTO organization (id, name, slug, created_at)
+             VALUES (gen_random_uuid()::text, 'Acme', 'acme', now())
+             RETURNING id
+         )
+         INSERT INTO member (id, organization_id, user_id, role, created_at)
+         SELECT gen_random_uuid()::text, created.id, u.id, 'owner', now()
+         FROM created, "user" u WHERE u.email = $1
+         RETURNING organization_id AS id`,
+        [email],
+    );
+
+    return rows[0]!.id;
 }
 
 async function seed(db: ReturnType<typeof createDb>, organizationId: string, sidecarUrl: string) {

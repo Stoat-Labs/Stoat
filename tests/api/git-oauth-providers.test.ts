@@ -33,6 +33,7 @@ import { connectionsRouter, getGitConnection } from "../../packages/api/src/rout
 import { POST } from "../../apps/web/src/routes/git/oauth/start/+server";
 import { GET } from "../../apps/web/src/routes/git/oauth/callback/+server";
 import * as webServices from "../../apps/web/src/services";
+import { insertUserWithOrganization } from "../users";
 
 type TestServices = { db: Context["db"] | null; session: Context["session"] };
 
@@ -163,18 +164,17 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
 
         for (const role of ["owner", "admin", "member", "foreign"]) {
             const userId = randomUUID();
-            await db.$client.query('INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)', [
+
+            const ownOrganizationId = await insertUserWithOrganization(
+                db,
                 userId,
                 role,
                 `${role}@example.test`,
-            ]);
+            );
 
-            const [membership] = await db.select().from(member).where(eq(member.userId, userId));
+            if (role === "owner") organizationId = ownOrganizationId;
 
-            if (role === "owner") organizationId = membership!.organizationId;
-
-            const activeOrganizationId =
-                role === "foreign" ? membership!.organizationId : organizationId!;
+            const activeOrganizationId = role === "foreign" ? ownOrganizationId : organizationId!;
 
             if (role === "admin" || role === "member") {
                 await db.insert(member).values({
@@ -470,10 +470,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             const listed = await call(connectionsRouter.list, undefined, { context });
             expect(listed.organizationId).toBe(orgId(context));
             expect(listed.oauthProviders.map((app) => app.id).sort()).toEqual(
-                (context === foreignContext
-                    ? [foreign.id]
-                    : [created.id, replacement.id]
-                ).sort(),
+                (context === foreignContext ? [foreign.id] : [created.id, replacement.id]).sort(),
             );
 
             for (const app of listed.oauthProviders)

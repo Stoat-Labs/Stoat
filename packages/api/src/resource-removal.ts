@@ -22,7 +22,10 @@ async function deployedServices(tx: Transaction, resource: Resource) {
     const [snapshot] = await tx
         .select({ spec: deployments.spec, prefix: resourceDeploymentInputs.prefix })
         .from(deployments)
-        .leftJoin(resourceDeploymentInputs, eq(resourceDeploymentInputs.deploymentId, deployments.id))
+        .leftJoin(
+            resourceDeploymentInputs,
+            eq(resourceDeploymentInputs.deploymentId, deployments.id),
+        )
         .where(
             and(
                 eq(deployments.resourceId, resource.id),
@@ -118,8 +121,7 @@ export async function removeResources(tx: Transaction, clusterId: string, remove
             // Already gone is what we wanted.
             if (result && (result.response.ok || result.response.status === 404)) continue;
 
-            const reason =
-                result?.error?.error ?? "the sidecar did not respond";
+            const reason = result?.error?.error ?? "the sidecar did not respond";
 
             throw new ORPCError("BAD_GATEWAY", {
                 message: `Could not remove service "${service}" from the cluster: ${reason}`,

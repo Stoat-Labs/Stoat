@@ -27,6 +27,7 @@ it("restores the saved-draft message from loaded data without a successful save 
             {
                 id: input.projectId,
                 name: "Project",
+                clusterName: "Cluster",
                 isInternal: false,
                 description: null,
                 clusterId: "cluster",

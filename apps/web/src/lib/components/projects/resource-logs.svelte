@@ -68,6 +68,9 @@
 
     type ViewLog = DisplayLog & { key: string };
 
+    // Compose prefixes names with `<projectId8>-<resourceId8>-`; it adds noise in the row label.
+    const COMPOSE_PREFIX = /^[0-9a-f]{8}-[0-9a-f]{8}-/u;
+
     const view = useQueryStates(
         {
             logServices: parseAsArrayOf(parseAsString),
@@ -998,8 +1001,10 @@
                                     ? "Newest first"
                                     : ""}
                                 source={(log) =>
-                                    log.container ??
-                                    "Unknown container"}
+                                    log.container?.replace(
+                                        COMPOSE_PREFIX,
+                                        "...",
+                                    ) ?? log.serviceName}
                                 bind:viewport
                                 bind:level={
                                     () => view.logLevel.current,

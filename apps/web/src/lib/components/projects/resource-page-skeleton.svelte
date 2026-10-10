@@ -23,9 +23,6 @@
                     <FrameTitle class="text-base">
                         <h2>Containers</h2>
                     </FrameTitle>
-                    <FrameDescription class="mt-1">
-                        Runtime status across machines.
-                    </FrameDescription>
                 </FrameHeader>
                 <FramePanel
                     class="max-h-96 overflow-y-auto p-0 xl:min-h-0 xl:max-h-none"

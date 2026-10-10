@@ -16,6 +16,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { dropTestDatabase } from "../database";
+import { insertUserWithOrganization } from "../users";
 
 describe("variable references API (PostgreSQL)", () => {
     const databaseName = `stoat_reference_api_${randomUUID().replaceAll("-", "")}`;
@@ -53,18 +54,21 @@ describe("variable references API (PostgreSQL)", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES
-                ('owner', 'Owner', 'owner@example.test'),
-                ('stranger', 'Stranger', 'stranger@example.test')`,
+
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "owner",
+            "Owner",
+            "owner@example.test",
         );
 
-        const memberships = await db.$client.query<{ organization_id: string }>(
-            `SELECT organization_id FROM member ORDER BY user_id`,
+        const foreignOrganizationId = await insertUserWithOrganization(
+            db,
+            "stranger",
+            "Stranger",
+            "stranger@example.test",
         );
 
-        const organizationId = memberships.rows[0]!.organization_id;
-        const foreignOrganizationId = memberships.rows[1]!.organization_id;
         // SAFETY: these procedures read only identity and active organization from the session.
         context = {
             db,

@@ -3,6 +3,7 @@
         bandwidth,
         bridgeGaps,
         bytes,
+        byteTicks,
         count,
         duration,
         percent,
@@ -71,6 +72,23 @@
             perSecond,
         }[unit],
     );
+
+    // Byte axes tick on binary units so labels read 1 KiB, 2 KiB rather than 1,000 B, 2 KiB.
+    const yTicks = $derived.by(() => {
+        if (max || (unit !== "bytes" && unit !== "rate"))
+            return undefined;
+
+        const peak = series.reduce(
+            (highest, item) =>
+                item.points.reduce(
+                    (top, point) => Math.max(top, point.value ?? 0),
+                    highest,
+                ),
+            0,
+        );
+
+        return peak > 0 ? byteTicks(peak, 3) : undefined;
+    });
 
     const hasData = $derived(
         series.some((item) =>
@@ -180,14 +198,26 @@
                     },
                 },
                 y: {
-                    scale: max
-                        ? scaleLinear().domain([0, max])
-                        : scaleLinear,
-                    nice: !max,
+                    scale: yTicks
+                        ? scaleLinear().domain([
+                              0,
+                              yTicks.at(-1) ?? 0,
+                          ])
+                        : max
+                          ? scaleLinear().domain([0, max])
+                          : scaleLinear,
+                    nice: !max && !yTicks,
                     grid: true,
                     axis: {
                         line: false,
-                        ticks: { count: 3, size: 0, format },
+                        // The axis accepts either a count or exact values, never both.
+                        ticks: {
+                            ...(yTicks
+                                ? { values: yTicks }
+                                : { count: 3 }),
+                            size: 0,
+                            format,
+                        },
                     },
                 },
                 // Fixed 0..1 scale that pins marker labels to the top of the plot.

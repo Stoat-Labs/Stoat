@@ -225,6 +225,13 @@
             "when": 1791299642210,
             "tag": "0031_blushing_captain_america",
             "breakpoints": true
+        },
+        {
+            "idx": 32,
+            "version": "7",
+            "when": 1791622755330,
+            "tag": "0032_first_run_setup",
+            "breakpoints": true
         }
     ]
 }

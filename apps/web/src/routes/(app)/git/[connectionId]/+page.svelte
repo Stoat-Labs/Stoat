@@ -238,10 +238,12 @@
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Repository</TableHead>
-                                    <TableHead>
+                                    <TableHead class="text-center">
                                         Default branch
                                     </TableHead>
-                                    <TableHead>URL</TableHead>
+                                    <TableHead class="text-center">
+                                        URL
+                                    </TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -253,12 +255,12 @@
                                             {repo.name}
                                         </TableCell>
                                         <TableCell
-                                            class="font-mono text-xs"
+                                            class="text-center font-mono text-xs"
                                         >
                                             {repo.defaultBranch}
                                         </TableCell>
                                         <TableCell
-                                            class="max-w-0 truncate text-muted-foreground"
+                                            class="max-w-0 truncate text-center text-muted-foreground"
                                         >
                                             {repo.url}
                                         </TableCell>

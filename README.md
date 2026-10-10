@@ -71,7 +71,7 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
     docker compose up -d
     ```
 
-4. Open `http://localhost:3001`, create your account and add your cluster. Enjoy :D
+4. Open `http://localhost:3001` and follow the setup wizard: the first account becomes the instance admin, then you name your organization and optionally connect your cluster. Public sign-ups stay closed unless you turn them on. Enjoy :D
 
 ### Optional settings
 

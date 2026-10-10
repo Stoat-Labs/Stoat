@@ -51,10 +51,6 @@
             <FrameTitle class="text-base">
                 <h2 id="connection-heading">Connection</h2>
             </FrameTitle>
-            <FrameDescription class="mt-1">
-                Built from the saved Compose draft and POSTGRES_*
-                variables.
-            </FrameDescription>
         </FrameHeader>
         <FramePanel class="grid gap-4">
             <ConnectionField
@@ -118,10 +114,6 @@
                 <FrameTitle class="text-base">
                     <h2>Connection</h2>
                 </FrameTitle>
-                <FrameDescription class="mt-1">
-                    Built from the saved Compose draft and POSTGRES_*
-                    variables.
-                </FrameDescription>
             </FrameHeader>
             <FramePanel class="grid gap-4">
                 <ConnectionField

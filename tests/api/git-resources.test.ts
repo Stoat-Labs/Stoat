@@ -22,6 +22,7 @@ import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api
 import { connectionsRouter } from "../../packages/api/src/routers/connections";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { resolveComposePath } from "../../packages/api/src/routers/resources/git";
+import { insertUserWithOrganization } from "../users";
 
 const revision = "a".repeat(40);
 
@@ -196,18 +197,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         for (const role of ["owner", "admin", "member", "foreign"]) {
             const userId = randomUUID();
             const email = `${role}@example.test`;
-            await db.$client.query('INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)', [
-                userId,
-                role,
-                email,
-            ]);
-
-            const memberships = await db.$client.query(
-                "SELECT organization_id FROM member WHERE user_id = $1",
-                [userId],
-            );
-
-            const ownOrganizationId = memberships.rows[0].organization_id;
+            const ownOrganizationId = await insertUserWithOrganization(db, userId, role, email);
 
             if (role === "owner") organizationId = ownOrganizationId;
 

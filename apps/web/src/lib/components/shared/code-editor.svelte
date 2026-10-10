@@ -40,6 +40,23 @@
 
     const editability = new Compartment();
 
+    function editabilityExtensions(locked: boolean) {
+        return [
+            EditorState.readOnly.of(locked),
+            EditorView.editable.of(!locked),
+            EditorView.contentAttributes.of({
+                "aria-readonly": String(locked),
+                tabindex: "0",
+            }),
+            // Read-only editors stay focusable for selecting, but a caret would suggest typing works.
+            locked
+                ? EditorView.theme({
+                      ".cm-cursorLayer": { display: "none" },
+                  })
+                : [],
+        ];
+    }
+
     function envDecorations(state: EditorState) {
         const ranges = new RangeSetBuilder<Decoration>();
         const mark = Decoration.mark({ class: "cm-env-value" });
@@ -111,14 +128,7 @@
             doc: value,
             extensions: [
                 minimalSetup,
-                editability.of([
-                    EditorState.readOnly.of(readOnly),
-                    EditorView.editable.of(!readOnly),
-                    EditorView.contentAttributes.of({
-                        "aria-readonly": String(readOnly),
-                        tabindex: "0",
-                    }),
-                ]),
+                editability.of(editabilityExtensions(readOnly)),
                 lineNumbers(),
                 language === "yaml" ? yaml() : envValues,
                 syntaxHighlighting(
@@ -199,14 +209,9 @@
 
     $effect(() => {
         view?.dispatch({
-            effects: editability.reconfigure([
-                EditorState.readOnly.of(readOnly),
-                EditorView.editable.of(!readOnly),
-                EditorView.contentAttributes.of({
-                    "aria-readonly": String(readOnly),
-                    tabindex: "0",
-                }),
-            ]),
+            effects: editability.reconfigure(
+                editabilityExtensions(readOnly),
+            ),
         });
     });
 

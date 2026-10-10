@@ -57,9 +57,6 @@
             <FrameTitle class="text-base">
                 <h2 id="compose-heading">Docker Compose</h2>
             </FrameTitle>
-            <FrameDescription class="mt-1">
-                Edit the Docker Compose YAML for this resource.
-            </FrameDescription>
         </div>
         <div class="flex flex-wrap items-center gap-2">
             <div class="text-sm" aria-live="polite">

@@ -33,7 +33,7 @@ jobs:
               id: calc_version
               run: |
                   # Get current version from root package.json as the source of truth
-                  CURRENT_VERSION=$(jq -r '.version' package.json)
+                  CURRENT_VERSION=$(jq -er '.version' package.json)
                   echo "Current base version: $CURRENT_VERSION"
                   echo "root_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Browser, Page } from "@playwright/test";
 import { createDb } from "@stoat/db";
@@ -205,16 +206,21 @@ export async function freshAccount(browser: Browser) {
 
     if (!response.ok()) throw new Error(`Sign-up failed: ${await response.text()}`);
 
-    const [row] = await sql<{ organization_id: string }>(
-        `SELECT m.organization_id FROM member m JOIN "user" u ON u.id = m.user_id WHERE u.email = $1`,
-        [account.email],
-    );
+    // Creating it also makes it the session's active organization.
+    const created = await context.request.post("/api/auth/organization/create", {
+        data: { name: `${account.name}'s workspace`, slug: `org-${randomUUID()}` },
+        headers: { origin: baseURL },
+    });
+
+    if (!created.ok()) throw new Error(`Organization failed: ${await created.text()}`);
+
+    const organization = v.parse(v.object({ id: v.string() }), await created.json());
 
     return {
         account,
         context,
         page: await context.newPage(),
-        organizationId: row!.organization_id,
+        organizationId: organization.id,
     };
 }
 

@@ -21,6 +21,7 @@ import {
     RESOURCE_FAILURE_MESSAGE,
 } from "../../packages/workflows/src/deploy-resource";
 import { dropTestDatabase } from "../database";
+import { insertUserWithOrganization } from "../users";
 
 // The worker resolves `{{ <resourceId>.KEY }}` against a fake sidecar that records what it receives.
 describe("deploying resources that reference other resources (PostgreSQL)", () => {
@@ -84,15 +85,14 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('referrer', 'Referrer', 'referrer@example.test')`,
+
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "referrer",
+            "Referrer",
+            "referrer@example.test",
         );
 
-        const { rows } = await db.$client.query<{ organization_id: string }>(
-            `SELECT organization_id FROM member WHERE user_id = 'referrer'`,
-        );
-
-        const organizationId = rows[0]!.organization_id;
         sidecar.listen(0, "127.0.0.1");
         await once(sidecar, "listening");
         const address = sidecar.address();

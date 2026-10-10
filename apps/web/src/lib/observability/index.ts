@@ -102,7 +102,6 @@ type Usage = {
     networkOut: number | null;
     restarts: number;
     oomKilled: number;
-    trend: MetricPoint[];
 };
 
 export type ContainerRow = Omit<ObservabilityContainer, "oomKilled"> & Usage & { key: string };
@@ -137,6 +136,31 @@ export function bytes(value: number | null | undefined) {
     );
 
     return `${(Math.abs(value) / 1024 ** index).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[index]}`;
+}
+
+/**
+ * Axis ticks for byte values that land on round binary units (1 KiB, 2 KiB, ...) instead of
+ * decimal ones (1,000 B, 2,000 B), which format as uneven KiB labels.
+ */
+export function byteTicks(max: number, count: number) {
+    let unit = 1024 ** Math.min(4, Math.max(0, Math.floor(Math.log2(max) / 10)));
+
+    const stepIn = (size: number) => {
+        const rough = max / size / count;
+        const magnitude = 10 ** Math.floor(Math.log10(rough));
+
+        return ([1, 2, 5].find((factor) => factor * magnitude >= rough) ?? 10) * magnitude * size;
+    };
+
+    let step = stepIn(unit);
+
+    // 800 B would round up to a "1,000 B" top tick, so count in the next unit instead.
+    if (Math.ceil(max / step) * step >= 1000 * unit && unit < 1024 ** 4) {
+        unit *= 1024;
+        step = stepIn(unit);
+    }
+
+    return Array.from({ length: Math.ceil(max / step) + 1 }, (_, index) => index * step);
 }
 
 export function bandwidth(value: number | null | undefined) {
@@ -290,6 +314,7 @@ export function machineList(clusters: ClusterData[]): MachineData[] {
             cluster,
         }));
     });
+
     const colors = nameColors(machines.map((machine) => machine.name));
 
     return machines.map((machine) => ({
@@ -527,7 +552,6 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                         networkIn: value("serviceNetworkIn"),
                         networkOut: value("serviceNetworkOut"),
                         oomKilled: item.oomKilled ? 1 : 0,
-                        trend: metric(cluster, "serviceCpu", item.machineId, service.id, item.name),
                     },
                 ];
             });
@@ -565,7 +589,6 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                     networkOut: value("serviceNetworkOut"),
                     restarts: containers.reduce((sum, item) => sum + item.restarts, 0),
                     oomKilled: containers.reduce((sum, item) => sum + item.oomKilled, 0),
-                    trend: metric(cluster, "serviceCpu", scope || undefined, service.id),
                 },
             ];
         }),

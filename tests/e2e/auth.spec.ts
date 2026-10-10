@@ -19,6 +19,17 @@ async function signUp(page: Page, account: ReturnType<typeof newAccount>) {
     await page.getByRole("button", { name: "Create account" }).click();
 }
 
+// Account names repeat across workers, so derive the name (and its slug) from the unique email.
+const workspaceFor = (account: ReturnType<typeof newAccount>) =>
+    `Workspace ${account.email.split("@")[0]}`;
+
+async function createOrganization(page: Page, name: string) {
+    // Wait for /setup: the sign-up form's "Full name" would also match a loose "Name" label.
+    await expect(page.getByRole("heading", { name: "Create your organization" })).toBeVisible();
+    await page.getByRole("textbox", { name: /^Name/u }).fill(name);
+    await page.getByRole("button", { name: "Create organization" }).click();
+}
+
 async function logIn(page: Page, email: string, password: string) {
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(password);
@@ -41,10 +52,18 @@ test.describe("signed out", () => {
         await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
     });
 
-    test("signing up creates an account with its own organization", async ({ page }) => {
+    test("signing up asks the new account to create its organization", async ({ page }) => {
         const account = newAccount();
         await signUp(page, account);
 
+        await expect(page).toHaveURL(/\/setup$/u);
+        // App pages wait until the account belongs to an organization.
+        await page.goto("/projects");
+        await expect(page).toHaveURL(/\/setup$/u);
+        // A regular account sees no instance-wide options.
+        await expect(page.getByRole("switch", { name: "Allow user signups" })).toHaveCount(0);
+
+        await createOrganization(page, workspaceFor(account));
         await expect(page).toHaveURL(/\/$/u);
         await expect(accountMenu(page, account.name)).toBeVisible();
 
@@ -55,7 +74,7 @@ test.describe("signed out", () => {
             [account.email],
         );
 
-        expect(organizations).toEqual([{ name: `${account.name}'s organization`, role: "owner" }]);
+        expect(organizations).toEqual([{ name: workspaceFor(account), role: "owner" }]);
     });
 
     test("an email that is already registered is refused", async ({ page }) => {
@@ -128,6 +147,7 @@ test.describe("signed out", () => {
     test("logging out ends the session", async ({ page }) => {
         const account = newAccount();
         await signUp(page, account);
+        await createOrganization(page, workspaceFor(account));
         await accountMenu(page, account.name).click();
         await page.getByRole("menuitem", { name: "Log out" }).click();
 

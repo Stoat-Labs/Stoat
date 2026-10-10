@@ -21,10 +21,7 @@
     import { ago, deploymentDuration } from "$lib/format";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import {
-        listPageSize,
-        pageParser,
-    } from "$lib/params/query-params";
+    import { pageParser } from "$lib/params/query-params";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsStringLiteral,
@@ -43,18 +40,11 @@
         onDeploymentChange?: () => void;
     } = $props();
 
-    // The paginated view sizes its page to the viewport so the whole table
-    // fits without scrolling. The first fit is measured on the skeleton rows,
-    // and the query waits for it.
-    let container = $state<HTMLDivElement>();
-
-    let viewportHeight = $state(0);
-
-    let fittedRows = $state<number>();
+    const pageSize = 15;
 
     const limit = $derived(
         latest === undefined
-            ? (fittedRows ?? listPageSize)
+            ? pageSize
             : Math.min(100, Math.max(1, Math.floor(latest))),
     );
 
@@ -97,7 +87,7 @@
 
     // Finished deployments are immutable: terminal filters stay cached until a
     // watch event invalidates them, so back-nav never refetches. Live filters
-    // keep the 15s app default. placeholderData keeps the previous page visible.
+    // keep the 15s app default.
     const isTerminalFilter = $derived(
         status === "ready" ||
             status === "failed" ||
@@ -112,59 +102,16 @@
             resourceId,
         };
 
-        // Wait for the viewport fit so the first fetch already has the right size.
-        const enabled =
-            latest !== undefined || fittedRows !== undefined;
-
         if (isTerminalFilter)
             return orpc.cluster.listAllDeployments.queryOptions({
                 input,
-                enabled,
                 staleTime: Infinity,
                 gcTime: 30 * 60_000,
-                placeholderData: (previous) => previous,
             });
 
         return orpc.cluster.listAllDeployments.queryOptions({
             input,
-            enabled,
-            placeholderData: (previous) => previous,
         });
-    });
-
-    // Pagination footer (p-2 + h-8 buttons + border) and the wrapper's pb-6
-    // plus the app shell's pb-6 sit below the rows.
-    const belowRows = 49 + 24 + 24;
-
-    $effect(() => {
-        if (
-            latest !== undefined ||
-            !container ||
-            viewportHeight === 0
-        )
-            return;
-
-        const body = container.querySelector<HTMLTableSectionElement>(
-            "[data-slot=table-body]",
-        );
-
-        if (!body) return;
-
-        // Skeleton rows share the real row markup, so both measure the same.
-        // The empty state is a single tall row and says nothing about rows.
-        if (!deploymentsQuery.isPending && items.length === 0) return;
-
-        const rowHeight = body.offsetHeight / body.rows.length;
-
-        const available =
-            viewportHeight -
-            (body.getBoundingClientRect().top + window.scrollY) -
-            belowRows;
-
-        fittedRows = Math.min(
-            100,
-            Math.max(5, Math.floor(available / rowHeight)),
-        );
     });
 
     let watchError = $state("");
@@ -299,10 +246,7 @@
     </div>
 {/snippet}
 
-<svelte:window bind:innerHeight={viewportHeight} />
-
 <div
-    bind:this={container}
     class={latest === undefined
         ? "w-full space-y-6 pt-6"
         : "w-full space-y-3"}
@@ -348,21 +292,29 @@
         >
             {#snippet header()}
                 <TableRow>
-                    <TableHead>Status</TableHead>
+                    <TableHead class="text-center">Status</TableHead>
                     <TableHead>Deployment</TableHead>
-                    <TableHead>Cluster</TableHead>
+                    <TableHead class="text-center">Cluster</TableHead>
                     {#if !resourceId && latest === undefined}
-                        <TableHead class="hidden md:table-cell">
+                        <TableHead
+                            class="hidden text-center md:table-cell"
+                        >
                             Project
                         </TableHead>
-                        <TableHead class="hidden md:table-cell">
+                        <TableHead
+                            class="hidden text-center md:table-cell"
+                        >
                             Resource
                         </TableHead>
                     {/if}
-                    <TableHead class="hidden md:table-cell">
+                    <TableHead
+                        class="hidden text-center md:table-cell"
+                    >
                         Created
                     </TableHead>
-                    <TableHead class="text-right">Duration</TableHead>
+                    <TableHead class="text-center">
+                        Duration
+                    </TableHead>
                 </TableRow>
             {/snippet}
             {#snippet placeholderRow()}
@@ -392,7 +344,7 @@
         class="group cursor-pointer"
         onclick={() => goto(deploymentHref(deployment))}
     >
-        <TableCell>
+        <TableCell class="text-center">
             <Badge
                 variant={deploymentStatusVariant(deployment.status)}
             >
@@ -410,7 +362,7 @@
                     : deployment.name}
             </a>
         </TableCell>
-        <TableCell>
+        <TableCell class="text-center">
             <a
                 href={`/clusters/${deployment.clusterId}`}
                 onclick={(event) => event.stopPropagation()}
@@ -420,7 +372,7 @@
             </a>
         </TableCell>
         {#if !resourceId && latest === undefined}
-            <TableCell class="hidden md:table-cell">
+            <TableCell class="hidden text-center md:table-cell">
                 {#if deployment.projectId}
                     <a
                         href={`/projects/${deployment.projectId}`}
@@ -435,7 +387,7 @@
                     </span>
                 {/if}
             </TableCell>
-            <TableCell class="hidden md:table-cell">
+            <TableCell class="hidden text-center md:table-cell">
                 {#if deployment.resourceId}
                     {#if deployment.projectId}
                         <a
@@ -458,14 +410,14 @@
                 {/if}
             </TableCell>
         {/if}
-        <TableCell class="hidden md:table-cell">
+        <TableCell class="hidden text-center md:table-cell">
             <span class="text-sm text-muted-foreground">
                 {latest === undefined
                     ? new Date(deployment.createdAt).toLocaleString()
                     : ago(deployment.createdAt, now)}
             </span>
         </TableCell>
-        <TableCell class="text-right">
+        <TableCell class="text-center">
             <span class="text-sm text-muted-foreground">
                 {deploymentDuration(
                     deployment.createdAt,

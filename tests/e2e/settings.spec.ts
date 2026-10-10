@@ -8,7 +8,9 @@ import {
     sql,
 } from "./fixtures";
 
-const section = (page: Page, name: string) => page.goto(`/settings?section=${name}`);
+// Wait until the app has hydrated; a click on the server-rendered page has no handler yet.
+const section = (page: Page, name: string) =>
+    page.goto(`/settings?section=${name}`, { waitUntil: "networkidle" });
 
 /** A dialog's primary button, so "Delete" in a list never matches by mistake. */
 const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alertdialog"));
@@ -98,14 +100,17 @@ test.describe("organization", () => {
         const { context, page, organizationId } = await freshAccount(browser);
         await section(page, "organization");
 
+        // Better Auth ids are mixed case; slugs are not.
+        const slug = `renamed-org-${organizationId.slice(0, 8).toLowerCase()}`;
+
         await page.getByLabel("Name").fill("Renamed Org");
-        await page.getByLabel("Slug").fill("renamed-org-" + organizationId.slice(0, 8));
+        await page.getByLabel("Slug").fill(slug);
         await page.getByRole("button", { name: "Save changes" }).click();
         await expect(page.getByText("Organization updated.")).toBeVisible();
 
         expect(
             await sql("SELECT name, slug FROM organization WHERE id = $1", [organizationId]),
-        ).toEqual([{ name: "Renamed Org", slug: `renamed-org-${organizationId.slice(0, 8)}` }]);
+        ).toEqual([{ name: "Renamed Org", slug }]);
         await context.close();
     });
 
@@ -255,7 +260,8 @@ test.describe("danger zone", () => {
         await expect(dialog(page)).toContainText("cannot be undone");
         await dialog(page).getByRole("button", { name: "Delete" }).click();
 
-        await expect(page).toHaveURL(/\/$/u);
+        // It was their only organization, so they are asked to create another.
+        await expect(page).toHaveURL(/\/setup$/u);
         expect(await sql("SELECT id FROM organization WHERE id = $1", [organizationId])).toEqual(
             [],
         );

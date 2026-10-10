@@ -28,6 +28,7 @@ import type { Context } from "../../packages/api/src/context";
 import { bucketsRouter } from "../../packages/api/src/routers/buckets";
 import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { s3Router } from "../../packages/api/src/routers/s3";
+import { insertUserWithOrganization } from "../users";
 
 const generic: S3ConnectionInput = {
     provider: "generic",
@@ -228,15 +229,17 @@ describe("S3 connections and buckets API", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
+
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "owner",
+            "Owner",
+            "owner@example.test",
+        );
+
         await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('owner', 'Owner', 'owner@example.test'), ('member', 'Member', 'member@example.test')`,
+            `INSERT INTO "user" (id, name, email) VALUES ('member', 'Member', 'member@example.test')`,
         );
-
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'owner'`,
-        );
-
-        const organizationId: string = membership.rows[0].organization_id;
         await db.$client.query(
             `INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES ($1, $2, 'member', 'member', now())`,
             [randomUUID(), organizationId],

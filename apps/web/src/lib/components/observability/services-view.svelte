@@ -72,8 +72,6 @@
 
 <ServicesTable
     data={services}
-    {start}
-    {end}
     bind:search
     bind:hovered={hoveredService}
 />

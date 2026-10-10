@@ -75,8 +75,13 @@ export const projectsRouter = {
 
             // Derived so existing clusters and cluster renames need no data migration.
             return project.isInternal
-                ? { ...project, isInternal: true, name: `${clusterName}-internal` }
-                : { ...project, isInternal: false };
+                ? {
+                      ...project,
+                      clusterName,
+                      isInternal: true,
+                      name: `${clusterName}-internal`,
+                  }
+                : { ...project, clusterName, isInternal: false };
         }),
 
     listProjectOverviews: organizationProcedure.handler(

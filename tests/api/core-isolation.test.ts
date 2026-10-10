@@ -28,6 +28,7 @@ import {
 import type { Context } from "../../packages/api/src/context";
 import { projectsRouter } from "../../packages/api/src/routers/projects";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
+import { insertUserWithOrganization } from "../users";
 
 describe("core project and resource isolation (PostgreSQL)", () => {
     const databaseName = `stoat_core_${randomUUID().replaceAll("-", "")}`;
@@ -68,18 +69,21 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES
-                ('core-member', 'Core Member', 'core@example.test'),
-                ('foreign-owner', 'Foreign Owner', 'foreign@example.test')`,
+
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "core-member",
+            "Core Member",
+            "core@example.test",
         );
 
-        const memberships = await db.$client.query<{ user_id: string; organization_id: string }>(
-            `SELECT user_id, organization_id FROM member ORDER BY user_id`,
+        const foreignOrganizationId = await insertUserWithOrganization(
+            db,
+            "foreign-owner",
+            "Foreign Owner",
+            "foreign@example.test",
         );
 
-        const organizationId = memberships.rows[0]!.organization_id;
-        const foreignOrganizationId = memberships.rows[1]!.organization_id;
         await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'core-member'`);
         // SAFETY: these procedures read only identity and active organization from the session.
         context = {

@@ -21,7 +21,6 @@
         SidebarMenuItem,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import Boxes from "@lucide/svelte/icons/boxes";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Plus from "@lucide/svelte/icons/plus";
     import { parseAsString, useQueryState } from "nuqs-svelte";
@@ -123,7 +122,7 @@
                 <span
                     class="flex size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:size-6"
                 >
-                    <Boxes class="size-full" aria-hidden="true" />
+                    <img src="/stoat.png" alt="" class="size-8" />
                 </span>
                 <span
                     class="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"

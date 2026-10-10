@@ -461,7 +461,11 @@
                 </Button>
             </DialogFooter>
         {:else}
-            <form onsubmit={invite} aria-busy={inviting}>
+            <form
+                class="contents"
+                onsubmit={invite}
+                aria-busy={inviting}
+            >
                 <DialogPanel class="space-y-4">
                     <Field>
                         <Label for="invite-email">Email</Label>

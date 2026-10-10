@@ -91,7 +91,8 @@ it("uses observability's cluster-qualified machine identities and filters for DN
 
 it("scopes Postgres exporter metrics to the resource's services and skips template databases", () => {
     const queries = postgresMetricQueries("cluster-id", 15, ["service-a", "service-b"]);
-    const scope = 'customer_id="cluster-id",container_label_uncloud_service_id=~"service-a|service-b"';
+    const scope =
+        'customer_id="cluster-id",container_label_uncloud_service_id=~"service-a|service-b"';
 
     expect(queries.postgresSize).toBe(
         `sum by (machine_id) (pg_database_size_bytes{${scope},datname!~"template.*"})`,

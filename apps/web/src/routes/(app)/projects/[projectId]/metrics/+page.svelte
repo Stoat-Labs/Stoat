@@ -113,7 +113,7 @@
 
     const cluster = $derived(
         assembleCluster(
-            { id: clusterId, name: project.data?.name ?? "" },
+            { id: clusterId, name: project.data?.clusterName ?? "" },
             { data: [], error: null, isPending: false },
             services,
             metrics,
@@ -275,27 +275,9 @@
                             end={cluster.end}
                             unit={chart.unit}
                         />
-                        <div
-                            class="mt-3 flex flex-wrap gap-x-4 gap-y-2"
-                        >
-                            {#each chart.series.filter((item) => !item.dashed) as item (item.key)}<span
-                                    class="flex items-center gap-2 text-xs"
-                                >
-                                    <span
-                                        class="size-2 rounded-full"
-                                        style:background={item.color}
-                                    ></span>
-                                    {item.label}
-                                </span>{/each}
-                        </div>
                     </FramePanel>
                 </Frame>{/each}
         </div>
-        <ServicesTable
-            data={rows}
-            start={cluster.start}
-            end={cluster.end}
-            expandAll
-        />
+        <ServicesTable data={rows} expandAll />
     {/if}
 </div>

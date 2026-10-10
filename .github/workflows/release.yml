@@ -34,7 +34,7 @@ jobs:
               id: get_version
               run: |
                   # Read version from root package.json
-                  ROOT_VERSION=$(jq -r '.version' package.json)
+                  ROOT_VERSION=$(jq -er '.version' package.json)
                   echo "VERSION=$ROOT_VERSION" >> $GITHUB_ENV
                   echo "version=$ROOT_VERSION" >> $GITHUB_OUTPUT
 

@@ -5,7 +5,7 @@ import { instanceSettings } from "./schema";
 export async function getSignupsEnabled(db: Database) {
     const [settings] = await db.select().from(instanceSettings).where(eq(instanceSettings.id, 1));
 
-    return settings?.signupsEnabled ?? true;
+    return settings?.signupsEnabled ?? false;
 }
 
 export async function setSignupsEnabled(db: Database, signupsEnabled: boolean) {

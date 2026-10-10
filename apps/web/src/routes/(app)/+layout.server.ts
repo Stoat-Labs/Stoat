@@ -4,9 +4,12 @@ import { listUserOrganizations } from "@stoat/db/organizations";
 import { getAuth, getDb } from "../../services";
 
 export const load = async ({ url, request, locals: { session } }) => {
-    // Come back here after logging in.
+    // Come back here after logging in. The login page sends a fresh install on to /setup.
     if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
     const organizations = await listUserOrganizations(getDb(), session.user.id);
+
+    // Everything in the app is scoped to an organization; /setup creates the first one.
+    if (organizations.length === 0) redirect(303, "/setup");
     let activeOrganizationId = session.session.activeOrganizationId;
 
     if (!organizations.some((organization) => organization.id === activeOrganizationId)) {

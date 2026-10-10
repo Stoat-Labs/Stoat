@@ -15,6 +15,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
+import { insertUserWithOrganization } from "../users";
 
 describe("resource deployment API", () => {
     const databaseName = `stoat_deploy_api_${randomUUID().replaceAll("-", "")}`;
@@ -33,16 +34,15 @@ describe("resource deployment API", () => {
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('deployer', 'Deployer', 'deployer@example.test')`,
-        );
 
-        const membership = await db.$client.query(
-            `SELECT organization_id FROM member WHERE user_id = 'deployer'`,
+        const organizationId = await insertUserWithOrganization(
+            db,
+            "deployer",
+            "Deployer",
+            "deployer@example.test",
         );
-
-        const organizationId: string = membership.rows[0].organization_id;
         // SAFETY: authorization reads only identity and active organization.
+
         context = {
             db,
             session: {

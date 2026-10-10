@@ -2,4 +2,4 @@
     import AuthForm from "$lib/components/auth/auth-form.svelte";
 </script>
 
-<AuthForm signup />
+<AuthForm mode="signup" />

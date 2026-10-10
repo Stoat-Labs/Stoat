@@ -48,6 +48,7 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
     cache.setQueryData(orpc.projects.getProject.queryKey({ input: { projectId: "project" } }), {
         id: "project",
         name: "Project",
+        clusterName: "Cluster",
         isInternal: false,
         description: null,
         clusterId: "cluster",

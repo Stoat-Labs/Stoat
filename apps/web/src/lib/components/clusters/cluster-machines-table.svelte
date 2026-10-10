@@ -81,9 +81,11 @@
             <TableHeader>
                 <TableRow>
                     <TableHead>Machine</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Versions</TableHead>
-                    <TableHead class="text-right">
+                    <TableHead class="text-center">State</TableHead>
+                    <TableHead class="text-center">
+                        Versions
+                    </TableHead>
+                    <TableHead class="text-center">
                         WireGuard
                     </TableHead>
                 </TableRow>
@@ -113,14 +115,14 @@
                                 </span>
                             </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell class="text-center">
                             <Badge
                                 variant={stateVariant(machine.state)}
                             >
                                 {machine.state}
                             </Badge>
                         </TableCell>
-                        <TableCell class="min-w-36">
+                        <TableCell class="min-w-36 text-center">
                             <span class="block text-xs">
                                 Daemon {machine.daemonVersion ??
                                     "Unknown"}
@@ -132,7 +134,7 @@
                                     "Unknown"}
                             </span>
                         </TableCell>
-                        <TableCell class="text-right">
+                        <TableCell class="text-center">
                             {#if machine.wireGuard}
                                 <span
                                     class="inline-flex items-center gap-1.5 text-sm"
