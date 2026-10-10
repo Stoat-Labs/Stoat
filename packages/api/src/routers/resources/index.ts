@@ -1,9 +1,9 @@
 import { ORPCError } from "@orpc/server";
+import type { Database } from "@stoat/db";
 import {
     clusterMonitoring,
     clusters,
     deployments,
-    deploymentLogs,
     projects,
     resources,
     resourceDeploymentInputs,
@@ -17,9 +17,8 @@ import {
     GREPTIME_USERNAME,
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
-import { ComposeVariableError, composeVariables } from "@stoat/workflows/compose";
+import { composeVariables } from "@stoat/workflows/compose";
 import {
-    checkVariableReferences,
     referencedResourceIds,
     referenceTargets,
     referenceVariables,
@@ -63,11 +62,35 @@ import {
     lockedComposeResource,
     resourceEditInput,
     resourceGitRouter,
+    unpushedGitSource,
 } from "./git";
-import { gitText } from "../connections";
+import { getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
+import { insertResourceDeployment } from "../../resource-deployment";
+import { pushGitFile } from "../../git";
+
+// A deployable resource of the organization, with the cluster its project runs on.
+function deployTarget(
+    db: Pick<Database, "select">,
+    organizationId: string,
+    input: { projectId: string; resourceId: string },
+) {
+    return db
+        .select({ resource: resources, clusterId: projects.clusterId })
+        .from(resources)
+        .innerJoin(projects, eq(resources.projectId, projects.id))
+        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+        .where(
+            and(
+                eq(resources.id, input.resourceId),
+                eq(projects.id, input.projectId),
+                sql`${projects.isInternal} is not true`,
+                eq(clusters.organizationId, organizationId),
+            ),
+        );
+}
 
 export const resourcesRouter = {
     ...resourceGitRouter,
@@ -78,104 +101,79 @@ export const resourcesRouter = {
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
                 recreate: v.optional(v.boolean(), false),
+                // Commit message used when the draft has changes that are not in Git yet.
+                message: v.optional(gitMessage),
             }),
         )
-        .handler(async ({ context: { db, organizationId }, input }) => {
+        .handler(async ({ context: { db, organizationId, session }, input }) => {
+            const [preview] = await deployTarget(db, organizationId, input);
+            const expected = preview ? unpushedGitSource(preview.resource) : null;
+
+            if (expected && !session?.user)
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Committing the draft to Git requires a signed-in user.",
+                });
+
+            // Resolved before the row lock, like pushGitSource: it opens its own transaction.
+            const repo = expected
+                ? await getGitConnection(
+                      db,
+                      organizationId,
+                      expected.connectionId,
+                      expected.source.repositoryUrl,
+                      expected.source.branch,
+                  )
+                : null;
+
             const id = await db.transaction(async (tx) => {
-                const [row] = await tx
-                    .select({ resource: resources, clusterId: projects.clusterId })
-                    .from(resources)
-                    .innerJoin(projects, eq(resources.projectId, projects.id))
-                    .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                    .where(
-                        and(
-                            eq(resources.id, input.resourceId),
-                            eq(projects.id, input.projectId),
-                            sql`${projects.isInternal} is not true`,
-                            eq(clusters.organizationId, organizationId),
-                        ),
-                    )
-                    .for("update", { of: resources });
+                const [row] = await deployTarget(tx, organizationId, input).for("update", {
+                    of: resources,
+                });
 
                 if (!row)
                     throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
                 const { resource, clusterId } = row;
 
-                if (!resource.draftSpec?.trim())
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Save a Compose spec before deploying.",
-                    });
-
-                if (Buffer.byteLength(resource.draftSpec) > 4 * 1024 * 1024)
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: "Compose must not exceed 4 MiB.",
-                    });
-
-                const prefix = resourceComposePrefix(resource) ?? "";
-
-                try {
-                    if (formatComposeFile(resource.draftSpec, prefix).serviceCount === 0)
-                        throw new Error("Compose must contain at least one service.");
-                } catch {
-                    throw new ORPCError("BAD_REQUEST", {
-                        message:
-                            "Save a valid Compose spec containing at least one service before deploying.",
-                    });
-                }
-
-                // Fail fast on broken references; the worker resolves them again at deploy time.
-                const env = resourceEnv(resource);
-
-                try {
-                    await checkVariableReferences(
-                        db,
-                        clusterId,
-                        resource.id,
-                        resource.draftSpec,
-                        env,
-                    );
-                } catch (error) {
-                    if (!(error instanceof ComposeVariableError)) throw error;
-                    throw new ORPCError("BAD_REQUEST", { message: error.message });
-                }
-
-                const [active] = await tx
-                    .select({ id: deployments.id })
-                    .from(deployments)
-                    .where(
-                        and(
-                            eq(deployments.resourceId, resource.id),
-                            inArray(deployments.status, ["queued", "running"]),
-                        ),
-                    )
-                    .limit(1);
-
-                if (active)
-                    throw new ORPCError("CONFLICT", {
-                        message: "This resource already has an active deployment.",
-                    });
-
-                const deploymentId = randomUUID();
-                await tx.insert(deployments).values({
-                    id: deploymentId,
-                    jobId: deploymentId,
+                const deploymentId = await insertResourceDeployment(
+                    tx,
+                    db,
+                    resource,
                     clusterId,
-                    resourceId: resource.id,
-                    name: "DeployResource",
-                    status: "queued",
-                    spec: resource.draftSpec,
+                    input.recreate,
+                );
+
+                const unpushed = unpushedGitSource(resource);
+
+                if (!unpushed) return deploymentId;
+
+                const { source } = unpushed;
+
+                if (
+                    !repo ||
+                    !session?.user ||
+                    unpushed.connectionId !== expected?.connectionId ||
+                    source.repositoryUrl !== expected.source.repositoryUrl ||
+                    source.branch !== expected.source.branch ||
+                    source.revision !== expected.source.revision
+                )
+                    throw new ORPCError("CONFLICT", {
+                        message: "The Git source changed. Reload the resource before deploying.",
+                    });
+
+                // A rejected push rolls back the deployment, so Git and the deployed draft agree.
+                const pushed = await pushGitFile(repo, {
+                    path: source.path,
+                    content: unpushed.content,
+                    expectedRevision: source.revision,
+                    message: input.message ?? `Deploy ${resource.name} from Stoat`,
+                    author: { name: session.user.name, email: session.user.email },
+                    watchPath: source.watchPath,
                 });
-                await tx.insert(resourceDeploymentInputs).values({
-                    deploymentId,
-                    prefix,
-                    env,
-                    recreate: input.recreate,
-                });
-                await tx.insert(deploymentLogs).values({
-                    deploymentId,
-                    text: "Resource deployment queued. Saved Compose snapshot captured.",
-                    metadata: { level: "info" },
-                });
+
+                await tx
+                    .update(resources)
+                    .set({ gitSource: { ...source, ...pushed } })
+                    .where(eq(resources.id, resource.id));
 
                 return deploymentId;
             });

@@ -23,6 +23,7 @@
         FrameTitle,
     } from "$lib/components/ui/frame";
     import IngressRouteFlow from "$lib/components/shared/ingress-route-flow.svelte";
+    import IngressTargetFlow from "$lib/components/shared/ingress-target-flow.svelte";
     import IngressRoutesListView from "$lib/components/ingress/ingress-routes-list.svelte";
     import IngressEntryDialog, {
         type DialogKind,
@@ -370,6 +371,42 @@
         });
     });
 
+    // A host whose only route is `/` has nothing to fan out, so hosts like that
+    // collapse into one flow per upstream instead of repeating its node.
+    const isRootOnly = (group: HostGroup) =>
+        group.host !== null &&
+        group.items.length === 1 &&
+        group.items[0].path === "/";
+
+    const fanOutGroups = $derived(
+        hostGroups.filter((group) => !isRootOnly(group)),
+    );
+
+    const targetGroups = $derived.by(() => {
+        const groups = new Map<
+            string,
+            { service: string; port?: number; hosts: string[] }
+        >();
+
+        for (const group of hostGroups) {
+            if (!isRootOnly(group) || group.host === null) continue;
+
+            const { service, port } = group.items[0];
+            const key = `${service}:${port ?? ""}`;
+
+            const target = groups.get(key) ?? {
+                service,
+                port,
+                hosts: [],
+            };
+
+            target.hosts.push(group.host);
+            groups.set(key, target);
+        }
+
+        return [...groups.values()];
+    });
+
     // The ingress being added (`entry` is null) or edited; null while the dialog is closed.
     let dialog = $state<{
         kind: DialogKind;
@@ -636,9 +673,23 @@
                             </EmptyHeader>
                         </Empty>
                     {:else}
-                        {#each hostGroups as group, groupIndex (group.host ?? "default")}
+                        {#each targetGroups as target, targetIndex (`${target.service}:${target.port ?? ""}`)}
                             <div
-                                class={groupIndex > 0
+                                class={targetIndex > 0
+                                    ? "border-t border-border"
+                                    : ""}
+                            >
+                                <IngressTargetFlow
+                                    hosts={target.hosts}
+                                    service={target.service}
+                                    port={target.port}
+                                />
+                            </div>
+                        {/each}
+                        {#each fanOutGroups as group, groupIndex (group.host ?? "default")}
+                            <div
+                                class={groupIndex > 0 ||
+                                targetGroups.length > 0
                                     ? "border-t border-border"
                                     : ""}
                             >

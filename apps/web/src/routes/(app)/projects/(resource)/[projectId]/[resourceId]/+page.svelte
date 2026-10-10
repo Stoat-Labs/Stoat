@@ -326,6 +326,15 @@
                 void queryClient.invalidateQueries({
                     queryKey: orpc.cluster.key(),
                 });
+                // Deploying may have pushed the draft, which moves the Git revision.
+                void queryClient.invalidateQueries({
+                    queryKey: orpc.resources.getResource.queryKey({
+                        input: {
+                            projectId: input.projectId,
+                            resourceId: input.resourceId,
+                        },
+                    }),
+                });
 
                 if (
                     !active ||

@@ -40,7 +40,11 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
         finishedAt: new Date("2026-09-30T12:01:00Z"),
     }));
 
-    cache.setQueryData(orpc.cluster.listAllDeployments.queryKey({ input }), { items, total: 80 });
+    cache.setQueryData(orpc.cluster.listAllDeployments.queryKey({ input }), {
+        items,
+        total: 80,
+        canDelete: false,
+    });
 
     function TableWithContext(...args: Parameters<typeof DeploymentsTable>) {
         setQueryClientContext(cache);

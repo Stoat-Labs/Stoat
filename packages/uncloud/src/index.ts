@@ -60,7 +60,10 @@ const sseHeaders = { Accept: "text/event-stream" };
  * Turns an event stream response into typed events, throwing `UcApiError` when
  * the sidecar refused to open the stream.
  */
-async function* readEvents<T>(request: Promise<StreamResult>): AsyncGenerator<T, void, undefined> {
+async function* readEvents<T>(
+    request: Promise<StreamResult>,
+    signal?: AbortSignal,
+): AsyncGenerator<T, void, undefined> {
     const { data, error, response } = await request;
 
     if (!response.ok) {
@@ -71,7 +74,7 @@ async function* readEvents<T>(request: Promise<StreamResult>): AsyncGenerator<T,
         throw new UcApiError(response, { error: "Sidecar returned an empty stream" });
     }
 
-    yield* readSseJson<T>(data);
+    yield* readSseJson<T>(data, signal);
 }
 
 /**
@@ -185,6 +188,7 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                         parseAs: "stream",
                         signal,
                     }),
+                    signal,
                 );
             },
 
@@ -199,6 +203,7 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                         parseAs: "stream",
                         signal,
                     }),
+                    signal,
                 );
             },
 
@@ -217,6 +222,7 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                         parseAs: "stream",
                         signal: options.signal,
                     }),
+                    options.signal,
                 );
             },
 
@@ -238,6 +244,7 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                         parseAs: "stream",
                         signal: options.signal,
                     }),
+                    options.signal,
                 );
             },
         },

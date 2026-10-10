@@ -88,6 +88,7 @@
         pull: "Compose imported from Git.",
         push: "Commit pushed and draft saved.",
         detach: "Git source detached. Compose retained.",
+        watch: "Auto-deploy settings saved.",
     };
 
     // A Git action waiting for an answer in the confirmation dialog.
@@ -119,7 +120,7 @@
     }
 
     async function gitAction(
-        action: "source" | "pull" | "detach" | "push",
+        action: "source" | "pull" | "detach" | "push" | "watch",
         source?: {
             connectionId: string;
             repositoryUrl: string;
@@ -127,6 +128,7 @@
             path: string;
         },
         message?: string,
+        watch?: { autoDeploy: boolean; watchPath: string },
     ) {
         if (pending || !resource) return false;
 
@@ -197,6 +199,13 @@
                     expectedSource,
                     expectedRevision,
                     message: message.trim(),
+                });
+            } else if (action === "watch" && watch) {
+                updated = await client.resources.setGitWatch({
+                    ...input,
+                    ...watch,
+                    expectedSpec,
+                    expectedSource,
                 });
             } else return false;
             queryClient.setQueryData(
@@ -337,6 +346,16 @@
                             source={savedSource}
                             busy={pending}
                             onaction={gitAction}
+                            onwatch={(autoDeploy, watchPath) =>
+                                gitAction(
+                                    "watch",
+                                    undefined,
+                                    undefined,
+                                    {
+                                        autoDeploy,
+                                        watchPath,
+                                    },
+                                )}
                         />
                     </TabsPanel>
                 {/each}

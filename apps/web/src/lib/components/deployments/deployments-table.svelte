@@ -19,11 +19,24 @@
         deploymentStatusVariant,
     } from "$lib/deployments/status";
     import { ago, deploymentDuration } from "$lib/format";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
+    import Ellipsis from "@lucide/svelte/icons/ellipsis";
+    import Trash2 from "@lucide/svelte/icons/trash-2";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { pageParser } from "$lib/params/query-params";
-    import { createQuery } from "@tanstack/svelte-query";
     import {
+        createMutation,
+        createQuery,
+    } from "@tanstack/svelte-query";
+    import {
+        parseAsString,
         parseAsStringLiteral,
         useQueryStates,
     } from "nuqs-svelte";
@@ -73,6 +86,7 @@
                 filters.map((filter) => filter.value),
             ).withDefault("all"),
             page: pageParser,
+            deleteId: parseAsString,
         },
         { shallow: true, scroll: false },
     );
@@ -115,6 +129,27 @@
     });
 
     let watchError = $state("");
+
+    const deleteMutation = createMutation(() =>
+        orpc.cluster.deleteDeployment.mutationOptions({
+            onSuccess: async (_data, input) => {
+                queryClient.removeQueries({
+                    queryKey: orpc.cluster.getDeployment.queryKey({
+                        input: { deploymentId: input.deploymentId },
+                    }),
+                });
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listAllDeployments.key(),
+                });
+                await list.set({ deleteId: null });
+                deleteMutation.reset();
+            },
+        }),
+    );
+
+    const canDelete = $derived(
+        deploymentsQuery.data?.canDelete === true,
+    );
 
     useHeaderActions(statusFilters, () => latest === undefined);
 
@@ -209,6 +244,14 @@
         finishedAt: new Date(),
     };
 
+    function isSettled(status: string) {
+        return (
+            status === "ready" ||
+            status === "failed" ||
+            status === "cancelled"
+        );
+    }
+
     function deploymentHref(deployment: {
         id: string;
         projectId: string | null;
@@ -218,6 +261,9 @@
             : `/deployments/${deployment.id}`;
     }
 </script>
+
+colSpan={(resourceId || latest !== undefined ? 5 : 7) +
+    (canDelete ? 1 : 0)}
 
 {#snippet statusFilters()}
     <div
@@ -315,6 +361,7 @@
                     <TableHead class="text-center">
                         Duration
                     </TableHead>
+                    {#if canDelete}<TableHead class="w-10" />{/if}
                 </TableRow>
             {/snippet}
             {#snippet placeholderRow()}
@@ -425,5 +472,60 @@
                 )}
             </span>
         </TableCell>
+        {#if canDelete}
+            <TableCell class="w-10 text-right">
+                {#if isSettled(deployment.status) && deployment.id !== "placeholder"}
+                    <Menu>
+                        <MenuTrigger
+                            aria-label="Deployment actions"
+                            class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                            onclick={(event) =>
+                                event.stopPropagation()}
+                        >
+                            <Ellipsis
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </MenuTrigger>
+                        <MenuPopup align="end">
+                            <MenuItem
+                                variant="destructive"
+                                onclick={(event) => {
+                                    event.stopPropagation();
+                                    void list.set({
+                                        deleteId: deployment.id,
+                                    });
+                                }}
+                            >
+                                <Trash2 aria-hidden="true" />
+                                Delete
+                            </MenuItem>
+                        </MenuPopup>
+                    </Menu>
+                {/if}
+            </TableCell>
+        {/if}
     </TableRow>
 {/snippet}
+
+<ConfirmDialog
+    bind:open={
+        () => list.deleteId.current !== null,
+        (open) => {
+            if (!open) {
+                void list.set({ deleteId: null });
+                deleteMutation.reset();
+            }
+        }
+    }
+    title="Delete deployment?"
+    description="This permanently removes the deployment and its logs. Running services are not affected."
+    confirmLabel="Delete deployment"
+    pending={deleteMutation.isPending}
+    error={deleteMutation.error?.message ?? ""}
+    onconfirm={() => {
+        const deploymentId = list.deleteId.current;
+
+        if (deploymentId) deleteMutation.mutate({ deploymentId });
+    }}
+/>

@@ -13,6 +13,7 @@
     } from "$lib/components/ui/card";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
+    import { Switch } from "$lib/components/ui/switch";
     import { orpc } from "$lib/api/orpc";
     import {
         gitProviders,
@@ -32,6 +33,7 @@
         source,
         busy,
         onaction,
+        onwatch,
     }: {
         provider: GitProvider;
         connectionId: string | null;
@@ -40,6 +42,8 @@
             branch: string;
             path: string;
             revision: string;
+            autoDeploy: boolean;
+            watchPath: string;
         } | null;
         busy: boolean;
         onaction: (
@@ -51,6 +55,10 @@
                 path: string;
             },
             message?: string,
+        ) => Promise<boolean>;
+        onwatch: (
+            autoDeploy: boolean,
+            watchPath: string,
         ) => Promise<boolean>;
     } = $props();
 
@@ -117,6 +125,16 @@
     );
 
     let message = $state("");
+
+    // Follow the saved settings until edited; a save or reload resets them.
+    let autoDeploy = $derived(boundSource?.autoDeploy ?? false);
+
+    let watchPath = $derived(boundSource?.watchPath ?? ".");
+
+    const watchChanged = $derived(
+        autoDeploy !== (boundSource?.autoDeploy ?? false) ||
+            watchPath.trim() !== (boundSource?.watchPath ?? "."),
+    );
 
     function changeSource() {
         void fields.set({
@@ -249,11 +267,70 @@
             {/if}
             {#if boundSource}
                 <p class="text-xs text-muted-foreground">
-                    Save draft stays local to Stoat. Pull replaces the
-                    local draft. Importing Compose does not deploy
-                    relative build contexts or other repository files.
+                    Saved drafts stay in Stoat until you deploy:
+                    deploying commits draft changes to {boundSource.branch}
+                    first. Pull replaces the local draft. Importing Compose
+                    does not deploy relative build contexts or other repository
+                    files.
                 </p>
                 {#if canManage}
+                    <form
+                        class="space-y-3"
+                        onsubmit={async (event) => {
+                            event.preventDefault();
+                            await onwatch(
+                                autoDeploy,
+                                watchPath.trim(),
+                            );
+                        }}
+                    >
+                        <div
+                            class="flex items-center justify-between gap-3"
+                        >
+                            <div class="space-y-1">
+                                <Label for="{id}-auto-deploy">
+                                    Auto-deploy
+                                </Label>
+                                <p
+                                    id="{id}-auto-deploy-description"
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    Pull and deploy when a push to
+                                    {boundSource.branch} changes the watched
+                                    directory. Checked every minute, and
+                                    paused while the draft has changes that
+                                    are not in Git.
+                                </p>
+                            </div>
+                            <Switch
+                                id="{id}-auto-deploy"
+                                aria-describedby="{id}-auto-deploy-description"
+                                bind:checked={autoDeploy}
+                                disabled={busy}
+                            />
+                        </div>
+                        <div class="flex flex-wrap items-end gap-2">
+                            <div class="min-w-0 flex-1 space-y-1">
+                                <Label for="{id}-watch-path">
+                                    Watch directory
+                                </Label>
+                                <Input
+                                    id="{id}-watch-path"
+                                    bind:value={watchPath}
+                                    placeholder="."
+                                    disabled={busy}
+                                />
+                            </div>
+                            <Button
+                                type="submit"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy || !watchChanged}
+                            >
+                                Save
+                            </Button>
+                        </div>
+                    </form>
                     <form
                         class="flex flex-wrap items-end gap-2"
                         onsubmit={async (event) => {

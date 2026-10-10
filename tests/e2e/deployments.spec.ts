@@ -90,15 +90,12 @@ test("a deploy streams to ready, then the resource shows its running container",
     );
 });
 
-test("a failing deploy shows the cluster's error and can be cancelled", async ({ page }) => {
+test("a failing deploy shows the cluster's error and stays failed", async ({ page }) => {
     const target = await resource(page, FAILING_IMAGE);
     await deploy(page, target.path);
 
     await expect(page.getByText(`Unable to pull image ${FAILING_IMAGE}`).first()).toBeVisible();
-    await expect(status(page)).toHaveText("Retrying");
-
-    await page.getByRole("button", { name: "Cancel deployment" }).click();
-    await expect(status(page)).toHaveText("Cancelled");
+    await expect(status(page)).toHaveText("Failed");
     await expect(page.getByRole("button", { name: "Cancel deployment" })).toHaveCount(0);
 });
 

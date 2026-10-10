@@ -12,6 +12,9 @@ function mapLayer() {
         async setItem<T extends StorageValue>(key: string, value: T): Promise<void> {
             store.set(key, value);
         },
+        async removeItem(key: string): Promise<void> {
+            store.delete(key);
+        },
         async clear(): Promise<void> {
             store.clear();
         },
@@ -25,7 +28,7 @@ function deadLayer(): CacheLayer {
         throw new Error("shared cache is down");
     };
 
-    return { getItem: fail, setItem: fail, clear: fail };
+    return { getItem: fail, setItem: fail, removeItem: fail, clear: fail };
 }
 
 it("writes through to both layers and then reads from memory", async () => {

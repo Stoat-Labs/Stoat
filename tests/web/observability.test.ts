@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/client";
 import {
+    hasPostgresExporter,
     httpQueries,
     metricNames,
     parseMetricSeries,
@@ -25,6 +26,7 @@ import {
 const container = (overrides: Partial<ObservabilityContainer>): ObservabilityContainer => ({
     id: "c1",
     name: "web-1",
+    image: "nginx:1.29",
     machineId: "node",
     machineName: "Node",
     running: true,
@@ -36,6 +38,33 @@ const container = (overrides: Partial<ObservabilityContainer>): ObservabilityCon
     memoryLimit: null,
     cpuLimit: null,
     ...overrides,
+});
+
+it("detects Postgres metrics from a Postgres server and postgres-exporter in any services", () => {
+    const services = (...images: string[]) =>
+        images.map((image, index) => ({
+            id: `s${index}`,
+            name: `service-${index}`,
+            href: null,
+            containers: [container({ image })],
+        }));
+
+    expect(
+        hasPostgresExporter(
+            services("postgres:18-alpine", "prometheuscommunity/postgres-exporter:v0.20.1"),
+        ),
+    ).toBe(true);
+    expect(
+        hasPostgresExporter(
+            services(
+                "docker.io/library/postgres@sha256:abc",
+                "quay.io/prometheuscommunity/postgres-exporter",
+            ),
+        ),
+    ).toBe(true);
+    expect(hasPostgresExporter(services("postgres:18", "wrouesnel/postgres_exporter"))).toBe(true);
+    expect(hasPostgresExporter(services("postgres:18-alpine"))).toBe(false);
+    expect(hasPostgresExporter(services("mysql:9", "postgres-exporter"))).toBe(false);
 });
 
 it("matches filesystem usage by machine, device, mount and type, preserving missing samples", () => {

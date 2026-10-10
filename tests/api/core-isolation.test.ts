@@ -53,6 +53,10 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         branch: "main",
         path: "compose.yaml",
         revision: "a".repeat(40),
+        blob: "b".repeat(40),
+        tree: "c".repeat(40),
+        autoDeploy: false,
+        watchPath: ".",
     };
 
     let admin: ReturnType<typeof createDb>;

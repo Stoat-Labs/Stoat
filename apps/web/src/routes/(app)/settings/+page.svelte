@@ -96,13 +96,6 @@
 
 <svelte:head><title>Settings / Stoat</title></svelte:head>
 <div class="flex w-full flex-col gap-6 pt-6">
-    <div class="space-y-1">
-        <h1 class="text-2xl font-semibold">Settings</h1>
-        <p class="text-sm text-muted-foreground">
-            Manage your account and {organization?.name ??
-                "your organization"}.
-        </p>
-    </div>
     <div
         class="grid gap-6 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0"
     >

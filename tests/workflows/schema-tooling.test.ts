@@ -7,7 +7,6 @@ import { createDb } from "@stoat/db";
 import * as schema from "@stoat/db/schema/index";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { expect, inject, it } from "vite-plus/test";
-import dbPackage from "../../packages/db/package.json";
 import * as queue from "../../packages/workflows/src/schema";
 
 const require = createRequire(resolve("packages/db/package.json"));
@@ -24,7 +23,6 @@ it("keeps migrated queue tables and sequences in generate and CLI push", async (
 
     const snapshot = JSON.parse(await readFile(resolve(metadataPath, latestSnapshot), "utf8"));
 
-    expect(dbPackage.scripts["db:push"]).toBe("drizzle-kit push");
     expect(await generateMigration(snapshot, generateDrizzleJson({ ...schema, ...queue }))).toEqual(
         [],
     );

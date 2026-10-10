@@ -13,14 +13,6 @@
 
 <svelte:head><title>Admin / Stoat</title></svelte:head>
 <div class="mx-auto w-full max-w-6xl space-y-4 pt-6">
-    <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-            Administration
-        </h1>
-        <p class="text-sm text-muted-foreground">
-            Instance overview and global configuration.
-        </p>
-    </div>
     <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {#each data.stats as stat (stat.title)}
             <Card>

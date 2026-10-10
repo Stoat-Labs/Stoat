@@ -316,6 +316,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
                                     State: { Running: true, Status: "running", OOMKilled: false },
                                     HostConfig: { Memory: 512, NanoCpus: 500000000 },
                                     Config: {
+                                        Image: "nginx:1.29",
                                         Labels: {
                                             "uncloud.service.ports": "app.example.com:80/http",
                                         },
@@ -396,6 +397,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
                 {
                     id: "abc",
                     name: "web-1",
+                    image: "nginx:1.29",
                     machineName: "Node",
                     running: true,
                     restarts: 3,

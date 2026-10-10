@@ -2,6 +2,7 @@
     import { page } from "$app/state";
     import CreateConnectionDialog from "$lib/components/s3/create-connection-dialog.svelte";
     import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertDescription,
@@ -41,6 +42,8 @@
 
     let ready = $state(false);
 
+    useHeaderActions(connectionActions);
+
     onMount(() => {
         ready = true;
 
@@ -56,23 +59,16 @@
 
 <svelte:head><title>S3 connections / Stoat</title></svelte:head>
 
-<div class="flex w-full flex-col gap-6 pt-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-semibold">S3 connections</h1>
-            <p class="mt-1 text-sm text-muted-foreground">
-                Provider accounts that projects provision buckets
-                from.
-            </p>
-        </div>
-        {#if page.data.isOrganizationAdmin}
-            <Button disabled={!ready} onclick={openCreate}>
-                <Plus aria-hidden="true" />
-                Add connection
-            </Button>
-        {/if}
-    </div>
+{#snippet connectionActions()}
+    {#if page.data.isOrganizationAdmin}
+        <Button size="sm" disabled={!ready} onclick={openCreate}>
+            <Plus aria-hidden="true" />
+            Add connection
+        </Button>
+    {/if}
+{/snippet}
 
+<div class="flex w-full flex-col gap-6 pt-6">
     {#if listQuery.isError}
         <Alert variant="error">
             <AlertDescription>

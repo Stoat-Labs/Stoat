@@ -27,14 +27,6 @@
 
 <svelte:head><title>System Settings / Stoat</title></svelte:head>
 <div class="mx-auto w-full max-w-6xl space-y-4 pt-6">
-    <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-            System Settings
-        </h1>
-        <p class="text-sm text-muted-foreground">
-            Global configuration for the Stoat instance.
-        </p>
-    </div>
     <Card class="w-full max-w-3xl">
         <CardHeader>
             <CardTitle>General Settings</CardTitle>

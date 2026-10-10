@@ -114,8 +114,10 @@ export function postgresMetricQueries(
     // Template databases are never connected to and only add noise to sizes.
     const databases = `${scope},datname!~"template.*"`;
     const window = `${Math.max(60, step * 2)}s`;
+
     const rate = (metric: string) =>
         `sum by (machine_id) (rate(${metric}{${databases}}[${window}]))`;
+
     const blocks = `${rate("pg_stat_database_blks_hit")} + ${rate("pg_stat_database_blks_read")}`;
 
     return {
@@ -150,6 +152,8 @@ export function counterTotalQuery(query: string, duration: number) {
 export type ObservabilityContainer = {
     id: string;
     name: string;
+    /** The image reference as written in the Compose file, e.g. `postgres:18-alpine`. */
+    image: string;
     machineId: string;
     machineName: string;
     running: boolean;
@@ -168,6 +172,27 @@ export type ObservabilityService = {
     href: string | null;
     containers: ObservabilityContainer[];
 };
+
+/** Repository name without registry, namespace, tag, or digest: `docker.io/library/postgres:18` → `postgres`. */
+function imageRepository(image: string) {
+    const [reference = ""] = image.split("@");
+
+    return reference.split("/").at(-1)?.split(":")[0] ?? "";
+}
+
+/** Postgres metrics exist when services run both a Postgres server and postgres-exporter next to it. */
+export function hasPostgresExporter(services: ObservabilityService[]) {
+    const repositories = new Set(
+        services.flatMap((service) =>
+            service.containers.map((container) => imageRepository(container.image)),
+        ),
+    );
+
+    return (
+        repositories.has("postgres") &&
+        (repositories.has("postgres-exporter") || repositories.has("postgres_exporter"))
+    );
+}
 
 export type ClusterObservability = {
     available: boolean;

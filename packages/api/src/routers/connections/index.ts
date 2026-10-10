@@ -291,6 +291,22 @@ export async function getGitConnection(
     return { url: selected, branch: validateGitBranch(requestedBranch), credentials };
 }
 
+// For background polling of a repository a resource is already bound to. Skips provider
+// discovery, which would call the provider API every tick; binding already checked the account.
+export async function getBoundGitRepository(
+    db: Database,
+    organizationId: string,
+    connectionId: string,
+    repositoryUrl: string,
+    branch: string,
+) {
+    const { credentials } = await db.transaction((tx) =>
+        accountConnection(tx, organizationId, connectionId),
+    );
+
+    return { url: validateGitUrl(repositoryUrl), branch: validateGitBranch(branch), credentials };
+}
+
 export const connectionsRouter = {
     oauthSetup: organizationAdminProcedure.handler(() => ({
         callbackUrl: getGitOAuthCallbackUrl(),

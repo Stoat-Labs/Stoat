@@ -18,6 +18,7 @@
     } from "@codemirror/language";
     import { tags } from "@lezer/highlight";
     import { onMount } from "svelte";
+    import { parseDocument } from "yaml";
 
     let {
         value = $bindable(""),
@@ -113,6 +114,21 @@
         return ranges.finish();
     }
 
+    // Invalid YAML is left untouched so formatting never destroys work in progress.
+    function formatYaml(editor: EditorView) {
+        const text = editor.state.doc.toString();
+        const document = parseDocument(text);
+
+        if (document.errors.length > 0) return;
+
+        const formatted = document.toString({ indent: 2 });
+
+        if (formatted === text) return;
+        editor.dispatch({
+            changes: { from: 0, to: text.length, insert: formatted },
+        });
+    }
+
     const envValues = StateField.define({
         create: envDecorations,
         update: (decorations, transaction) =>
@@ -162,6 +178,12 @@
                 EditorState.tabSize.of(2),
                 EditorView.contentAttributes.of({
                     "aria-label": label,
+                }),
+                EditorView.domEventHandlers({
+                    blur: (_event, editor) => {
+                        if (language === "yaml" && !readOnly)
+                            formatYaml(editor);
+                    },
                 }),
                 EditorView.updateListener.of((update) => {
                     if (update.docChanged)

@@ -34,7 +34,7 @@ import {
     DeployResource,
     InitializeCluster,
     JobStoreLive,
-    MonitoringWorkerLive,
+    monitoringWorkerLive,
     pollInitializationOutbox,
     queueResourceDeployment,
 } from "../../packages/workflows/src/runtime";
@@ -160,7 +160,7 @@ describe("resource deployment worker", () => {
         await db
             .insert(resources)
             .values({ id: resourceId, projectId, name: "Resource", draftSpec: spec });
-        worker = Effect.runPromise(Layer.launch(MonitoringWorkerLive), {
+        worker = Effect.runPromise(Layer.launch(monitoringWorkerLive(async () => {})), {
             signal: controller.signal,
         }).then(
             () => {},

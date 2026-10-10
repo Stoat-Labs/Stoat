@@ -10,6 +10,7 @@ const ttlSeconds = 10 * 60;
 export type CacheLayer = {
     getItem<T extends StorageValue>(key: string): Promise<T | null>;
     setItem<T extends StorageValue>(key: string, value: T): Promise<void>;
+    removeItem(key: string): Promise<void>;
     clear(): Promise<void>;
 };
 
@@ -54,6 +55,10 @@ export function createTwoLevel(shared?: CacheLayer): CacheLayer {
             await memory.setItem(key, value);
             // Memory stays the source of truth until the shared cache recovers.
             await useShared((layer) => layer.setItem(key, value));
+        },
+        async removeItem(key: string): Promise<void> {
+            await memory.removeItem(key);
+            await useShared((layer) => layer.removeItem(key));
         },
         async clear(): Promise<void> {
             await memory.clear();

@@ -95,6 +95,23 @@ describe("readSseMessages", () => {
         expect(await collect(readSseMessages(streamOf()))).toEqual([]);
     });
 
+    it("aborts a pending read when the signal fires", async () => {
+        const abort = new AbortController();
+
+        const stream = new ReadableStream<Uint8Array>({
+            start(streamController) {
+                streamController.enqueue(new TextEncoder().encode("data: first\n\n"));
+            },
+        });
+
+        const iterator = readSseMessages(stream, abort.signal);
+        const first = await iterator.next();
+        expect(first.value?.data).toBe("first");
+
+        abort.abort();
+        await expect(iterator.next()).rejects.toMatchObject({ name: "AbortError" });
+    });
+
     it("cancels the underlying stream when iteration stops early", async () => {
         const encoder = new TextEncoder();
         let cancelled = false;

@@ -104,9 +104,9 @@
             provider: (initial
                 ? parseAsStringLiteral([initial.provider])
                 : connectionFormParsers.provider
-            ).withDefault(initial?.provider ?? "github"),
+            ).withDefault(initial?.provider ?? "forgejo"),
             authMode: connectionFormParsers.authMode.withDefault(
-                initial?.authType ?? "token",
+                initial?.authType ?? "oauth",
             ),
             credentialType:
                 connectionFormParsers.credentialType.withDefault(

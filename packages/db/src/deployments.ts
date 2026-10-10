@@ -82,6 +82,21 @@ export async function cancelDeployment(db: Database, id: string) {
     return row ?? null;
 }
 
+/** Delete a settled deployment (logs cascade). Returns null while it is still active. */
+export async function deleteSettledDeployment(db: Database, id: string) {
+    const [row] = await db
+        .delete(deployments)
+        .where(
+            and(
+                eq(deployments.id, id),
+                inArray(deployments.status, ["ready", "failed", "cancelled"]),
+            ),
+        )
+        .returning({ id: deployments.id });
+
+    return row ?? null;
+}
+
 export async function appendDeploymentLog(
     db: Database,
     deploymentId: string,

@@ -108,3 +108,27 @@ export const HealthCheck: Job.Job<
         },
     },
 });
+
+const watchPayload = Schema.Struct({});
+
+// Polls Git-bound resources with auto-deploy on and deploys pushes to their watched directory.
+// Runs every minute from a schedule.
+export const WatchGitSources: Job.Job<
+    "WatchGitSources",
+    typeof watchPayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("WatchGitSources", {
+    payload: watchPayload,
+    success: Schema.Void,
+    queue: "git",
+    defaults: {
+        // The next tick is the retry.
+        attempts: 1,
+        timeout: "5 minutes",
+        keep: {
+            completed: { age: "1 hour" },
+            failed: { age: "7 days" },
+        },
+    },
+});

@@ -5,9 +5,11 @@ import { createDb } from "@stoat/db";
 import * as schema from "@stoat/db/schema/index";
 import {
     clusters,
+    deployments,
     gitConnections,
     organization,
     projects,
+    resourceDeploymentInputs,
     resources,
 } from "@stoat/db/schema/index";
 import { eq } from "drizzle-orm";
@@ -16,9 +18,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Context } from "../../packages/api/src/context";
 import * as git from "../../packages/api/src/git";
+import { gitBlobId } from "../../packages/api/src/git";
 import * as gitOAuth from "../../packages/api/src/git-oauth";
 import * as gitProvider from "../../packages/api/src/git-provider";
 import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
+import { watchGitSources } from "../../packages/api/src/git-watch";
 import { connectionsRouter } from "../../packages/api/src/routers/connections";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { resolveComposePath } from "../../packages/api/src/routers/resources/git";
@@ -28,12 +32,17 @@ const revision = "a".repeat(40);
 
 const nextRevision = "b".repeat(40);
 
+// Tree id of the watched directory; the fake Git never changes it.
+const tree = "c".repeat(40);
+
 const rawSpec =
     '# Preserve this comment and quoting\nservices:\n  web:\n    image: "nginx:alpine"\n';
 
 const draftSpec = rawSpec.replace("nginx:alpine", "nginx:stable");
 
 const deployedSpec = rawSpec.replace("nginx:alpine", "nginx:1.27");
+
+const pushed = { revision: nextRevision, blob: gitBlobId(draftSpec, nextRevision), tree };
 
 const credentials = { username: "git-test-user", password: "git-test-token-never-return" };
 
@@ -116,6 +125,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
     const list = vi.spyOn(git, "listGitFiles");
     const read = vi.spyOn(git, "readGitFile");
     const push = vi.spyOn(git, "pushGitFile");
+    const head = vi.spyOn(git, "readGitHead");
     const source = () => ({ connectionId, repositoryUrl, branch: "release", path: "deploy/" });
 
     const expectedSource = () => ({
@@ -259,8 +269,11 @@ describe("Git connections/resources (PostgreSQL)", () => {
             revision,
             path,
             content: rawSpec,
+            blob: gitBlobId(rawSpec, revision),
+            tree,
         }));
-        push.mockReset().mockResolvedValue({ revision: nextRevision });
+        push.mockReset().mockResolvedValue(pushed);
+        head.mockReset().mockResolvedValue(revision);
 
         for (const context of [adminContext, foreignContext]) {
             const clusterId = randomUUID();
@@ -298,6 +311,10 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     branch: "release",
                     path: "deploy/compose.yaml",
                     revision,
+                    blob: gitBlobId(rawSpec, revision),
+                    tree,
+                    autoDeploy: false,
+                    watchPath: "deploy",
                 },
             });
 
@@ -1206,6 +1223,10 @@ describe("Git connections/resources (PostgreSQL)", () => {
                                     branch: "release",
                                     path: "deploy/compose.yaml",
                                     revision,
+                                    blob: gitBlobId(rawSpec, revision),
+                                    tree,
+                                    autoDeploy: false,
+                                    watchPath: "deploy",
                                 },
                             })
                             .where(eq(resources.id, resourceId));
@@ -1232,6 +1253,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
                             revision: nextRevision,
                             path,
                             content: draftSpec,
+                            blob: gitBlobId(draftSpec, nextRevision),
+                            tree,
                         }));
                         const result = await operate();
                         expect(result).toMatchObject({
@@ -1239,7 +1262,11 @@ describe("Git connections/resources (PostgreSQL)", () => {
                             draftSpec,
                             spec: action === "create" ? null : deployedSpec,
                             gitConnectionId: oauthConnectionId,
-                            gitSource: { ...before.gitSource, revision: nextRevision },
+                            gitSource: {
+                                ...before.gitSource,
+                                revision: nextRevision,
+                                blob: gitBlobId(draftSpec, nextRevision),
+                            },
                         });
 
                         if (action !== "create") {
@@ -1284,6 +1311,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                             expect(read).toHaveBeenCalledExactlyOnceWith(
                                 repo,
                                 "deploy/compose.yaml",
+                                "deploy",
                             );
                             expect(push).not.toHaveBeenCalled();
                         }
@@ -1528,7 +1556,13 @@ describe("Git connections/resources (PostgreSQL)", () => {
             { context: memberContext },
         );
 
-        expect(file).toEqual({ revision, path: "deploy/compose.yaml", content: rawSpec });
+        expect(file).toEqual({
+            revision,
+            path: "deploy/compose.yaml",
+            content: rawSpec,
+            blob: gitBlobId(rawSpec, revision),
+            tree,
+        });
         expect(read).toHaveBeenCalledWith(
             { url: repositoryUrl, branch: "release", credentials },
             "deploy/compose.yaml",
@@ -1751,6 +1785,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
             revision: nextRevision,
             path: "deploy/compose.yaml",
             content: rawSpec,
+            blob: gitBlobId(rawSpec, nextRevision),
+            tree,
         });
 
         const imported = await call(
@@ -1768,11 +1804,16 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 branch: "release",
                 path: "deploy/compose.yaml",
                 revision: nextRevision,
+                blob: gitBlobId(rawSpec, nextRevision),
+                tree,
+                autoDeploy: false,
+                watchPath: "deploy",
             },
         });
         expect(read).toHaveBeenCalledWith(
             { url: repositoryUrl, branch: "release", credentials },
             "deploy/compose.yaml",
+            "deploy",
         );
         expect(
             (await db.select().from(resources).where(eq(resources.id, imported!.id)))[0],
@@ -1808,6 +1849,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
             revision: nextRevision,
             path: "deploy/compose.yaml",
             content: draftSpec,
+            blob: gitBlobId(draftSpec, nextRevision),
+            tree,
         });
 
         const pulled = await call(
@@ -1991,6 +2034,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
                             revision: nextRevision,
                             path: "deploy/compose.yaml",
                             content: rawSpec,
+                            blob: gitBlobId(rawSpec, nextRevision),
+                            tree,
                         });
                         await call(resourcesRouter.pullGitSource, target(), {
                             context: memberContext,
@@ -2170,6 +2215,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 expectedRevision: revision,
                 message: "Update Compose",
                 author: { name: "admin", email: "admin@example.test" },
+                watchPath: "deploy",
             },
         );
         expect(result).toMatchObject({
@@ -2216,7 +2262,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         };
 
         const result = await call(connectionsRouter.pushFile, input, { context: adminContext });
-        expect(result).toEqual({ revision: nextRevision });
+        expect(result).toEqual(pushed);
         expect(push).toHaveBeenCalledExactlyOnceWith(
             { url: repositoryUrl, branch: "release", credentials },
             expect.objectContaining({
@@ -2377,6 +2423,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 revision: nextRevision,
                 path: "deploy/compose.yaml",
                 content,
+                blob: gitBlobId(content, nextRevision),
+                tree,
             });
             await expect(
                 call(
@@ -2405,6 +2453,8 @@ describe("Git connections/resources (PostgreSQL)", () => {
             revision: nextRevision,
             path: "deploy/compose.yaml",
             content: "services: [",
+            blob: gitBlobId("services: [", nextRevision),
+            tree,
         });
 
         const result = await call(
@@ -2518,5 +2568,295 @@ describe("Git connections/resources (PostgreSQL)", () => {
         expect(await storedConnection()).toBeUndefined();
         expect(await storedResource()).toMatchObject({ draftSpec: rawSpec, spec: deployedSpec });
         expectNoGitIO();
+    });
+
+    describe("deploying a Git-bound draft", () => {
+        const resourceDeployments = () =>
+            db.select().from(deployments).where(eq(deployments.resourceId, resourceId));
+
+        it("commits unpushed draft changes, then deploys exactly what was pushed", async () => {
+            await db.update(resources).set({ draftSpec }).where(eq(resources.id, resourceId));
+
+            const result = await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId },
+                { context: adminContext },
+            );
+
+            expect(push).toHaveBeenCalledExactlyOnceWith(
+                { url: repositoryUrl, branch: "release", credentials },
+                {
+                    path: "deploy/compose.yaml",
+                    content: draftSpec,
+                    expectedRevision: revision,
+                    message: "Deploy Compose from Stoat",
+                    author: { name: "admin", email: "admin@example.test" },
+                    watchPath: "deploy",
+                },
+            );
+            expect((await storedResource()).gitSource).toMatchObject(pushed);
+            expect(await resourceDeployments()).toEqual([
+                expect.objectContaining({ id: result.id, spec: draftSpec }),
+            ]);
+        });
+
+        it("uses the given commit message", async () => {
+            await db.update(resources).set({ draftSpec }).where(eq(resources.id, resourceId));
+            await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId, message: "Bump nginx" },
+                { context: adminContext },
+            );
+
+            expect(push).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ message: "Bump nginx" }),
+            );
+        });
+
+        it("deploys a draft that matches Git without touching Git", async () => {
+            const before = await storedResource();
+            await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId },
+                { context: adminContext },
+            );
+
+            expectNoGitIO();
+            expect((await storedResource()).gitSource).toEqual(before.gitSource);
+            expect(await resourceDeployments()).toHaveLength(1);
+        });
+
+        it("queues nothing when the push is rejected", async () => {
+            await db.update(resources).set({ draftSpec }).where(eq(resources.id, resourceId));
+            const before = await storedResource();
+            push.mockRejectedValueOnce(new ORPCError("CONFLICT"));
+
+            await expect(
+                call(resourcesRouter.deploy, { projectId, resourceId }, { context: adminContext }),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+            expect(await storedResource()).toEqual(before);
+            expect(await resourceDeployments()).toEqual([]);
+        });
+
+        it("never pushes an invalid draft", async () => {
+            await db
+                .update(resources)
+                .set({ draftSpec: "services: [" })
+                .where(eq(resources.id, resourceId));
+
+            await expect(
+                call(resourcesRouter.deploy, { projectId, resourceId }, { context: adminContext }),
+            ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+            expect(push).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("watching Git for auto-deploy", () => {
+        const resourceDeployments = () =>
+            db.select().from(deployments).where(eq(deployments.resourceId, resourceId));
+
+        const watch = () => watchGitSources(db, new AbortController().signal);
+
+        beforeEach(async () => {
+            // Resources left by earlier tests stay in the database; watch only this one.
+            await db.$client.query(
+                "UPDATE resources SET git_source = jsonb_set(git_source, '{autoDeploy}', 'false') WHERE git_source IS NOT NULL",
+            );
+            const { gitSource } = await storedResource();
+            await db
+                .update(resources)
+                .set({ gitSource: { ...gitSource!, autoDeploy: true } })
+                .where(eq(resources.id, resourceId));
+        });
+
+        it("only checks the branch head while nothing was pushed", async () => {
+            const before = await storedResource();
+            await watch();
+
+            expect(head).toHaveBeenCalledTimes(1);
+            expect(read).not.toHaveBeenCalled();
+            expect(await storedResource()).toEqual(before);
+        });
+
+        it("pulls and deploys a push that changed the watched directory", async () => {
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            expect(read).toHaveBeenCalledWith(expect.anything(), "deploy/compose.yaml", "deploy");
+            expect(await storedResource()).toMatchObject({
+                draftSpec,
+                gitSource: {
+                    revision: nextRevision,
+                    blob: gitBlobId(draftSpec, nextRevision),
+                    tree: "d".repeat(40),
+                    autoDeploy: true,
+                },
+            });
+            expect(await resourceDeployments()).toEqual([
+                expect.objectContaining({ status: "queued", spec: draftSpec }),
+            ]);
+
+            // The pulled revision is now synced, so the next tick does nothing.
+            head.mockClear();
+            read.mockClear();
+            await watch();
+            expect(read).not.toHaveBeenCalled();
+            expect(await resourceDeployments()).toHaveLength(1);
+        });
+
+        it("deploys normally when another file in the watched directory changed", async () => {
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: rawSpec,
+                blob: gitBlobId(rawSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            const [deployment] = await resourceDeployments();
+            expect(deployment).toMatchObject({ status: "queued", spec: rawSpec });
+            expect(
+                (
+                    await db
+                        .select()
+                        .from(resourceDeploymentInputs)
+                        .where(eq(resourceDeploymentInputs.deploymentId, deployment!.id))
+                )[0],
+            ).toMatchObject({ recreate: false });
+        });
+
+        it("records pushes outside the watched directory without deploying", async () => {
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: rawSpec,
+                blob: gitBlobId(rawSpec, nextRevision),
+                tree,
+            });
+            await watch();
+
+            expect(await storedResource()).toMatchObject({
+                draftSpec: rawSpec,
+                gitSource: { revision: nextRevision },
+            });
+            expect(await resourceDeployments()).toEqual([]);
+        });
+
+        it("never overwrites a draft with unpushed changes", async () => {
+            const edited = rawSpec.replace("nginx:alpine", "nginx:edited");
+            await db
+                .update(resources)
+                .set({ draftSpec: edited })
+                .where(eq(resources.id, resourceId));
+            const before = await storedResource();
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            expect(await storedResource()).toEqual(before);
+            expect(await resourceDeployments()).toEqual([]);
+        });
+
+        it("retries on the next tick while a deployment is active", async () => {
+            await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId },
+                { context: adminContext },
+            );
+            const before = await storedResource();
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            expect(await storedResource()).toEqual(before);
+            expect(await resourceDeployments()).toHaveLength(1);
+        });
+
+        it("enables auto-deploy for a source bound before blobs and trees were recorded", async () => {
+            await db.$client.query(
+                "UPDATE resources SET git_source = git_source - 'blob' - 'tree' - 'autoDeploy' - 'watchPath' WHERE id = $1",
+                [resourceId],
+            );
+            await call(
+                resourcesRouter.setGitWatch,
+                { ...target(), autoDeploy: true, watchPath: "deploy/" },
+                { context: adminContext },
+            );
+
+            expect((await storedResource()).gitSource).toMatchObject({
+                blob: gitBlobId(rawSpec, revision),
+                tree,
+                autoDeploy: true,
+                watchPath: "deploy",
+            });
+
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            expect(await resourceDeployments()).toEqual([
+                expect.objectContaining({ spec: draftSpec }),
+            ]);
+        });
+
+        it("refuses to change auto-deploy while Git has unpulled commits", async () => {
+            const before = await storedResource();
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: rawSpec,
+                blob: gitBlobId(rawSpec, nextRevision),
+                tree,
+            });
+
+            await expect(
+                call(
+                    resourcesRouter.setGitWatch,
+                    { ...target(), autoDeploy: false, watchPath: "." },
+                    { context: adminContext },
+                ),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+            expect(await storedResource()).toEqual(before);
+        });
+
+        it("ignores resources with auto-deploy off", async () => {
+            const { gitSource } = await storedResource();
+            await db
+                .update(resources)
+                .set({ gitSource: { ...gitSource!, autoDeploy: false } })
+                .where(eq(resources.id, resourceId));
+            await watch();
+
+            expect(head).not.toHaveBeenCalled();
+        });
     });
 });

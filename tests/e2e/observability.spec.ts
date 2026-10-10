@@ -103,5 +103,5 @@ test("the admin area links to system settings", async ({ page }) => {
         .first()
         .click();
     await expect(page).toHaveURL(/\/admin\/settings$/u);
-    await expect(page.getByRole("heading", { name: "System Settings" })).toBeVisible();
+    await expect(page.getByText("General Settings")).toBeVisible();
 });

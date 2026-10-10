@@ -28,6 +28,10 @@ async function createOrganization(page: Page, name: string) {
     await expect(page.getByRole("heading", { name: "Create your organization" })).toBeVisible();
     await page.getByRole("textbox", { name: /^Name/u }).fill(name);
     await page.getByRole("button", { name: "Create organization" }).click();
+    // The owner is then offered an optional cluster step before the dashboard.
+    await expect(page).toHaveURL(/\/setup\?step=cluster$/u);
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await page.getByRole("link", { name: "Go to dashboard" }).click();
 }
 
 async function logIn(page: Page, email: string, password: string) {

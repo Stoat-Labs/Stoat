@@ -213,10 +213,6 @@
 {/snippet}
 
 <div class="w-full min-w-0 space-y-6 pt-6">
-    <p class="text-sm text-muted-foreground">
-        Connect Git server accounts and choose their repositories when
-        configuring resources.
-    </p>
     {#if connectionsQuery.isError}
         <Alert variant="error">
             <AlertDescription>

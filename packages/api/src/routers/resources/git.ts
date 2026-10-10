@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
 import { resources } from "@stoat/db/schema/index";
@@ -11,7 +12,7 @@ import {
     resourceMiddleware,
 } from "../..";
 import { formatComposeFile } from "../../compose";
-import { listGitFiles, pushGitFile, readGitFile, validateGitPath } from "../../git";
+import { gitBlobId, listGitFiles, pushGitFile, readGitFile, validateGitPath } from "../../git";
 import { getGitConnection, gitFilePath, gitMessage, gitRevision, gitText } from "../connections";
 
 export const gitSourceInput = v.object({
@@ -76,14 +77,35 @@ export async function loadGitCompose(
 
     const tree = await listGitFiles(repo);
     const path = resolveComposePath(source.path, tree.files);
-    const file = await readGitFile(repo, path);
+    const watchPath = posix.dirname(path);
+    const file = await readGitFile(repo, path, watchPath);
     validateCompose(file.content);
 
     return {
         draftSpec: file.content,
         gitConnectionId: source.connectionId,
-        gitSource: { repositoryUrl: repo.url, branch: repo.branch, path, revision: file.revision },
+        gitSource: {
+            repositoryUrl: repo.url,
+            branch: repo.branch,
+            path,
+            revision: file.revision,
+            blob: file.blob,
+            tree: file.tree,
+            autoDeploy: false,
+            watchPath,
+        },
     };
+}
+
+// The Git source of a draft with changes that are not committed yet, if any.
+export function unpushedGitSource(resource: typeof resources.$inferSelect) {
+    const { gitConnectionId: connectionId, gitSource: source, draftSpec: content } = resource;
+
+    if (!connectionId || !source || content === null) return null;
+
+    if (gitBlobId(content, source.revision) === source.blob) return null;
+
+    return { connectionId, source, content };
 }
 
 // Lock the row during network operations so a concurrent draft edit cannot be lost.
@@ -169,7 +191,7 @@ export const resourceGitRouter = {
                 source.branch,
             );
 
-            const file = await readGitFile(repo, source.path);
+            const file = await readGitFile(repo, source.path, resource.gitSource?.watchPath);
             validateCompose(file.content);
 
             return db.transaction(async (tx) => {
@@ -184,7 +206,12 @@ export const resourceGitRouter = {
                     .update(resources)
                     .set({
                         draftSpec: file.content,
-                        gitSource: { ...resource.gitSource, revision: file.revision },
+                        gitSource: {
+                            ...resource.gitSource,
+                            revision: file.revision,
+                            blob: file.blob,
+                            tree: file.tree,
+                        },
                     })
                     .where(eq(resources.id, resource.id))
                     .returning();
@@ -208,6 +235,68 @@ export const resourceGitRouter = {
                 return updated!;
             }),
         ),
+    setGitWatch: organizationAdminProcedure
+        .input(
+            v.object({
+                ...resourceEditInput,
+                autoDeploy: v.boolean(),
+                watchPath: v.pipe(v.string(), v.trim(), v.maxLength(4096)),
+            }),
+        )
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db, organizationId, resource }, input }) => {
+            assertComposeSnapshot(resource, input);
+
+            if (!input.expectedSource)
+                throw new ORPCError("BAD_REQUEST", { message: "This resource has no Git source." });
+            const source = input.expectedSource;
+            const directory = input.watchPath.replace(/\/+$/, "");
+
+            const watchPath =
+                directory === "" || directory === "." ? "." : validateGitPath(directory);
+
+            const repo = await getGitConnection(
+                db,
+                organizationId,
+                source.connectionId,
+                source.repositoryUrl,
+                source.branch,
+            );
+
+            // The watched tree is recorded at the synced revision, so newer commits are pulled first.
+            const file = await readGitFile(repo, source.path, watchPath);
+
+            if (file.revision !== source.revision)
+                throw new ORPCError("CONFLICT", {
+                    message: "Git has newer commits. Pull from Git before changing auto-deploy.",
+                });
+
+            return db.transaction(async (tx) => {
+                const resource = await lockedComposeResource(tx, input);
+
+                if (!resource.gitConnectionId || !resource.gitSource)
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This resource has no Git source.",
+                    });
+
+                const [updated] = await tx
+                    .update(resources)
+                    .set({
+                        gitSource: {
+                            ...resource.gitSource,
+                            autoDeploy: input.autoDeploy,
+                            watchPath,
+                            // Both are at the synced revision, checked above.
+                            blob: file.blob,
+                            tree: file.tree,
+                        },
+                    })
+                    .where(eq(resources.id, resource.id))
+                    .returning();
+
+                return updated!;
+            });
+        }),
     pushGitSource: organizationAdminProcedure
         .use(requireAuth)
         .input(
@@ -259,13 +348,14 @@ export const resourceGitRouter = {
                     expectedRevision: input.expectedRevision,
                     message: input.message,
                     author: { name: session.user.name, email: session.user.email },
+                    watchPath: resource.gitSource.watchPath,
                 });
 
                 const [updated] = await tx
                     .update(resources)
                     .set({
                         draftSpec: input.spec,
-                        gitSource: { ...resource.gitSource, revision: result.revision },
+                        gitSource: { ...resource.gitSource, ...result },
                     })
                     .where(eq(resources.id, resource.id))
                     .returning();

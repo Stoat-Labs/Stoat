@@ -1,5 +1,6 @@
 import { startWorker } from "@stoat/workflows/lifecycle";
-import { MonitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
+import { watchGitSources } from "@stoat/api/git-watch";
+import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
 import { JobStoreLive } from "@stoat/workflows/store";
 import { Effect, Layer } from "effect";
 
@@ -31,7 +32,7 @@ export function startMonitoringWorker() {
     }
 
     startWorker(
-        Layer.launch(MonitoringWorkerLive),
+        Layer.launch(monitoringWorkerLive(watchGitSources)),
         pollInitializationOutbox().pipe(Effect.provide(JobStoreLive)),
     );
 }

@@ -224,14 +224,16 @@ configs:
 
             // Exporters are found by service name: a `<name>-metrics` service runs in
             // containers named `/<name>-metrics-<4 random characters>` (Uncloud's format).
+            // postgres-exporter's default port 9187 is kept too, whatever its service is named.
             // Docker discovery only sees this machine's containers, so each exporter is
             // scraped once, at the port its image exposes on the Uncloud network.
             discovery.relabel "exporters" {
               targets = discovery.docker.containers.targets
 
               rule {
-                source_labels = ["__meta_docker_container_name"]
-                regex         = "/.+-metrics-[a-z0-9]{4}"
+                source_labels = ["__meta_docker_container_name", "__meta_docker_port_private"]
+                separator     = ";"
+                regex         = "/.+-metrics-[a-z0-9]{4};.*|.+;9187"
                 action        = "keep"
               }
 

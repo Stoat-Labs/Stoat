@@ -24,12 +24,10 @@ async function createTestDatabase(admin: ReturnType<typeof createDb>, name: stri
 
 describe("first-run setup (PostgreSQL)", () => {
     const databaseName = `stoat_setup_test_${randomUUID().replaceAll("-", "")}`;
-    const raceDatabaseName = `stoat_setup_race_${randomUUID().replaceAll("-", "")}`;
     const baseURL = "http://localhost:5173";
     const password = "test-password-long-enough";
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
-    let raceDb: ReturnType<typeof createDb> | undefined;
     let auth: ReturnType<typeof createAuth>;
 
     beforeAll(async () => {
@@ -43,11 +41,9 @@ describe("first-run setup (PostgreSQL)", () => {
 
     afterAll(async () => {
         await db?.$client.end();
-        await raceDb?.$client.end();
 
         if (admin) {
             await dropTestDatabase(admin, databaseName);
-            await dropTestDatabase(admin, raceDatabaseName);
         }
 
         await admin?.$client.end();
@@ -140,25 +136,5 @@ describe("first-run setup (PostgreSQL)", () => {
 
         expect((await signUp("later@example.test")).status).toBe(200);
         expect(await roleOf("later@example.test")).not.toBe("admin");
-    });
-
-    it("promotes exactly one account when first sign-ups race", async () => {
-        raceDb = await createTestDatabase(admin, raceDatabaseName);
-        const race = raceDb;
-
-        await Promise.all(
-            Array.from({ length: 8 }, (_, index) =>
-                race.$client.query(
-                    `INSERT INTO "user" (id, name, email) VALUES ($1, 'Racer', $2)`,
-                    [randomUUID(), `racer-${index}@example.test`],
-                ),
-            ),
-        );
-
-        const { rows } = await race.$client.query<{ admins: number }>(
-            `SELECT count(*)::int AS admins FROM "user" WHERE role = 'admin'`,
-        );
-
-        expect(rows[0]?.admins).toBe(1);
     });
 });

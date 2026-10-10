@@ -1,8 +1,20 @@
 <script lang="ts">
+    import { goto } from "$app/navigation";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import LogViewer from "$lib/components/shared/log-viewer.svelte";
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
+    import {
+        Dialog,
+        DialogContent,
+        DialogDescription,
+        DialogFooter,
+        DialogHeader,
+        DialogPanel,
+        DialogTitle,
+    } from "$lib/components/ui/dialog";
     import {
         Empty,
         EmptyDescription,
@@ -35,6 +47,7 @@
     import {
         parseAsBoolean,
         parseAsString,
+        parseAsStringLiteral,
         useQueryStates,
     } from "nuqs-svelte";
     import { untrack, tick } from "svelte";
@@ -51,7 +64,10 @@
 
     type ViewerRow = LogRow & { event?: string };
 
-    let { deploymentId }: { deploymentId: string } = $props();
+    let {
+        deploymentId,
+        backHref = "/deployments",
+    }: { deploymentId: string; backHref?: string } = $props();
 
     let deployment = $state<DeploymentEvent["deployment"] | null>(
         null,
@@ -71,6 +87,7 @@
             deploymentDebug: parseAsBoolean.withDefault(false),
             deploymentWrap: parseAsBoolean.withDefault(true),
             deploymentFollowing: parseAsBoolean.withDefault(true),
+            dialog: parseAsStringLiteral(["spec", "delete"]),
         },
         { shallow: true, scroll: false, history: "replace" },
     );
@@ -429,6 +446,33 @@
         }),
     );
 
+    const deleteMutationState = createMutation(() =>
+        orpc.cluster.deleteDeployment.mutationOptions({
+            onSuccess: async (_data, input) => {
+                queryClient.removeQueries({
+                    queryKey: orpc.cluster.getDeployment.queryKey({
+                        input: { deploymentId: input.deploymentId },
+                    }),
+                });
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listAllDeployments.key(),
+                });
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listDeployments.key(),
+                });
+                await goto(backHref);
+            },
+        }),
+    );
+
+    const canDelete = $derived(
+        cancelAllowed && !isActive && !!deployment,
+    );
+
+    function closeDialog() {
+        view.dialog.current = null;
+    }
+
     function cancelDeployment() {
         if (
             !deploymentId ||
@@ -443,6 +487,24 @@
 <svelte:head><title>{title} / Stoat</title></svelte:head>
 
 {#snippet cancelAction()}
+    {#if deployment?.spec}
+        <Button
+            variant="outline"
+            size="sm"
+            onclick={() => (view.dialog.current = "spec")}
+        >
+            View spec
+        </Button>
+    {/if}
+    {#if canDelete}
+        <Button
+            variant="destructive-outline"
+            size="sm"
+            onclick={() => (view.dialog.current = "delete")}
+        >
+            Delete deployment
+        </Button>
+    {/if}
     {#if canCancel}
         <Button
             variant="destructive-outline"
@@ -654,3 +716,51 @@
         </FramePanel>
     </Frame>
 </div>
+
+<Dialog
+    bind:open={
+        () => view.dialog.current === "spec",
+        (open) => {
+            if (!open) closeDialog();
+        }
+    }
+>
+    <DialogContent class="max-w-4xl">
+        <DialogHeader>
+            <DialogTitle>Deployment spec</DialogTitle>
+            <DialogDescription>
+                Read-only Compose spec captured when this deployment
+                was created.
+            </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+            <div class="h-[55vh] min-h-48 overflow-hidden rounded-xl">
+                <CodeEditor
+                    value={deployment?.spec ?? ""}
+                    label="Deployment spec"
+                    readOnly
+                />
+            </div>
+        </DialogPanel>
+        <DialogFooter>
+            <Button variant="outline" onclick={closeDialog}>
+                Close
+            </Button>
+        </DialogFooter>
+    </DialogContent>
+</Dialog>
+
+<ConfirmDialog
+    bind:open={
+        () => view.dialog.current === "delete",
+        (open) => {
+            if (!open) closeDialog();
+        }
+    }
+    title="Delete deployment?"
+    description="This permanently removes the deployment and its logs. Running services are not affected."
+    confirmLabel="Delete deployment"
+    pending={deleteMutationState.isPending}
+    error={deleteMutationState.error?.message ?? ""}
+    onconfirm={() => deleteMutationState.mutate({ deploymentId })}
+/>

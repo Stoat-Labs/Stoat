@@ -56,7 +56,12 @@ const containerInspect = z
         HostConfig: z
             .object({ Memory: z.number().optional(), NanoCpus: z.number().optional() })
             .nullish(),
-        Config: z.object({ Labels: z.record(z.string(), z.string()).nullish() }).nullish(),
+        Config: z
+            .object({
+                Image: z.string().optional(),
+                Labels: z.record(z.string(), z.string()).nullish(),
+            })
+            .nullish(),
     })
     .catch({});
 
@@ -179,6 +184,7 @@ function toContainer(
     return {
         id: container.Id ?? "",
         name: container.Name?.replace(/^\//u, "") ?? "",
+        image: container.Config?.Image ?? "",
         machineId,
         machineName,
         running: container.State?.Running ?? false,

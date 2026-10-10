@@ -3,6 +3,7 @@ import { cache, currentWindow, swr } from "@stoat/cache";
 import type { Database } from "@stoat/db";
 import {
     cancelDeployment as cancelDeploymentRow,
+    deleteSettledDeployment,
     getDeploymentWithLogs,
     listDeployments,
     watchDeployment,
@@ -168,6 +169,30 @@ export const deploymentsRouter = {
             return { id: cancelled.id, status: "cancelled" as const };
         }),
 
+    deleteDeployment: organizationAdminProcedure
+        .input(v.object({ deploymentId: v.pipe(v.string(), v.uuid()) }))
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [deployment] = await db
+                .select({ clusterId: deployments.clusterId })
+                .from(deployments)
+                .where(eq(deployments.id, input.deploymentId));
+
+            if (!deployment) throw new ORPCError("NOT_FOUND", { message: "Deployment not found." });
+            await requireOrgCluster(db, organizationId, deployment.clusterId);
+
+            const deleted = await deleteSettledDeployment(db, input.deploymentId);
+
+            if (!deleted) {
+                throw new ORPCError("CONFLICT", {
+                    message: "Cancel this deployment before deleting it.",
+                });
+            }
+
+            await cache.removeItem(`deployment:${input.deploymentId}`);
+
+            return { id: deleted.id };
+        }),
+
     listAllDeployments: organizationProcedure
         .input(
             v.optional(
@@ -184,7 +209,7 @@ export const deploymentsRouter = {
                 }),
             ),
         )
-        .handler(async ({ context: { db, organizationId }, input }) => {
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
             const status = input?.status ?? "all";
@@ -192,7 +217,7 @@ export const deploymentsRouter = {
             const projectId = input?.projectId ?? "";
 
             // New deployments expire the 15s window on their own; no manual bust needed.
-            return swr(
+            const page = await swr(
                 `deployments:list:${organizationId}:${status}:${limit}:${offset}:${resourceId}:${projectId}`,
                 currentWindow(),
                 async () => {
@@ -240,5 +265,8 @@ export const deploymentsRouter = {
                     return { items, total: row?.count ?? 0 };
                 },
             );
+
+            // The cached page is shared by the whole org, so the role is attached per request.
+            return { ...page, canDelete: canInitializeRole(organizationRole) };
         }),
 };

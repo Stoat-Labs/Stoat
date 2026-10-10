@@ -1,10 +1,11 @@
 /* eslint-disable no-control-regex -- Reject control bytes at Git and credential boundaries. */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { mkdtemp, opendir, rm, stat, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
@@ -628,10 +629,67 @@ export async function listGitFiles(
     }));
 }
 
+// Git's object id for this content, so a draft can be compared with a committed blob.
+export function gitBlobId(content: string, revision: string): string {
+    const data = Buffer.from(content);
+
+    return createHash(revision.length === 64 ? "sha256" : "sha1")
+        .update(`blob ${data.length}\0`)
+        .update(data)
+        .digest("hex");
+}
+
+// The tree id of a directory inside a commit or tree; "." is the root.
+async function directoryTree(run: Run, treeish: string, path: string): Promise<string> {
+    if (path === ".") {
+        const root = (await run(["rev-parse", "--verify", `${treeish}^{tree}`]))
+            .toString("utf8")
+            .trim();
+
+        if (!oidPattern.test(root)) throw new Error();
+
+        return root;
+    }
+
+    // Without -r, ls-tree prints the directory's own entry rather than its contents.
+    const output = await run(["ls-tree", "-z", treeish, "--", validateGitPath(path)]);
+    const match = /^040000 tree ([0-9a-f]{40}|[0-9a-f]{64})\t([^\0]*)\0/u.exec(
+        output.toString("utf8"),
+    );
+
+    if (!match || match[2] !== path)
+        throw new ORPCError("NOT_FOUND", { message: "Watched Git directory not found" });
+
+    return match[1]!;
+}
+
+// The branch head, without fetching any objects.
+export async function readGitHead(repo: GitRepository): Promise<string> {
+    const ref = `refs/heads/${validateGitBranch(repo.branch)}`;
+
+    return withRepository(
+        repo,
+        async (run, _revision, url) => {
+            const output = await run(["ls-remote", url, ref], undefined, 64 * 1024);
+
+            // ls-remote matches patterns by suffix, so compare the full ref name.
+            for (const line of output.toString("utf8").split("\n")) {
+                const [oid, name] = line.split("\t");
+
+                if (name === ref && oid && oidPattern.test(oid)) return oid;
+            }
+
+            throw new ORPCError("NOT_FOUND", { message: "Git branch not found" });
+        },
+        false,
+    );
+}
+
 export async function readGitFile(
     repo: GitRepository,
     path: string,
-): Promise<{ revision: string; path: string; content: string }> {
+    watchPath = posix.dirname(path),
+): Promise<{ revision: string; path: string; content: string; blob: string; tree: string }> {
     validateGitPath(path);
 
     return withRepository(repo, async (run, revision) => {
@@ -644,8 +702,9 @@ export async function readGitFile(
 
         if (entry.size > maxTextBytes) invalid("Git files must be at most 1 MiB");
         const content = text(await run(["cat-file", "blob", entry.oid], undefined, maxTextBytes));
+        const tree = await directoryTree(run, revision, watchPath);
 
-        return { revision, path, content };
+        return { revision, path, content, blob: entry.oid, tree };
     });
 }
 
@@ -657,9 +716,12 @@ export async function pushGitFile(
         expectedRevision: string;
         message: string;
         author: { name: string; email: string };
+        // Defaults to the directory of `path`.
+        watchPath?: string;
     },
-): Promise<{ revision: string }> {
+): Promise<{ revision: string; blob: string; tree: string }> {
     const path = validateGitPath(input.path);
+    const watchPath = input.watchPath ?? posix.dirname(path);
 
     if (!z.string().safeParse(input.content).success || !input.content.isWellFormed())
         invalid("Git file must be UTF-8 text");
@@ -701,6 +763,14 @@ export async function pushGitFile(
         if (existing && existing.mode !== "100644" && existing.mode !== "100755")
             invalid("Only regular Git files are supported");
 
+        // Identical content would only add an empty commit.
+        if (existing?.oid === gitBlobId(input.content, current))
+            return {
+                revision: current,
+                blob: existing.oid,
+                tree: await directoryTree(run, current, watchPath),
+            };
+
         if (tree.some((entry) => path.startsWith(`${entry.path}/`) && entry.mode !== "040000"))
             invalid("Git file parent is not a directory");
 
@@ -724,6 +794,7 @@ export async function pushGitFile(
         const treeId = (await run(["write-tree"])).toString("utf8").trim();
 
         if (!oidPattern.test(treeId)) throw new Error();
+        const watchTree = await directoryTree(run, treeId, watchPath);
 
         // The exact-OID lease below is safe only because current is the sole parent:
         // a successful push can only append, never replace the expected history.
@@ -749,6 +820,6 @@ export async function pushGitFile(
             `${revision}:refs/heads/${branch}`,
         ]);
 
-        return { revision };
+        return { revision, blob, tree: watchTree };
     });
 }

@@ -154,7 +154,9 @@ afterAll(() => {
 import {
     inspectGitRemote,
     listGitFiles,
+    gitBlobId,
     readGitFile,
+    readGitHead,
     pushGitFile,
     validateGitUrl,
     validateGitPath,
@@ -182,11 +184,13 @@ afterEach(() => {
 describe("Git validation", () => {
     it("exports only the requested runtime adapter and encryption functions", async () => {
         expect(Object.keys(await import("../../packages/api/src/git")).sort()).toEqual([
+            "gitBlobId",
             "inspectGitRemote",
             "isBlockedAddress",
             "listGitFiles",
             "pushGitFile",
             "readGitFile",
+            "readGitHead",
             "validateGitBranch",
             "validateGitPath",
             "validateGitUrl",
@@ -588,8 +592,63 @@ describe("Git plumbing and transport isolation", () => {
             revision: initial,
             path: "compose.yaml",
             content: "services:\n  web:\n    image: nginx\n",
+            blob: fixtureGit(["rev-parse", `${initial}:compose.yaml`]),
+            tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
         });
         expect(fixtureGit(["rev-parse", "refs/heads/main"])).not.toBe(initial);
+    });
+
+    it("hashes content exactly like Git, so drafts can be compared with committed blobs", () => {
+        for (const content of ["", "services:\n  web:\n    image: nginx\n", "\ufeffünïcode\n"])
+            expect(gitBlobId(content, initial)).toBe(
+                fixtureGit(["hash-object", "--stdin"], content),
+            );
+    });
+
+    it("reads the branch head without fetching objects", async () => {
+        expect(await readGitHead(repo)).toBe(initial);
+        expect(network.calls.some((call) => call.args.includes("fetch"))).toBe(false);
+        await expect(readGitHead({ ...repo, branch: "missing" })).rejects.toMatchObject({
+            code: "NOT_FOUND",
+        });
+    });
+
+    it("reports the watched directory's tree, which only changes when that directory does", async () => {
+        const watched = await readGitFile(repo, "compose.yaml", "dir");
+        expect(watched.tree).toBe(fixtureGit(["rev-parse", `${initial}:dir`]));
+
+        addFixture("bin/other.sh", "unrelated\n");
+        commitFixture(initial);
+        expect((await readGitFile(repo, "compose.yaml", "dir")).tree).toBe(watched.tree);
+
+        await expect(readGitFile(repo, "compose.yaml", "missing")).rejects.toMatchObject({
+            code: "NOT_FOUND",
+        });
+        // A file is not a directory, and a path prefix is not the directory itself.
+        await expect(readGitFile(repo, "compose.yaml", "compose.yaml")).rejects.toMatchObject({
+            code: "NOT_FOUND",
+        });
+        await expect(readGitFile(repo, "compose.yaml", "di")).rejects.toMatchObject({
+            code: "NOT_FOUND",
+        });
+    });
+
+    it("pushes identical content as a no-op instead of an empty commit", async () => {
+        const result = await pushGitFile(repo, {
+            path: "compose.yaml",
+            content: "services:\n  web:\n    image: nginx\n",
+            expectedRevision: initial,
+            message: "Nothing changed",
+            author,
+        });
+
+        expect(result).toEqual({
+            revision: initial,
+            blob: fixtureGit(["rev-parse", `${initial}:compose.yaml`]),
+            tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
+        });
+        expect(fixtureGit(["rev-parse", "refs/heads/main"])).toBe(initial);
+        expect(network.calls.some((call) => call.args.includes("push"))).toBe(false);
     });
 
     it("reads literal paths and rejects missing, non-regular and binary files", async () => {
@@ -623,6 +682,9 @@ describe("Git plumbing and transport isolation", () => {
         expect(fixtureGit(["rev-parse", `${result.revision}^`])).toBe(initial);
         expect(fixtureGit(["show", "-s", "--format=%P", result.revision])).toBe(initial);
         expect(fixtureGit(["ls-tree", result.revision, "bin/run.sh"])).toMatch(/^100755 blob/u);
+        // The watched directory defaults to the file's own directory.
+        expect(result.blob).toBe(fixtureGit(["rev-parse", `${result.revision}:bin/run.sh`]));
+        expect(result.tree).toBe(fixtureGit(["rev-parse", `${result.revision}:bin`]));
         expect(fixtureGit(["show", `${result.revision}:compose.yaml`])).toContain("image: nginx");
         expect(fixtureGit(["show", "-s", "--format=%an <%ae>", result.revision])).toBe(
             "Test Author <test@example.com>",

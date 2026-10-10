@@ -46,8 +46,8 @@
         type MetricUnit,
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
-    import { databaseEngine } from "@stoat/api/databases";
     import {
+        hasPostgresExporter,
         httpMetricNames,
         postgresMetricNames,
         type MetricSeries,
@@ -89,21 +89,6 @@
 
     const clusterId = $derived(project.data?.clusterId ?? "");
 
-    const resource = createQuery(() =>
-        orpc.resources.getResource.queryOptions({
-            input: { projectId, resourceId },
-            enabled:
-                browser &&
-                projectId.length > 0 &&
-                resourceId.length > 0,
-        }),
-    );
-
-    const isPostgres = $derived(
-        !!resource.data &&
-            databaseEngine(resource.data) === "postgresql",
-    );
-
     const options = $derived({
         enabled: browser && clusterId.length > 0,
         refetchInterval:
@@ -122,16 +107,22 @@
     );
 
     // The services procedure already maps Uncloud services to the resource that deploys them.
-    const serviceIds = $derived([
-        ...new Set(
-            (services.data ?? []).flatMap((service) =>
+    const resourceServices = $derived(
+        (services.data ?? []).filter(
+            (service) =>
                 service.href ===
-                `/projects/${projectId}/${resourceId}`
-                    ? [service.id]
-                    : [],
-            ),
+                `/projects/${projectId}/${resourceId}`,
         ),
+    );
+
+    const serviceIds = $derived([
+        ...new Set(resourceServices.map((service) => service.id)),
     ]);
+
+    // Any resource running Postgres next to postgres-exporter, not only database resources.
+    const hasPostgres = $derived(
+        hasPostgresExporter(resourceServices),
+    );
 
     const metrics = createQueries(() => ({
         queries: names.map((name) =>
@@ -163,7 +154,7 @@
         ),
     }));
 
-    // The template's exporter service is one of this resource's services, so the same scope applies.
+    // The exporter service is one of this resource's services, so the same scope applies.
     const postgres = createQueries(() => ({
         queries: postgresMetricNames.map((name) =>
             orpc.cluster.getObservabilityMetric.queryOptions({
@@ -174,10 +165,7 @@
                     serviceIds,
                 },
                 ...options,
-                enabled:
-                    options.enabled &&
-                    isPostgres &&
-                    serviceIds.length > 0,
+                enabled: options.enabled && hasPostgres,
             }),
         ),
     }));
@@ -840,14 +828,13 @@
                         chart,
                     )}{/each}{/if}
         </div>
-        {#if isPostgres && postgres[0]?.isSuccess && !postgresCollecting}
+        {#if hasPostgres && postgres[0]?.isSuccess && !postgresCollecting}
             <Alert variant="info">
                 <AlertDescription>
-                    No database metrics yet. Databases created before
-                    metrics were added need the template's
-                    <code>postgres-metrics</code>
-                    service in their Compose file, and clusters initialized
-                    before then need monitoring re-initialized.
+                    No database metrics yet. They appear once
+                    monitoring scrapes the postgres-exporter service;
+                    clusters initialized before database metrics were
+                    added need monitoring re-initialized.
                 </AlertDescription>
             </Alert>
         {/if}

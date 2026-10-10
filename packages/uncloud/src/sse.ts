@@ -28,6 +28,7 @@ export type SseMessage = {
  */
 export async function* readSseMessages(
     stream: ReadableStream<Uint8Array>,
+    signal?: AbortSignal,
 ): AsyncGenerator<SseMessage, void, undefined> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -37,6 +38,23 @@ export async function* readSseMessages(
     let dataLines: string[] = [];
     let eventName: string | undefined;
     let lastId: string | undefined;
+
+    // A pending `read()` only rejects once the transport notices the abort, which
+    // can lag behind the signal. Race it so cancellation is prompt regardless.
+    let onAbort: (() => void) | undefined;
+
+    const aborted = signal
+        ? new Promise<never>((_, reject) => {
+              onAbort = () => reject(signal.reason);
+
+              if (signal.aborted) onAbort();
+              else signal.addEventListener("abort", onAbort, { once: true });
+          })
+        : undefined;
+
+    // The race below is the only consumer; keep a rejection from going unhandled
+    // when the stream ends first and this promise is abandoned.
+    aborted?.catch(() => {});
 
     const takeMessage = (): SseMessage | undefined => {
         if (dataLines.length === 0) {
@@ -100,7 +118,9 @@ export async function* readSseMessages(
 
     try {
         for (;;) {
-            const { done, value } = await reader.read();
+            const { done, value } = aborted
+                ? await Promise.race([reader.read(), aborted])
+                : await reader.read();
 
             if (done) {
                 streamEnded = true;
@@ -141,6 +161,8 @@ export async function* readSseMessages(
             yield trailing;
         }
     } finally {
+        if (onAbort) signal?.removeEventListener("abort", onAbort);
+
         try {
             if (!streamEnded) {
                 // Releasing the lock only hands the stream back to its owner; it
@@ -165,8 +187,9 @@ export async function* readSseMessages(
  */
 export async function* readSseJson<T>(
     stream: ReadableStream<Uint8Array>,
+    signal?: AbortSignal,
 ): AsyncGenerator<T, void, undefined> {
-    for await (const message of readSseMessages(stream)) {
+    for await (const message of readSseMessages(stream, signal)) {
         let parsed: unknown;
 
         try {

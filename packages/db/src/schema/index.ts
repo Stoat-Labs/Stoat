@@ -129,6 +129,13 @@ export type ResourceGitSource = {
     branch: string;
     path: string;
     revision: string;
+    // Object ids at `revision`: the Compose file's blob and the watched directory's tree.
+    // A draft whose blob id differs from `blob` has changes that are not in Git yet.
+    blob: string;
+    tree: string;
+    // Redeploy when a push changes the tree at `watchPath` ("." is the repository root).
+    autoDeploy: boolean;
+    watchPath: string;
 };
 
 export const resources = t.pgTable("resources", {

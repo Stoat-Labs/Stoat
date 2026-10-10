@@ -12,7 +12,13 @@ import { Cause, Effect, Layer } from "effect";
 import { createInitializeClusterHandler } from "./initialize-cluster";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
 import { runHealthCheck } from "./health-check";
-import { DeployResource, HealthCheck, InitializeCluster, ReconcileBucket } from "./jobs";
+import {
+    DeployResource,
+    HealthCheck,
+    InitializeCluster,
+    ReconcileBucket,
+    WatchGitSources,
+} from "./jobs";
 import { reconcileBucket } from "./reconcile-bucket";
 import { JobStoreLive, PgLive } from "./store";
 
@@ -195,14 +201,49 @@ export const HealthCheckLive = HealthCheck.toLayer(
     { concurrency: 1 },
 );
 
+type GitWatcher = (db: Database, signal: AbortSignal) => Promise<void>;
+
+// The watcher lives in @stoat/api (it needs Git and deploy logic), which depends on this package,
+// so the worker bootstrap passes it in.
+function watchGitSourcesLive(watch: GitWatcher) {
+    return WatchGitSources.toLayer(
+        () =>
+            Effect.callback<void>((resume, signal) => {
+                const attempt = (async () => {
+                    const db = createHandlerDb();
+
+                    try {
+                        await watch(db, signal);
+                    } finally {
+                        await db.$client.end();
+                    }
+                })().then(
+                    () => resume(Effect.void),
+                    (error) =>
+                        resume(
+                            Effect.die(
+                                error instanceof Error ? error : new Error("Git watch failed."),
+                            ),
+                        ),
+                );
+
+                return Effect.promise(() => attempt);
+            }),
+        { concurrency: 1 },
+    );
+}
+
 // Top of every hour, UTC.
 const HEALTH_CHECK_CRON = "0 * * * *";
+
+const GIT_WATCH_CRON = "* * * * *";
 
 // Upserted on startup. Each tick is claimed atomically, so it runs once across web replicas.
 export const SchedulesLive = JobSchedules.layer({
     group: "stoat",
     schedules: [
         JobSchedules.schedule(HealthCheck, "hourly", { cron: HEALTH_CHECK_CRON, payload: {} }),
+        JobSchedules.schedule(WatchGitSources, "minutely", { cron: GIT_WATCH_CRON, payload: {} }),
     ],
     // Schedules dropped from this list are removed after the grace window.
     removal: "group",
@@ -309,6 +350,7 @@ export const WorkerLive = Worker.layer({
         deploy: { concurrency: 4 },
         buckets: { concurrency: 2 },
         health: { concurrency: 1 },
+        git: { concurrency: 1 },
     },
     lockDuration: "10 minutes",
     // effect-mq also delivers cross-process cancellation on this heartbeat.
@@ -326,13 +368,16 @@ export const WorkerLive = Worker.layer({
     },
 });
 
-export const MonitoringWorkerLive = Layer.mergeAll(
-    InitializeClusterLive,
-    DeployResourceLive,
-    ReconcileBucketLive,
-    HealthCheckLive,
-    SchedulesLive,
-).pipe(Layer.provideMerge(WorkerLive), Layer.provideMerge(JobStoreLive));
+export function monitoringWorkerLive(watchGitSources: GitWatcher) {
+    return Layer.mergeAll(
+        InitializeClusterLive,
+        DeployResourceLive,
+        ReconcileBucketLive,
+        HealthCheckLive,
+        watchGitSourcesLive(watchGitSources),
+        SchedulesLive,
+    ).pipe(Layer.provideMerge(WorkerLive), Layer.provideMerge(JobStoreLive));
+}
 
 // Enqueue (or re-enqueue) initialization for a cluster. Idempotent per
 // (clusterId, requestId) via the job's idempotencyKey.

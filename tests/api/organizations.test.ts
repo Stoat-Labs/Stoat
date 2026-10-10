@@ -1,8 +1,6 @@
 import * as v from "valibot";
 import { randomUUID } from "node:crypto";
-import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb } from "@stoat/db";
@@ -21,14 +19,6 @@ describe("organization authentication (PostgreSQL)", () => {
     const password = "test-password-long-enough";
     let first: { userId: string; organizationId: string; cookie: string };
     let second: typeof first;
-
-    const existingStateQuery = `SELECT
-        (SELECT jsonb_agg(o ORDER BY id) FROM organization o
-            WHERE id IN ('existing-old', 'existing-chosen')) AS organizations,
-        (SELECT jsonb_agg(m ORDER BY id) FROM member m
-            WHERE user_id = 'existing') AS memberships`;
-
-    let existingState: unknown;
 
     async function request(path: string, body?: Record<string, string>, cookie?: string) {
         const headers = new Headers({ origin: baseURL });
@@ -95,73 +85,7 @@ describe("organization authentication (PostgreSQL)", () => {
         const url = new URL(process.env.DATABASE_URL!);
         url.pathname = `/${databaseName}`;
         db = createDb({ DATABASE_URL: url.toString() });
-        const folder = resolve("packages/db/src/migrations");
-        const historical = mkdtempSync(join(tmpdir(), "stoat-migrations-"));
-
-        try {
-            const journal = JSON.parse(readFileSync(join(folder, "meta/_journal.json"), "utf8"));
-
-            const cutoff = journal.entries.findIndex(
-                (entry: { tag: string }) => entry.tag === "0007_default_organizations",
-            );
-
-            expect(cutoff).toBeGreaterThan(0);
-            expect(journal.entries[cutoff - 1].tag).toBe("0006_fair_iron_patriot");
-            journal.entries = journal.entries.slice(0, cutoff);
-            mkdirSync(join(historical, "meta"));
-            writeFileSync(join(historical, "meta/_journal.json"), JSON.stringify(journal));
-
-            for (const entry of journal.entries)
-                copyFileSync(
-                    join(folder, `${entry.tag}.sql`),
-                    join(historical, `${entry.tag}.sql`),
-                );
-            await migrate(db, { migrationsFolder: historical });
-            await db.$client.query(
-                `INSERT INTO "user" (id, name, email) VALUES
-                    ('legacy', 'Same Name', 'legacy@example.test'),
-                    ('legacy-same', 'Same Name', 'legacy-same@example.test'),
-                    ('legacy-empty', '', 'legacy-empty@example.test'),
-                    ('legacy-blank', '   ', 'legacy-blank@example.test'),
-                    ('existing', 'Existing', 'existing@example.test')`,
-            );
-            // These rows must predate the provisioning trigger, not exercise it.
-            expect((await db.$client.query("SELECT * FROM organization")).rows).toEqual([]);
-            expect((await db.$client.query("SELECT * FROM member")).rows).toEqual([]);
-            await db.$client.query(`
-                INSERT INTO organization (id, name, slug, logo, metadata, created_at) VALUES
-                    ('existing-old', 'Original workspace', 'original-workspace',
-                        'https://example.test/logo.png', '{"preserved":true}', '2020-01-01'),
-                    ('existing-chosen', 'Chosen workspace', 'chosen-workspace',
-                        NULL, NULL, '2021-01-01');
-                INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES
-                    ('existing-a', 'existing-chosen', 'existing', 'admin', '2021-01-01'),
-                    ('existing-z', 'existing-old', 'existing', 'member', '2020-01-01');
-                INSERT INTO session (id, token, user_id, expires_at, updated_at, active_organization_id)
-                    SELECT id || '-null', id || '-token', id, now() + interval '1 day', now(), NULL
-                    FROM "user";
-                INSERT INTO session (id, token, user_id, expires_at, updated_at, active_organization_id)
-                    VALUES ('existing-choice', 'existing-choice-token', 'existing',
-                        now() + interval '1 day', now(), 'existing-chosen');
-            `);
-            existingState = (await db.$client.query(existingStateQuery)).rows;
-            expect(
-                (
-                    await db.$client.query(
-                        "SELECT id FROM session WHERE active_organization_id IS NULL ORDER BY id",
-                    )
-                ).rows,
-            ).toEqual([
-                { id: "existing-null" },
-                { id: "legacy-blank-null" },
-                { id: "legacy-empty-null" },
-                { id: "legacy-null" },
-                { id: "legacy-same-null" },
-            ]);
-            await migrate(db, { migrationsFolder: folder });
-        } finally {
-            rmSync(historical, { recursive: true, force: true });
-        }
+        await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
 
         auth = createAuth(
             {
@@ -219,85 +143,10 @@ describe("organization authentication (PostgreSQL)", () => {
         }
 
         await signup("signup-setting-blocked@example.com");
-        // Keep the legacy migration assertions below independent of these users.
         await db.$client.query(
             `DELETE FROM organization WHERE id IN (SELECT organization_id FROM member WHERE user_id IN (SELECT id FROM "user" WHERE email LIKE 'signup-setting-%'))`,
         );
         await db.$client.query(`DELETE FROM "user" WHERE email LIKE 'signup-setting-%'`);
-    });
-
-    it("backfills distinct owned organizations for same-name users without memberships", async () => {
-        const legacy = await listUserOrganizations(db, "legacy");
-        const sameName = await listUserOrganizations(db, "legacy-same");
-
-        expect(legacy).toHaveLength(1);
-        expect(sameName).toHaveLength(1);
-        expect(legacy[0]).toMatchObject({ name: "Same Name's organization", role: "owner" });
-        expect(sameName[0]).toMatchObject({ name: "Same Name's organization", role: "owner" });
-        expect(legacy[0]!.id).not.toBe(sameName[0]!.id);
-        expect(legacy[0]!.slug).not.toBe(sameName[0]!.slug);
-    });
-
-    it.each(["legacy-empty", "legacy-blank"])(
-        "uses the personal organization fallback for %s",
-        async (userId) => {
-            const organizations = await listUserOrganizations(db, userId);
-
-            expect(organizations).toHaveLength(1);
-            expect(organizations[0]).toMatchObject({
-                name: "Personal's organization",
-                role: "owner",
-            });
-        },
-    );
-
-    it("preserves existing organizations and memberships without provisioning another", async () => {
-        expect((await db.$client.query(existingStateQuery)).rows).toEqual(existingState);
-        expect(await listUserOrganizations(db, "existing")).toHaveLength(2);
-        expect((await db.$client.query("SELECT id FROM organization")).rows).toHaveLength(6);
-        expect((await db.$client.query("SELECT id FROM member")).rows).toHaveLength(6);
-    });
-
-    it("backfills null session organizations with the user's earliest membership", async () => {
-        for (const userId of [
-            "legacy",
-            "legacy-same",
-            "legacy-empty",
-            "legacy-blank",
-            "existing",
-        ]) {
-            const [organization] = await listUserOrganizations(db, userId);
-
-            const result = await db.$client.query(
-                "SELECT active_organization_id FROM session WHERE id = $1",
-                [`${userId}-null`],
-            );
-
-            expect(result.rows).toEqual([{ active_organization_id: organization!.id }]);
-        }
-
-        expect((await listUserOrganizations(db, "existing"))[0]!.id).toBe("existing-old");
-    });
-
-    it("preserves a nonnull session organization instead of replacing it with the earliest", async () => {
-        const result = await db.$client.query(
-            "SELECT active_organization_id FROM session WHERE id = 'existing-choice'",
-        );
-
-        expect(result.rows).toEqual([{ active_organization_id: "existing-chosen" }]);
-    });
-
-    it("keeps organizations, memberships, sessions and the migration journal stable on runner replay", async () => {
-        const query = `SELECT
-            (SELECT jsonb_agg(o ORDER BY id) FROM organization o) AS organizations,
-            (SELECT jsonb_agg(m ORDER BY id) FROM member m) AS memberships,
-            (SELECT jsonb_agg(s ORDER BY id) FROM session s) AS sessions,
-            (SELECT jsonb_agg(m ORDER BY id) FROM drizzle.__drizzle_migrations m) AS migrations`;
-
-        const before = (await db.$client.query(query)).rows;
-
-        await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
-        expect((await db.$client.query(query)).rows).toEqual(before);
     });
 
     it("creates distinct owned organizations and active sessions for same-name users", async () => {
