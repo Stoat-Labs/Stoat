@@ -696,16 +696,42 @@ export async function readGitFile(
         const entry = (await entries(run, revision)).find((item) => item.path === path);
 
         if (!entry) throw new ORPCError("NOT_FOUND", { message: "Git file not found" });
-
-        if (entry.mode !== "100644" && entry.mode !== "100755")
-            invalid("Only regular Git files are supported");
-
-        if (entry.size > maxTextBytes) invalid("Git files must be at most 1 MiB");
-        const content = text(await run(["cat-file", "blob", entry.oid], undefined, maxTextBytes));
+        const content = await readText(run, entry);
         const tree = await directoryTree(run, revision, watchPath);
 
         return { revision, path, content, blob: entry.oid, tree };
     });
+}
+
+/** Several text files from one snapshot of the branch head, keyed by path. */
+export async function readGitFiles(
+    repo: GitRepository,
+    paths: string[],
+): Promise<Record<string, string>> {
+    for (const path of paths) validateGitPath(path);
+
+    return withRepository(repo, async (run, revision) => {
+        const tree = await entries(run, revision);
+        const files: Record<string, string> = {};
+
+        for (const path of paths) {
+            const entry = tree.find((item) => item.path === path);
+
+            if (!entry) throw new ORPCError("NOT_FOUND", { message: `Git file ${path} not found` });
+            files[path] = await readText(run, entry);
+        }
+
+        return files;
+    });
+}
+
+async function readText(run: Run, entry: Entry): Promise<string> {
+    if (entry.mode !== "100644" && entry.mode !== "100755")
+        invalid("Only regular Git files are supported");
+
+    if (entry.size > maxTextBytes) invalid("Git files must be at most 1 MiB");
+
+    return text(await run(["cat-file", "blob", entry.oid], undefined, maxTextBytes));
 }
 
 export async function pushGitFile(

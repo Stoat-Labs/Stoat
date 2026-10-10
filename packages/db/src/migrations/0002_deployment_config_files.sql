@@ -1,0 +1,1 @@
+ALTER TABLE "resource_deployment_inputs" ADD COLUMN "config_files" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -124,6 +124,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
     const refresh = vi.spyOn(gitOAuth, "refreshGitOAuthCredentials");
     const list = vi.spyOn(git, "listGitFiles");
     const read = vi.spyOn(git, "readGitFile");
+    const readFiles = vi.spyOn(git, "readGitFiles");
     const push = vi.spyOn(git, "pushGitFile");
     const head = vi.spyOn(git, "readGitHead");
     const source = () => ({ connectionId, repositoryUrl, branch: "release", path: "deploy/" });
@@ -179,6 +180,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         expect(refresh).not.toHaveBeenCalled();
         expect(list).not.toHaveBeenCalled();
         expect(read).not.toHaveBeenCalled();
+        expect(readFiles).not.toHaveBeenCalled();
         expect(push).not.toHaveBeenCalled();
     }
 
@@ -272,6 +274,11 @@ describe("Git connections/resources (PostgreSQL)", () => {
             blob: gitBlobId(rawSpec, revision),
             tree,
         }));
+        readFiles
+            .mockReset()
+            .mockImplementation(async (_repo, paths) =>
+                Object.fromEntries(paths.map((path) => [path, `contents of ${path}`])),
+            );
         push.mockReset().mockResolvedValue(pushed);
         head.mockReset().mockResolvedValue(revision);
 
@@ -2639,6 +2646,75 @@ describe("Git connections/resources (PostgreSQL)", () => {
             expect(await resourceDeployments()).toEqual([]);
         });
 
+        const configSpec = `${rawSpec}configs:\n  site:\n    file: ./site.css\n  nginx:\n    file: conf/nginx.conf\n  absolute:\n    file: /etc/stoat.conf\n`;
+
+        const deploymentInput = async (deploymentId: string) =>
+            (
+                await db
+                    .select()
+                    .from(resourceDeploymentInputs)
+                    .where(eq(resourceDeploymentInputs.deploymentId, deploymentId))
+            )[0];
+
+        it("ships relative config files from the Compose file's Git directory", async () => {
+            await db
+                .update(resources)
+                .set({
+                    draftSpec: configSpec,
+                    gitSource: {
+                        ...(await storedResource()).gitSource!,
+                        blob: gitBlobId(configSpec, revision),
+                    },
+                })
+                .where(eq(resources.id, resourceId));
+
+            const result = await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId },
+                { context: adminContext },
+            );
+
+            expect(readFiles).toHaveBeenCalledExactlyOnceWith(
+                { url: repositoryUrl, branch: "release", credentials },
+                ["deploy/site.css", "deploy/conf/nginx.conf"],
+            );
+            expect(push).not.toHaveBeenCalled();
+            expect(await deploymentInput(result.id)).toMatchObject({
+                configFiles: {
+                    "./site.css": "contents of deploy/site.css",
+                    "conf/nginx.conf": "contents of deploy/conf/nginx.conf",
+                },
+            });
+        });
+
+        it("rejects config files outside the repository or missing from Git", async () => {
+            for (const [file, failure] of [
+                ["../../secret.txt", undefined],
+                [
+                    "missing.css",
+                    new ORPCError("NOT_FOUND", { message: "Git file missing.css not found" }),
+                ],
+            ] as const) {
+                if (failure) readFiles.mockRejectedValueOnce(failure);
+                await db
+                    .update(resources)
+                    .set({ draftSpec: `${rawSpec}configs:\n  x:\n    file: ${file}\n` })
+                    .where(eq(resources.id, resourceId));
+
+                await expect(
+                    call(
+                        resourcesRouter.deploy,
+                        { projectId, resourceId },
+                        { context: adminContext },
+                    ),
+                ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+            }
+
+            expect(readFiles).toHaveBeenCalledOnce();
+            expect(push).not.toHaveBeenCalled();
+            expect(await resourceDeployments()).toEqual([]);
+        });
+
         it("never pushes an invalid draft", async () => {
             await db
                 .update(resources)
@@ -2733,6 +2809,50 @@ describe("Git connections/resources (PostgreSQL)", () => {
                         .where(eq(resourceDeploymentInputs.deploymentId, deployment!.id))
                 )[0],
             ).toMatchObject({ recreate: false });
+        });
+
+        it("deploys pushed config files, or only pulls when one is missing", async () => {
+            const configSpec = `${rawSpec}configs:\n  site:\n    file: site.css\n`;
+
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                path: "deploy/compose.yaml",
+                content: configSpec,
+                blob: gitBlobId(configSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            readFiles.mockRejectedValueOnce(
+                new ORPCError("NOT_FOUND", { message: "Git file deploy/site.css not found" }),
+            );
+            await watch();
+
+            expect(await storedResource()).toMatchObject({
+                draftSpec: configSpec,
+                gitSource: { revision: nextRevision },
+            });
+            expect(await resourceDeployments()).toEqual([]);
+
+            // Committing the file changes the tree again, so the next tick deploys it.
+            head.mockResolvedValue("e".repeat(40));
+            read.mockResolvedValue({
+                revision: "e".repeat(40),
+                path: "deploy/compose.yaml",
+                content: configSpec,
+                blob: gitBlobId(configSpec, "e".repeat(40)),
+                tree: "f".repeat(40),
+            });
+            await watch();
+
+            const [deployment] = await resourceDeployments();
+            expect(
+                (
+                    await db
+                        .select()
+                        .from(resourceDeploymentInputs)
+                        .where(eq(resourceDeploymentInputs.deploymentId, deployment!.id))
+                )[0],
+            ).toMatchObject({ configFiles: { "site.css": "contents of deploy/site.css" } });
         });
 
         it("records pushes outside the watched directory without deploying", async () => {

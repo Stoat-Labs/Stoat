@@ -2,6 +2,7 @@ import * as v from "valibot";
 import YAML from "yaml";
 
 export {
+    composeConfigFiles,
     formatComposeFile,
     resourceComposePrefix,
     resourceEnv,

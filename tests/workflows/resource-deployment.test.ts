@@ -279,6 +279,38 @@ describe("resource deployment worker", () => {
         expect(jobs.rows).toEqual([{ payload: { deploymentId: id }, attempts_max: 1 }]);
     });
 
+    it("inlines Git config files after interpolation", async () => {
+        const id = randomUUID();
+
+        const configSpec = `${spec}configs:\n  nginx:\n    file: ./nginx.conf\n`;
+
+        await db.transaction(async (tx) => {
+            await tx.insert(deployments).values({
+                id,
+                jobId: id,
+                clusterId,
+                resourceId,
+                name: "DeployResource",
+                spec: configSpec,
+            });
+            await tx.insert(resourceDeploymentInputs).values({
+                deploymentId: id,
+                prefix: "project-resource",
+                configFiles: { "./nginx.conf": "proxy_set_header Host $host;\n" },
+            });
+        });
+
+        await queueResourceDeployment(id);
+        expect((await terminal(id)).status).toBe("ready");
+
+        const compose = parse(Buffer.from(JSON.parse(requestBody).compose, "base64").toString());
+
+        // `$$` reaches Uncloud, which unescapes it to the literal `$host`.
+        expect(compose.configs).toEqual({
+            "project-resource-nginx": { content: "proxy_set_header Host $$host;\n" },
+        });
+    });
+
     it("recovers a queued snapshot through the existing idempotent outbox sweep", async () => {
         const id = await snapshot();
         await Effect.runPromise(pollInitializationOutbox().pipe(Effect.provide(JobStoreLive)));

@@ -40,6 +40,7 @@ import {
     uncloudMiddleware,
 } from "../..";
 import {
+    composeConfigFiles,
     composePublishedPorts,
     enablePostgresPort,
     formatComposeFile,
@@ -64,11 +65,11 @@ import {
     resourceGitRouter,
     unpushedGitSource,
 } from "./git";
-import { getGitConnection, gitMessage, gitText } from "../connections";
+import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
-import { insertResourceDeployment } from "../../resource-deployment";
+import { insertResourceDeployment, readComposeConfigFiles } from "../../resource-deployment";
 import { pushGitFile } from "../../git";
 
 // A deployable resource of the organization, with the cluster its project runs on.
@@ -125,6 +126,27 @@ export const resourcesRouter = {
                   )
                 : null;
 
+            // Config files come from the branch head; the draft's own changes are pushed below.
+            const gitSource = preview?.resource.gitSource;
+            const connectionId = preview?.resource.gitConnectionId;
+            const draft = preview?.resource.draftSpec;
+
+            const configFiles =
+                gitSource && connectionId && draft && composeConfigFiles(draft).length > 0
+                    ? await readComposeConfigFiles(
+                          repo ??
+                              (await getBoundGitRepository(
+                                  db,
+                                  organizationId,
+                                  connectionId,
+                                  gitSource.repositoryUrl,
+                                  gitSource.branch,
+                              )),
+                          gitSource.path,
+                          draft,
+                      )
+                    : {};
+
             const id = await db.transaction(async (tx) => {
                 const [row] = await deployTarget(tx, organizationId, input).for("update", {
                     of: resources,
@@ -140,6 +162,7 @@ export const resourcesRouter = {
                     resource,
                     clusterId,
                     input.recreate,
+                    configFiles,
                 );
 
                 const unpushed = unpushedGitSource(resource);

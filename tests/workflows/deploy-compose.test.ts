@@ -1,6 +1,6 @@
 import { ucClient } from "@stoat/uncloud";
 import { expect, it } from "vite-plus/test";
-import { deployCompose } from "../../packages/workflows/src/deploy-compose";
+import { deployCompose, environmentCredentials } from "../../packages/workflows/src/deploy-compose";
 
 it("keeps diagnostics while masking merged, list, multiline, URL and overlapping credentials", async () => {
     const secrets = [
@@ -15,7 +15,8 @@ it("keeps diagnostics while masking merged, list, multiline, URL and overlapping
         "inline-secret",
     ];
 
-    const diagnostic = `Image pull failed: ${secrets.join("; ")}. Registry denied access.`;
+    // `production` sits under a non-credential key and is already public in the Compose file.
+    const diagnostic = `Image pull failed: ${secrets.join("; ")}. Registry denied access in production.`;
 
     const uc = ucClient("http://sidecar.test", {
         fetch: async () =>
@@ -30,7 +31,7 @@ it("keeps diagnostics while masking merged, list, multiline, URL and overlapping
     const compose = `
 x-env: &env
   PASSWORD: merge-secret
-  CERT: |-
+  TLS_KEY: |-
     line one
     line two
 services:
@@ -44,13 +45,13 @@ services:
         TOKEN: short-long
   db:
     image: postgres
-    environment: [TOKEN=list-secret, SMALL=x, PASS=short]
+    environment: [TOKEN=list-secret, SMALL_SECRET=x, PASS=short, NODE_ENV=production]
 secrets:
   key:
     content: inline-secret
 `;
 
-    const expected = `Image pull failed: ${secrets.map(() => "[REDACTED]").join("; ")}. Registry denied access.`;
+    const expected = `Image pull failed: ${secrets.map(() => "[REDACTED]").join("; ")}. Registry denied access in production.`;
 
     await expect(
         deployCompose(uc, compose, new AbortController().signal, async (text) => {
@@ -114,7 +115,7 @@ it("does not mask service names or values without letters or digits", async () =
     await expect(
         deployCompose(
             uc,
-            "services:\n  seafile-ai:\n    image: x\n    environment: [DB_USER=seafile, ROOT=/, PASS=data]\n",
+            "services:\n  seafile-ai:\n    image: x\n    environment: [DB_PASSWORD=seafile, ROOT_KEY=/, PASS=data]\n",
             new AbortController().signal,
             async (text) => {
                 logs.push(text);
@@ -126,7 +127,7 @@ it("does not mask service names or values without letters or digits", async () =
     ]);
 });
 
-it("masks only the given credentials when the environment is public", async () => {
+it("masks given credentials but not plain environment values", async () => {
     const error = "stoat-monitoring-alloy failed to reach monitoring with hunter2";
 
     const uc = ucClient("http://sidecar.test", {
@@ -141,17 +142,26 @@ it("masks only the given credentials when the environment is public", async () =
     await expect(
         deployCompose(
             uc,
-            "services:\n  alloy:\n    image: x\n    environment: [GREPTIME_USERNAME=stoat, GREPTIME_DB=monitoring, GREPTIME_PASSWORD=hunter2]\n",
+            "services:\n  alloy:\n    image: x\n    environment: [GREPTIME_USERNAME=stoat, GREPTIME_DB=monitoring, GREPTIME_URL=monitoring-alloy]\n",
             new AbortController().signal,
             async (text) => {
                 logs.push(text);
             },
             undefined,
             ["hunter2"],
-            undefined,
-            false,
-            false,
         ),
     ).rejects.toThrow();
     expect(logs).toEqual(["stoat-monitoring-alloy failed to reach monitoring with [REDACTED]"]);
+});
+
+it("masks whole values only under credential-like keys", () => {
+    expect(environmentCredentials("DB_PASSWORD", "hunter2")).toEqual(["hunter2"]);
+    expect(environmentCredentials("GITHUB_PAT", "ghp_x")).toEqual(["ghp_x"]);
+    expect(environmentCredentials("REPLICAS", "2")).toEqual([]);
+    expect(environmentCredentials("TAG", "1.27")).toEqual([]);
+    expect(environmentCredentials("PATH_PREFIX", "/app")).toEqual([]);
+    expect(environmentCredentials("DATABASE_URL", "postgres://app:p%40ss@db/app")).toEqual([
+        "p%40ss",
+        "p@ss",
+    ]);
 });

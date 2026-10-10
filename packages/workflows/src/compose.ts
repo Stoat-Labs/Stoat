@@ -4,6 +4,7 @@
 import YAML, { isAlias, isMap, isNode, isScalar, isSeq } from "yaml";
 import type { Node, YAMLMap } from "yaml";
 import { Predicate } from "effect";
+import { posix } from "node:path";
 import { parseEnv } from "node:util";
 import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 
@@ -565,6 +566,51 @@ export const resourceEnv = (resource: { settings: unknown }): string =>
     Predicate.isObject(resource.settings) && Predicate.isString(resource.settings.env)
         ? resource.settings.env
         : "";
+
+// Uncloud reads `configs.*.file` next to a temporary copy of the Compose file, so relative
+// paths never resolve. Git-backed resources ship those files with each deployment instead.
+function relativeConfigFiles(doc: YAML.Document) {
+    const configs = doc.get("configs", true);
+
+    if (!isMap(configs)) return [];
+
+    return configs.items.flatMap(({ value: config }) => {
+        const file = isMap(config) ? config.get("file", true) : undefined;
+
+        return isMap(config) &&
+            isScalar(file) &&
+            Predicate.isString(file.value) &&
+            !posix.isAbsolute(file.value)
+            ? [{ config, file: file.value }]
+            : [];
+    });
+}
+
+/** Relative `configs.*.file` paths, as written in the Compose file. */
+export function composeConfigFiles(compose: string): string[] {
+    return relativeConfigFiles(YAML.parseDocument(compose)).map(({ file }) => file);
+}
+
+/**
+ * Replaces each relative `configs.*.file` that has an entry in `files` with inline `content`.
+ * Run it after `interpolateCompose`: `$` is escaped so file contents (nginx `$host`) stay literal.
+ */
+export function inlineComposeConfigs(compose: string, files: Record<string, string>): string {
+    const doc = YAML.parseDocument(compose);
+    let inlined = false;
+
+    for (const { config, file } of relativeConfigFiles(doc)) {
+        if (!Object.hasOwn(files, file)) continue;
+        config.delete("file");
+        config.set(
+            "content",
+            (files[file] ?? "").replaceAll("$", () => "$$"),
+        );
+        inlined = true;
+    }
+
+    return inlined ? doc.toString() : compose;
+}
 
 export class ComposeVariableError extends Error {}
 

@@ -55,9 +55,25 @@ func emitDeployComposeEvent(
 	}
 }
 
+// secretEnvironment lists, per service, the environment keys that reference a secret.
+// Call it before compose.ResolveSecrets replaces the references with their values.
+func secretEnvironment(project *types.Project) map[string][]string {
+	keys := make(map[string][]string)
+	for name, service := range project.Services {
+		for key, value := range service.Environment {
+			if value != nil && strings.HasPrefix(*value, compose.SecretRefPrefix) {
+				keys[name] = append(keys[name], key)
+			}
+		}
+	}
+	return keys
+}
+
 // newDeployRedactor snapshots values after secret resolution, including partially
 // resolved environments on failure. It never re-reads files or re-runs commands.
-func newDeployRedactor(project *types.Project) func(string) string {
+// Plain environment values are left alone: they are already visible in the Compose
+// file, and masking them hides service names and other harmless words in logs.
+func newDeployRedactor(project *types.Project, secretKeys map[string][]string) func(string) string {
 	values := make(map[string]struct{})
 	add := func(value string) {
 		value = stripansi.Strip(value)
@@ -70,17 +86,11 @@ func newDeployRedactor(project *types.Project) func(string) string {
 	}
 	// Ambient process values (e.g. PWD=/ or SHLVL=1) must not corrupt diagnostics.
 	add(project.Environment["SIDECAR_TOKEN"])
-	for _, service := range project.Services {
-		for key, value := range service.Environment {
-			// These monitoring identifiers are intentionally public: Uncloud embeds
-			// them in resource names and progress IDs. Masking them makes otherwise
-			// useful deployment logs show up as "[REDACTED]" without protecting a
-			// credential.
-			switch key {
-			case "CUSTOMER_ID", "STOAT_MONITORING_CLUSTER_ID", "GREPTIME_USERNAME", "GREPTIME_DB", "GREPTIME_URL", "MONITORING_MACHINE":
-				continue
-			}
-			if value != nil {
+	for name, keys := range secretKeys {
+		for _, key := range keys {
+			// A reference that failed to resolve is still just the secret's name.
+			value := project.Services[name].Environment[key]
+			if value != nil && !strings.HasPrefix(*value, compose.SecretRefPrefix) {
 				add(*value)
 			}
 		}
@@ -276,8 +286,9 @@ func runComposeDeployment(
 	cli compose.Client,
 	composeDeploy *compose.Deployment,
 	events chan<- DeployComposeEvent,
+	redact func(string) string,
 ) {
-	emit := newDeployComposeEmitter(ctx, events, newDeployRedactor(composeDeploy.Project))
+	emit := newDeployComposeEmitter(ctx, events, redact)
 	plan, err := composeDeploy.Plan(ctx)
 	if err != nil {
 		emit(DeployComposeEvent{Type: "error", Error: err.Error()})

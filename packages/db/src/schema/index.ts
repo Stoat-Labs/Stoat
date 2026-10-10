@@ -287,6 +287,8 @@ export const resourceDeploymentInputs = t.pgTable("resource_deployment_inputs", 
     prefix: t.text("prefix").notNull(),
     env: t.text("env").notNull().default(""),
     recreate: t.boolean("recreate").notNull().default(false),
+    // Contents of relative `configs.*.file` paths read from Git, keyed as written in the Compose file.
+    configFiles: t.jsonb("config_files").$type<Record<string, string>>().notNull().default({}),
 });
 
 // Mirrors `S3ProviderId` in @stoat/s3; the check constraint below keeps the database honest.

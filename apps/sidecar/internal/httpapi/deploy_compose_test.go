@@ -53,10 +53,11 @@ func TestDeployComposeRedactsResolvedValuesAtEmission(t *testing.T) {
 			"content": {Content: "resolved-content"},
 		},
 	}
+	secretKeys := secretEnvironment(project)
 	require.NoError(t, compose.ResolveSecrets(ctx, project))
 	assert.Equal(t, "resolved-exec", *project.Services["app"].Environment["EXEC"])
 	project.Services["app"].Environment["UNSET"] = nil
-	redact := newDeployRedactor(project)
+	redact := newDeployRedactor(project, secretKeys)
 	events := make(chan DeployComposeEvent, 4)
 	emit := newDeployComposeEmitter(ctx, events, redact)
 	writer := newDeployProgressWriter(ctx, events)
@@ -102,20 +103,20 @@ func TestDeployComposeRedactsResolvedValuesAtEmission(t *testing.T) {
 	require.True(t, emit(DeployComposeEvent{Type: "complete", DeployStatus: "\x1b[32mdeployed resolved-env\x1b[0m"}))
 	assert.Equal(t, DeployComposeEvent{Type: "complete", DeployStatus: "deployed [REDACTED]"}, <-events)
 
-	assert.Equal(t, "resolved-env", newDeployRedactor(&types.Project{})("resolved-env"), "redaction is deployment-scoped")
-	serviceRedact := newDeployRedactor(&types.Project{Services: types.Services{"app": {Environment: types.Mapping{
-		"SHORT": "x", "ANSI": "\x1b[31mcolored-secret\x1b[0m",
-	}.ToMappingWithEquals()}}})
-	assert.Equal(t, "[REDACTED]", serviceRedact("x"))
-	assert.Equal(t, "[REDACTED]", serviceRedact("colored-secret"))
+	assert.Equal(t, "resolved-env", newDeployRedactor(&types.Project{}, nil)("resolved-env"), "redaction is deployment-scoped")
+	ansiRedact := newDeployRedactor(&types.Project{Services: types.Services{"app": {Environment: types.Mapping{
+		"ANSI": "\x1b[31mcolored-secret\x1b[0m",
+	}.ToMappingWithEquals()}}}, map[string][]string{"app": {"ANSI"}})
+	assert.Equal(t, "[REDACTED]", ansiRedact("colored-secret"))
+}
 
-	publicMonitoring := newDeployRedactor(&types.Project{Services: types.Services{"alloy": {Environment: types.Mapping{
-		"GREPTIME_USERNAME": "stoat", "GREPTIME_DB": "monitoring", "CUSTOMER_ID": "cluster-id",
-		"STOAT_MONITORING_CLUSTER_ID": "cluster-id", "SIDECAR_TOKEN": "private-token",
-	}.ToMappingWithEquals()}}})
-	assert.Equal(t, "stoat-monitoring-alloy cluster-id [REDACTED]", publicMonitoring(
-		"stoat-monitoring-alloy cluster-id private-token",
-	))
+func TestDeployComposeRedactorKeepsPlainEnvironment(t *testing.T) {
+	project := &types.Project{Services: types.Services{"rizz": {Name: "rizz", Environment: types.Mapping{
+		"APP_NAME": "rizz", "NODE_ENV": "production", "PORT": "3000",
+	}.ToMappingWithEquals()}}}
+	redact := newDeployRedactor(project, secretEnvironment(project))
+	const text = "convert compose service 'rizz' to service spec: production on port 3000"
+	assert.Equal(t, text, redact(text))
 }
 
 func TestDeployComposeRedactorIgnoresIncidentalProcessEnvironment(t *testing.T) {
@@ -126,14 +127,14 @@ func TestDeployComposeRedactorIgnoresIncidentalProcessEnvironment(t *testing.T) 
 		Secrets: types.Secrets{"credential": {Environment: "SECRET_SOURCE"}},
 	}
 	const diagnostic = "registry/image failed with exit code 1"
-	redact := newDeployRedactor(project)
+	redact := newDeployRedactor(project, nil)
 	assert.Equal(t, diagnostic, redact(diagnostic))
 	assert.Equal(t, "credentials: [REDACTED] [REDACTED]", redact("credentials: sidecar-token source-token"))
 
 	project.Secrets["short"] = types.SecretConfig{Environment: "SHLVL"}
-	assert.Equal(t, "registry/image failed with exit code [REDACTED]", newDeployRedactor(project)(diagnostic))
+	assert.Equal(t, "registry/image failed with exit code [REDACTED]", newDeployRedactor(project, nil)(diagnostic))
 	project.Secrets["short"] = types.SecretConfig{Environment: "PWD"}
-	assert.Equal(t, "registry[REDACTED]image failed with exit code 1", newDeployRedactor(project)(diagnostic))
+	assert.Equal(t, "registry[REDACTED]image failed with exit code 1", newDeployRedactor(project, nil)(diagnostic))
 }
 
 func TestDeployComposeSecretCommandFailureHidesCommandAndStderr(t *testing.T) {
@@ -146,16 +147,17 @@ func TestDeployComposeSecretCommandFailureHidesCommandAndStderr(t *testing.T) {
 			"command": "sh -c 'printf unknown-sensitive-output >&2; exit 3'",
 		}}},
 	}
+	secretKeys := secretEnvironment(project)
 	err := compose.ResolveSecrets(context.Background(), project)
 	require.ErrorContains(t, err, "unknown-sensitive-output")
-	redact := newDeployRedactor(project)
+	redact := newDeployRedactor(project, secretKeys)
 	want := "resolve secrets: get the value of secret 'vault': secret command failed (details withheld)"
 	assert.Equal(t, want, redact("resolve secrets: "+err.Error()))
-	assert.Equal(t, "earlier failure: [REDACTED]", redact("earlier failure: previous-secret"))
+	assert.Equal(t, "plain: previous-secret", redact("plain: previous-secret"), "plain values are not secrets")
 
 	// Plan calls ResolveSecrets too; its terminal error must use the same boundary.
 	events := make(chan DeployComposeEvent, 1)
-	runComposeDeployment(context.Background(), nil, &compose.Deployment{Project: project}, events)
+	runComposeDeployment(context.Background(), nil, &compose.Deployment{Project: project}, events, redact)
 	require.Len(t, events, 1)
 	assert.Equal(t, DeployComposeEvent{Type: "error", Error: want}, <-events)
 }
@@ -163,10 +165,13 @@ func TestDeployComposeSecretCommandFailureHidesCommandAndStderr(t *testing.T) {
 func TestDeployComposePlanFailureRedactsResolvedValues(t *testing.T) {
 	project := &types.Project{Services: types.Services{"app": {
 		Name: "app", PullPolicy: "\x1b[31mprivate-policy\x1b[0m",
-		Environment: types.Mapping{"TOKEN": "private-policy"}.ToMappingWithEquals(),
-	}}}
+		Environment: types.Mapping{"TOKEN": "secret://policy"}.ToMappingWithEquals(),
+	}}, Environment: types.Mapping{"POLICY": "private-policy"}, Secrets: types.Secrets{"policy": {Environment: "POLICY"}}}
+	secretKeys := secretEnvironment(project)
+	require.NoError(t, compose.ResolveSecrets(context.Background(), project))
 	events := make(chan DeployComposeEvent, 1)
-	runComposeDeployment(context.Background(), nil, &compose.Deployment{Project: project}, events)
+	runComposeDeployment(context.Background(), nil, &compose.Deployment{Project: project}, events,
+		newDeployRedactor(project, secretKeys))
 	require.Len(t, events, 1)
 	assert.Equal(t, DeployComposeEvent{
 		Type: "error", Error: "convert compose service 'app' to service spec: unsupported pull policy: '[REDACTED]'",
@@ -193,8 +198,7 @@ services:
       MISSING: secret://missing-resolved-token
 `})
 	require.ErrorContains(t, err, "resolve secrets:")
-	assert.ErrorContains(t, err, "missing-[REDACTED]")
-	assert.NotContains(t, err.Error(), "resolved-token")
+	assert.ErrorContains(t, err, "secret 'missing-resolved-token' referenced via 'secret://missing-resolved-token'")
 
 	cause := status.Error(codes.Unavailable, "backend resolved-token")
 	safe := redactedDeployError{cause, "create compose deployment: backend [REDACTED]"}
@@ -208,7 +212,7 @@ func TestDeployComposeRedactedWriterUnblocksOnCancellation(t *testing.T) {
 	defer cancel()
 	events := make(chan DeployComposeEvent)
 	writer := newDeployProgressWriter(ctx, events)
-	writer.emit = newDeployComposeEmitter(ctx, events, newDeployRedactor(&types.Project{}))
+	writer.emit = newDeployComposeEmitter(ctx, events, newDeployRedactor(&types.Project{}, nil))
 	done := make(chan struct{})
 	go func() {
 		writer.Events([]progress.Event{{ID: "first"}, {ID: "second"}})
@@ -220,4 +224,19 @@ func TestDeployComposeRedactedWriterUnblocksOnCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancelled deployment writer remained blocked")
 	}
+}
+
+// Stoat escapes `$` in inlined config files; Uncloud's interpolation must restore it.
+func TestComposeConfigContentUnescapesDollars(t *testing.T) {
+	project, err := compose.LoadProjectFromContent(context.Background(), `
+services:
+  web:
+    image: nginx
+    configs: [nginx]
+configs:
+  nginx:
+    content: "proxy_set_header Host $$host;"
+`)
+	require.NoError(t, err)
+	assert.Equal(t, "proxy_set_header Host $host;", project.Configs["nginx"].Content)
 }

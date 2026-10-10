@@ -11,6 +11,33 @@ export type DeploymentLogger = (
     event: string,
 ) => Promise<void>;
 
+// Values under these keys are credentials, e.g. a template's `POSTGRES_PASSWORD: {{ 32 }}`.
+// Others (`NODE_ENV=production`, `REPLICAS=2`, ports, image tags) stay readable in logs.
+const SECRET_KEY =
+    /pass|pwd|secret|token|key|salt|credential|auth|private|jwt|dsn|(?:^|_)pat(?:_|$)/iu;
+
+function urlPassword(value: string): string[] {
+    const password = URL.canParse(value) ? new URL(value).password : "";
+
+    if (!password) return [];
+
+    try {
+        return [password, decodeURIComponent(password)];
+    } catch {
+        // The literal credential is still masked if its escaping is invalid.
+        return [password];
+    }
+}
+
+/** What to mask for one variable: the whole value under a credential-like key, else only a URL password. */
+export function environmentCredentials(key: string, value: string): string[] {
+    return SECRET_KEY.test(key) ? [value] : urlPassword(value);
+}
+
+/**
+ * Deploys Compose through the sidecar, masking `credentials`, `secrets.*.content`, URL passwords
+ * and environment values under credential-like keys in every log line and error.
+ */
 export async function deployCompose(
     uc: UcClient,
     compose: string,
@@ -20,8 +47,6 @@ export async function deployCompose(
     credentials: string[] = [],
     onProgress: (percent: number) => Promise<void> = async () => {},
     recreate = false,
-    // Platform-owned stacks pass their real secrets as `credentials`; their other environment values are public names.
-    maskEnvironment = true,
 ) {
     const values = new Set<string>();
 
@@ -34,25 +59,17 @@ export async function deployCompose(
 
         if (value.trim()) values.add(stripVTControlCharacters(value.trim()));
 
-        if (URL.canParse(value)) {
-            const url = new URL(value);
+        for (const password of urlPassword(value)) values.add(password);
+    }
 
-            if (url.password) {
-                values.add(url.password);
-
-                try {
-                    values.add(decodeURIComponent(url.password));
-                } catch {
-                    // The literal credential is still masked if its escaping is invalid.
-                }
-            }
-        }
+    function addEnvironment(key: string, value: string) {
+        for (const credential of environmentCredentials(key, value)) add(credential);
     }
 
     for (const value of credentials) add(value);
     const config: unknown = parse(compose, { merge: true, maxAliasCount: 100 });
 
-    if (maskEnvironment && Predicate.isObject(config) && Predicate.isObject(config.services)) {
+    if (Predicate.isObject(config) && Predicate.isObject(config.services)) {
         for (const service of Object.values(config.services)) {
             if (!Predicate.isObject(service)) continue;
 
@@ -61,20 +78,21 @@ export async function deployCompose(
                 Predicate.isObject(service.build) ? service.build.args : undefined,
             ]) {
                 if (Predicate.isObject(environment) && !Array.isArray(environment)) {
-                    for (const value of Object.values(environment)) {
+                    for (const [key, value] of Object.entries(environment)) {
                         if (
                             Predicate.isString(value) ||
                             Predicate.isNumber(value) ||
                             Predicate.isBoolean(value)
                         )
-                            add(String(value));
+                            addEnvironment(key, String(value));
                     }
                 } else if (Array.isArray(environment)) {
                     for (const entry of environment) {
                         if (!Predicate.isString(entry)) continue;
                         const separator = entry.indexOf("=");
 
-                        if (separator !== -1) add(entry.slice(separator + 1));
+                        if (separator !== -1)
+                            addEnvironment(entry.slice(0, separator), entry.slice(separator + 1));
                     }
                 }
             }
@@ -112,7 +130,7 @@ export async function deployCompose(
     const redact = (text: string) => {
         const plain = stripVTControlCharacters(text);
 
-        // The sidecar also masks values resolved from secret:// and its own environment.
+        // The sidecar also masks values resolved from secret:// and its own token.
         return values.size ? plain.replace(secrets, "[REDACTED]") : plain;
     };
 

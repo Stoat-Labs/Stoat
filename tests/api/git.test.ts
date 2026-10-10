@@ -156,6 +156,7 @@ import {
     listGitFiles,
     gitBlobId,
     readGitFile,
+    readGitFiles,
     readGitHead,
     pushGitFile,
     validateGitUrl,
@@ -190,6 +191,7 @@ describe("Git validation", () => {
             "listGitFiles",
             "pushGitFile",
             "readGitFile",
+            "readGitFiles",
             "readGitHead",
             "validateGitBranch",
             "validateGitPath",
@@ -596,6 +598,21 @@ describe("Git plumbing and transport isolation", () => {
             tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
         });
         expect(fixtureGit(["rev-parse", "refs/heads/main"])).not.toBe(initial);
+    });
+
+    it("reads several files from one snapshot and rejects missing or non-regular ones", async () => {
+        expect(await readGitFiles(repo, ["compose.yaml", "bin/run.sh"])).toEqual({
+            "compose.yaml": "services:\n  web:\n    image: nginx\n",
+            "bin/run.sh": "#!/bin/sh\nexit 42\n",
+        });
+        await expect(readGitFiles(repo, ["compose.yaml", "missing.css"])).rejects.toMatchObject({
+            code: "NOT_FOUND",
+            message: "Git file missing.css not found",
+        });
+        await expect(readGitFiles(repo, ["link"])).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        await expect(readGitFiles(repo, ["../outside"])).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+        });
     });
 
     it("hashes content exactly like Git, so drafts can be compared with committed blobs", () => {

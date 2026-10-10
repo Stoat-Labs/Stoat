@@ -624,8 +624,9 @@ func (b *clientBackend) DeployCompose(
 		}
 	}
 
+	secretKeys := secretEnvironment(project)
 	err = compose.ResolveSecrets(ctx, project)
-	redact := newDeployRedactor(project)
+	redact := newDeployRedactor(project, secretKeys)
 	if err != nil {
 		return nil, redactedDeployError{err, redact("resolve secrets: " + err.Error())}
 	}
@@ -643,7 +644,7 @@ func (b *clientBackend) DeployCompose(
 	events := make(chan DeployComposeEvent, 16)
 	go func() {
 		defer close(events)
-		runComposeDeployment(ctx, b.Client, composeDeploy, events)
+		runComposeDeployment(ctx, b.Client, composeDeploy, events, redact)
 	}()
 	return events, nil
 }

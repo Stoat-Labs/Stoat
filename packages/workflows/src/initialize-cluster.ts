@@ -46,9 +46,6 @@ export async function deployMonitoring(
         },
         services,
         credentials,
-        undefined,
-        false,
-        false,
     );
 }
 

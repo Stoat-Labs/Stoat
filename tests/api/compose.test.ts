@@ -6,7 +6,12 @@ import {
     rewriteComposeHostname,
     unformatComposeFile,
 } from "../../packages/api/src/compose";
-import { ComposeVariableError, interpolateCompose } from "../../packages/workflows/src/compose";
+import {
+    composeConfigFiles,
+    ComposeVariableError,
+    inlineComposeConfigs,
+    interpolateCompose,
+} from "../../packages/workflows/src/compose";
 
 describe("formatComposeFile", () => {
     it("prefixes compose service names with the given prefix", () => {
@@ -2146,5 +2151,47 @@ describe("interpolateCompose", () => {
                 "Required variable X is missing a value: need X. Set it in the resource's Variables.",
             ),
         );
+    });
+});
+
+describe("Compose config files", () => {
+    const compose = `services:
+  web:
+    image: nginx
+    configs: [site, nginx, absolute]
+configs:
+  site:
+    file: ./site.css
+  nginx:
+    file: conf/nginx.conf
+  absolute:
+    file: /etc/stoat.conf
+  inline:
+    content: kept
+`;
+
+    it("lists relative file paths as written", () => {
+        expect(composeConfigFiles(compose)).toEqual(["./site.css", "conf/nginx.conf"]);
+        expect(composeConfigFiles("services: {}\n")).toEqual([]);
+    });
+
+    it("inlines file contents with `$` kept literal, after prefixing still applies", () => {
+        const inlined = inlineComposeConfigs(compose, {
+            "./site.css": "body { color: red; }\n",
+            "conf/nginx.conf": "proxy_set_header Host $host;\n",
+        });
+
+        const formatted = formatComposeFile(inlined, "p").yaml;
+
+        expect(formatted).toContain("p-site:\n    content: |\n      body { color: red; }");
+        expect(formatted).toContain(
+            "p-nginx:\n    content: |\n      proxy_set_header Host $$host;",
+        );
+        expect(formatted).toContain("file: /etc/stoat.conf");
+        expect(formatted).not.toContain("site.css");
+    });
+
+    it("leaves files without contents untouched", () => {
+        expect(inlineComposeConfigs(compose, {})).toBe(compose);
     });
 });

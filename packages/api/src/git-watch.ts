@@ -5,7 +5,7 @@ import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { readGitFile, readGitHead } from "./git";
-import { insertResourceDeployment } from "./resource-deployment";
+import { insertResourceDeployment, readComposeConfigFiles } from "./resource-deployment";
 import { getBoundGitRepository } from "./routers/connections";
 import { unpushedGitSource } from "./routers/resources/git";
 
@@ -68,6 +68,16 @@ async function syncResource(
 
     const file = await readGitFile(repo, source.path, source.watchPath);
     const changed = file.blob !== source.blob || file.tree !== source.tree;
+    let configFiles: Record<string, string> | null = {};
+
+    if (changed) {
+        try {
+            configFiles = await readComposeConfigFiles(repo, source.path, file.content);
+        } catch (error) {
+            if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) throw error;
+            configFiles = null;
+        }
+    }
 
     return db.transaction(async (tx) => {
         const [locked] = await tx
@@ -105,8 +115,11 @@ async function syncResource(
             .where(eq(resources.id, resource.id))
             .returning();
 
+        // Like an invalid Compose file below: a config file that cannot be read stays undeployed.
+        if (!configFiles) return null;
+
         try {
-            return await insertResourceDeployment(tx, db, pulled!, clusterId, false);
+            return await insertResourceDeployment(tx, db, pulled!, clusterId, false, configFiles);
         } catch (error) {
             // An invalid Compose file stays pulled but undeployed, like a manual pull would.
             // Anything else (such as an active deployment) rolls back, so the next tick retries.

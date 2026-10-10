@@ -1,14 +1,16 @@
 import type { Database } from "@stoat/db";
 import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
 import { ucClient, unwrap } from "@stoat/uncloud";
+import { parseEnv } from "node:util";
 import { YAMLParseError } from "yaml";
 import {
     ComposeVariableError,
     formatComposeFile,
+    inlineComposeConfigs,
     interpolateCompose,
     resourceEnv,
 } from "./compose";
-import { deployCompose, DeploymentError } from "./deploy-compose";
+import { deployCompose, DeploymentError, environmentCredentials } from "./deploy-compose";
 import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
 
 export const RESOURCE_FAILURE_MESSAGE =
@@ -108,14 +110,16 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             step = "Formatting Compose snapshot.";
             await log(step);
             let spec: string;
+            let references: Record<string, string>;
 
             try {
+                references = resolveReferences(input.env, targets, domain, deployment.resourceId);
                 spec = interpolateCompose(
                     deployedSpec,
                     input.env,
                     input.prefix ?? undefined,
                     domain,
-                    resolveReferences(input.env, targets, domain, deployment.resourceId),
+                    references,
                 );
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;
@@ -123,7 +127,10 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 throw new DeploymentError(error.message);
             }
 
-            const compose = formatComposeFile(spec, input.prefix ?? undefined);
+            const compose = formatComposeFile(
+                inlineComposeConfigs(spec, input.configFiles),
+                input.prefix ?? undefined,
+            );
 
             if (compose.serviceCount === 0) {
                 const reason = "Compose file defines no services.";
@@ -150,7 +157,21 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 signal,
                 log,
                 undefined,
-                [cluster.sidecarToken],
+                // `.env` and referenced values may not appear in the Compose environment,
+                // e.g. `image: app:${TAG}`, so they get the same key-based masking here.
+                [
+                    cluster.sidecarToken,
+                    ...Object.entries(parseEnv(input.env)).flatMap(([key, value = ""]) =>
+                        environmentCredentials(key, value),
+                    ),
+                    // Reference keys are `<resourceId>.<KEY>`.
+                    ...Object.entries(references).flatMap(([reference, value]) =>
+                        environmentCredentials(
+                            reference.slice(reference.lastIndexOf(".") + 1),
+                            value,
+                        ),
+                    ),
+                ],
                 setProgress,
                 input.recreate,
             );
