@@ -28,8 +28,8 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local,required=fals
     --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
     export NODE_ENV=production APP_SECRET=build-only-secret-that-is-not-used-at-runtime APP_URL=http://localhost:3001 DATABASE_URL=postgresql://build:build@localhost:5432/build \
     && pnpm install --prod=false --offline --frozen-lockfile --store-dir /pnpm/store \
-    && pnpm --filter stoat build \
-    && pnpm deploy --filter stoat --prod /app/runtime --legacy
+    && pnpm --filter @stoat/stoat build \
+    && pnpm deploy --filter @stoat/stoat --prod /app/runtime --legacy
 
 FROM node:24-alpine AS runtime
 
