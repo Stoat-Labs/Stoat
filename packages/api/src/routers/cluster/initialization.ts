@@ -2,11 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { createDeployment } from "@stoat/db/deployments";
 import { clusterMonitoring, clusters, resources } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
-import {
-    GREPTIME_SERVICE,
-    GREPTIME_USERNAME,
-    MONITORING_DATABASE,
-} from "@stoat/workflows/monitoring-compose";
+import { GREPTIME_USERNAME, MONITORING_DATABASE } from "@stoat/workflows/monitoring-compose";
 import { sql } from "@stoat/workflows/greptime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, eq, inArray } from "drizzle-orm";
@@ -338,16 +334,8 @@ export const initializationRouter = {
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
             try {
-                const greptime = await unwrap(
-                    uc.GET("/api/v1/services/{id}", {
-                        params: { path: { id: GREPTIME_SERVICE } },
-                        signal: AbortSignal.timeout(30_000),
-                    }),
-                );
-
                 await sql(
                     uc,
-                    greptime,
                     password,
                     `ALTER DATABASE ${MONITORING_DATABASE} SET 'ttl'='${input.retentionDays}d'`,
                     AbortSignal.timeout(60_000),

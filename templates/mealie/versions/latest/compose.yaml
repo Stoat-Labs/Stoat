@@ -1,18 +1,29 @@
 services:
     mealie:
         image: ghcr.io/mealie-recipes/mealie:latest
-        container_name: mealie
         x-ports:
             - "${MEALIE_HOST}:9000/https"
         volumes:
             - mealie-data:/app/data/
         environment:
             ALLOW_SIGNUP: "false"
-            PUID: ${PUID}
-            PGID: ${PGID}
+            PUID: ${MEDIA_UID}
+            PGID: ${MEDIA_GID}
             TZ: ${TZ}
             BASE_URL: https://${MEALIE_HOST}
             ALLOW_PASSWORD_LOGIN: "false"
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/api/app/about')",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
 
 volumes:
     mealie-data:

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -578,6 +579,76 @@ func TestInternalMetricsProxy(t *testing.T) {
 	assert.Equal(t, "# HELP stoat_test_metric A test metric.\nstoat_test_metric 1\n", readBody(t, response))
 	assert.Equal(t, "http://10.210.0.1:51090/metrics", targetURL)
 	assert.Equal(t, "machine-1", fake.lastMachineID)
+}
+
+func TestServiceHTTPProxy(t *testing.T) {
+	var upstream *http.Request
+	var form url.Values
+	server, _ := newTestServerWithConfig(t, Config{
+		ServiceHTTPClient: &http.Client{
+			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				upstream = request
+				require.NoError(t, request.ParseForm())
+				form = request.PostForm
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"output":[]}`)),
+					Request:    request,
+				}, nil
+			}),
+		},
+	})
+
+	response := doRequest(t, server, http.MethodPost, "/api/v1/services/stoat-monitoring-greptimedb/http", ServiceHTTPRequest{
+		Port:    4000,
+		Path:    "/v1/sql?db=public",
+		Form:    map[string]string{"sql": "SELECT 1"},
+		Headers: map[string]string{"Authorization": "Basic c3RvYXQ6c2VjcmV0"},
+	}, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, ServiceHTTPResponse{Status: http.StatusOK, Body: `{"output":[]}`}, decodeResponse[ServiceHTTPResponse](t, response))
+	require.NotNil(t, upstream)
+	assert.Equal(t, http.MethodPost, upstream.Method)
+	assert.Equal(t, "http://stoat-monitoring-greptimedb.internal:4000/v1/sql?db=public", upstream.URL.String())
+	assert.Equal(t, "Basic c3RvYXQ6c2VjcmV0", upstream.Header.Get("Authorization"))
+	assert.Equal(t, "SELECT 1", form.Get("sql"))
+}
+
+func TestServiceHTTPProxyCapsBodyAndHidesErrors(t *testing.T) {
+	failing := true
+	server, _ := newTestServerWithConfig(t, Config{
+		ServiceHTTPClient: &http.Client{
+			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if failing {
+					return nil, errors.New("dial " + request.URL.String())
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", maxExecOutputBytes+1))),
+					Request:    request,
+				}, nil
+			}),
+		},
+	})
+	path := "/api/v1/services/greptime/http"
+
+	response := doRequest(t, server, http.MethodPost, path, ServiceHTTPRequest{Port: 4000, Path: "/secret-path"}, "")
+	assert.Equal(t, http.StatusBadGateway, response.StatusCode)
+	assert.NotContains(t, readBody(t, response), "secret-path")
+
+	failing = false
+	response = doRequest(t, server, http.MethodPost, path, ServiceHTTPRequest{Port: 4000, Path: "/"}, "")
+	result := decodeResponse[ServiceHTTPResponse](t, response)
+	assert.True(t, result.Truncated)
+	assert.Len(t, result.Body, maxExecOutputBytes)
+
+	for _, target := range []string{"no-slash", "//evil.example/x"} {
+		response = doRequest(t, server, http.MethodPost, path, ServiceHTTPRequest{Port: 4000, Path: target}, "")
+		assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode, target)
+	}
+
+	response = doRequest(t, server, http.MethodPost, "/api/v1/services/Bad.Name/http", ServiceHTTPRequest{Port: 4000, Path: "/"}, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 }
 
 func TestInternalMetricsRequiresLocalMachineID(t *testing.T) {

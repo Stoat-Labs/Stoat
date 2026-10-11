@@ -1095,16 +1095,8 @@ export const resourceLogsRouter = {
                     () => new Map<string, string>(),
                 );
 
-                const greptime = await unwrap(
-                    uc.GET("/api/v1/services/{id}", {
-                        params: { path: { id: GREPTIME_SERVICE } },
-                        signal: querySignal,
-                    }),
-                );
-
                 const columns = await greptimeSql(
                     uc,
-                    greptime,
                     password,
                     `SELECT column_name FROM information_schema.columns WHERE table_schema = '${MONITORING_DATABASE}' AND table_name = 'docker_logs'`,
                     querySignal,
@@ -1138,7 +1130,6 @@ export const resourceLogsRouter = {
                     try {
                         rows = await greptimeSql(
                             uc,
-                            greptime,
                             password,
                             `SELECT
                 CAST(greptime_timestamp AS STRING) AS timestamp, uncloud_service_id, "line", machine_id, container, ${stream} AS log_stream

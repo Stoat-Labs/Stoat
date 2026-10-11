@@ -792,12 +792,10 @@
             </EmptyHeader>
         </Empty>
     {:else if cluster.available}
-        <div
-            class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6"
-        >
+        <div class="flex flex-wrap gap-3">
             {#each summary as item (item.label)}
                 <div
-                    class="rounded-lg border p-3 {item.tone ===
+                    class="min-w-36 flex-1 rounded-lg border p-3 {item.tone ===
                     'error'
                         ? 'border-destructive/40'
                         : item.tone === 'warning'

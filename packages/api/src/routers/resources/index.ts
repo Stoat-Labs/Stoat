@@ -70,7 +70,7 @@ import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
 import { insertResourceDeployment, readComposeConfigFiles } from "../../resource-deployment";
-import { pushGitFile } from "../../git";
+import { pushGitFile, readGitHead } from "../../git";
 
 // A deployable resource of the organization, with the cluster its project runs on.
 function deployTarget(
@@ -102,6 +102,8 @@ export const resourcesRouter = {
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
                 recreate: v.optional(v.boolean(), false),
+                // Commit on top of the branch's current head instead of failing when it moved.
+                force: v.optional(v.boolean(), false),
                 // Commit message used when the draft has changes that are not in Git yet.
                 message: v.optional(gitMessage),
             }),
@@ -125,6 +127,8 @@ export const resourcesRouter = {
                       expected.source.branch,
                   )
                 : null;
+
+            const forcedRevision = repo && input.force ? await readGitHead(repo) : null;
 
             // Config files come from the branch head; the draft's own changes are pushed below.
             const gitSource = preview?.resource.gitSource;
@@ -187,7 +191,7 @@ export const resourcesRouter = {
                 const pushed = await pushGitFile(repo, {
                     path: source.path,
                     content: unpushed.content,
-                    expectedRevision: source.revision,
+                    expectedRevision: forcedRevision ?? source.revision,
                     message: input.message ?? `Deploy ${resource.name} from Stoat`,
                     author: { name: session.user.name, email: session.user.email },
                     watchPath: source.watchPath,

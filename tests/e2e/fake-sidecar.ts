@@ -94,7 +94,7 @@ type Reply =
     | StatusResponse
     | Service
     | { items: Machine[] | Service[] }
-    | { exitCode: number; truncated: boolean; stdout: string };
+    | { status: number; truncated: boolean; body: string };
 
 function json(response: ServerResponse, status: number, body: Reply) {
     response.writeHead(status, { "Content-Type": "application/json" });
@@ -102,15 +102,14 @@ function json(response: ServerResponse, status: number, body: Reply) {
 }
 
 /**
- * What GreptimeDB (reached through `curl` inside its container) answers. Initialization only
+ * What GreptimeDB (reached through the sidecar's HTTP proxy) answers. Initialization only
  * needs to see this machine reporting metrics and at least one log line; every other query
  * finds no data, so monitoring pages show their empty states.
  */
-function monitoringAnswer(command: string[]) {
-    const url = command.at(-1) ?? "";
-    const query = command.find((arg) => arg.startsWith("sql="))?.slice("sql=".length) ?? "";
+function monitoringAnswer(path: string, form: Record<string, string>) {
+    const query = form.sql ?? "";
 
-    if (url.includes("/prometheus/"))
+    if (path.includes("/prometheus/"))
         return { status: "success", data: { resultType: "matrix", result: [] } };
 
     const rows = query.includes("node_uname_info")
@@ -122,7 +121,10 @@ function monitoringAnswer(command: string[]) {
     return { code: 0, output: [{ records: { rows } }] };
 }
 
-const execSchema = v.object({ command: v.array(v.string()) });
+const monitoringSchema = v.object({
+    path: v.string(),
+    form: v.optional(v.record(v.string(), v.string()), {}),
+});
 
 /**
  * Just enough of the Uncloud sidecar for the app: cluster info, machines, a deploy stream
@@ -272,16 +274,16 @@ export async function startFakeSidecar() {
             );
         }
 
-        if (
-            request.method === "POST" &&
-            /^\/api\/v1\/services\/[^/]+\/containers\/[^/]+\/exec$/u.test(path)
-        ) {
-            const { command } = v.parse(execSchema, JSON.parse(Buffer.concat(chunks).toString()));
+        if (request.method === "POST" && /^\/api\/v1\/services\/[^/]+\/http$/u.test(path)) {
+            const { path: target, form } = v.parse(
+                monitoringSchema,
+                JSON.parse(Buffer.concat(chunks).toString()),
+            );
 
             return json(response, 200, {
-                exitCode: 0,
+                status: 200,
                 truncated: false,
-                stdout: JSON.stringify(monitoringAnswer(command)),
+                body: JSON.stringify(monitoringAnswer(target, form)),
             });
         }
 

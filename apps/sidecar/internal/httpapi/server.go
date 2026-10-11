@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -161,6 +162,9 @@ type Config struct {
 	// MetricsHTTPClient allows the local metrics transport to be replaced in
 	// tests. A client with a five-second timeout is used when it is nil.
 	MetricsHTTPClient *http.Client
+	// ServiceHTTPClient allows the cluster-network service transport to be
+	// replaced in tests. newServiceHTTPClient is used when it is nil.
+	ServiceHTTPClient *http.Client
 }
 
 // Server is the standalone Fiber HTTP API for Uncloud.
@@ -172,6 +176,7 @@ type Server struct {
 	requestTimeout time.Duration
 	execTimeout    time.Duration
 	metricsClient  *http.Client
+	serviceClient  *http.Client
 	openapiJSON    []byte
 	openapiYAML    []byte
 	scalarHTML     string
@@ -190,6 +195,10 @@ func New(backend Backend, cfg Config) (*Server, error) {
 	if metricsClient == nil {
 		metricsClient = &http.Client{Timeout: metricsClientTimeout}
 	}
+	serviceClient := cfg.ServiceHTTPClient
+	if serviceClient == nil {
+		serviceClient = newServiceHTTPClient()
+	}
 	requestTimeout := cfg.RequestTimeout
 	if requestTimeout <= 0 {
 		requestTimeout = DefaultRequestTimeout
@@ -206,6 +215,7 @@ func New(backend Backend, cfg Config) (*Server, error) {
 		requestTimeout: requestTimeout,
 		execTimeout:    execTimeout,
 		metricsClient:  metricsClient,
+		serviceClient:  serviceClient,
 	}
 	s.app = fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -249,6 +259,22 @@ func New(backend Backend, cfg Config) (*Server, error) {
 	s.app.Get(docsPath, s.scalar)
 	s.app.Get(docsPath+"/*", s.scalar)
 	return s, nil
+}
+
+// newServiceHTTPClient keeps connections to cluster services open between
+// requests. Dashboards fire a dozen queries at once at the same database, far
+// more than the default transport's two idle connections per host. Request
+// deadlines bound each call, so the client itself has no timeout.
+func newServiceHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+			MaxIdleConnsPerHost: 32,
+			IdleConnTimeout:     90 * time.Second,
+		},
+		// Upstream redirects are reported to the caller, never followed.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 // requireBearerToken rejects every request that does not carry the configured
@@ -409,6 +435,11 @@ type execContainerInput struct {
 	Body ExecContainerRequest
 }
 
+type serviceHTTPInput struct {
+	Name string `path:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" doc:"Service name, resolved through Uncloud's internal DNS."`
+	Body ServiceHTTPRequest
+}
+
 type readinessOutput struct {
 	Status int
 	Body   ReadinessResponse
@@ -553,6 +584,10 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 		OperationID: "execContainer", Method: http.MethodPost, Path: "/api/v1/services/{id}/containers/{container}/exec",
 		Summary: "Execute a command in a service container", Tags: []string{"services"},
 	}, s.execContainer)
+	register(humaAPI, huma.Operation{
+		OperationID: "serviceHTTP", Method: http.MethodPost, Path: "/api/v1/services/{name}/http",
+		Summary: "Send an HTTP request to a service over the cluster network", Tags: []string{"services"},
+	}, s.serviceHTTP)
 
 	register(humaAPI, huma.Operation{
 		OperationID: "listVolumes", Method: http.MethodGet, Path: "/api/v1/volumes",
@@ -963,6 +998,47 @@ func (s *Server) execContainer(ctx context.Context, input *execContainerInput) (
 		ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String(),
 		Truncated: stdout.Truncated() || stderr.Truncated(),
 	}), nil
+}
+
+// serviceHTTP reaches services that publish no ports, such as the monitoring
+// database, without the cost of a container exec per request.
+func (s *Server) serviceHTTP(ctx context.Context, input *serviceHTTPInput) (*bodyOutput[ServiceHTTPResponse], error) {
+	request := input.Body
+	if !strings.HasPrefix(request.Path, "/") || strings.HasPrefix(request.Path, "//") {
+		return nil, huma.Error422UnprocessableEntity("path must start with a single /")
+	}
+
+	host := net.JoinHostPort(input.Name+".internal", strconv.Itoa(request.Port))
+	form := url.Values{}
+	for key, value := range request.Form {
+		form.Set(key, value)
+	}
+
+	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+host+request.Path, strings.NewReader(form.Encode()))
+	if err != nil || upstream.URL.Host != host {
+		return nil, huma.Error422UnprocessableEntity("path must not change the target host")
+	}
+	for key, value := range request.Headers {
+		upstream.Header.Set(key, value)
+	}
+	upstream.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationForm)
+
+	response, err := s.serviceClient.Do(upstream)
+	if err != nil {
+		// Only the host is reported: the URL error would also echo the path.
+		return nil, huma.Error502BadGateway("request to " + host + " failed")
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxExecOutputBytes+1))
+	if err != nil {
+		return nil, huma.Error502BadGateway("read response from " + host + " failed")
+	}
+	truncated := len(body) > maxExecOutputBytes
+	if truncated {
+		body = body[:maxExecOutputBytes]
+	}
+	return reply(ServiceHTTPResponse{Status: response.StatusCode, Body: string(body), Truncated: truncated}), nil
 }
 
 func (s *Server) removeService(ctx context.Context, input *idInput) (*bodyOutput[StatusResponse], error) {

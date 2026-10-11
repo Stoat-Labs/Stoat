@@ -24,6 +24,13 @@ import { metricsRouter } from "../../packages/api/src/routers/cluster/metrics";
 // Greptime's SQL API reports failures in the body.
 const greptimeResult = v.looseObject({ error: v.optional(v.string()) });
 
+const serviceHttpRequest = v.object({
+    port: v.number(),
+    path: v.string(),
+    form: v.record(v.string(), v.string()),
+    headers: v.record(v.string(), v.string()),
+});
+
 const exec = promisify(execFile);
 
 const nativeFetch = globalThis.fetch;
@@ -256,43 +263,23 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         expect(url.origin).toBe("http://metrics.test");
         expect(request.headers.get("authorization")).toBe("Bearer private");
 
-        if (url.pathname.endsWith("/exec")) {
-            const body = await request.json();
-            const command: string[] = body.command;
-            expect(command.slice(0, 8)).toEqual([
-                "curl",
-                "--silent",
-                "--show-error",
-                "--fail-with-body",
-                "--max-time",
-                "15",
-                "--config",
-                "-",
-            ]);
-            expect(body.stdin).toBe('user = "stoat:password"\n');
-            const parameters = new URLSearchParams();
+        if (url.pathname === "/api/v1/services/stoat-monitoring-greptimedb/http") {
+            const body = v.parse(serviceHttpRequest, await request.json());
+            expect(body.port).toBe(4000);
+            expect(body.headers).toEqual({ Authorization: `Basic ${btoa("stoat:password")}` });
 
-            for (let index = 8; index < command.length - 1; index += 2) {
-                expect(command[index]).toBe("--data-urlencode");
-                const argument = command[index + 1]!;
-                const separator = argument.indexOf("=");
-                parameters.set(argument.slice(0, separator), argument.slice(separator + 1));
-            }
+            if (body.path.includes("prometheus"))
+                expect(body.form.query).toContain(`customer_id="${clusterId}"`);
 
-            const target = new URL(command.at(-1)!);
-
-            if (target.pathname.includes("prometheus"))
-                expect(parameters.get("query")).toContain(`customer_id="${clusterId}"`);
-
-            const response = await nativeFetch(`${greptimeUrl}${target.pathname}${target.search}`, {
+            const response = await nativeFetch(`${greptimeUrl}${body.path}`, {
                 method: "POST",
-                body: parameters,
+                body: new URLSearchParams(body.form),
             });
 
             return Response.json({
-                exitCode: response.ok ? 0 : 22,
+                status: response.status,
                 truncated: false,
-                stdout: await response.text(),
+                body: await response.text(),
             });
         }
 
@@ -330,7 +317,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
                 ],
             });
 
-        return Response.json({ id: "metrics", containers: [{ container: { Id: "container" } }] });
+        throw new Error(`Unexpected sidecar request: ${url.pathname}`);
     });
 
     vi.stubGlobal("fetch", fetch);
@@ -411,8 +398,8 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         },
     ]);
     expect(JSON.stringify(result)).not.toContain("password");
-    const execs = fetch.mock.calls.filter(([request]) => request.url.endsWith("/exec"));
-    expect(execs).toHaveLength(metricNames.length);
+    const queries = fetch.mock.calls.filter(([request]) => request.url.endsWith("/http"));
+    expect(queries).toHaveLength(metricNames.length);
     const uncached = fetch.mock.calls.length;
     await expect(metric("cpu", range)).resolves.toEqual(metrics[0]);
     expect(fetch.mock.calls).toHaveLength(uncached);

@@ -46,7 +46,7 @@ services:
         image: prometheuscommunity/postgres-exporter:v0.20.1
         restart: unless-stopped
         environment:
-            DATA_SOURCE_URI: uptimekit-db:5432/uptimekit?sslmode=disable
+            DATA_SOURCE_URI: ${UPTIMEKIT_DB_INTERNAL_HOST}:5432/uptimekit?sslmode=disable
             DATA_SOURCE_USER: postgres
             DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
         healthcheck:

@@ -1,4 +1,5 @@
-import { unwrap, type UcClient, type Service } from "@stoat/uncloud";
+import { unwrap, type UcClient } from "@stoat/uncloud";
+import { GREPTIME_SERVICE } from "./monitoring-compose";
 import { Schema } from "effect";
 
 export class GreptimeResponseTooLargeError extends Error {
@@ -34,17 +35,10 @@ export function readSqlRows(stdout: string): unknown[][] {
     return result.output.flatMap((output) => output.records?.rows?.map((row) => [...row]) ?? []);
 }
 
-export async function sql(
-    uc: UcClient,
-    service: Service,
-    password: string,
-    query: string,
-    signal: AbortSignal,
-) {
+export async function sql(uc: UcClient, password: string, query: string, signal: AbortSignal) {
     return readSqlRows(
         await monitoringRequest(
             uc,
-            service,
             password,
             "/v1/sql?db=public",
             new URLSearchParams({ sql: query }),
@@ -53,110 +47,33 @@ export async function sql(
     );
 }
 
-/** Query the private monitoring HTTP API through the existing bounded exec transport. */
+/** Query the private monitoring HTTP API, which the sidecar reaches over the cluster network. */
 export async function monitoringRequest(
     uc: UcClient,
-    service: Service,
     password: string,
     path: string,
     parameters: URLSearchParams,
     signal: AbortSignal,
 ) {
-    const result = await exec(
-        uc,
-        service,
-        [
-            "curl",
-            "--silent",
-            "--show-error",
-            "--fail-with-body",
-            "--max-time",
-            "15",
-            "--config",
-            "-",
-            ...Array.from(parameters, ([key, value]) => [
-                "--data-urlencode",
-                `${key}=${value}`,
-            ]).flat(),
-            `http://127.0.0.1:4000${path}`,
-        ],
-        `user = ${curlQuote(`stoat:${password}`)}\n`,
-        signal,
-        1024 * 1024,
+    const result = await unwrap(
+        uc.POST("/api/v1/services/{name}/http", {
+            params: { path: { name: GREPTIME_SERVICE } },
+            body: {
+                port: 4000,
+                path,
+                form: Object.fromEntries(parameters),
+                headers: {
+                    Authorization: `Basic ${Buffer.from(`stoat:${password}`).toString("base64")}`,
+                },
+            },
+            signal,
+        }),
     );
 
     if (result.truncated) throw new GreptimeResponseTooLargeError();
 
-    if (result.exitCode !== 0) throw new Error("Monitoring database query failed.");
-
-    return result.stdout;
-}
-
-function curlQuote(value: string) {
-    // curl config input is not a shell, but still has its own quoting rules.
-    if (/[\r\n\0]/u.test(value)) throw new Error("Invalid monitoring request.");
-
-    return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-
-async function exec(
-    uc: UcClient,
-    service: Service,
-    command: string[],
-    stdin: string,
-    signal: AbortSignal,
-    limit: number,
-) {
-    const container = Schema.decodeUnknownSync(Schema.String)(service.containers[0]?.container.Id);
-
-    const response = await uc.POST("/api/v1/services/{id}/containers/{container}/exec", {
-        params: { path: { id: service.id, container } },
-        body: { command, stdin },
-        parseAs: "stream",
-        signal,
-    });
-
-    if (!response.response.ok) {
-        await response.response.body?.cancel().catch(() => {});
+    if (result.status < 200 || result.status >= 300)
         throw new Error("Monitoring database query failed.");
-    }
 
-    const stream = await unwrap(Promise.resolve(response));
-
-    if (!stream) throw new Error("Monitoring database query failed.");
-    const reader = stream.getReader();
-
-    const cancel = () => {
-        void reader.cancel().catch(() => {});
-    };
-
-    signal.addEventListener("abort", cancel, { once: true });
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-
-    try {
-        for (;;) {
-            signal.throwIfAborted();
-            const { done, value } = await reader.read();
-            signal.throwIfAborted();
-
-            if (done) break;
-            size += value.byteLength;
-
-            if (size > limit) throw new GreptimeResponseTooLargeError();
-            chunks.push(value);
-        }
-    } finally {
-        signal.removeEventListener("abort", cancel);
-        await reader.cancel().catch(() => {});
-        reader.releaseLock();
-    }
-
-    return Schema.decodeUnknownSync(
-        Schema.Struct({
-            exitCode: Schema.Number,
-            truncated: Schema.Boolean,
-            stdout: Schema.String,
-        }),
-    )(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    return result.body;
 }

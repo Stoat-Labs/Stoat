@@ -907,6 +907,53 @@
                 "required": ["machineId", "machineName", "container"],
                 "type": "object"
             },
+            "ServiceHTTPRequest": {
+                "additionalProperties": false,
+                "properties": {
+                    "form": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "Sent URL-encoded as the request body.",
+                        "type": "object"
+                    },
+                    "headers": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "path": {
+                        "description": "Request path and query string, starting with /.",
+                        "type": "string"
+                    },
+                    "port": {
+                        "format": "int64",
+                        "maximum": 65535,
+                        "minimum": 1,
+                        "type": "integer"
+                    }
+                },
+                "required": ["port", "path"],
+                "type": "object"
+            },
+            "ServiceHTTPResponse": {
+                "additionalProperties": false,
+                "properties": {
+                    "body": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    }
+                },
+                "required": ["status", "body", "truncated"],
+                "type": "object"
+            },
             "ServiceResponse": {
                 "additionalProperties": false,
                 "properties": {
@@ -3438,6 +3485,98 @@
                     }
                 },
                 "summary": "Stop a service",
+                "tags": ["services"]
+            }
+        },
+        "/api/v1/services/{name}/http": {
+            "post": {
+                "operationId": "serviceHTTP",
+                "parameters": [
+                    {
+                        "description": "Service name, resolved through Uncloud's internal DNS.",
+                        "in": "path",
+                        "name": "name",
+                        "required": true,
+                        "schema": {
+                            "description": "Service name, resolved through Uncloud's internal DNS.",
+                            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServiceHTTPRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceHTTPResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unprocessable Entity"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Send an HTTP request to a service over the cluster network",
                 "tags": ["services"]
             }
         },

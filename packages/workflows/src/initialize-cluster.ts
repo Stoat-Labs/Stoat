@@ -4,7 +4,7 @@ import {
     prepareMonitoring,
     updateMonitoringPassword,
 } from "@stoat/db/initialization";
-import { ucClient, unwrap, type UcClient, type Service } from "@stoat/uncloud";
+import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@stoat/uncloud";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Schema } from "effect";
@@ -247,28 +247,34 @@ export function createInitializeClusterHandler(
             await log("Waiting for GreptimeDB to become healthy…");
 
             // Uncloud reports container placement by machine ID.
-            const greptime = await waitForService(
-                uc,
-                GREPTIME_SERVICE,
-                [target.id],
-                bounded(signal, 90_000),
-                true,
-            );
+            await waitForService(uc, GREPTIME_SERVICE, [target.id], bounded(signal, 90_000), true);
 
             await log("GreptimeDB is healthy. Creating monitoring database…");
-            await sql(
-                uc,
-                greptime,
-                password,
-                `CREATE DATABASE IF NOT EXISTS ${MONITORING_DATABASE} WITH (ttl = '${config.retentionDays}d')`,
-                bounded(signal, 60_000),
-            );
+
+            // The sidecar reaches GreptimeDB by its internal DNS name, which can
+            // trail a fresh container by a few seconds on other machines. The
+            // sidecar answers 502 while it cannot connect; anything else is real.
+            for (let attempt = 1; ; attempt++) {
+                try {
+                    await sql(
+                        uc,
+                        password,
+                        `CREATE DATABASE IF NOT EXISTS ${MONITORING_DATABASE} WITH (ttl = '${config.retentionDays}d')`,
+                        bounded(signal, 60_000),
+                    );
+                    break;
+                } catch (error) {
+                    if (attempt === 10 || !(error instanceof UcApiError) || error.status !== 502)
+                        throw error;
+                    await delay(3_000, undefined, { signal });
+                }
+            }
+
             // CREATE IF NOT EXISTS leaves an existing database untouched, so
             // enforce the configured retention on every run. This is what makes
             // retention changes apply when initialization is re-run.
             await sql(
                 uc,
-                greptime,
                 password,
                 `ALTER DATABASE ${MONITORING_DATABASE} SET 'ttl'='${config.retentionDays}d'`,
                 bounded(signal, 60_000),
@@ -303,7 +309,6 @@ export function createInitializeClusterHandler(
 
                     const metrics = await sql(
                         uc,
-                        greptime,
                         password,
                         `SELECT DISTINCT machine_id FROM ${MONITORING_DATABASE}.node_uname_info`,
                         querySignal,
@@ -311,7 +316,6 @@ export function createInitializeClusterHandler(
 
                     const logs = await sql(
                         uc,
-                        greptime,
                         password,
                         `SELECT COUNT(*) FROM ${MONITORING_DATABASE}.docker_logs`,
                         querySignal,

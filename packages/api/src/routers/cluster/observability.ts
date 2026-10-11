@@ -99,23 +99,8 @@ function ucServices(cluster: MonitoringCluster, uc: UcClient) {
     );
 }
 
-function monitoringAccess(cluster: MonitoringCluster, uc: UcClient, signal: AbortSignal) {
-    const password = decryptMonitoringPassword(
-        cluster.password,
-        process.env.APP_SECRET ?? "",
-        cluster.id,
-    );
-
-    const greptime = swr(`greptime:${cluster.id}`, currentWindow(), () =>
-        unwrap(
-            uc.GET("/api/v1/services/{id}", {
-                params: { path: { id: GREPTIME_SERVICE } },
-                signal,
-            }),
-        ),
-    );
-
-    return { password, greptime };
+function monitoringPassword(cluster: MonitoringCluster) {
+    return decryptMonitoringPassword(cluster.password, process.env.APP_SECRET ?? "", cluster.id);
 }
 
 async function queryRange(
@@ -126,13 +111,9 @@ async function queryRange(
     end: number,
     step: number,
 ): Promise<PackedMetricSeries[]> {
-    const signal = AbortSignal.timeout(30_000);
-    const { password, greptime } = monitoringAccess(cluster, uc, signal);
-
     const text = await monitoringRequest(
         uc,
-        await greptime,
-        password,
+        monitoringPassword(cluster),
         `/v1/prometheus/api/v1/query_range?db=${MONITORING_DATABASE}`,
         new URLSearchParams({
             query,
@@ -140,7 +121,7 @@ async function queryRange(
             end: String(end),
             step: String(step),
         }),
-        signal,
+        AbortSignal.timeout(30_000),
     );
 
     return parseMetricSeries(text, start, end, step);
@@ -158,16 +139,12 @@ function collecting(
     tables: readonly string[],
 ) {
     return swr(`${kind}-tables:${cluster.id}`, Math.floor(Date.now() / 300_000), async () => {
-        const signal = AbortSignal.timeout(30_000);
-        const { password, greptime } = monitoringAccess(cluster, uc, signal);
-
         // Table names are constants from this codebase, never user input.
         const rows = await greptimeSql(
             uc,
-            await greptime,
-            password,
+            monitoringPassword(cluster),
             `SELECT table_name FROM information_schema.tables WHERE table_schema = '${MONITORING_DATABASE}' AND table_name IN (${tables.map((table) => `'${table}'`).join(", ")})`,
-            signal,
+            AbortSignal.timeout(30_000),
         );
 
         return rows.length === tables.length;

@@ -2,6 +2,7 @@
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import PostgresConnectionCard from "$lib/components/projects/postgres-connection-card.svelte";
+    import DeployConflictDialog from "$lib/components/projects/deploy-conflict-dialog.svelte";
     import ResourceComposeEditor from "$lib/components/projects/resource-compose-editor.svelte";
     import ResourceContainersCard from "$lib/components/projects/resource-containers-card.svelte";
     import ResourcePageSkeleton from "$lib/components/projects/resource-page-skeleton.svelte";
@@ -39,6 +40,7 @@
         TooltipTrigger,
     } from "$lib/components/ui/tooltip";
     import { orpc, queryClient } from "$lib/api/orpc";
+    import { ORPCError } from "@orpc/client";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
@@ -139,11 +141,14 @@
         readOnly: () => readOnly,
         busy: () =>
             externalConnectionMutation.isPending ||
-            deployMutation.isPending,
+            deployMutation.isPending ||
+            reloadMutation.isPending,
         paused: () => false,
         onSwitch: () => {
             externalConnectionMutation.reset();
             deployMutation.reset();
+            reloadMutation.reset();
+            conflictOpen = false;
             deploymentId = null;
         },
     });
@@ -196,8 +201,45 @@
         });
     }
 
+    let conflictOpen = $state(false);
+
+    let lastRecreate = false;
+
+    const reloadMutation = createMutation(() =>
+        orpc.resources.pullGitSource.mutationOptions({
+            onSuccess: (updated, input) => {
+                queryClient.setQueryData(
+                    orpc.resources.getResource.queryKey({
+                        input: {
+                            projectId: input.projectId,
+                            resourceId: input.resourceId,
+                        },
+                    }),
+                    updated,
+                );
+
+                if (
+                    projectId !== input.projectId ||
+                    resourceId !== input.resourceId
+                )
+                    return;
+                draft.accept(updated);
+                draft.save.reset();
+                deployMutation.reset();
+                conflictOpen = false;
+            },
+        }),
+    );
+
     const deployMutation = createMutation(() =>
         orpc.resources.deploy.mutationOptions({
+            onError: (error) => {
+                if (
+                    error instanceof ORPCError &&
+                    error.code === "CONFLICT"
+                )
+                    conflictOpen = true;
+            },
             onSuccess: (deployment, input) => {
                 void queryClient.invalidateQueries({
                     queryKey: orpc.cluster.key(),
@@ -217,6 +259,7 @@
                     resourceId !== input.resourceId
                 )
                     return;
+                conflictOpen = false;
                 deploymentId = deployment.id;
             },
         }),
@@ -264,9 +307,24 @@
                 : "",
     );
 
-    function deploySavedDraft(recreate = false) {
+    function deploySavedDraft(recreate = false, force = false) {
         if (!canDeploy) return;
-        deployMutation.mutate({ projectId, resourceId, recreate });
+        lastRecreate = recreate;
+        deployMutation.mutate({
+            projectId,
+            resourceId,
+            recreate,
+            force,
+        });
+    }
+
+    function reloadFromGit() {
+        reloadMutation.mutate({
+            projectId,
+            resourceId,
+            expectedSpec: draft.savedSpec,
+            expectedSource: draft.savedSource,
+        });
     }
 </script>
 
@@ -327,6 +385,15 @@
         </Tooltip>
     {/if}
 {/snippet}
+
+<DeployConflictDialog
+    bind:open={conflictOpen}
+    reloading={reloadMutation.isPending}
+    forcing={deployMutation.isPending}
+    reloadError={reloadMutation.error?.message}
+    onreload={reloadFromGit}
+    onforce={() => deploySavedDraft(lastRecreate, true)}
+/>
 
 {#if resource?.type === "bucket"}
     <BucketOverview {projectId} {resourceId} name={resource.name} />
@@ -453,7 +520,9 @@
                         draft.loadedResourceId !== resource.id}
                     {saveStatus}
                     saveError={draft.save.error?.message}
-                    deployError={deployMutation.error?.message}
+                    deployError={conflictOpen
+                        ? undefined
+                        : deployMutation.error?.message}
                     composeError={!draft.isDirty &&
                     draft.savedSpec?.trim()
                         ? formattedComposeQuery.error?.message

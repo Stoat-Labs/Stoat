@@ -409,6 +409,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/services/{name}/http": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send an HTTP request to a service over the cluster network */
+        post: operations["serviceHTTP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/volumes": {
         parameters: {
             query?: never;
@@ -789,6 +806,25 @@ export interface components {
             };
             machineId: string;
             machineName: string;
+        };
+        ServiceHTTPRequest: {
+            /** @description Sent URL-encoded as the request body. */
+            form?: {
+                [key: string]: string;
+            };
+            headers?: {
+                [key: string]: string;
+            };
+            /** @description Request path and query string, starting with /. */
+            path: string;
+            /** Format: int64 */
+            port: number;
+        };
+        ServiceHTTPResponse: {
+            body: string;
+            /** Format: int64 */
+            status: number;
+            truncated: boolean;
         };
         ServiceResponse: {
             containers: components["schemas"]["ServiceContainerResponse"][];
@@ -2707,6 +2743,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    serviceHTTP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Service name, resolved through Uncloud's internal DNS. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceHTTPRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceHTTPResponse"];
                 };
             };
             /** @description Bad Request */

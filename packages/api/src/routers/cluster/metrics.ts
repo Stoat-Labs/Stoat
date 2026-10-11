@@ -1,8 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import { clusterMonitoring, clusters } from "@stoat/db/schema/index";
-import { ucClient, unwrap } from "@stoat/uncloud";
+import { ucClient } from "@stoat/uncloud";
 import { sql as greptimeSql } from "@stoat/workflows/greptime";
-import { GREPTIME_SERVICE, MONITORING_DATABASE } from "@stoat/workflows/monitoring-compose";
+import { MONITORING_DATABASE } from "@stoat/workflows/monitoring-compose";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
@@ -77,21 +77,13 @@ export const metricsRouter = {
 
                     const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
-                    const greptime = await unwrap(
-                        uc.GET("/api/v1/services/{id}", {
-                            params: { path: { id: GREPTIME_SERVICE } },
-                            signal: querySignal,
-                        }),
-                    );
-
                     // The cluster id comes from our own database and is a validated UUID.
                     const customer = `'${cluster.id}'`;
 
                     const recent = (alias: string) =>
                         `${alias}.customer_id = ${customer} AND ${alias}.greptime_timestamp >= now() - INTERVAL '5 minutes'`;
 
-                    const query = (text: string) =>
-                        greptimeSql(uc, greptime, password, text, querySignal);
+                    const query = (text: string) => greptimeSql(uc, password, text, querySignal);
 
                     const [cpu, memory, disk] = await Promise.all([
                         // Busy cores over the last five minutes: each core's non-idle share, summed.

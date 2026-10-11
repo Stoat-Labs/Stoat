@@ -1,10 +1,9 @@
 services:
     qbittorrent:
         image: lscr.io/linuxserver/qbittorrent:latest
-        container_name: qbittorrent
         environment:
-            - PUID=${PUID}
-            - PGID=${PGID}
+            - PUID=${MEDIA_UID}
+            - PGID=${MEDIA_GID}
             - TZ=${TZ}
             - WEBUI_PORT=8080
             - TORRENTING_PORT=6881
@@ -15,6 +14,12 @@ services:
             - ${QBITTORRENT_HOST}:8080:8080/https
             - 6881:6881
             - 6881:6881/udp
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 30s
         stop_grace_period: "10s"
         restart: unless-stopped
 

@@ -36,6 +36,13 @@ import { insertUserWithOrganization } from "../users";
 // Greptime's SQL API reports failures in the body.
 const greptimeResult = v.looseObject({ error: v.optional(v.string()) });
 
+const serviceHttpRequest = v.object({
+    port: v.number(),
+    path: v.string(),
+    form: v.record(v.string(), v.string()),
+    headers: v.record(v.string(), v.string()),
+});
+
 const exec = promisify(execFile);
 
 const nativeFetch = globalThis.fetch;
@@ -52,10 +59,9 @@ const time = "2026-01-01T12:00:00.123456789Z";
 
 function sqlResponse(rows: unknown[][]) {
     return Response.json({
-        exitCode: 0,
-        stderr: "",
+        status: 200,
         truncated: false,
-        stdout: JSON.stringify({ output: [{ records: { rows } }] }),
+        body: JSON.stringify({ output: [{ records: { rows } }] }),
     });
 }
 
@@ -114,13 +120,17 @@ describe("resource logs backend", () => {
             greptime_timestamp TIMESTAMP(9) TIME INDEX, customer_id STRING, uncloud_service_id STRING,
             machine_id STRING, container STRING, "line" STRING,
             PRIMARY KEY(customer_id, uncloud_service_id, machine_id, container))`);
-        sqlHandler = async (query) =>
-            Response.json({
-                exitCode: 0,
-                truncated: false,
-                stderr: "",
-                stdout: JSON.stringify(await executeSql(query)),
+        sqlHandler = async (query) => {
+            const body = JSON.stringify(await executeSql(query));
+            const limit = 1024 * 1024;
+
+            // Mirrors the sidecar, which caps upstream bodies at 1 MiB.
+            return Response.json({
+                status: 200,
+                truncated: body.length > limit,
+                body: body.slice(0, limit),
             });
+        };
     }
 
     async function deployment(
@@ -310,16 +320,15 @@ describe("resource logs backend", () => {
                     return openStream(id, request.signal);
                 }
 
-                if (url.pathname.endsWith("/exec")) {
-                    expect(id).toBe("greptime-id");
-                    const body = await request.json();
-                    expect(body.stdin).toBe(`user = "stoat:${password}"\n`);
-                    expect(body.command.at(-1)).toBe("http://127.0.0.1:4000/v1/sql?db=public");
-                    expect(body.command).toContain("--max-time");
+                if (url.pathname.endsWith("/http")) {
+                    expect(id).toBe(GREPTIME_SERVICE);
+                    const body = v.parse(serviceHttpRequest, await request.json());
+                    expect(body.headers).toEqual({
+                        Authorization: `Basic ${btoa(`stoat:${password}`)}`,
+                    });
+                    expect(body).toMatchObject({ port: 4000, path: "/v1/sql?db=public" });
 
-                    const query = body.command
-                        .find((arg: string) => arg.startsWith("sql="))
-                        .slice(4);
+                    const query = body.form.sql ?? "";
 
                     queries.push(query);
 
@@ -331,12 +340,6 @@ describe("resource logs backend", () => {
                 if (inspectionFailures.has(id))
                     return Response.json({ error: "private inspection failure" }, { status: 503 });
 
-                if (id === GREPTIME_SERVICE)
-                    return Response.json({
-                        id: "greptime-id",
-                        name: GREPTIME_SERVICE,
-                        containers: [{ container: { Id: "greptime-container" } }],
-                    });
                 const serviceId = current.get(id);
 
                 return serviceId
@@ -2073,14 +2076,14 @@ describe("resource logs backend", () => {
 
         for (const response of [
             {
-                exitCode: 0,
+                status: 200,
                 truncated: false,
-                stdout: JSON.stringify({ code: 5000, error: "private-monitoring-password" }),
+                body: JSON.stringify({ code: 5000, error: "private-monitoring-password" }),
             },
-            { exitCode: 22, truncated: false, stdout: "private-monitoring-password" },
-            { exitCode: 0, truncated: true, stdout: "truncated" },
-            { exitCode: 0, truncated: false, stdout: "malformed" },
-            { exitCode: 0, truncated: false, stdout: "x".repeat(1024 * 1024) },
+            { status: 500, truncated: false, body: "private-monitoring-password" },
+            // The sidecar caps bodies at 1 MiB and flags the cut.
+            { status: 200, truncated: true, body: "truncated" },
+            { status: 200, truncated: false, body: "malformed" },
         ]) {
             sqlHandler = async () => Response.json(response);
             await expect(
@@ -2111,36 +2114,40 @@ describe("resource logs backend", () => {
         sqlHandler = original;
     });
 
-    it("cancels a pending SQL response body on disconnect", async () => {
+    // Resolves only when the outgoing sidecar request is aborted, like a stalled query.
+    function stalledQuery() {
+        const opened = Promise.withResolvers<void>();
+        const state = { opened: opened.promise, aborted: false };
+
+        sqlHandler = (_query, signal) =>
+            new Promise((_resolve, reject) => {
+                opened.resolve();
+                signal?.addEventListener("abort", () => {
+                    state.aborted = true;
+                    reject(signal.reason);
+                });
+            });
+
+        return state;
+    }
+
+    it("aborts a pending SQL query on disconnect", async () => {
         await deployment();
         await enableHistory();
-        let bodyCancelled = false;
-        const opened = Promise.withResolvers<void>();
-        sqlHandler = async () =>
-            new Response(
-                new ReadableStream({
-                    start() {
-                        opened.resolve();
-                    },
-                    cancel() {
-                        bodyCancelled = true;
-                    },
-                }),
-                { headers: { "content-type": "application/json" } },
-            );
+        const query = stalledQuery();
         const controller = new AbortController();
 
         const result = expect(
             call(resourcesRouter.searchLogs, search, { context, signal: controller.signal }),
         ).rejects.toMatchObject({ code: "BAD_GATEWAY" });
 
-        await opened.promise;
+        await query.opened;
         controller.abort();
         await result;
-        expect(bodyCancelled).toBe(true);
+        expect(query.aborted).toBe(true);
     });
 
-    it("bounds the entire historical request, including a stalled exec body", async () => {
+    it("bounds the entire historical request, including a stalled query", async () => {
         await deployment();
         await enableHistory();
         vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -2152,30 +2159,17 @@ describe("resource logs backend", () => {
 
             return controller.signal;
         });
-        let bodyCancelled = false;
-        const opened = Promise.withResolvers<void>();
-        sqlHandler = async () =>
-            new Response(
-                new ReadableStream({
-                    start() {
-                        opened.resolve();
-                    },
-                    cancel() {
-                        bodyCancelled = true;
-                    },
-                }),
-                { headers: { "content-type": "application/json" } },
-            );
+        const query = stalledQuery();
 
         const result = expect(
             call(resourcesRouter.searchLogs, search, { context }),
         ).rejects.toMatchObject({ code: "BAD_GATEWAY" });
 
-        await opened.promise;
+        await query.opened;
         await vi.advanceTimersByTimeAsync(30_000);
         await result;
         expect(deadlines).toContain(30_000);
-        expect(bodyCancelled).toBe(true);
+        expect(query.aborted).toBe(true);
     });
 
     it("executes real Greptime SQL: >200 equal timestamps, nanos, literal matching, current IDs and scoped cursors", async () => {
@@ -2428,9 +2422,9 @@ describe("resource logs backend", () => {
             query.includes("information_schema")
                 ? schema(query)
                 : Response.json({
-                      exitCode: 0,
+                      status: 200,
                       truncated: false,
-                      stdout: JSON.stringify({ code: 5000, error: "DB failure" }),
+                      body: JSON.stringify({ code: 5000, error: "DB failure" }),
                   });
         await expect(call(resourcesRouter.searchLogs, search, { context })).rejects.toMatchObject({
             code: "BAD_GATEWAY",
@@ -2441,9 +2435,9 @@ describe("resource logs backend", () => {
             query.includes("information_schema")
                 ? schema(query)
                 : Response.json({
-                      exitCode: 0,
+                      status: 200,
                       truncated: true,
-                      stdout: "oversized",
+                      body: "oversized",
                   });
         await expect(call(resourcesRouter.searchLogs, search, { context })).rejects.toMatchObject({
             code: "BAD_GATEWAY",

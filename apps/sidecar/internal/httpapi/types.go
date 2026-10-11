@@ -180,6 +180,24 @@ type ExecContainerResponse struct {
 	Truncated bool   `json:"truncated"`
 }
 
+// ServiceHTTPRequest is a form POST sent to a service port over the cluster
+// network. Credentials belong in Headers, never in Path, so they stay out of
+// error messages.
+type ServiceHTTPRequest struct {
+	Port    int               `json:"port" minimum:"1" maximum:"65535"`
+	Path    string            `json:"path" doc:"Request path and query string, starting with /."`
+	Form    map[string]string `json:"form,omitempty" doc:"Sent URL-encoded as the request body."`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// ServiceHTTPResponse is the upstream answer. Body is capped at 1 MiB and
+// Truncated reports whether the cap was hit.
+type ServiceHTTPResponse struct {
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	Truncated bool   `json:"truncated"`
+}
+
 // MachineExecRequest describes a command to run on a machine's host operating system.
 type MachineExecRequest struct {
 	Command []string `json:"command"`
