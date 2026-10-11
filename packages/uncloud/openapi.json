@@ -256,6 +256,14 @@
                         "maxLength": 262144,
                         "type": "string"
                     },
+                    "env": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "Environment variables merged into the caddy container's environment.",
+                        "maxProperties": 32,
+                        "type": "object"
+                    },
                     "image": {
                         "description": "Caddy image. Custom images must include curl and start Caddy with /etc/caddy/Caddyfile.",
                         "maxLength": 512,

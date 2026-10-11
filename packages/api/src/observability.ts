@@ -326,7 +326,7 @@ export function serviceHosts(label: string | undefined) {
 }
 
 /**
- * HTTP metrics come from Caddy access logs, which Alloy turns into per-host counters. Hosts are
+ * HTTP metrics are Caddy's own per-host metrics, pushed over OTLP through Alloy. Hosts are
  * mapped back to services here, one `or` branch per service, so each series carries its service ID.
  */
 export function httpQueries(
@@ -343,14 +343,16 @@ export function httpQueries(
         entries
             .map(([serviceId, names]) => {
                 // Hostnames match hostnamePattern, so escaping dots is the only regex quoting needed.
-                const matcher = `customer_id=${JSON.stringify(clusterId)},http_host=~${JSON.stringify(names.map((name) => name.replaceAll(".", "\\.")).join("|"))}`;
+                // Sites always run as a subroute; this leaves out automatic HTTP-to-HTTPS redirects.
+                const matcher = `customer_id=${JSON.stringify(clusterId)},handler="subroute",host=~${JSON.stringify(names.map((name) => name.replaceAll(".", "\\.")).join("|"))}`;
 
                 return `label_replace(${build((metric, extra = "") => `${metric}{${matcher}${extra}}`)}, "container_label_uncloud_service_id", ${JSON.stringify(serviceId)}, "", "")`;
             })
             .join(" or ");
 
-    const requests = "loki_process_custom_http_requests_total";
-    const buckets = "loki_process_custom_http_request_duration_seconds_bucket";
+    // caddy_http_requests_total has no status code, so requests are counted from the histogram.
+    const requests = "caddy_http_request_duration_seconds_count";
+    const buckets = "caddy_http_request_duration_seconds_bucket";
 
     const latency = (quantile: number) => (selector: (metric: string, extra?: string) => string) =>
         `histogram_quantile(${quantile}, sum by (le) (rate(${selector(buckets)}[${window}])))`;
@@ -360,7 +362,7 @@ export function httpQueries(
         // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
         httpErrors: each(
             (selector) =>
-                `(sum(rate(${selector(requests, ',http_status=~"5.."')}[${window}])) or sum(rate(${selector(requests)}[${window}])) * 0)`,
+                `(sum(rate(${selector(requests, ',code=~"5.."')}[${window}])) or sum(rate(${selector(requests)}[${window}])) * 0)`,
         ),
         httpLatency: each(latency(0.95)),
         httpLatencyP50: each(latency(0.5)),

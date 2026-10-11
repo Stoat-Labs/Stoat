@@ -183,8 +183,11 @@
                         Leave empty to remove it. Read secrets with
                         {"{env.NAME}"} instead of pasting them. An invalid
                         config keeps Caddy on its previous one, and the
-                        error shows on the cluster page. Changing the global
-                        log format can break HTTP metrics.
+                        error shows on the cluster page. With monitoring,
+                        Stoat adds a
+                        <code>metrics</code>
+                         global option for HTTP metrics unless you set one
+                        yourself.
                     </FieldDescription>
                 </Field>
             </form>

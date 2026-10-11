@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -267,20 +268,18 @@ func (b *clientBackend) CaddySettings(ctx context.Context) (CaddySettingsRespons
 // deployment of caddy survive.
 func (b *clientBackend) DeployCaddy(ctx context.Context, request DeployCaddyRequest) (<-chan DeployComposeEvent, error) {
 	spec, err := b.caddySpec(ctx)
-	var caddyDeploy *deploy.Deployment
 	switch {
 	case errors.Is(err, api.ErrNotFound):
-		caddyDeploy, err = b.Client.Caddy.NewDeployment(ctx, client.CaddyDeploymentOptions{
-			Image: request.Image, Config: request.Caddyfile,
-		})
+		// Start from Uncloud's default caddy spec (admin socket, volumes, host ports).
+		fresh, err := b.Client.Caddy.NewDeployment(ctx, client.CaddyDeploymentOptions{Image: request.Image})
 		if err != nil {
 			return nil, fmt.Errorf("create caddy deployment: %w", err)
 		}
+		spec = fresh.Spec
 	case err != nil:
 		return nil, fmt.Errorf("inspect caddy service: %w", err)
-	default:
-		caddyDeploy = b.Client.NewDeployment(patchCaddySpec(spec, request), nil)
 	}
+	caddyDeploy := b.Client.NewDeployment(patchCaddySpec(spec, request), nil)
 
 	events := make(chan DeployComposeEvent, 16)
 	go func() {
@@ -290,9 +289,19 @@ func (b *clientBackend) DeployCaddy(ctx context.Context, request DeployCaddyRequ
 	return events, nil
 }
 
-// patchCaddySpec sets the image and global Caddyfile, leaving the rest of the spec as deployed.
+// patchCaddySpec sets the image and global Caddyfile and merges the request's env, leaving the
+// rest of the spec as deployed.
 func patchCaddySpec(spec api.ServiceSpec, request DeployCaddyRequest) api.ServiceSpec {
 	spec.Container.Image = request.Image
+	if len(request.Env) > 0 {
+		// Env is a map shared with the caller's spec, so merge into a copy.
+		env := maps.Clone(spec.Container.Env)
+		if env == nil {
+			env = make(map[string]string, len(request.Env))
+		}
+		maps.Copy(env, request.Env)
+		spec.Container.Env = env
+	}
 	spec.Caddy = nil
 	if request.Caddyfile != "" {
 		spec.Caddy = &api.CaddySpec{Config: request.Caddyfile}

@@ -1,10 +1,11 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, deploymentLogs, deployments } from "@stoat/db/schema/index";
+import { clusters, deployments } from "@stoat/db/schema/index";
 import { unwrap } from "@stoat/uncloud";
-import { caddyComposeSpec } from "@stoat/workflows/deploy-caddy";
-import { queueCaddyDeployment } from "@stoat/workflows/runtime";
+import {
+    CaddyDeploymentInProgressError,
+    createCaddyDeployment,
+} from "@stoat/workflows/deploy-caddy";
 import { and, eq, inArray } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 import {
     isOrganizationAdmin,
@@ -67,61 +68,35 @@ export const caddyRouter = {
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
-            const deploymentId = await db.transaction(async (tx) => {
-                // Locking the cluster row serializes rollouts, so two never race on the same service.
-                const [cluster] = await tx
-                    .select({ id: clusters.id })
-                    .from(clusters)
-                    .where(
-                        and(
-                            eq(clusters.id, input.clusterId),
-                            eq(clusters.organizationId, organizationId),
-                        ),
-                    )
-                    .for("update")
-                    .limit(1);
+            const [cluster] = await db
+                .select({ id: clusters.id, initializedAt: clusters.initializedAt })
+                .from(clusters)
+                .where(
+                    and(
+                        eq(clusters.id, input.clusterId),
+                        eq(clusters.organizationId, organizationId),
+                    ),
+                )
+                .limit(1);
 
-                if (!cluster) throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
+            if (!cluster) throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 
-                const [active] = await tx
-                    .select({ id: deployments.id })
-                    .from(deployments)
-                    .where(
-                        and(
-                            eq(deployments.clusterId, cluster.id),
-                            eq(deployments.name, "DeployCaddy"),
-                            inArray(deployments.status, ["queued", "running"]),
-                        ),
-                    )
-                    .limit(1);
+            try {
+                const deploymentId = await createCaddyDeployment(
+                    db,
+                    cluster.id,
+                    input.image,
+                    input.caddyfile,
+                    // Metrics are pushed to the monitoring stack's Alloy, so they need it running.
+                    !!cluster.initializedAt,
+                );
 
-                if (active)
-                    throw new ORPCError("CONFLICT", {
-                        message: "A Caddy deployment is already in progress on this cluster.",
-                    });
+                return { deploymentId };
+            } catch (error) {
+                if (error instanceof CaddyDeploymentInProgressError)
+                    throw new ORPCError("CONFLICT", { message: error.message });
 
-                const id = randomUUID();
-
-                await tx.insert(deployments).values({
-                    id,
-                    jobId: id,
-                    clusterId: cluster.id,
-                    name: "DeployCaddy",
-                    status: "queued",
-                    spec: caddyComposeSpec(input.image, input.caddyfile),
-                });
-                await tx.insert(deploymentLogs).values({
-                    deploymentId: id,
-                    text: "Caddy deployment queued.",
-                    metadata: { level: "info" },
-                });
-
-                return id;
-            });
-
-            // The queued row is the outbox, so a failed enqueue is picked up by the next sweep.
-            await queueCaddyDeployment(deploymentId).catch(() => {});
-
-            return { deploymentId };
+                throw error;
+            }
         }),
 };

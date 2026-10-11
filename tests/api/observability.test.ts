@@ -198,10 +198,10 @@ beforeAll(async () => {
     }
 
     await sql(
-        `CREATE TABLE monitoring.loki_process_custom_http_requests_total (customer_id STRING, http_host STRING, http_status STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,http_host,http_status))`,
+        `CREATE TABLE monitoring.caddy_http_request_duration_seconds_count (customer_id STRING, handler STRING, host STRING, code STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,handler,host,code))`,
     );
     await sql(
-        `CREATE TABLE monitoring.loki_process_custom_http_request_duration_seconds_bucket (customer_id STRING, http_host STRING, http_status STRING, le STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,http_host,http_status,le))`,
+        `CREATE TABLE monitoring.caddy_http_request_duration_seconds_bucket (customer_id STRING, handler STRING, host STRING, code STRING, le STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,handler,host,code,le))`,
     );
     const requests: string[] = [];
     const buckets: string[] = [];
@@ -209,14 +209,15 @@ beforeAll(async () => {
     for (let index = 0; index <= 8; index++) {
         const timestamp = new Date((end - 120 + index * 15) * 1000).toISOString();
 
-        // 1.5 req/s of 200s and 0.5 req/s of 500s; other hosts must not be counted.
-        for (const [host, status, rate] of [
-            ["app.example.com", "200", 1.5],
-            ["app.example.com", "500", 0.5],
-            ["other.example.com", "200", 100],
+        // 1.5 req/s of 200s and 0.5 req/s of 500s; other hosts and HTTPS redirects must not be counted.
+        for (const [handler, host, status, rate] of [
+            ["subroute", "app.example.com", "200", 1.5],
+            ["subroute", "app.example.com", "500", 0.5],
+            ["static_response", "app.example.com", "308", 50],
+            ["subroute", "other.example.com", "200", 100],
         ] as const) {
             requests.push(
-                `('${clusterId}','${host}','${status}',${index * 15 * rate},'${timestamp}')`,
+                `('${clusterId}','${handler}','${host}','${status}',${index * 15 * rate},'${timestamp}')`,
             );
 
             for (const [le, share] of [
@@ -225,16 +226,16 @@ beforeAll(async () => {
                 ["+Inf", 1],
             ] as const)
                 buckets.push(
-                    `('${clusterId}','${host}','${status}','${le}',${index * 15 * rate * share},'${timestamp}')`,
+                    `('${clusterId}','${handler}','${host}','${status}','${le}',${index * 15 * rate * share},'${timestamp}')`,
                 );
         }
     }
 
     await sql(
-        `INSERT INTO monitoring.loki_process_custom_http_requests_total VALUES ${requests.join(",")}`,
+        `INSERT INTO monitoring.caddy_http_request_duration_seconds_count VALUES ${requests.join(",")}`,
     );
     await sql(
-        `INSERT INTO monitoring.loki_process_custom_http_request_duration_seconds_bucket VALUES ${buckets.join(",")}`,
+        `INSERT INTO monitoring.caddy_http_request_duration_seconds_bucket VALUES ${buckets.join(",")}`,
     );
 }, 60000);
 

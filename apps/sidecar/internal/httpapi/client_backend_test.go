@@ -84,6 +84,16 @@ func TestPatchCaddySpecKeepsCustomizations(t *testing.T) {
 
 	cleared := patchCaddySpec(deployed, DeployCaddyRequest{Image: "caddy:2.10.0"})
 	assert.Nil(t, cleared.Caddy)
+
+	withEnv := patchCaddySpec(deployed, DeployCaddyRequest{
+		Image: "caddy:2.11.7", Env: map[string]string{"OTEL_SERVICE_NAME": "caddy", "CF_API_TOKEN": "new"},
+	})
+	assert.Equal(t, api.EnvVars{
+		"CADDY_ADMIN":       "unix//run/caddy/admin.sock",
+		"CF_API_TOKEN":      "new",
+		"OTEL_SERVICE_NAME": "caddy",
+	}, withEnv.Container.Env)
+	assert.Equal(t, "token", deployed.Container.Env["CF_API_TOKEN"])
 }
 
 func mustImageRemoteReference(t *testing.T, images []api.MachineImage) string {

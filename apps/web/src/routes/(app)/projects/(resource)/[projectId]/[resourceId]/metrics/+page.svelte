@@ -848,7 +848,7 @@
                 <AlertDescription>
                     No HTTP traffic recorded yet. Request metrics
                     appear after the first proxied request; clusters
-                    initialized before HTTP metrics were added need
+                    initialized before Caddy metrics were added need
                     monitoring re-initialized.
                 </AlertDescription>
             </Alert>

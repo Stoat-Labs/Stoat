@@ -638,6 +638,10 @@ export interface components {
         DeployCaddyRequest: {
             /** @description Global Caddyfile prepended to the generated config. Empty removes it. */
             caddyfile: string;
+            /** @description Environment variables merged into the caddy container's environment. */
+            env?: {
+                [key: string]: string;
+            };
             /** @description Caddy image. Custom images must include curl and start Caddy with /etc/caddy/Caddyfile. */
             image: string;
         };

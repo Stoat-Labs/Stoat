@@ -424,13 +424,6 @@ export async function queueResourceDeployment(deploymentId: string): Promise<voi
     );
 }
 
-// The queued deployment row is the outbox if enqueue is temporarily unavailable.
-export async function queueCaddyDeployment(deploymentId: string): Promise<void> {
-    await Effect.runPromise(
-        DeployCaddy.enqueue({ deploymentId }).pipe(Effect.provide(JobStoreLive)),
-    );
-}
-
 // The bucket row is the durable outbox if enqueue is temporarily unavailable.
 export async function queueBucketReconcile(resourceId: string, requestedAt: Date): Promise<void> {
     await Effect.runPromise(

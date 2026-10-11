@@ -273,8 +273,8 @@ async function httpMetric(
             try {
                 if (
                     !(await collecting(cluster, uc, "http", [
-                        "loki_process_custom_http_requests_total",
-                        "loki_process_custom_http_request_duration_seconds_bucket",
+                        "caddy_http_request_duration_seconds_count",
+                        "caddy_http_request_duration_seconds_bucket",
                     ]))
                 )
                     return { start, end, step, series: [], status: "not-collecting" as const };

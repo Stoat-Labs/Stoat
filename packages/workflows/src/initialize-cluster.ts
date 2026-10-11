@@ -22,6 +22,7 @@ export { readSqlRows } from "./greptime";
 
 import { appendDeploymentLog } from "@stoat/db/deployments";
 import { deployCompose } from "./deploy-compose";
+import { enableCaddyMetrics } from "./deploy-caddy";
 
 export type DeployLogFn = (
     text: string,
@@ -332,6 +333,13 @@ export function createInitializeClusterHandler(
                         await db.$client.query(
                             "UPDATE resources SET spec = $1, updated_at = now() WHERE id = $2",
                             [template, state.resourceId],
+                        );
+                        await enableCaddyMetrics(
+                            db,
+                            uc,
+                            clusterId,
+                            (text) => log(text),
+                            bounded(signal, 30_000),
                         );
 
                         return;

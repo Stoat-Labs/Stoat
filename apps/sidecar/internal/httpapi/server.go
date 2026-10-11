@@ -753,6 +753,7 @@ func (s *Server) deployCaddy(ctx context.Context, input *bodyInput[DeployCaddyRe
 	request := DeployCaddyRequest{
 		Image:     strings.TrimSpace(input.Body.Image),
 		Caddyfile: strings.TrimSpace(input.Body.Caddyfile),
+		Env:       input.Body.Env,
 	}
 	if _, err := reference.ParseNormalizedNamed(request.Image); err != nil {
 		return nil, huma.Error400BadRequest("invalid image reference: " + err.Error())
