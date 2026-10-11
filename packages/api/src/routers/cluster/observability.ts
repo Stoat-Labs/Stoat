@@ -350,7 +350,11 @@ const monitoringMiddleware = organizationProcedure.middleware(
 export const observabilityRouter = {
     listObservableClusters: organizationProcedure.handler(({ context: { db, organizationId } }) =>
         db
-            .select({ id: clusters.id, name: clusters.name })
+            .select({
+                id: clusters.id,
+                name: clusters.name,
+                monitored: sql<boolean>`${clusters.initializedAt} is not null`,
+            })
             .from(clusters)
             .where(eq(clusters.organizationId, organizationId))
             .orderBy(asc(clusters.name)),

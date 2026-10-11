@@ -362,7 +362,15 @@
                 machineCount={machines.length}
                 linkCount={links.length}
                 issueCount={issues.length}
-                versionDrift={diagnostics.versionDrift}
+                versions={machines.some(
+                    (machine) =>
+                        !machine.daemonVersion ||
+                        !machine.dockerVersion,
+                )
+                    ? "unknown"
+                    : diagnostics.versionDrift
+                      ? "drift"
+                      : "aligned"}
             />
 
             {#if issues.length > 0}
@@ -389,7 +397,7 @@
 
             <Frame class="min-w-0">
                 <FrameHeader
-                    class="flex-row flex-wrap items-start justify-between gap-3 px-2.5 py-3"
+                    class="flex-row items-start justify-between gap-3 px-2.5 py-3"
                 >
                     <div class="min-w-0">
                         <FrameTitle>Machine connections</FrameTitle>
@@ -398,7 +406,9 @@
                             cluster.
                         </FrameDescription>
                     </div>
-                    <Badge variant="secondary">{links.length}</Badge>
+                    <Badge variant="secondary" class="shrink-0">
+                        {links.length}
+                    </Badge>
                 </FrameHeader>
                 <FramePanel class="overflow-hidden p-0">
                     {#if links.length === 0 && machines.length === 0}

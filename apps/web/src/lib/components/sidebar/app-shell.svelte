@@ -178,6 +178,21 @@
 
     const clusterName = $derived(clusterQuery.data?.name);
 
+    const connectionId = $derived(page.params.connectionId);
+
+    const isS3ConnectionDetail = $derived(
+        page.url.pathname.startsWith("/s3/") && Boolean(connectionId),
+    );
+
+    const s3ConnectionQuery = createQuery(() =>
+        orpc.s3.get.queryOptions({
+            input: { connectionId: connectionId ?? "" },
+            enabled: isS3ConnectionDetail,
+        }),
+    );
+
+    const s3ConnectionName = $derived(s3ConnectionQuery.data?.name);
+
     const trail = $derived.by((): Crumb[] => {
         const base = `/projects/${projectId}`;
         const shortId = deploymentId?.slice(0, 8) ?? "";
@@ -192,6 +207,12 @@
             return [
                 { label: "Clusters", href: "/clusters" },
                 { label: clusterName ?? "…" },
+            ];
+
+        if (isS3ConnectionDetail)
+            return [
+                { label: "S3 connections", href: "/s3" },
+                { label: s3ConnectionName ?? "…" },
             ];
 
         if (isResourceDetail)

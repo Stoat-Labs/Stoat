@@ -71,9 +71,14 @@
 
     const clusters = $derived(list.data ?? []);
 
+    // Without an explicit selection, open on a cluster with monitoring when one exists.
+    const defaultCluster = $derived(
+        clusters.find((cluster) => cluster.monitored) ?? clusters[0],
+    );
+
     const selected = $derived(
         filters.clusters.current ??
-            (clusters[0] ? [clusters[0].id] : []),
+            (defaultCluster ? [defaultCluster.id] : []),
     );
 
     const selection = $derived(

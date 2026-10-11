@@ -73,6 +73,9 @@
         null,
     );
 
+    // Names come from the snapshot only: stream events carry no project or resource names.
+    let resourceLabel = $state("");
+
     let rows = $state.raw<ViewerRow[]>([]);
 
     let cancelAllowed = $state(false);
@@ -133,6 +136,7 @@
         if (!id) return;
 
         deployment = null;
+        resourceLabel = "";
         rows = [];
         cancelAllowed = false;
         streamError = "";
@@ -248,10 +252,15 @@
                 const {
                     logs: snapshotLogs,
                     canCancel: snapshotCanCancel,
+                    projectName,
+                    resourceName,
                     ...snapshotDeployment
                 } = snapshot;
 
                 deployment = snapshotDeployment;
+                resourceLabel = resourceName
+                    ? `${projectName ? `${projectName} / ` : ""}${resourceName}`
+                    : "";
                 cancelAllowed = snapshotCanCancel;
                 rows = snapshotLogs.map(toRow);
                 rawLogs.push(...snapshotLogs);
@@ -296,7 +305,7 @@
 
     const title = $derived(
         deployment?.name === "DeployResource"
-            ? "Resource deployment"
+            ? resourceLabel || "Resource deployment"
             : deployment?.name === "InitializeCluster"
               ? "Cluster initialization"
               : (deployment?.name ?? "Deployment"),

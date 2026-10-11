@@ -127,6 +127,9 @@ async function visit(page: Page, path: string) {
 
 test.beforeAll(async ({ browser }) => {
     await resetData();
+    // Clusters other specs initialized lost their monitoring stack when the fake sidecar was
+    // reset. They would never answer, and observability opens on a monitored cluster by default.
+    await sql("DELETE FROM clusters WHERE initialised_at IS NOT NULL");
 
     // A finished deployment, so deployment pages and their links exist.
     const page = await browser.newPage();

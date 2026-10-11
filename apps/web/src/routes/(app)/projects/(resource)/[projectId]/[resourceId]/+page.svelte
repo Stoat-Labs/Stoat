@@ -33,6 +33,11 @@
         EmptyMedia,
         EmptyTitle,
     } from "$lib/components/ui/empty";
+    import {
+        Tooltip,
+        TooltipPopup,
+        TooltipTrigger,
+    } from "$lib/components/ui/tooltip";
     import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
@@ -466,47 +471,55 @@
 
 {#snippet deployAction()}
     {#if !readOnly && resource?.type !== "bucket" && page.data.isOrganizationAdmin}
-        <ButtonGroup>
-            <Button
-                onclick={() => deploySavedDraft()}
-                loading={deployMutation.isPending}
-                disabled={!canDeploy}
-                title={hasUndeployedChanges
-                    ? "Saved draft has undeployed changes"
-                    : "Deploy"}
-            >
-                <span class="inline-flex items-baseline gap-0.5">
-                    Deploy
-                    {#if hasUndeployedChanges}
+        <Tooltip disabled={!hasUndeployedChanges}>
+            <TooltipTrigger as="span" class="inline-flex">
+                <ButtonGroup>
+                    <Button
+                        onclick={() => deploySavedDraft()}
+                        loading={deployMutation.isPending}
+                        disabled={!canDeploy}
+                    >
                         <span
-                            class="inline-block origin-center text-md leading-none text-orange-500 scale-125"
-                            aria-hidden="true"
+                            class="inline-flex items-baseline gap-0.5"
                         >
-                            *
+                            Deploy
+                            {#if hasUndeployedChanges}
+                                <span
+                                    class="inline-block origin-center text-md leading-none text-orange-500 scale-125"
+                                    aria-hidden="true"
+                                >
+                                    *
+                                </span>
+                                <span class="sr-only">
+                                    (undeployed changes)
+                                </span>
+                            {/if}
                         </span>
-                        <span class="sr-only">
-                            (undeployed changes)
-                        </span>
-                    {/if}
-                </span>
-            </Button>
-            <ButtonGroupSeparator />
-            <Menu>
-                <MenuTrigger
-                    class={buttonVariants({ size: "icon" })}
-                    disabled={!canDeploy}
-                    aria-label="More deploy options"
-                >
-                    <ChevronDown aria-hidden="true" />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                    <MenuItem onclick={() => deploySavedDraft(true)}>
-                        <RefreshCw aria-hidden="true" />
-                        Recreate
-                    </MenuItem>
-                </MenuPopup>
-            </Menu>
-        </ButtonGroup>
+                    </Button>
+                    <ButtonGroupSeparator />
+                    <Menu>
+                        <MenuTrigger
+                            class={buttonVariants({ size: "icon" })}
+                            disabled={!canDeploy}
+                            aria-label="More deploy options"
+                        >
+                            <ChevronDown aria-hidden="true" />
+                        </MenuTrigger>
+                        <MenuPopup align="end">
+                            <MenuItem
+                                onclick={() => deploySavedDraft(true)}
+                            >
+                                <RefreshCw aria-hidden="true" />
+                                Recreate
+                            </MenuItem>
+                        </MenuPopup>
+                    </Menu>
+                </ButtonGroup>
+            </TooltipTrigger>
+            <TooltipPopup side="bottom" sideOffset={8}>
+                Undeployed changes
+            </TooltipPopup>
+        </Tooltip>
     {/if}
 {/snippet}
 

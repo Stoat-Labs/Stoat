@@ -29,7 +29,6 @@
         s3DraftComplete,
         type S3ConnectionDraft,
     } from "$lib/s3";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import { s3Providers } from "@stoat/s3/providers";
     import {
@@ -173,7 +172,6 @@
             <div class="flex flex-col gap-6">
                 <div class="flex items-start gap-3">
                     <span class="size-8 shrink-0 rounded-lg"></span>
-                    <span class="size-14 shrink-0 rounded-lg"></span>
                     <div>
                         <h1 class="text-2xl font-semibold">
                             Connection name
@@ -246,17 +244,9 @@
         </Skeleton>
     {:else}
         <div class="flex items-start gap-3">
-            <Button
-                variant="ghost"
-                size="icon-sm"
-                href="/s3"
-                aria-label="Back to S3 connections"
-            >
-                <ArrowLeft aria-hidden="true" />
-            </Button>
             <ProviderIcon
                 provider={connection.provider}
-                class="size-14"
+                class="size-8"
             />
             <div class="min-w-0">
                 <h1 class="text-2xl font-semibold break-anywhere">

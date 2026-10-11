@@ -45,7 +45,7 @@
             placeholder="32-character Cloudflare account ID"
             autocomplete="off"
             spellcheck="false"
-            class="font-mono"
+            class="font-mono placeholder:font-sans"
             {disabled}
         />
     </Field>
@@ -101,7 +101,7 @@
             placeholder={editing ? keepHint : "Access key"}
             autocomplete="off"
             spellcheck="false"
-            class="font-mono"
+            class="font-mono placeholder:font-sans"
             {disabled}
         />
     </Field>

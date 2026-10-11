@@ -466,18 +466,6 @@
                             </Card>
                         </li>
                     {/each}
-                    {#if !isInternal}<li class="min-w-0">
-                            <a
-                                href={createHref}
-                                class="flex h-full min-h-28 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-input hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            >
-                                <Plus
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                                Add resource
-                            </a>
-                        </li>{/if}
                 </ul>
             </main>
         {/if}

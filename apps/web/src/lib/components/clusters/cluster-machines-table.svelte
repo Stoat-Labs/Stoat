@@ -56,7 +56,7 @@
 
 <Frame class="min-w-0">
     <FrameHeader
-        class="flex-row flex-wrap items-start justify-between gap-3 px-2.5 py-3"
+        class="flex-row items-start justify-between gap-3 px-2.5 py-3"
     >
         <div class="min-w-0">
             <FrameTitle>Machines</FrameTitle>
@@ -64,7 +64,7 @@
                 Members reported by the Uncloud control plane.
             </FrameDescription>
         </div>
-        <Badge variant="secondary">
+        <Badge variant="secondary" class="shrink-0">
             {machines.length}
         </Badge>
     </FrameHeader>

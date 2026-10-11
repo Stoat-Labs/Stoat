@@ -8,13 +8,28 @@
         machineCount,
         linkCount,
         issueCount,
-        versionDrift,
+        versions,
     }: {
         machineCount: number;
         linkCount: number;
         issueCount: number;
-        versionDrift: boolean;
+        versions: "aligned" | "drift" | "unknown";
     } = $props();
+
+    const versionStat = {
+        aligned: {
+            value: "Aligned",
+            hint: "Across cluster machines",
+        },
+        drift: {
+            value: "Drift",
+            hint: "Machines run different versions",
+        },
+        unknown: {
+            value: "Unknown",
+            hint: "Some machines did not report versions",
+        },
+    } as const;
 
     const stats = $derived([
         {
@@ -38,14 +53,14 @@
         {
             label: "Versions",
             icon: GitBranch,
-            value: versionDrift ? "Drift" : "Aligned",
-            hint: "Across cluster machines",
+            value: versionStat[versions].value,
+            hint: versionStat[versions].hint,
         },
     ]);
 </script>
 
 <div
-    class="grid overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 xl:grid-cols-4"
+    class="grid overflow-hidden rounded-xl border border-border bg-border grid-cols-2 md:grid-cols-4"
 >
     {#each stats as stat (stat.label)}
         <div class="bg-card p-4">

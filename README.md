@@ -15,7 +15,6 @@
 
 <img width="2237" height="1332" alt="image" src="https://github.com/user-attachments/assets/01725fe7-3840-4b43-b302-262ff5b38667" />
 
-
 ## Features
 
 Stoat sits between the simplicity of Docker and the complexity of Kubernetes: deploy Compose apps across your own machines from a single dashboard.
@@ -49,10 +48,6 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
 1. **Download `compose.yml` and `.env.example`**
 
     ```bash
-    git clone https://github.com/Stoat-labs/Stoat.git && cd Stoat
-    ```
-
-    ```bash
     APP_URL=stoat.example.com
     APP_SECRET=changeme                   # openssl rand -hex 32 # this is used to encrypt secrets, dont lose it
     POSTGRES_PASSWORD=changeme            # openssl rand -hex 32
@@ -60,13 +55,13 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
     REDIS_URL=redis://stoat-cache.internal:6379
     ```
 
-3. **Start Stoat**
+2. **Start Stoat**
 
     ```bash
     uc deploy
     ```
 
-4. Open `https://stoat.example` or whatever you set and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster. Enjoy :D
+3. Open `https://stoat.example` or whatever you set and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster. Enjoy :D
 
 <!--## Project Structure
 

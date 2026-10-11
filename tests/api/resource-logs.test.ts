@@ -250,7 +250,6 @@ describe("resource logs backend", () => {
             id: resourceId,
             projectId,
             name: "Resource",
-            spec: "services:\n  editable-draft:\n    image: secret\n",
         });
         inspected = [];
         inspectionFailures = new Set();
@@ -405,21 +404,33 @@ describe("resource logs backend", () => {
         return stream;
     }
 
-    it("lists no nonexistent/queued services, then uses deployed snapshot prefixes and actual current IDs", async () => {
+    it("lists services deployed outside Stoat, then uses deployed snapshot prefixes and actual current IDs", async () => {
         expect(await call(resourcesRouter.listLogServices, input, { context })).toEqual({
             services: [],
             historyAvailable: false,
             retentionDays: null,
         });
-        expect(inspected).toEqual([
-            `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-editable-draft`,
-        ]);
-        inspected.length = 0;
-        await deployment("queued");
-        expect((await call(resourcesRouter.listLogServices, input, { context })).services).toEqual(
-            [],
-        );
         expect(inspected).toEqual([]);
+        await db
+            .update(resources)
+            .set({
+                spec: "services:\n  web: { image: nginx }\n  missing: { image: nginx }\n",
+                settings: { prefixNames: false },
+            })
+            .where(eq(resources.id, resourceId));
+
+        // Saved services that already run are listed before and during a queued deployment.
+        for (const status of [undefined, "queued"] as const) {
+            if (status) await deployment(status);
+            inspected.length = 0;
+            expect(
+                (await call(resourcesRouter.listLogServices, input, { context })).services,
+            ).toEqual([{ id: "web-id", name: "web" }]);
+            expect(inspected).toEqual(["web", "missing"]);
+        }
+
+        await db.update(resources).set({ spec: null }).where(eq(resources.id, resourceId));
+        inspected.length = 0;
         await deployment("ready", "services:\n  web: { image: nginx }\n", "deployed-prefix");
         current.set("deployed-prefix-web", "current-recreated-id");
         expect(await call(resourcesRouter.listLogServices, input, { context })).toEqual({

@@ -244,6 +244,10 @@
         finishedAt: new Date(),
     };
 
+    function deploymentLabel(name: string) {
+        return name === "InitializeCluster" ? "Cluster setup" : name;
+    }
+
     function isSettled(status: string) {
         return (
             status === "ready" ||
@@ -315,8 +319,7 @@
             {meta}
             loading={deploymentsQuery.isPending}
             loadingRows={limit}
-            colSpan={(resourceId || latest !== undefined ? 5 : 7) +
-                (canDelete ? 1 : 0)}
+            colSpan={5 + (canDelete ? 1 : 0)}
             isEmpty={items.length === 0}
             emptyTitle={status === "all"
                 ? "No deployments yet"
@@ -339,18 +342,6 @@
                     <TableHead class="text-center">Status</TableHead>
                     <TableHead>Deployment</TableHead>
                     <TableHead class="text-center">Cluster</TableHead>
-                    {#if !resourceId && latest === undefined}
-                        <TableHead
-                            class="hidden text-center md:table-cell"
-                        >
-                            Project
-                        </TableHead>
-                        <TableHead
-                            class="hidden text-center md:table-cell"
-                        >
-                            Resource
-                        </TableHead>
-                    {/if}
                     <TableHead
                         class="hidden text-center md:table-cell"
                     >
@@ -402,9 +393,9 @@
                 onclick={(event) => event.stopPropagation()}
                 class="font-medium hover:underline"
             >
-                {latest !== undefined && deployment.resourceName
+                {deployment.resourceName
                     ? `${deployment.projectName ? `${deployment.projectName} / ` : ""}${deployment.resourceName}`
-                    : deployment.name}
+                    : deploymentLabel(deployment.name)}
             </a>
         </TableCell>
         <TableCell class="text-center">
@@ -416,45 +407,6 @@
                 {deployment.clusterName}
             </a>
         </TableCell>
-        {#if !resourceId && latest === undefined}
-            <TableCell class="hidden text-center md:table-cell">
-                {#if deployment.projectId}
-                    <a
-                        href={`/projects/${deployment.projectId}`}
-                        onclick={(event) => event.stopPropagation()}
-                        class="hover:underline"
-                    >
-                        {deployment.projectName ?? "Project"}
-                    </a>
-                {:else}
-                    <span class="text-sm text-muted-foreground">
-                        —
-                    </span>
-                {/if}
-            </TableCell>
-            <TableCell class="hidden text-center md:table-cell">
-                {#if deployment.resourceId}
-                    {#if deployment.projectId}
-                        <a
-                            href={`/projects/${deployment.projectId}/${deployment.resourceId}`}
-                            onclick={(event) =>
-                                event.stopPropagation()}
-                            class="hover:underline"
-                        >
-                            {deployment.resourceName ?? "Resource"}
-                        </a>
-                    {:else}
-                        <span class="text-sm">
-                            {deployment.resourceName ?? "Resource"}
-                        </span>
-                    {/if}
-                {:else}
-                    <span class="text-sm text-muted-foreground">
-                        —
-                    </span>
-                {/if}
-            </TableCell>
-        {/if}
         <TableCell class="hidden text-center md:table-cell">
             <span class="text-sm text-muted-foreground">
                 {latest === undefined

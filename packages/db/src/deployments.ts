@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { Client, type Notification } from "pg";
 import type { Database } from "./index";
@@ -7,6 +7,8 @@ import {
     deploymentLogs,
     deployments,
     type DeploymentStatus,
+    projects,
+    resources,
 } from "./schema";
 
 export type Deployment = typeof deployments.$inferSelect;
@@ -119,9 +121,19 @@ export function listDeployments(db: Database, clusterId: string, limit = 20) {
 }
 
 export async function getDeploymentWithLogs(db: Database, id: string) {
-    const [deployment] = await db.select().from(deployments).where(eq(deployments.id, id)).limit(1);
+    const [row] = await db
+        .select({
+            ...getTableColumns(deployments),
+            resourceName: resources.name,
+            projectName: projects.name,
+        })
+        .from(deployments)
+        .leftJoin(resources, eq(deployments.resourceId, resources.id))
+        .leftJoin(projects, eq(resources.projectId, projects.id))
+        .where(eq(deployments.id, id))
+        .limit(1);
 
-    if (!deployment) return null;
+    if (!row) return null;
 
     const logs = await db
         .select()
@@ -130,7 +142,7 @@ export async function getDeploymentWithLogs(db: Database, id: string) {
         .orderBy(asc(deploymentLogs.id))
         .limit(MAX_LOGS);
 
-    return { ...deployment, logs };
+    return { ...row, logs };
 }
 
 /** The null IDs are a subscription-ready event: invalidate once to close the list/read race. */

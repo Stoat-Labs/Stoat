@@ -47,7 +47,13 @@ async function resource(page: Page, image = "nginx:alpine") {
         `services:\n  web:\n    image: ${image}\n`,
     ]);
 
-    return { id, name, projectId: project.id, path: `/projects/${project.id}/${id}` };
+    return {
+        id,
+        name,
+        projectName: `Deploy project ${suffix}`,
+        projectId: project.id,
+        path: `/projects/${project.id}/${id}`,
+    };
 }
 
 async function deploy(page: Page, path: string) {
@@ -70,7 +76,9 @@ test("a deploy streams to ready, then the resource shows its running container",
     await expect(page.getByRole("button", { name: /undeployed changes/u })).toBeVisible();
     await deploy(page, target.path);
 
-    await expect(page.getByRole("heading", { name: "Resource deployment" })).toBeVisible();
+    await expect(
+        page.getByRole("heading", { name: `${target.projectName} / ${target.name}` }),
+    ).toBeVisible();
     await expect(status(page)).toHaveText("Ready");
     await expect(page.getByText(/Started .*web/u).first()).toBeVisible();
 

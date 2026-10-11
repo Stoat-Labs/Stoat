@@ -44,8 +44,17 @@
         return [...unique.values()];
     });
 
-    const width = $derived(
+    let containerWidth = $state(0);
+
+    const naturalWidth = $derived(
         nodes.length <= 2 ? 600 : Math.max(640, nodes.length * 115),
+    );
+
+    // Small graphs shrink to the available width; larger ones keep their width and scroll.
+    const width = $derived(
+        nodes.length <= 2
+            ? Math.min(naturalWidth, Math.max(containerWidth, 320))
+            : naturalWidth,
     );
 
     const height = $derived(
@@ -64,7 +73,10 @@
                     {
                         x: Match.value(nodes.length).pipe(
                             Match.when(1, () => width / 2),
-                            Match.when(2, () => 140 + index * 320),
+                            Match.when(
+                                2,
+                                () => (width * (2 * index + 1)) / 4,
+                            ),
                             Match.orElse(
                                 () =>
                                     width / 2 +
@@ -192,14 +204,17 @@
     });
 </script>
 
-<div>
+<div bind:clientWidth={containerWidth}>
     <div
         class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-muted-foreground sm:px-5"
     >
         <span>
-            {nodes.length} {nodes.length === 1 ? "machine" : "machines"}
+            {nodes.length}
+            {nodes.length === 1 ? "machine" : "machines"}
             <span class="mx-1 opacity-40">/</span>
-            {links.length} measured {links.length === 1 ? "path" : "paths"}
+            {links.length} measured {links.length === 1
+                ? "path"
+                : "paths"}
         </span>
         <span>Median latency / Hover a path for variation</span>
     </div>

@@ -200,20 +200,13 @@ async function deployedServices(
 
     const names = new Set<string>(monitoring ? [GREPTIME_SERVICE, ALLOY_SERVICE] : []);
 
-    if (candidates.length === 0 && resource.spec?.trim()) {
-        const [tracked] = await db
-            .select({ id: deployments.id })
-            .from(deployments)
-            .where(eq(deployments.resourceId, resource.id))
-            .limit(1);
-
-        // Imported resources predate deployment snapshots. Resolve their saved
-        // Compose names just like Overview, then accept only services that exist.
-        if (!tracked)
-            for (const name of formatComposeFile(resource.spec, resourceComposePrefix(resource))
-                .serviceNames)
-                names.add(name);
-    }
+    // Services can exist before Stoat deploys them (deployed outside Stoat, or a deployment
+    // that is queued or failed early). Resolve the saved Compose names just like Overview,
+    // then accept only services that exist.
+    if (resource.spec?.trim())
+        for (const name of formatComposeFile(resource.spec, resourceComposePrefix(resource))
+            .serviceNames)
+            names.add(name);
 
     // A failed partial deploy can leave services from the last successful snapshot alive.
     // Include subsequent attempted snapshots, never a queued or editable draft.
@@ -856,8 +849,9 @@ export const resourceLogsRouter = {
 
                         // Replica discovery is per service and must never delay the auth deadline.
                         for (const refresh of refreshers.values()) void refresh();
-                    } catch {
+                    } catch (error) {
                         if (combined.aborted) return;
+                        console.error("Log access check failed", error);
                         failure = new ORPCError("FORBIDDEN", {
                             message:
                                 "Log access expired or could not be verified. Refresh the resource.",

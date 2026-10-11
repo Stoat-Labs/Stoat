@@ -34,6 +34,12 @@
 
     const metrics = $derived(metricsQuery.data);
 
+    const notSetUp = $derived(
+        metrics &&
+            !metrics.available &&
+            metrics.reason === "uninitialized",
+    );
+
     const machines = $derived(cluster.diagnostics?.machines ?? []);
 
     const onlineMachines = $derived(
@@ -146,95 +152,113 @@
         </p>
     </div>
 
-    <div class="min-w-0 space-y-3">
-        <dl class="grid gap-4 sm:grid-cols-3">
-            {#each stats as stat (stat.label)}
-                {@const ratio =
-                    stat.usage && stat.usage.total > 0
-                        ? Math.min(
-                              1,
-                              Math.max(
-                                  0,
-                                  stat.usage.used / stat.usage.total,
-                              ),
-                          )
-                        : 0}
-                <div class="min-w-0 space-y-1.5">
-                    <dt class="text-xs text-muted-foreground">
-                        {stat.label}
-                    </dt>
-                    <dd>
-                        <Skeleton
-                            loading={metricsQuery.isPending}
-                            loading-label={`Loading ${stat.label} usage`}
-                        >
-                            <p
-                                class="truncate text-sm font-medium tabular-nums"
-                            >
-                                {stat.text ??
-                                    (metricsQuery.isPending
-                                        ? "0 / 0 units"
-                                        : "No data")}
-                            </p>
-                            {#if stat.usage}
-                                <Meter
-                                    value={Math.round(ratio * 100)}
-                                    aria-label={`${stat.label} usage`}
-                                >
-                                    <MeterTrack
-                                        class="mt-1.5 h-1.5 rounded-full"
-                                    >
-                                        <MeterIndicator
-                                            class={cn(
-                                                "rounded-full",
-                                                meterTone(ratio),
-                                            )}
-                                        />
-                                    </MeterTrack>
-                                </Meter>
-                            {:else}
-                                <div
-                                    class="mt-1.5 h-1.5 rounded-full bg-muted"
-                                ></div>
-                            {/if}
-                        </Skeleton>
-                    </dd>
-                </div>
-            {/each}
-        </dl>
-        {#if metricsQuery.isError || (metrics && !metrics.available)}
-            <div
-                class="flex flex-wrap items-center justify-between gap-2"
+    {#if notSetUp}
+        <div
+            class="flex min-w-0 flex-wrap items-center justify-between gap-2"
+        >
+            <p class="text-xs text-muted-foreground">
+                Monitoring not set up
+            </p>
+            <Button
+                class="relative z-10"
+                size="sm"
+                variant="outline"
+                href="/clusters/{cluster.id}"
             >
-                <p
-                    class="text-xs text-muted-foreground"
-                    role="status"
+                Set up monitoring
+            </Button>
+        </div>
+    {:else}
+        <div class="min-w-0 space-y-3">
+            <dl class="grid gap-4 sm:grid-cols-3">
+                {#each stats as stat (stat.label)}
+                    {@const ratio =
+                        stat.usage && stat.usage.total > 0
+                            ? Math.min(
+                                  1,
+                                  Math.max(
+                                      0,
+                                      stat.usage.used /
+                                          stat.usage.total,
+                                  ),
+                              )
+                            : 0}
+                    <div class="min-w-0 space-y-1.5">
+                        <dt class="text-xs text-muted-foreground">
+                            {stat.label}
+                        </dt>
+                        <dd>
+                            <Skeleton
+                                loading={metricsQuery.isPending}
+                                loading-label={`Loading ${stat.label} usage`}
+                            >
+                                <p
+                                    class="truncate text-sm font-medium tabular-nums"
+                                >
+                                    {stat.text ??
+                                        (metricsQuery.isPending
+                                            ? "0 / 0 units"
+                                            : "No data")}
+                                </p>
+                                {#if stat.usage}
+                                    <Meter
+                                        value={Math.round(
+                                            ratio * 100,
+                                        )}
+                                        aria-label={`${stat.label} usage`}
+                                    >
+                                        <MeterTrack
+                                            class="mt-1.5 h-1.5 rounded-full"
+                                        >
+                                            <MeterIndicator
+                                                class={cn(
+                                                    "rounded-full",
+                                                    meterTone(ratio),
+                                                )}
+                                            />
+                                        </MeterTrack>
+                                    </Meter>
+                                {:else}
+                                    <div
+                                        class="mt-1.5 h-1.5 rounded-full bg-muted"
+                                    ></div>
+                                {/if}
+                            </Skeleton>
+                        </dd>
+                    </div>
+                {/each}
+            </dl>
+            {#if metricsQuery.isError || (metrics && !metrics.available)}
+                <div
+                    class="flex flex-wrap items-center justify-between gap-2"
                 >
-                    {#if metrics && !metrics.available && metrics.reason === "uninitialized"}
-                        Monitoring is not set up. Initialize this
-                        cluster to see resource usage.
-                    {:else}
+                    <p
+                        class="text-xs text-muted-foreground"
+                        role="status"
+                    >
                         Usage metrics are unavailable. Check the
                         cluster connection and monitoring services.
-                    {/if}
-                </p>
-                <Button
-                    class="relative z-10"
-                    size="sm"
-                    variant="outline"
-                    disabled={metricsQuery.isFetching}
-                    onclick={() => {
-                        void metricsQuery.refetch();
-                        void queryClient.invalidateQueries({
-                            queryKey: orpc.cluster.healthz.key({
-                                input: { clusterId: cluster.id },
-                            }),
-                        });
-                    }}
-                >
-                    {metricsQuery.isFetching ? "Retrying…" : "Retry"}
-                </Button>
-            </div>
-        {/if}
-    </div>
+                    </p>
+                    <Button
+                        class="relative z-10"
+                        size="sm"
+                        variant="outline"
+                        disabled={metricsQuery.isFetching}
+                        onclick={() => {
+                            void metricsQuery.refetch();
+                            void queryClient.invalidateQueries({
+                                queryKey: orpc.cluster.healthz.key({
+                                    input: { clusterId: cluster.id },
+                                }),
+                            });
+                        }}
+                    >
+                        {metricsQuery.isFetching
+                            ? "Retrying…"
+                            : "Retry"}
+                    </Button>
+                </div>
+            {/if}
+        </div>
+    {/if}
 </li>
