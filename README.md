@@ -41,7 +41,7 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
 ### Prerequisites
 
 - An [Uncloud](https://uncloud.run/) cluster
-- Docker & Docker Compose
+- Uncloud cli
 
 ### Install
 
