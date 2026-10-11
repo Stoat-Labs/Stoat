@@ -7,6 +7,7 @@ require (
 	github.com/bdpiprava/scalar-go v0.13.0
 	github.com/compose-spec/compose-go/v2 v2.9.0
 	github.com/danielgtaylor/huma/v2 v2.39.1
+	github.com/distribution/reference v0.6.0
 	github.com/docker/compose/v2 v2.40.0
 	github.com/docker/docker v28.5.0+incompatible
 	github.com/goccy/go-yaml v1.19.2
@@ -71,7 +72,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/distribution/v3 v3.0.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/buildx v0.29.1 // indirect
 	github.com/docker/cli v28.5.0+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect

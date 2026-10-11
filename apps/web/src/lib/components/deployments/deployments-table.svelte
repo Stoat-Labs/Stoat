@@ -247,7 +247,11 @@
     };
 
     function deploymentLabel(name: string) {
-        return name === "InitializeCluster" ? "Cluster setup" : name;
+        if (name === "InitializeCluster") return "Cluster setup";
+
+        if (name === "DeployCaddy") return "Caddy";
+
+        return name;
     }
 
     function isSettled(status: string) {

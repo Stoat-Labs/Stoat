@@ -1,6 +1,8 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
+    import CaddyDialog from "$lib/components/clusters/caddy-dialog.svelte";
+    import ClusterCaddyCard from "$lib/components/clusters/cluster-caddy-card.svelte";
     import ClusterConnectionsFlow from "$lib/components/clusters/cluster-connections-flow.svelte";
     import ClusterMachinesTable from "$lib/components/clusters/cluster-machines-table.svelte";
     import ClusterMonitoringCard from "$lib/components/clusters/cluster-monitoring-card.svelte";
@@ -166,7 +168,8 @@
             | "initialize"
             | "reinitialize"
             | "monitoring"
-            | "retention",
+            | "retention"
+            | "caddy",
     ) {
         void dialog.set(next);
     }
@@ -425,6 +428,11 @@
                 onretry={retryInitialization}
                 onopendialog={openDialog}
             />
+
+            <ClusterCaddyCard
+                clusterId={cluster.id}
+                onconfigure={() => openDialog("caddy")}
+            />
         {:else}
             <Alert variant="error">
                 <CircleAlert aria-hidden="true" />
@@ -460,6 +468,20 @@
         : "initialize"}
     onInitialized={openDeployment}
 />
+{#if cluster?.canInitialize}
+    <CaddyDialog
+        bind:open={
+            () => dialog.current === "caddy",
+            (open) => {
+                if (mounted && !open && dialog.current === "caddy") {
+                    void dialog.set(null);
+                }
+            }
+        }
+        {clusterId}
+        ondeployed={openDeployment}
+    />
+{/if}
 <MonitoringConnectionDialog
     bind:open={
         () => dialog.current === "monitoring" && canViewMonitoring,

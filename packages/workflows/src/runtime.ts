@@ -10,9 +10,11 @@ import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
 import { createInitializeClusterHandler } from "./initialize-cluster";
+import { CADDY_FAILURE_MESSAGE, deployCaddy } from "./deploy-caddy";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
 import { runHealthCheck } from "./health-check";
 import {
+    DeployCaddy,
     DeployResource,
     HealthCheck,
     InitializeCluster,
@@ -140,6 +142,29 @@ export const DeployResourceLive = DeployResource.toLayer(
             // before effect-mq invokes its terminal failure hook.
             return Effect.promise(() => attempt);
         }),
+    { concurrency: 4 },
+);
+
+export const DeployCaddyLive = DeployCaddy.toLayer(
+    ({ deploymentId }) =>
+        Effect.callback<void>((resume, signal) => {
+            const attempt = (async () => {
+                const db = createHandlerDb();
+
+                try {
+                    await deployCaddy(db, deploymentId, signal);
+                } finally {
+                    await db.$client.end();
+                }
+            })().then(
+                () => resume(Effect.void),
+                // deployCaddy only throws CADDY_FAILURE_MESSAGE; never pass a raw cause.
+                () => resume(Effect.die(new Error(CADDY_FAILURE_MESSAGE))),
+            );
+
+            return Effect.promise(() => attempt);
+        }),
+    // One rollout per cluster is enforced when queueing; across clusters they are independent.
     { concurrency: 4 },
 );
 
@@ -303,14 +328,17 @@ async function recordFailureAsync(failure: Worker.JobFailure) {
             return;
         }
 
-        if (failure.name === "DeployResource") {
+        if (failure.name === "DeployResource" || failure.name === "DeployCaddy") {
             if (!deployment || !["queued", "running"].includes(deployment.status)) return;
             const cause = Cause.squash(failure.cause);
             const timedOut = Cause.isTimeoutError(cause);
 
             const reason = timedOut
                 ? cause.message
-                : (deployment.error ?? RESOURCE_FAILURE_MESSAGE);
+                : (deployment.error ??
+                  (failure.name === "DeployCaddy"
+                      ? CADDY_FAILURE_MESSAGE
+                      : RESOURCE_FAILURE_MESSAGE));
 
             // The attempt already logged its own reason; only timeouts are new here.
             const text = timedOut ? reason : "Deployment failed.";
@@ -361,7 +389,11 @@ export const WorkerLive = Worker.layer({
         if (failure.name === "ReconcileBucket")
             return Effect.promise(() => recordBucketFailureAsync(failure)).pipe(Effect.ignore);
 
-        if (failure.name !== "DeployResource" && failure.name !== "InitializeCluster")
+        if (
+            failure.name !== "DeployResource" &&
+            failure.name !== "DeployCaddy" &&
+            failure.name !== "InitializeCluster"
+        )
             return Effect.void;
 
         return Effect.promise(() => recordFailureAsync(failure)).pipe(Effect.ignore);
@@ -372,6 +404,7 @@ export function monitoringWorkerLive(watchGitSources: GitWatcher) {
     return Layer.mergeAll(
         InitializeClusterLive,
         DeployResourceLive,
+        DeployCaddyLive,
         ReconcileBucketLive,
         HealthCheckLive,
         watchGitSourcesLive(watchGitSources),
@@ -388,6 +421,13 @@ export function enqueueInitialization(clusterId: string, requestId: string) {
 export async function queueResourceDeployment(deploymentId: string): Promise<void> {
     await Effect.runPromise(
         DeployResource.enqueue({ deploymentId }).pipe(Effect.provide(JobStoreLive)),
+    );
+}
+
+// The queued deployment row is the outbox if enqueue is temporarily unavailable.
+export async function queueCaddyDeployment(deploymentId: string): Promise<void> {
+    await Effect.runPromise(
+        DeployCaddy.enqueue({ deploymentId }).pipe(Effect.provide(JobStoreLive)),
     );
 }
 
@@ -417,10 +457,15 @@ export async function queueClusterHealthCheck(clusterId: string): Promise<void> 
  */
 export async function cancelDeploymentJob(
     jobId: string,
-    name: "InitializeCluster" | "DeployResource" = "InitializeCluster",
+    name: "InitializeCluster" | "DeployResource" | "DeployCaddy" = "InitializeCluster",
 ): Promise<void> {
     try {
-        const job = name === "DeployResource" ? DeployResource : InitializeCluster;
+        const job =
+            name === "DeployResource"
+                ? DeployResource
+                : name === "DeployCaddy"
+                  ? DeployCaddy
+                  : InitializeCluster;
 
         const program = job
             .cancel(JobStore.JobId(`${name}/${jobId}`))
@@ -446,9 +491,18 @@ async function pollOutboxAsync() {
             `SELECT id AS "deploymentId" FROM deployments WHERE name = 'DeployResource' AND status = 'queued'`,
         );
 
+        const caddy = await db.$client.query<{ deploymentId: string }>(
+            `SELECT id AS "deploymentId" FROM deployments WHERE name = 'DeployCaddy' AND status = 'queued'`,
+        );
+
         const buckets = await pendingBucketRequests(db);
 
-        return { initialization: initialization.rows, resources: resources.rows, buckets };
+        return {
+            initialization: initialization.rows,
+            resources: resources.rows,
+            caddy: caddy.rows,
+            buckets,
+        };
     } finally {
         await db.$client.end().catch(() => {});
     }
@@ -457,13 +511,14 @@ async function pollOutboxAsync() {
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox() {
     return Effect.promise(() => pollOutboxAsync()).pipe(
-        Effect.flatMap(({ initialization, resources, buckets }) =>
+        Effect.flatMap(({ initialization, resources, caddy, buckets }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
                         enqueueInitialization(row.clusterId, row.requestedAt.toISOString()),
                     ),
                     ...resources.map((row) => DeployResource.enqueue(row)),
+                    ...caddy.map((row) => DeployCaddy.enqueue(row)),
                     ...buckets.map((row) =>
                         ReconcileBucket.enqueue({
                             resourceId: row.resourceId,
@@ -480,6 +535,6 @@ export function pollInitializationOutbox() {
 
 export { JobStoreLive, PgLive };
 
-export { DeployResource, HealthCheck, InitializeCluster, ReconcileBucket };
+export { DeployCaddy, DeployResource, HealthCheck, InitializeCluster, ReconcileBucket };
 
 export type { Database };

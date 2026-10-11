@@ -142,12 +142,16 @@ export const deploymentsRouter = {
                 throw new ORPCError("CONFLICT", { message: "This deployment already settled." });
             }
 
-            await cancelDeploymentJob(
-                deployment.jobId,
-                deployment.resourceId ? "DeployResource" : "InitializeCluster",
-            );
+            const job =
+                deployment.name === "DeployCaddy"
+                    ? "DeployCaddy"
+                    : deployment.resourceId
+                      ? "DeployResource"
+                      : "InitializeCluster";
 
-            if (!deployment.resourceId)
+            await cancelDeploymentJob(deployment.jobId, job);
+
+            if (job === "InitializeCluster")
                 await db
                     .update(clusters)
                     .set({

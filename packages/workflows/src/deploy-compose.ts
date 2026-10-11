@@ -1,5 +1,10 @@
 import { stripVTControlCharacters } from "node:util";
-import { encodeComposeFile, UcApiError, type UcClient } from "@stoat/uncloud";
+import {
+    type DeployComposeEvent,
+    encodeComposeFile,
+    UcApiError,
+    type UcClient,
+} from "@stoat/uncloud";
 import { Predicate } from "effect";
 import { parse } from "yaml";
 
@@ -134,6 +139,30 @@ export async function deployCompose(
         return values.size ? plain.replace(secrets, "[REDACTED]") : plain;
     };
 
+    await followDeployment(
+        uc.stream.deployCompose(
+            encodeComposeFile(compose),
+            { services, skipHealth: false, ...(recreate && { recreate }) },
+            { signal },
+        ),
+        signal,
+        onLog,
+        redact,
+        onProgress,
+    );
+}
+
+/**
+ * Logs a sidecar deployment event stream and reports progress, throwing `DeploymentError`
+ * unless Uncloud confirms completion. Every log line and error goes through `redact`.
+ */
+export async function followDeployment(
+    events: AsyncIterable<DeployComposeEvent>,
+    signal: AbortSignal,
+    onLog: DeploymentLogger,
+    redact: (text: string) => string = stripVTControlCharacters,
+    onProgress: (percent: number) => Promise<void> = async () => {},
+) {
     const log: DeploymentLogger = (text, level, event) => onLog(redact(text), level, event);
     let complete = false;
     let failure: string | undefined;
@@ -152,11 +181,7 @@ export async function deployCompose(
     };
 
     try {
-        for await (const event of uc.stream.deployCompose(
-            encodeComposeFile(compose),
-            { services, skipHealth: false, ...(recreate && { recreate }) },
-            { signal },
-        )) {
+        for await (const event of events) {
             signal.throwIfAborted();
 
             if (!Predicate.isObject(event)) throw new Error("Invalid Uncloud deployment event.");

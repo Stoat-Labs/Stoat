@@ -11,6 +11,7 @@ import {
     organizationProcedure,
     uncloudMiddleware,
 } from "../..";
+import { caddyRouter } from "./caddy";
 import { deploymentsRouter } from "./deployments";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
@@ -38,6 +39,7 @@ export const clusterRouter = {
     ...monitoringRouter,
     ...metricsRouter,
     ...observabilityRouter,
+    ...caddyRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(

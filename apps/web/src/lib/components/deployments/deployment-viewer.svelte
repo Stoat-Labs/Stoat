@@ -328,7 +328,9 @@
             ? resourceLabel || "Resource deployment"
             : deployment?.name === "InitializeCluster"
               ? "Cluster initialization"
-              : (deployment?.name ?? "Deployment"),
+              : deployment?.name === "DeployCaddy"
+                ? "Caddy deployment"
+                : (deployment?.name ?? "Deployment"),
     );
 
     const canCancel = $derived(cancelAllowed && isActive);

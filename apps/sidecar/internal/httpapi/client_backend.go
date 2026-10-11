@@ -230,6 +230,76 @@ func (b *clientBackend) ListCaddyConfigs(ctx context.Context) (CaddyConfigsRespo
 	return CaddyConfigsResponse{Items: configs, Drift: len(hashes) > 1}, nil
 }
 
+// caddySpec returns the spec of the newest caddy container, which is the
+// service's latest desired state even mid-rollout.
+func (b *clientBackend) caddySpec(ctx context.Context) (api.ServiceSpec, error) {
+	svc, err := b.Client.InspectService(ctx, client.CaddyServiceName)
+	if err != nil {
+		return api.ServiceSpec{}, err
+	}
+	if len(svc.Containers) == 0 {
+		return api.ServiceSpec{}, api.ErrNotFound
+	}
+
+	newest := svc.Containers[0].Container
+	for _, c := range svc.Containers[1:] {
+		if c.Container.CreatedTime().After(newest.CreatedTime()) {
+			newest = c.Container
+		}
+	}
+	return newest.ServiceSpec, nil
+}
+
+func (b *clientBackend) CaddySettings(ctx context.Context) (CaddySettingsResponse, error) {
+	spec, err := b.caddySpec(ctx)
+	if errors.Is(err, api.ErrNotFound) {
+		return CaddySettingsResponse{}, nil
+	}
+	if err != nil {
+		return CaddySettingsResponse{}, fmt.Errorf("inspect caddy service: %w", err)
+	}
+	return CaddySettingsResponse{Deployed: true, Image: spec.Container.Image, Caddyfile: spec.CaddyConfig()}, nil
+}
+
+// DeployCaddy rolls out the caddy service with a new image and global
+// Caddyfile. Unlike 'uc caddy deploy', it patches the running spec instead of
+// rebuilding it, so environment, volumes and placement set through a Compose
+// deployment of caddy survive.
+func (b *clientBackend) DeployCaddy(ctx context.Context, request DeployCaddyRequest) (<-chan DeployComposeEvent, error) {
+	spec, err := b.caddySpec(ctx)
+	var caddyDeploy *deploy.Deployment
+	switch {
+	case errors.Is(err, api.ErrNotFound):
+		caddyDeploy, err = b.Client.Caddy.NewDeployment(ctx, client.CaddyDeploymentOptions{
+			Image: request.Image, Config: request.Caddyfile,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create caddy deployment: %w", err)
+		}
+	case err != nil:
+		return nil, fmt.Errorf("inspect caddy service: %w", err)
+	default:
+		caddyDeploy = b.Client.NewDeployment(patchCaddySpec(spec, request), nil)
+	}
+
+	events := make(chan DeployComposeEvent, 16)
+	go func() {
+		defer close(events)
+		runServiceDeployment(ctx, b.Client, caddyDeploy, events)
+	}()
+	return events, nil
+}
+
+// patchCaddySpec sets the image and global Caddyfile, leaving the rest of the spec as deployed.
+func patchCaddySpec(spec api.ServiceSpec, request DeployCaddyRequest) api.ServiceSpec {
+	spec.Container.Image = request.Image
+	spec.Caddy = nil
+	if request.Caddyfile != "" {
+		spec.Caddy = &api.CaddySpec{Config: request.Caddyfile}
+	}
+	return spec
+}
+
 // ListCaddyCertificates reads Caddy's certificate storage from one replica of
 // the cluster store: the connected machine, or machine when it is set. Stored
 // certificates that fail to parse are reported in Errors instead of failing

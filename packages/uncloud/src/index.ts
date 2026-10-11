@@ -4,6 +4,7 @@ import { UcApiError } from "./errors";
 import type { paths } from "./generated/schema";
 import { readSseJson } from "./sse";
 import type {
+    DeployCaddyRequest,
     DeployComposeEvent,
     DeployComposeOptions,
     LogEvent,
@@ -240,6 +241,19 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                 return readEvents<DeployComposeEvent>(
                     client.POST("/api/v1/services/deploy/compose", {
                         body: { compose, options: deployOptions },
+                        headers: sseHeaders,
+                        parseAs: "stream",
+                        signal: options.signal,
+                    }),
+                    options.signal,
+                );
+            },
+
+            /** Rolls out Caddy with an image and global Caddyfile, streaming deploy events. */
+            deployCaddy(body: DeployCaddyRequest, options: StreamOptions = {}) {
+                return readEvents<DeployComposeEvent>(
+                    client.POST("/api/v1/caddy/deploy", {
+                        body,
                         headers: sseHeaders,
                         parseAs: "stream",
                         signal: options.signal,

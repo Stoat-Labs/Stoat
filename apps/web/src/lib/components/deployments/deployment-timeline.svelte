@@ -86,9 +86,9 @@
                         {error}
                     </span>{/if}
             {:else if status === "ready"}
-                {name === "DeployResource" ? "Deployed" : "Done"} in {formatDurationMs(
-                    durationMs,
-                )}
+                {name === "DeployResource" || name === "DeployCaddy"
+                    ? "Deployed"
+                    : "Done"} in {formatDurationMs(durationMs)}
             {:else if status === "failed"}
                 Failed after {formatDurationMs(
                     durationMs,

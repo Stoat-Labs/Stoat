@@ -55,6 +55,37 @@ func TestImageRemoteReferenceRequiresRepositoryReference(t *testing.T) {
 	require.EqualError(t, err, "image has no repository tag or digest")
 }
 
+func TestPatchCaddySpecKeepsCustomizations(t *testing.T) {
+	deployed := api.ServiceSpec{
+		Name: "caddy",
+		Mode: api.ServiceModeGlobal,
+		Container: api.ContainerSpec{
+			Image: "caddy:2.10.0",
+			Env:   map[string]string{"CADDY_ADMIN": "unix//run/caddy/admin.sock", "CF_API_TOKEN": "token"},
+			VolumeMounts: []api.VolumeMount{
+				{VolumeName: "data", ContainerPath: "/data"},
+			},
+		},
+		Placement: api.Placement{Machines: []string{"edge-1"}},
+		Caddy:     &api.CaddySpec{Config: "{\n\temail old@example.com\n}"},
+	}
+
+	patched := patchCaddySpec(deployed, DeployCaddyRequest{
+		Image: "ghcr.io/example/caddy-cloudflare:2.10", Caddyfile: "{\n\temail ops@example.com\n}",
+	})
+	assert.Equal(t, "ghcr.io/example/caddy-cloudflare:2.10", patched.Container.Image)
+	assert.Equal(t, "{\n\temail ops@example.com\n}", patched.CaddyConfig())
+	assert.Equal(t, deployed.Container.Env, patched.Container.Env)
+	assert.Equal(t, deployed.Container.VolumeMounts, patched.Container.VolumeMounts)
+	assert.Equal(t, deployed.Placement, patched.Placement)
+	assert.Equal(t, api.ServiceModeGlobal, patched.Mode)
+	// The deployed spec is a value, so patching must not touch the caller's copy.
+	assert.Equal(t, "caddy:2.10.0", deployed.Container.Image)
+
+	cleared := patchCaddySpec(deployed, DeployCaddyRequest{Image: "caddy:2.10.0"})
+	assert.Nil(t, cleared.Caddy)
+}
+
 func mustImageRemoteReference(t *testing.T, images []api.MachineImage) string {
 	t.Helper()
 

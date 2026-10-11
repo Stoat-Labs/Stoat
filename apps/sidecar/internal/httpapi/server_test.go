@@ -93,6 +93,9 @@ type fakeBackend struct {
 	deployComposeErr      error
 	lastComposeDeployment ComposeDeployment
 
+	caddySettings    CaddySettingsResponse
+	lastCaddyRequest DeployCaddyRequest
+
 	lastCertificatesMachine string
 }
 
@@ -354,6 +357,18 @@ func (f *fakeBackend) DeployCompose(_ context.Context, deployment ComposeDeploym
 		}
 		events <- DeployComposeEvent{Type: "complete", DeployStatus: "deployed"}
 	}()
+	return events, nil
+}
+
+func (f *fakeBackend) CaddySettings(context.Context) (CaddySettingsResponse, error) {
+	return f.caddySettings, nil
+}
+
+func (f *fakeBackend) DeployCaddy(_ context.Context, request DeployCaddyRequest) (<-chan DeployComposeEvent, error) {
+	f.lastCaddyRequest = request
+	events := make(chan DeployComposeEvent, 1)
+	events <- DeployComposeEvent{Type: "complete", DeployStatus: "deployed"}
+	close(events)
 	return events, nil
 }
 
@@ -1013,6 +1028,27 @@ func TestCaddyCertificatesRoute(t *testing.T) {
 	response = doRequest(t, server, http.MethodGet, "/api/v1/caddy/certificates?machine=node-1", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "node-1", fake.lastCertificatesMachine)
+}
+
+func TestCaddySettingsRoutes(t *testing.T) {
+	server, fake := newTestServer(t)
+	fake.caddySettings = CaddySettingsResponse{Deployed: true, Image: "caddy:2.10.2", Caddyfile: "{\n\temail ops@example.com\n}"}
+
+	response := doRequest(t, server, http.MethodGet, "/api/v1/caddy", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, fake.caddySettings, decodeResponse[CaddySettingsResponse](t, response))
+
+	response = doRequest(t, server, http.MethodPost, "/api/v1/caddy/deploy", DeployCaddyRequest{
+		Image: " ghcr.io/example/caddy-cloudflare:2.10 ", Caddyfile: "\n{\n\temail ops@example.com\n}\n",
+	}, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Contains(t, readBody(t, response), "event: complete")
+	assert.Equal(t, DeployCaddyRequest{
+		Image: "ghcr.io/example/caddy-cloudflare:2.10", Caddyfile: "{\n\temail ops@example.com\n}",
+	}, fake.lastCaddyRequest)
+
+	response = doRequest(t, server, http.MethodPost, "/api/v1/caddy/deploy", DeployCaddyRequest{Image: "Not An Image"}, "")
+	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
 }
 
 func TestClusterMachineAndServiceRoutes(t *testing.T) {

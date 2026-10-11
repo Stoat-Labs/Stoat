@@ -4,8 +4,15 @@ services:
     stoat:
         image: ghcr.io/stoat-labs/stoat:latest
         pull_policy: always
-        x-ports:
-            - "${APP_URL:-stoat.example.com}:3001/https"
+        # Caddy marks an upstream down for 30s after any failed request, and a browser aborting a
+        # request mid-flight counts as one. With one replica that is a 503 for every page, so
+        # disable the passive health check (the container healthcheck below still gates deploys).
+        x-caddy: |
+            ${APP_URL:-stoat.example.com} {
+                reverse_proxy {{upstreams 3001}} {
+                    fail_duration 0
+                }
+            }
         env_file: .env
         environment:
             APP_URL: https://${APP_URL:-stoat.example.com}

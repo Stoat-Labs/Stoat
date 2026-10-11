@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/caddy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the Caddy image and global Caddyfile */
+        get: operations["getCaddySettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/caddy/certificates": {
         parameters: {
             query?: never;
@@ -35,6 +52,26 @@ export interface paths {
         get: operations["listCaddyConfigs"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/caddy/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deploy Caddy with an image and global Caddyfile
+         * @description Like `uc caddy deploy`, but keeps the rest of the running caddy service spec (environment, volumes, placement), so a Caddy deployed from Compose keeps its customizations. An invalid global Caddyfile does not fail the deployment: Caddy keeps its previous config and the reason shows up as lastReconciliationError in /api/v1/caddy/configs.
+         */
+        post: operations["deployCaddy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -559,6 +596,14 @@ export interface components {
             drift: boolean;
             items: components["schemas"]["CaddyConfigResponse"][];
         };
+        CaddySettingsResponse: {
+            /** @description Global Caddyfile prepended to the generated config (the caddy service's x-caddy). */
+            caddyfile: string;
+            /** @description Whether the caddy service is running. */
+            deployed: boolean;
+            /** @description Image of the newest caddy container. Empty when Caddy is not deployed. */
+            image: string;
+        };
         ClusterDiagnosticsResponse: {
             issues: string[];
             links: components["schemas"]["ClusterLinkResponse"][];
@@ -589,6 +634,12 @@ export interface components {
             };
             machine: string;
             name: string;
+        };
+        DeployCaddyRequest: {
+            /** @description Global Caddyfile prepended to the generated config. Empty removes it. */
+            caddyfile: string;
+            /** @description Caddy image. Custom images must include curl and start Caddy with /etc/caddy/Caddyfile. */
+            image: string;
         };
         DeployComposeEvent: {
             /** Format: int64 */
@@ -882,6 +933,62 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getCaddySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaddySettingsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listCaddyCertificates: {
         parameters: {
             query?: {
@@ -988,6 +1095,75 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deployCaddy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployCaddyRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-Sent deployment events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["DeployComposeEvent"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

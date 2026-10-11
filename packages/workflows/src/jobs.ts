@@ -56,6 +56,28 @@ export const DeployResource: Job.Job<
     },
 });
 
+// Rolls out the cluster's caddy service with the image and global Caddyfile in the deployment spec.
+export const DeployCaddy: Job.Job<
+    "DeployCaddy",
+    typeof resourcePayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("DeployCaddy", {
+    payload: resourcePayload,
+    success: Schema.Void,
+    idempotencyKey: ({ deploymentId }) => deploymentId,
+    queue: "deploy",
+    defaults: {
+        // No retries: a half-rolled ingress update is safer to redeploy on purpose.
+        attempts: 1,
+        timeout: "15 minutes",
+        keep: {
+            completed: { age: "1 day" },
+            failed: { age: "30 days" },
+        },
+    },
+});
+
 const bucketPayload = Schema.Struct({
     resourceId: Schema.String,
     // The bucket row's requested_at ISO string; each retry or deletion is a new job.

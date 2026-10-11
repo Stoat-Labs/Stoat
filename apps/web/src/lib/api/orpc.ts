@@ -1,5 +1,6 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { BatchLinkPlugin } from "@orpc/client/plugins";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/svelte-query";
@@ -34,7 +35,15 @@ export const link = new RPCLink({
         return window.location.origin;
     },
     url: "/rpc",
-    plugins: [],
+    // One HTTP request per page load instead of 10-20 parallel ones. Caddy treats every request the
+    // browser aborts mid-flight (navigating away) as an upstream failure and drops the only
+    // upstream for 30s, so fewer requests also means fewer aborts. Log streaming polls on its own.
+    plugins: [
+        new BatchLinkPlugin({
+            groups: [{ condition: () => true, context: {} }],
+            filter: ({ path }) => path[0] !== "resources" || path[1] !== "streamLogs",
+        }),
+    ],
     fetch(url, options) {
         return fetch(url, {
             ...options,

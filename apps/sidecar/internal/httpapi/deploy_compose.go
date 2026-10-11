@@ -10,6 +10,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v2/pkg/progress"
 	"github.com/psviderski/uncloud/pkg/client/compose"
+	"github.com/psviderski/uncloud/pkg/client/deploy"
 	deployop "github.com/psviderski/uncloud/pkg/client/deploy/operation"
 )
 
@@ -299,15 +300,49 @@ func runComposeDeployment(
 		return
 	}
 
-	if !emit(DeployComposeEvent{
-		Type:       "plan",
-		Operations: planOperationsFromCompose(plan),
-	}) {
+	executePlan(ctx, emit, planOperationsFromCompose(plan), func(ctx context.Context) error {
+		return plan.Execute(ctx, cli)
+	})
+}
+
+// runServiceDeployment streams a single-service deployment as Compose deploy
+// events, so callers consume both the same way.
+func runServiceDeployment(
+	ctx context.Context,
+	cli deploy.Client,
+	serviceDeploy *deploy.Deployment,
+	events chan<- DeployComposeEvent,
+) {
+	emit := newDeployComposeEmitter(ctx, events, stripansi.Strip)
+	plan, err := serviceDeploy.Plan(ctx)
+	if err != nil {
+		emit(DeployComposeEvent{Type: "error", Error: err.Error()})
+		return
+	}
+	if len(plan.Operations) == 0 {
+		emit(DeployComposeEvent{Type: "complete", DeployStatus: "up to date"})
+		return
+	}
+
+	executePlan(ctx, emit, planOperationsFromOperations(plan.Operations), func(ctx context.Context) error {
+		return plan.Execute(ctx, cli)
+	})
+}
+
+// executePlan announces a non-empty plan, runs it with progress reporting and
+// emits its outcome.
+func executePlan(
+	ctx context.Context,
+	emit func(DeployComposeEvent) bool,
+	operations []DeployComposePlanOperation,
+	execute func(context.Context) error,
+) {
+	if !emit(DeployComposeEvent{Type: "plan", Operations: operations}) {
 		return
 	}
 
 	deployCtx := progress.WithContextWriter(ctx, &deployProgressWriter{emit: emit})
-	if err := plan.Execute(deployCtx, cli); err != nil {
+	if err := execute(deployCtx); err != nil {
 		emit(DeployComposeEvent{Type: "error", Error: err.Error()})
 		return
 	}

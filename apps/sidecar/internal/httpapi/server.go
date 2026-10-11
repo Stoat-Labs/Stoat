@@ -23,6 +23,7 @@ import (
 	scalargo "github.com/bdpiprava/scalar-go"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
+	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/gofiber/fiber/v2"
@@ -103,6 +104,8 @@ type Backend interface {
 	ClusterDiagnostics(context.Context) (ClusterDiagnosticsResponse, error)
 	ListCaddyConfigs(context.Context) (CaddyConfigsResponse, error)
 	ListCaddyCertificates(context.Context, string) (CaddyCertificatesResponse, error)
+	CaddySettings(context.Context) (CaddySettingsResponse, error)
+	DeployCaddy(context.Context, DeployCaddyRequest) (<-chan DeployComposeEvent, error)
 
 	ListMachines(context.Context, *api.MachineFilter) ([]api.MachineMember, error)
 	InspectMachine(context.Context, string) (api.MachineMember, error)
@@ -509,6 +512,19 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 			"with the default image Caddy stores certificates locally and this list is empty. " +
 			"Lists what is stored, not what Caddy serves, and may include expired certificates. Private keys are never read.",
 	}, s.listCaddyCertificates)
+	register(humaAPI, huma.Operation{
+		OperationID: "getCaddySettings", Method: http.MethodGet, Path: "/api/v1/caddy",
+		Summary: "Get the Caddy image and global Caddyfile", Tags: []string{"cluster"},
+	}, s.getCaddySettings)
+	register(humaAPI, huma.Operation{
+		OperationID: "deployCaddy", Method: http.MethodPost, Path: "/api/v1/caddy/deploy",
+		Summary: "Deploy Caddy with an image and global Caddyfile", Tags: []string{"cluster"},
+		Description: "Like `uc caddy deploy`, but keeps the rest of the running caddy service spec " +
+			"(environment, volumes, placement), so a Caddy deployed from Compose keeps its customizations. " +
+			"An invalid global Caddyfile does not fail the deployment: Caddy keeps its previous config " +
+			"and the reason shows up as lastReconciliationError in /api/v1/caddy/configs.",
+		Responses: eventStreamResponse(humaAPI, "Server-Sent deployment events", DeployComposeEvent{}),
+	}, s.deployCaddy)
 
 	register(humaAPI, huma.Operation{
 		OperationID: "listMachines", Method: http.MethodGet, Path: "/api/v1/machines",
@@ -723,6 +739,33 @@ func (s *Server) listCaddyCertificates(ctx context.Context, input *listCaddyCert
 		return nil, err
 	}
 	return reply(certificates), nil
+}
+
+func (s *Server) getCaddySettings(ctx context.Context, _ *struct{}) (*bodyOutput[CaddySettingsResponse], error) {
+	settings, err := s.backend.CaddySettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return reply(settings), nil
+}
+
+func (s *Server) deployCaddy(ctx context.Context, input *bodyInput[DeployCaddyRequest]) (*huma.StreamResponse, error) {
+	request := DeployCaddyRequest{
+		Image:     strings.TrimSpace(input.Body.Image),
+		Caddyfile: strings.TrimSpace(input.Body.Caddyfile),
+	}
+	if _, err := reference.ParseNormalizedNamed(request.Image); err != nil {
+		return nil, huma.Error400BadRequest("invalid image reference: " + err.Error())
+	}
+
+	streamCtx, cancel := streamContext(ctx)
+	events, err := s.backend.DeployCaddy(streamCtx, request)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	return eventStream(cancel, events, encodeDeployEvent), nil
 }
 
 func (s *Server) openapi(c *fiber.Ctx) error {
