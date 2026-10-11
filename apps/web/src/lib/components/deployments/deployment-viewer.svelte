@@ -74,7 +74,23 @@
     );
 
     // Names come from the snapshot only: stream events carry no project or resource names.
-    let resourceLabel = $state("");
+    let origin = $state<{
+        projectId: string | null;
+        projectName: string | null;
+        resourceName: string | null;
+    }>({ projectId: null, projectName: null, resourceName: null });
+
+    const resourceLabel = $derived(
+        origin.resourceName
+            ? `${origin.projectName ? `${origin.projectName} / ` : ""}${origin.resourceName}`
+            : "",
+    );
+
+    const resourceHref = $derived(
+        origin.projectId && deployment?.resourceId
+            ? `/projects/${origin.projectId}/${deployment.resourceId}`
+            : null,
+    );
 
     let rows = $state.raw<ViewerRow[]>([]);
 
@@ -136,7 +152,11 @@
         if (!id) return;
 
         deployment = null;
-        resourceLabel = "";
+        origin = {
+            projectId: null,
+            projectName: null,
+            resourceName: null,
+        };
         rows = [];
         cancelAllowed = false;
         streamError = "";
@@ -194,6 +214,7 @@
                             }),
                             {
                                 ...event.deployment,
+                                ...origin,
                                 logs: rawLogs,
                                 canCancel: event.canCancel,
                             },
@@ -252,15 +273,14 @@
                 const {
                     logs: snapshotLogs,
                     canCancel: snapshotCanCancel,
+                    projectId,
                     projectName,
                     resourceName,
                     ...snapshotDeployment
                 } = snapshot;
 
                 deployment = snapshotDeployment;
-                resourceLabel = resourceName
-                    ? `${projectName ? `${projectName} / ` : ""}${resourceName}`
-                    : "";
+                origin = { projectId, projectName, resourceName };
                 cancelAllowed = snapshotCanCancel;
                 rows = snapshotLogs.map(toRow);
                 rawLogs.push(...snapshotLogs);
@@ -595,7 +615,18 @@
     <Frame class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <FrameHeader class="shrink-0 gap-2 px-3 py-2">
             <div class="flex flex-wrap items-center gap-2">
-                <h1 class="text-sm font-medium">{title}</h1>
+                <h1 class="text-sm font-medium">
+                    {#if resourceHref}
+                        <a
+                            href={resourceHref}
+                            class="hover:underline"
+                        >
+                            {title}
+                        </a>
+                    {:else}
+                        {title}
+                    {/if}
+                </h1>
                 {#if deployment}
                     <span role="status">
                         <Badge variant={statusVariant}>

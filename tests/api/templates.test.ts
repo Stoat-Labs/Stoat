@@ -101,9 +101,11 @@ describe("templates", () => {
             "a1b2c3d4-e5f6a7b8",
         ).yaml;
 
-        expect(out).toContain("- jellyfin.abc.uncld.dev:8096/https");
+        expect(out).toContain("- a1b2c3d4-e5f6a7b8-jellyfin.abc.uncld.dev:8096/https");
         expect(out).toContain("- a1b2c3d4-e5f6a7b8-jellyfin_media:/media\n");
-        expect(out).toContain("JELLYFIN_PublishedServerUrl: https://jellyfin.abc.uncld.dev");
+        expect(out).toContain(
+            "JELLYFIN_PublishedServerUrl: https://a1b2c3d4-e5f6a7b8-jellyfin.abc.uncld.dev",
+        );
     });
 
     it("summarizes services and generated secrets", () => {
@@ -239,8 +241,8 @@ describe("templates", () => {
             );
 
             expect(missing).toEqual(
-                // FROM scratch image: nothing inside it can run a probe.
-                appId === "basedbin" ? [`${prefix}-basedbin`] : [],
+                // FROM scratch images: nothing inside it can run a probe.
+                ["basedbin", "drizzle-gateway"].includes(appId) ? [`${prefix}-${appId}`] : [],
             );
         });
 

@@ -10,10 +10,11 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vite-plus/test";
 import type { Context } from "../../packages/api/src/context";
-import { assembleCluster } from "../../apps/web/src/lib/observability";
+import { assembleCluster, unpackMetric } from "../../apps/web/src/lib/observability";
 import {
     metricNames,
     parseMetricSeries,
+    unpackSeries,
     type MetricName,
     type ObservabilityRange,
 } from "../../packages/api/src/observability";
@@ -339,7 +340,8 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     const metric = (name: MetricName, range: ObservabilityRange, ctx = context) =>
         call(
             observabilityRouter.getObservabilityMetric,
-            { clusterId, name, range },
+            // The services table draws CPU as a sparkline, so it asks for fewer points.
+            { clusterId, name, range, points: name === "serviceCpu" ? 24 : 120 },
             { context: ctx },
         );
 
@@ -353,7 +355,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         { id: clusterId, name: "Metrics" },
         { data: machines, error: null, isPending: false },
         { data: services, error: null, isPending: false },
-        metrics.map((data) => ({ data, error: null, isPending: false })),
+        metrics.map((data) => ({ data: unpackMetric(data), error: null, isPending: false })),
     );
 
     expect(result.available).toBe(true);
@@ -425,7 +427,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
 
     const week = await metric("cpu", "7d");
     expect(week.end - week.start).toBeGreaterThanOrEqual(604800);
-    expect(week.series[0]?.points.length).toBeLessThanOrEqual(121);
+    expect(week.series[0]?.values.length).toBeLessThanOrEqual(121);
     // Stale-while-revalidate: the next window serves the previous one while a refresh runs.
     vi.spyOn(Date, "now").mockReturnValue((end + 15) * 1000);
     await expect(metric("cpu", "7d")).resolves.toEqual(week);
@@ -442,7 +444,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         );
 
     // Scoped requests chart the whole window instead of the table's latest-only sample.
-    expect((await scoped(["web-id"])).series[0]?.points).toHaveLength(61);
+    expect((await scoped(["web-id"])).series[0]?.values).toHaveLength(61);
     await expect(scoped(["other-id"])).resolves.toMatchObject({ series: [] });
     await expect(scoped(['web-id"}) or vector(1'])).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
@@ -466,12 +468,12 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     const requests = await http("httpRequests");
     expect(requests.status).toBe("ok");
     expect(requests.series[0]).toMatchObject({ serviceId: "web-id" });
-    expect(requests.series[0]?.points.at(-1)?.value).toBeCloseTo(2);
-    expect((await http("httpErrors")).series[0]?.points.at(-1)?.value).toBeCloseTo(0.5);
-    expect((await http("httpLatency")).series[0]?.points.at(-1)?.value).toBeGreaterThan(0);
-    const p50 = (await http("httpLatencyP50")).series[0]?.points.at(-1)?.value;
-    const p95 = (await http("httpLatency")).series[0]?.points.at(-1)?.value;
-    const p99 = (await http("httpLatencyP99")).series[0]?.points.at(-1)?.value;
+    expect(requests.series[0]?.values.at(-1)).toBeCloseTo(2);
+    expect((await http("httpErrors")).series[0]?.values.at(-1)).toBeCloseTo(0.5);
+    expect((await http("httpLatency")).series[0]?.values.at(-1)).toBeGreaterThan(0);
+    const p50 = (await http("httpLatencyP50")).series[0]?.values.at(-1);
+    const p95 = (await http("httpLatency")).series[0]?.values.at(-1);
+    const p99 = (await http("httpLatencyP99")).series[0]?.values.at(-1);
     expect(p50).toBeGreaterThan(0);
     expect(p99).toBeGreaterThan(0);
     expect(Number(p50)).toBeLessThanOrEqual(Number(p95));
@@ -510,6 +512,9 @@ it("preserves missing, NaN and stale samples as gaps rather than inventing zeros
         15,
     );
 
-    expect(series[0]?.points.map((point) => point.value)).toEqual([120, null, null, null, null]);
+    expect(series[0]).toMatchObject({ start: 0, step: 15, values: [120, null, null, null, null] });
+    expect(series.map(unpackSeries)[0]?.points.map((point) => point.time)).toEqual([
+        0, 15000, 30000, 45000, 60000,
+    ]);
     expect(() => parseMetricSeries('{"status":"error"}', 0, 60, 15)).toThrow();
 });

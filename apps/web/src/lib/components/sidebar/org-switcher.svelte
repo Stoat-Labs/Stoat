@@ -158,9 +158,10 @@
                             <span
                                 class="flex size-6 shrink-0 items-center justify-center rounded-sm border"
                             >
-                                <Boxes
-                                    class="size-4"
-                                    aria-hidden="true"
+                                <img
+                                    src="/stoat.png"
+                                    alt=""
+                                    class="size-8"
                                 />
                             </span>
                             <span class="truncate">

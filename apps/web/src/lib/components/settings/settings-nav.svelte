@@ -26,7 +26,6 @@
 <script lang="ts">
     import {
         Frame,
-        FrameDescription,
         FrameHeader,
         FrameTitle,
     } from "$lib/components/ui/frame";
@@ -48,13 +47,11 @@
 <Frame
     class="w-full min-w-0 xl:col-span-1 xl:row-span-2 xl:grid xl:grid-rows-subgrid"
 >
+    <!-- Shares a subgrid row with the section's header so both panels start level. -->
     <FrameHeader>
         <FrameTitle class="text-base">
-            <h2 id="settings-nav-heading">Sections</h2>
+            <h2 id="settings-nav-heading">Settings</h2>
         </FrameTitle>
-        <FrameDescription class="mt-1">
-            Your account and organization.
-        </FrameDescription>
     </FrameHeader>
     <nav aria-labelledby="settings-nav-heading" class="px-2 pb-2">
         {#each groups as group, index (group.label)}

@@ -11,6 +11,7 @@
     import { Button } from "$lib/components/ui/button";
     import {
         Empty,
+        EmptyContent,
         EmptyDescription,
         EmptyHeader,
         EmptyMedia,
@@ -251,7 +252,14 @@
             Dismiss
         </Button>
     {/if}
-    <p class="text-sm text-muted-foreground" role="status">
+    <!-- Stays mounted so screen readers announce the message, but takes no space while empty. -->
+    <p
+        class={[
+            "text-sm text-muted-foreground",
+            !status && "sr-only",
+        ]}
+        role="status"
+    >
         {status}
     </p>
     {#if form && canManage}
@@ -281,7 +289,7 @@
                 <FramePanel class="h-32"></FramePanel>
             </Frame>
         </Skeleton>
-    {:else if connections.length === 0 && !connectionsQuery.isError}
+    {:else if connectionsQuery.isSuccess && connections.length === 0}
         <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -294,8 +302,20 @@
                         : "An administrator can add a connection using OAuth or an access token."}
                 </EmptyDescription>
             </EmptyHeader>
+            {#if canManage}
+                <EmptyContent>
+                    <Button
+                        size="sm"
+                        {disabled}
+                        onclick={() => changeDialog("add-connection")}
+                    >
+                        <Plus aria-hidden="true" />
+                        Add connection
+                    </Button>
+                </EmptyContent>
+            {/if}
         </Empty>
-    {:else}
+    {:else if connectionsQuery.isSuccess}
         <Frame role="region" aria-labelledby="connections-heading">
             <FrameHeader>
                 <FrameTitle class="text-base">

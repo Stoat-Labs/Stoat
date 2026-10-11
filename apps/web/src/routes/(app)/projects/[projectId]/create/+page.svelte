@@ -13,7 +13,6 @@
     } from "$lib/components/ui/empty";
     import {
         Frame,
-        FrameDescription,
         FrameHeader,
         FramePanel,
         FrameTitle,
@@ -175,6 +174,13 @@
         ),
     );
 
+    /** "status-page" → "Status page". */
+    function tagLabel(tag: string) {
+        const words = tag.replaceAll("-", " ");
+
+        return words[0].toUpperCase() + words.slice(1);
+    }
+
     function clearFilters() {
         void filters.set(null);
     }
@@ -233,9 +239,8 @@
                 <span class="flex flex-wrap gap-1">
                     {#each entry.tags as value (value)}<Badge
                             variant="outline"
-                            class="capitalize"
                         >
-                            {value}
+                            {tagLabel(value)}
                         </Badge>{/each}
                 </span>
             {/if}
@@ -289,29 +294,10 @@
     </Skeleton>
 {/snippet}
 
-{#snippet groupHeading(
-    id: string,
-    title: string,
-    description: string,
-    count: number | null,
-)}
-    <div class="min-w-0">
-        <div class="flex items-baseline gap-2">
-            <FrameTitle class="text-base">
-                <h2 {id}>{title}</h2>
-            </FrameTitle>
-            {#if count !== null}
-                <span
-                    class="text-xs tabular-nums text-muted-foreground"
-                >
-                    {count}
-                </span>
-            {/if}
-        </div>
-        <FrameDescription class="mt-1">
-            {description}
-        </FrameDescription>
-    </div>
+{#snippet groupHeading(id: string, title: string)}
+    <FrameTitle class="text-base">
+        <h2 {id}>{title}</h2>
+    </FrameTitle>
 {/snippet}
 
 <div class="flex w-full flex-col gap-6 pt-6">
@@ -329,8 +315,6 @@
                 {@render groupHeading(
                     "group-scratch",
                     "Start from scratch",
-                    "",
-                    null,
                 )}
             </FrameHeader>
             <FramePanel class="overflow-hidden p-0">
@@ -355,8 +339,6 @@
                         {@render groupHeading(
                             "group-databases",
                             "Databases",
-                            "",
-                            null,
                         )}
                     </FrameHeader>
                     <FramePanel class="overflow-hidden p-0">
@@ -380,8 +362,6 @@
                         {@render groupHeading(
                             "group-templates",
                             "Templates",
-                            "",
-                            null,
                         )}
                         <div
                             class="flex w-full flex-wrap items-center gap-2 sm:w-auto"
@@ -408,9 +388,7 @@
                                         },
                                         ...tags.map((value) => ({
                                             value,
-                                            label:
-                                                value[0].toUpperCase() +
-                                                value.slice(1),
+                                            label: tagLabel(value),
                                         })),
                                     ]}
                                     onValueChange={(value) =>
@@ -431,8 +409,9 @@
                                         />
                                         {#each tags as value (value)}<SelectItem
                                                 {value}
-                                                label={value[0].toUpperCase() +
-                                                    value.slice(1)}
+                                                label={tagLabel(
+                                                    value,
+                                                )}
                                             />{/each}
                                     </SelectContent>
                                 </Select>

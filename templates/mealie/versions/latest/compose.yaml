@@ -1,0 +1,18 @@
+services:
+    mealie:
+        image: ghcr.io/mealie-recipes/mealie:latest
+        container_name: mealie
+        x-ports:
+            - "${MEALIE_HOST}:9000/https"
+        volumes:
+            - mealie-data:/app/data/
+        environment:
+            ALLOW_SIGNUP: "false"
+            PUID: ${PUID}
+            PGID: ${PGID}
+            TZ: ${TZ}
+            BASE_URL: https://${MEALIE_HOST}
+            ALLOW_PASSWORD_LOGIN: "false"
+
+volumes:
+    mealie-data:

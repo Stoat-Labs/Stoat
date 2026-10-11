@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { beforeNavigate, goto } from "$app/navigation";
+    import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import PostgresConnectionCard from "$lib/components/projects/postgres-connection-card.svelte";
     import ResourceComposeEditor from "$lib/components/projects/resource-compose-editor.svelte";
@@ -50,8 +50,7 @@
         createQuery,
         partialMatchKey,
     } from "@tanstack/svelte-query";
-    import { onDestroy, untrack } from "svelte";
-    import { Debounced } from "runed";
+    import { ComposeDraft } from "$lib/resources/compose-draft.svelte";
 
     useHeaderActions(deployAction);
 
@@ -133,147 +132,21 @@
         });
     });
 
-    let compose = $state("");
-
-    const debouncedCompose = new Debounced(() => compose, 800);
-
-    let loadedResourceId = $state("");
-
-    let savedSpec = $state<string | null>(null);
-
-    // Keep the source identity paired with the editor baseline, not live query data.
-    let savedSource = $state<{
-        connectionId: string;
-        repositoryUrl: string;
-        branch: string;
-        path: string;
-        revision: string;
-    } | null>(null);
-
-    let active = true;
-
-    const isDirty = $derived(compose !== (savedSpec ?? ""));
-
-    // Leaving with unsaved edits saves them first, then continues, so nothing typed is lost.
-    // Closing or reloading the tab cannot wait for a save, so the browser asks instead.
-    let resumedTo = "";
-
-    beforeNavigate((navigation) => {
-        // The navigation this guard resumes after saving; query state may still read busy.
-        if (navigation.to?.url.href === resumedTo) return;
-
-        if (!busy && !isDirty) return;
-        navigation.cancel();
-
-        if (navigation.willUnload || busy || !navigation.to) return;
-        const target = navigation.to.url;
-        void saveNow().then((saved) => {
-            if (!saved) return;
-            resumedTo = target.href;
-            void goto(target);
-        });
-    });
-
-    onDestroy(() => {
-        active = false;
-        debouncedCompose.cancel();
-    });
-
-    $effect(() => {
-        // Route components are reused when switching between resources.
-        void projectId;
-        void resourceId;
-        untrack(() => {
-            debouncedCompose.cancel();
-            loadedResourceId = "";
-            compose = "";
-            savedSpec = null;
-            savedSource = null;
-            saveMutation.reset();
+    const draft = new ComposeDraft({
+        projectId: () => projectId,
+        resourceId: () => resourceId,
+        resource: () => resource,
+        readOnly: () => readOnly,
+        busy: () =>
+            externalConnectionMutation.isPending ||
+            deployMutation.isPending,
+        paused: () => false,
+        onSwitch: () => {
             externalConnectionMutation.reset();
             deployMutation.reset();
             deploymentId = null;
-        });
+        },
     });
-
-    $effect(() => {
-        const current = resource;
-
-        if (!current || current.id !== resourceId) return;
-        untrack(() => {
-            if (loadedResourceId !== current.id) {
-                loadedResourceId = current.id;
-                compose = current.draftSpec ?? "";
-                savedSpec = current.draftSpec;
-                savedSource =
-                    current.gitConnectionId && current.gitSource
-                        ? {
-                              connectionId: current.gitConnectionId,
-                              ...current.gitSource,
-                          }
-                        : null;
-                debouncedCompose.setImmediately(compose);
-                saveMutation.reset();
-            } else if (!isDirty && !busy) {
-                compose = current.draftSpec ?? "";
-                savedSpec = current.draftSpec;
-                savedSource =
-                    current.gitConnectionId && current.gitSource
-                        ? {
-                              connectionId: current.gitConnectionId,
-                              ...current.gitSource,
-                          }
-                        : null;
-                debouncedCompose.setImmediately(compose);
-            }
-        });
-    });
-
-    const saveMutation = createMutation(() =>
-        orpc.resources.updateComposeSpec.mutationOptions({
-            onSuccess: (updated, input) => {
-                if (
-                    active &&
-                    projectId === input.projectId &&
-                    resourceId === input.resourceId &&
-                    loadedResourceId === updated.id
-                ) {
-                    savedSpec = updated.draftSpec;
-                    savedSource =
-                        updated.gitConnectionId && updated.gitSource
-                            ? {
-                                  connectionId:
-                                      updated.gitConnectionId,
-                                  ...updated.gitSource,
-                              }
-                            : null;
-                }
-
-                queryClient.setQueryData(
-                    orpc.resources.getResource.queryKey({
-                        input: {
-                            projectId: input.projectId,
-                            resourceId: input.resourceId,
-                        },
-                    }),
-                    updated,
-                );
-                void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getContainers.key({
-                        input: {
-                            projectId: input.projectId,
-                            resourceId: input.resourceId,
-                        },
-                    }),
-                });
-                void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.queryKey({
-                        input: { projectId: input.projectId },
-                    }),
-                });
-            },
-        }),
-    );
 
     const externalConnectionMutation = createMutation(() =>
         orpc.resources.enableExternalConnection.mutationOptions({
@@ -294,34 +167,32 @@
                 });
 
                 if (
-                    !active ||
                     projectId !== input.projectId ||
                     resourceId !== input.resourceId
                 )
                     return;
-                compose = updated.draftSpec ?? "";
-                savedSpec = updated.draftSpec;
-                debouncedCompose.setImmediately(compose);
-                saveMutation.reset();
+                draft.accept(updated);
+                draft.save.reset();
             },
         }),
     );
 
+    const canEnableExternalConnection = $derived(
+        !readOnly &&
+            !draft.busy &&
+            !draft.isDirty &&
+            draft.loaded &&
+            !!draft.savedSpec,
+    );
+
     function enableExternalConnection() {
-        if (
-            readOnly ||
-            busy ||
-            isDirty ||
-            loadedResourceId !== resourceId ||
-            !savedSpec
-        )
-            return;
+        if (!canEnableExternalConnection || !draft.savedSpec) return;
         externalConnectionMutation.mutate({
             projectId,
             resourceId,
             clusterId,
-            expectedSpec: savedSpec,
-            expectedSource: savedSource ? { ...savedSource } : null,
+            expectedSpec: draft.savedSpec,
+            expectedSource: draft.savedSource,
         });
     }
 
@@ -342,7 +213,6 @@
                 });
 
                 if (
-                    !active ||
                     projectId !== input.projectId ||
                     resourceId !== input.resourceId
                 )
@@ -350,12 +220,6 @@
                 deploymentId = deployment.id;
             },
         }),
-    );
-
-    const busy = $derived(
-        saveMutation.isPending ||
-            externalConnectionMutation.isPending ||
-            deployMutation.isPending,
     );
 
     const formattedComposeQuery = createQuery(() =>
@@ -369,7 +233,9 @@
                 resource?.updatedAt,
             ],
             enabled:
-                !!resource?.draftSpec?.trim() && !isDirty && !busy,
+                !!resource?.draftSpec?.trim() &&
+                !draft.isDirty &&
+                !draft.busy,
             retry: false,
         }),
     );
@@ -377,11 +243,11 @@
     const canDeploy = $derived(
         !!resource &&
             !!project &&
-            loadedResourceId === resourceId &&
-            !!savedSpec?.trim() &&
-            savedSpec === resource.draftSpec &&
-            !isDirty &&
-            !busy &&
+            draft.loaded &&
+            !!draft.savedSpec?.trim() &&
+            draft.savedSpec === resource.draftSpec &&
+            !draft.isDirty &&
+            !draft.busy &&
             !resourceQuery.isFetching &&
             formattedComposeQuery.isSuccess &&
             !formattedComposeQuery.isFetching &&
@@ -389,9 +255,9 @@
     );
 
     const saveStatus = $derived(
-        saveMutation.isPending
+        draft.save.isPending
             ? "saving"
-            : isDirty
+            : draft.isDirty
               ? "unsaved"
               : hasUndeployedChanges
                 ? "saved"
@@ -402,67 +268,6 @@
         if (!canDeploy) return;
         deployMutation.mutate({ projectId, resourceId, recreate });
     }
-
-    /** Saves the editor text without waiting for the autosave delay; false if it failed. */
-    async function saveNow() {
-        if (readOnly || loadedResourceId !== resourceId) return false;
-        debouncedCompose.cancel();
-
-        try {
-            await saveMutation.mutateAsync({
-                projectId,
-                resourceId,
-                spec: compose,
-                expectedSpec: savedSpec,
-                expectedSource: savedSource
-                    ? { ...savedSource }
-                    : null,
-            });
-
-            return true;
-        } catch {
-            // The editor shows the save error.
-            return false;
-        }
-    }
-
-    // Autosave the draft after the user stops typing instead of a save button.
-    $effect(() => {
-        const target = debouncedCompose.current;
-        const debouncePending = debouncedCompose.pending;
-        const currentText = compose;
-        const baseline = savedSpec;
-        const baselineSource = savedSource;
-        const loaded = loadedResourceId;
-        const pid = projectId;
-        const rid = resourceId;
-
-        const locked =
-            readOnly ||
-            deployMutation.isPending ||
-            externalConnectionMutation.isPending ||
-            saveMutation.isPending;
-
-        const settled = !debouncePending && currentText === target;
-        const dirty = target !== (baseline ?? "");
-
-        const ready =
-            !locked && pid !== "" && rid !== "" && loaded === rid;
-
-        if (!settled || !dirty || !ready) return;
-
-        untrack(() => {
-            saveMutation.mutate({
-                projectId: pid,
-                resourceId: rid,
-                spec: target,
-                expectedSpec: baseline,
-                expectedSource: baselineSource
-                    ? { ...baselineSource }
-                    : null,
-            });
-        });
-    });
 </script>
 
 <svelte:head>
@@ -485,7 +290,7 @@
                             Deploy
                             {#if hasUndeployedChanges}
                                 <span
-                                    class="inline-block origin-center text-md leading-none text-orange-500 scale-125"
+                                    class="inline-block origin-center scale-125 leading-none text-warning"
                                     aria-hidden="true"
                                 >
                                     *
@@ -620,10 +425,7 @@
                                 undefined}
                             {readOnly}
                             enabling={externalConnectionMutation.isPending}
-                            canEnable={!busy &&
-                                !isDirty &&
-                                loadedResourceId === resourceId &&
-                                !!savedSpec}
+                            canEnable={canEnableExternalConnection}
                             errorMessage={externalConnectionMutation
                                 .error?.message}
                             onEnable={enableExternalConnection}
@@ -644,15 +446,16 @@
                     {projectId}
                     {resourceId}
                     editorKey={resource.id}
-                    bind:compose
+                    bind:compose={draft.compose}
                     {readOnly}
                     editorLocked={externalConnectionMutation.isPending ||
                         deployMutation.isPending ||
-                        loadedResourceId !== resource.id}
+                        draft.loadedResourceId !== resource.id}
                     {saveStatus}
-                    saveError={saveMutation.error?.message}
+                    saveError={draft.save.error?.message}
                     deployError={deployMutation.error?.message}
-                    composeError={!isDirty && savedSpec?.trim()
+                    composeError={!draft.isDirty &&
+                    draft.savedSpec?.trim()
                         ? formattedComposeQuery.error?.message
                         : undefined}
                 />

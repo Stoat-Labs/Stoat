@@ -153,21 +153,19 @@
     </div>
 
     {#if notSetUp}
-        <div
-            class="flex min-w-0 flex-wrap items-center justify-between gap-2"
+        <p
+            class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground"
         >
-            <p class="text-xs text-muted-foreground">
-                Monitoring not set up
-            </p>
+            Monitoring not set up.
             <Button
-                class="relative z-10"
+                class="relative z-10 h-auto px-0 text-xs"
                 size="sm"
-                variant="outline"
+                variant="link"
                 href="/clusters/{cluster.id}"
             >
-                Set up monitoring
+                Set up
             </Button>
-        </div>
+        </p>
     {:else}
         <div class="min-w-0 space-y-3">
             <dl class="grid gap-4 sm:grid-cols-3">

@@ -96,12 +96,8 @@ test.describe("with monitoring", () => {
     });
 });
 
-test("the admin area links to system settings", async ({ page }) => {
+test("the admin area shows system settings", async ({ page }) => {
     await page.goto("/admin");
-    await page
-        .getByRole("link", { name: /settings/iu })
-        .first()
-        .click();
-    await expect(page).toHaveURL(/\/admin\/settings$/u);
-    await expect(page.getByText("General settings")).toBeVisible();
+    await expect(page.getByText("System settings")).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Allow user signups" })).toBeVisible();
 });

@@ -67,7 +67,7 @@ it("shows only the latest N deployments independently of URL page and status fil
     for (const limit of [1, 5, 10]) {
         const body = renderDeployments(limit, "page=3&status=failed");
         expect(body).toContain("Recent deployments");
-        expect(body).toContain(`${limit} most recent`);
+        expect(body).toContain(`Latest ${limit} of 80`);
         expect(body).toContain("View all deployments");
         expect(body.match(/href="\/deployments\/deployment-/g)).toHaveLength(limit);
         expect(body).toContain("Storefront / Service 0");

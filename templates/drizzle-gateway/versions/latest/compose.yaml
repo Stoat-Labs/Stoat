@@ -1,0 +1,15 @@
+services:
+    drizzle-gateway:
+        image: ghcr.io/drizzle-team/gateway:latest
+        restart: unless-stopped
+        x-ports:
+            - ${DRIZZLE_GATEWAY_HOST}:4983/https
+        environment:
+            PORT: "4983"
+            STORE_PATH: /app
+            MASTERPASS: ${MASTERPASS}
+        volumes:
+            - drizzle_gateway:/app
+
+volumes:
+    drizzle_gateway:

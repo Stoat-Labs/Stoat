@@ -5,6 +5,7 @@
     import BucketFiles from "$lib/components/s3/bucket-files.svelte";
     import BucketUsage from "$lib/components/s3/bucket-usage.svelte";
     import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
+    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import {
         Alert,
         AlertDescription,
@@ -107,7 +108,9 @@
         <Skeleton loading loading-label="Loading bucket">
             <div class="flex flex-col gap-6">
                 <div class="flex items-start gap-3">
-                    <span class="size-14 shrink-0 rounded-lg"></span>
+                    <span
+                        class="size-10 shrink-0 rounded-full"
+                    ></span>
                     <div>
                         <h1 class="text-2xl font-semibold">
                             Bucket name
@@ -151,10 +154,12 @@
     {:else}
         <div class="flex flex-wrap items-start gap-4">
             <div class="flex min-w-0 items-start gap-3">
-                <ProviderIcon
-                    provider={bucket.connection.provider}
-                    class="size-14"
-                />
+                <!-- The provider shows under Details; the heading identifies the bucket itself. -->
+                <span
+                    class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                >
+                    <BucketIcon class="size-5" aria-hidden="true" />
+                </span>
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
                         <h1

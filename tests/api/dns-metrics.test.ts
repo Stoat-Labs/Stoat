@@ -41,7 +41,7 @@ it("keeps failed scrapes and missing intervals distinct from successful scrapes"
         120,
     );
 
-    expect(series[0]?.points.map((point) => point.value)).toEqual([1, 0, null, 1]);
+    expect(series[0]?.values).toEqual([1, 0, null, 1]);
 });
 
 it("uses observability's cluster-qualified machine identities and filters for DNS metrics", () => {

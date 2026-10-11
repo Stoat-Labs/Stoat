@@ -60,9 +60,8 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
 
     await page.goto("/clusters");
     await row(page, name)
-        .getByRole("button", { name: `Actions for ${name}` })
+        .getByRole("button", { name: `Delete ${name}` })
         .click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
     await expect(dialog(page)).toContainText(`"${name}" will be permanently deleted`);
     await dialog(page).getByRole("button", { name: "Delete" }).click();
     // The modal hides the table from the accessibility tree, so wait for it to close first.
@@ -90,9 +89,8 @@ test("deleting a cluster removes its projects", async ({ page }) => {
 
     await expect(row(page, cluster.name)).toContainText("1");
     await row(page, cluster.name)
-        .getByRole("button", { name: `Actions for ${cluster.name}` })
+        .getByRole("button", { name: `Delete ${cluster.name}` })
         .click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
     await expect(dialog(page)).toContainText("Its 1 project will also be removed.");
     await dialog(page).getByRole("button", { name: "Delete" }).click();
 
@@ -103,8 +101,7 @@ test("deleting a cluster removes its projects", async ({ page }) => {
 
 test("a cluster whose projects hold buckets is kept", async ({ page }) => {
     await page.goto("/clusters");
-    await row(page, "Main").getByRole("button", { name: "Actions for Main" }).click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await row(page, "Main").getByRole("button", { name: "Delete Main" }).click();
     await dialog(page).getByRole("button", { name: "Delete" }).click();
 
     await expect(dialog(page)).toContainText("Delete the S3 buckets");
@@ -192,7 +189,7 @@ test.describe("as a member", () => {
         await page.goto("/clusters");
         await expect(page.getByRole("link", { name: "Main" })).toBeVisible();
         await expect(page.getByRole("button", { name: "Create cluster" })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Actions for Main" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Delete Main" })).toHaveCount(0);
 
         for (const [path, input] of [
             ["cluster/createCluster", { name: "x", sidecarUrl: "http://x", sidecarToken: "x" }],

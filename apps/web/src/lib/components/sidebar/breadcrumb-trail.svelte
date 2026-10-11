@@ -5,7 +5,7 @@
         mono?: boolean;
         title?: string;
         /** Shows the resource logo (or a fallback icon) before the label. */
-        resource?: { icon?: string | null };
+        resource?: { icon?: string | null; type?: string | null };
     };
 </script>
 
@@ -26,6 +26,7 @@
         MenuPopup,
         MenuTrigger,
     } from "$lib/components/ui/menu";
+    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import Boxes from "@lucide/svelte/icons/boxes";
     import { watch } from "runed";
     import type { Snippet } from "svelte";
@@ -61,6 +62,11 @@
                 src={crumb.resource.icon}
                 alt=""
                 class="size-4 shrink-0 rounded object-contain"
+            />
+        {:else if crumb.resource.type === "bucket"}
+            <BucketIcon
+                class="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
             />
         {:else}
             <Boxes

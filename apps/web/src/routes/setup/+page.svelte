@@ -57,7 +57,7 @@
 
     async function organizationCreated() {
         // Sign-ups are closed by default; only record a change. If this fails the done step
-        // shows the saved value, and /admin/settings can change it later.
+        // shows the saved value, and /admin can change it later.
         if (data.isAdmin && signupsEnabled) {
             const body = new FormData();
             body.set("signupsEnabled", "true");

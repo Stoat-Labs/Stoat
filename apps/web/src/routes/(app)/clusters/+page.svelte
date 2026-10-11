@@ -15,19 +15,12 @@
     } from "$lib/components/ui/alert-dialog";
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
-    import { buttonVariants } from "$lib/components/ui/button/button-variants";
     import { DataTable } from "$lib/components/ui/data-table";
     import {
         InputGroup,
         InputGroupAddon,
         InputGroupInput,
     } from "$lib/components/ui/input-group";
-    import {
-        Menu,
-        MenuItem,
-        MenuPopup,
-        MenuTrigger,
-    } from "$lib/components/ui/menu";
     import {
         TableCell,
         TableHead,
@@ -39,7 +32,6 @@
         listPageSize,
         pageParser,
     } from "$lib/params/query-params";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
     import Plus from "@lucide/svelte/icons/plus";
     import Search from "@lucide/svelte/icons/search";
     import Trash2 from "@lucide/svelte/icons/trash-2";
@@ -231,7 +223,7 @@
             {meta}
             loading={clustersQuery.isPending || searchPending}
             loadingRows={5}
-            colSpan={5}
+            colSpan={4}
             isEmpty={items.length === 0}
             emptyTitle={debounced.current
                 ? "No matching clusters"
@@ -253,11 +245,6 @@
                     <TableHead>Name</TableHead>
                     <TableHead class="text-center">
                         Projects
-                    </TableHead>
-                    <TableHead
-                        class="hidden text-center md:table-cell"
-                    >
-                        Updated
                     </TableHead>
                     <TableHead class="text-center">
                         <span class="sr-only">Actions</span>
@@ -300,40 +287,20 @@
                         <TableCell class="text-center">
                             {cluster.projectCount}
                         </TableCell>
-                        <TableCell
-                            class="hidden text-center md:table-cell"
-                        >
-                            {formatDate(cluster.updatedAt)}
-                        </TableCell>
                         <TableCell class="text-center">
                             {#if canManage}
-                                <Menu>
-                                    <MenuTrigger
-                                        class={buttonVariants({
-                                            variant: "ghost",
-                                            size: "icon-xs",
-                                            class: "md:opacity-0 md:opacity-100 md:focus-visible:opacity-100",
-                                        })}
-                                        aria-label={`Actions for ${cluster.name}`}
-                                    >
-                                        <Ellipsis
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    </MenuTrigger>
-                                    <MenuPopup align="end">
-                                        <MenuItem
-                                            variant="destructive"
-                                            onclick={() =>
-                                                askDelete(cluster)}
-                                        >
-                                            <Trash2
-                                                aria-hidden="true"
-                                            />
-                                            Delete
-                                        </MenuItem>
-                                    </MenuPopup>
-                                </Menu>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    class="text-muted-foreground hover:text-destructive-foreground"
+                                    aria-label={`Delete ${cluster.name}`}
+                                    onclick={() => askDelete(cluster)}
+                                >
+                                    <Trash2
+                                        class="size-4"
+                                        aria-hidden="true"
+                                    />
+                                </Button>
                             {/if}
                         </TableCell>
                     </TableRow>

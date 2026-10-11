@@ -27,7 +27,8 @@
             {@render children?.()}
 
             <span
-                class="inline-block origin-center text-md leading-none text-orange-500 scale-125"
+                class="inline-block origin-center scale-125 leading-none text-destructive-foreground"
+                aria-hidden="true"
             >
                 *
             </span>

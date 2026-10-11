@@ -125,6 +125,7 @@ export async function getDeploymentWithLogs(db: Database, id: string) {
         .select({
             ...getTableColumns(deployments),
             resourceName: resources.name,
+            projectId: projects.id,
             projectName: projects.name,
         })
         .from(deployments)

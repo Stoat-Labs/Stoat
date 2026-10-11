@@ -157,13 +157,6 @@
         { value: "attention", label: "Failed deployments first" },
     ];
 
-    const resourceCount = $derived(
-        projects.reduce(
-            (count, project) => count + project.resources.length,
-            0,
-        ),
-    );
-
     const failedResources = $derived(
         projects.flatMap((project) => {
             const failed = [];
@@ -246,37 +239,6 @@
 {/snippet}
 
 <div class="w-full space-y-6 pt-6">
-    <!-- <section aria-labelledby="overview-title" class="space-y-2">
-        <h1 id="overview-title" class="text-2xl font-semibold">
-            Overview
-        </h1>
-        <div
-            class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground"
-        >
-            <span>
-                {projectsQuery.data ? projects.length : "—"} projects
-            </span>
-            <span>
-                {projectsQuery.data ? resourceCount : "—"} resources
-            </span>
-            <span>
-                {clustersQuery.data ? clustersQuery.data.total : "—"} clusters
-            </span>
-            {#if projectsQuery.data}
-                <span
-                    class={failedResources.length
-                        ? "text-destructive-foreground"
-                        : ""}
-                >
-                    {failedResources.length} failed {failedResources.length ===
-                    1
-                        ? "deployment"
-                        : "deployments"}
-                </span>
-            {/if}
-        </div>
-    </section> -->
-
     {#if failedResources.length || degradedClusters.length}
         <Frame>
             <FrameHeader>

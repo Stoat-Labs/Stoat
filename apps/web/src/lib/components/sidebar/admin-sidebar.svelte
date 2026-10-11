@@ -16,7 +16,6 @@
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
     import ChartColumn from "@lucide/svelte/icons/chart-column";
-    import Settings from "@lucide/svelte/icons/settings-2";
     import Shield from "@lucide/svelte/icons/shield";
     import SidebarNavLink from "./sidebar-nav-link.svelte";
     import UserMenu from "./user-menu.svelte";
@@ -36,11 +35,6 @@
 
     const navigation = [
         { title: "Overview", href: "/admin", icon: ChartColumn },
-        {
-            title: "Settings",
-            href: "/admin/settings",
-            icon: Settings,
-        },
     ];
 
     function closeNavigation() {

@@ -1,0 +1,67 @@
+services:
+    forgejo:
+        image: codeberg.org/forgejo/forgejo:16.0.2
+        restart: unless-stopped
+        x-ports:
+            - ${FORGEJO_HOST}:3000/https
+            - 2222:22/tcp@host
+        environment:
+            USER_UID: ${USER_UID}
+            USER_GID: ${USER_GID}
+            TZ: ${TZ}
+            FORGEJO__server__DOMAIN: ${FORGEJO_HOST}
+            FORGEJO__server__ROOT_URL: https://${FORGEJO_HOST}/
+            FORGEJO__server__SSH_DOMAIN: ${FORGEJO_HOST}
+            FORGEJO__server__SSH_PORT: "2222"
+            FORGEJO__database__DB_TYPE: postgres
+            FORGEJO__database__HOST: forgejo-db:5432
+            FORGEJO__database__NAME: forgejo
+            FORGEJO__database__USER: forgejo
+            FORGEJO__database__PASSWD: ${POSTGRES_PASSWORD}
+        volumes:
+            - forgejo_data:/data
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 60s
+        depends_on:
+            forgejo-db:
+                condition: service_healthy
+
+    forgejo-db:
+        image: postgres:18-alpine
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: forgejo
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: forgejo
+        volumes:
+            - forgejo_db:/var/lib/postgresql
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U forgejo -d forgejo"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+    # Cluster monitoring scrapes services whose name ends in `-metrics`.
+    forgejo-metrics:
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        restart: unless-stopped
+        environment:
+            DATA_SOURCE_URI: forgejo-db:5432/forgejo?sslmode=disable
+            DATA_SOURCE_USER: forgejo
+            DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+        healthcheck:
+            test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9187/"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+        depends_on:
+            forgejo-db:
+                condition: service_healthy
+
+volumes:
+    forgejo_data:
+    forgejo_db:

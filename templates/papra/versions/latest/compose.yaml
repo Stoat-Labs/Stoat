@@ -1,0 +1,26 @@
+services:
+    papra:
+        image: ghcr.io/papra-hq/papra:latest
+        restart: unless-stopped
+        x-ports:
+            - ${PAPRA_HOST}:1221/https
+        environment:
+            APP_BASE_URL: https://${PAPRA_HOST}
+            AUTH_SECRET: ${AUTH_SECRET}
+        volumes:
+            - papra_data:/app/app-data
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "node",
+                    "-e",
+                    "fetch('http://localhost:1221/api/ping').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+                ]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 30s
+
+volumes:
+    papra_data:

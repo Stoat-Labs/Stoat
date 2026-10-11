@@ -32,6 +32,7 @@
     import {
         nameColors,
         seriesColor,
+        unpackMetric,
         type ChartSeries,
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
@@ -85,6 +86,15 @@
         clusters.filter((cluster) => selected.includes(cluster.id)),
     );
 
+    // Only clusters with monitoring are queried; the rest would only answer "set up monitoring first".
+    const monitoredSelection = $derived(
+        selection.filter((cluster) => cluster.monitored),
+    );
+
+    const unmonitoredSelection = $derived(
+        selection.filter((cluster) => !cluster.monitored),
+    );
+
     const options = $derived({
         enabled: browser,
         refetchInterval:
@@ -97,7 +107,7 @@
 
     // Without serviceIds the API charts every service that has an ingress hostname.
     const queries = createQueries(() => ({
-        queries: selection.flatMap((cluster) =>
+        queries: monitoredSelection.flatMap((cluster) =>
             httpMetricNames.map((name) =>
                 orpc.cluster.getObservabilityMetric.queryOptions({
                     input: {
@@ -105,6 +115,7 @@
                         name,
                         range: range.value,
                     },
+                    select: unpackMetric,
                     ...options,
                 }),
             ),
@@ -112,7 +123,7 @@
     }));
 
     const services = createQueries(() => ({
-        queries: selection.map((cluster) =>
+        queries: monitoredSelection.map((cluster) =>
             orpc.cluster.getObservabilityServices.queryOptions({
                 input: { clusterId: cluster.id },
                 ...options,
@@ -142,7 +153,7 @@
     }
 
     function chart(name: HttpMetricName): ChartSeries[] {
-        return selection.flatMap((cluster, index) =>
+        return monitoredSelection.flatMap((cluster, index) =>
             (query(index, name)?.data?.series ?? []).map((series) => {
                 const service =
                     serviceNames.get(series.serviceId) ??
@@ -152,7 +163,7 @@
                     key: `${cluster.id}:${name}:${series.serviceId}`,
                     machineKey: `${cluster.id}:${series.serviceId}`,
                     label:
-                        selection.length > 1
+                        monitoredSelection.length > 1
                             ? `${cluster.name} / ${service}`
                             : service,
                     color:
@@ -177,7 +188,7 @@
 
     // Each cluster reports one status for all its HTTP metrics; requests is representative.
     const statuses = $derived(
-        selection.map((cluster, index) => ({
+        monitoredSelection.map((cluster, index) => ({
             cluster,
             status: query(index, "httpRequests")?.data?.status,
             error: query(index, "httpRequests")?.error,
@@ -288,14 +299,15 @@
                 {/each}
             </PopoverContent>
         </Popover>
-        <RangeControls
-            {range}
-            bind:paused={filters.paused.current}
-            disabled={!selection.length}
-            {fetching}
-            onrefresh={() =>
-                queries.forEach((item) => void item.refetch())}
-        />
+        {#if monitoredSelection.length}
+            <RangeControls
+                {range}
+                bind:paused={filters.paused.current}
+                {fetching}
+                onrefresh={() =>
+                    queries.forEach((item) => void item.refetch())}
+            />
+        {/if}
     </div>
 {/snippet}
 
@@ -312,6 +324,20 @@
             </AlertDescription>
         </Alert>
     {/if}
+    {#each unmonitoredSelection as cluster (cluster.id)}
+        <Alert variant="warning">
+            <AlertDescription>
+                <span class="font-medium">{cluster.name}:</span>
+                Initialize monitoring to record ingress traffic.
+                <a
+                    class="underline underline-offset-2"
+                    href={`/clusters/${cluster.id}`}
+                >
+                    Open cluster
+                </a>
+            </AlertDescription>
+        </Alert>
+    {/each}
     {#each statuses as { cluster, status, error } (cluster.id)}
         {#if error}
             <Alert variant="warning">

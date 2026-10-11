@@ -42,6 +42,7 @@
         serviceRows,
         serviceSeries,
         sumPoints,
+        unpackMetric,
         type ChartSeries,
         type MetricUnit,
     } from "$lib/observability";
@@ -133,6 +134,7 @@
                     range: range.value,
                     serviceIds,
                 },
+                select: unpackMetric,
                 ...options,
                 enabled: options.enabled && serviceIds.length > 0,
             }),
@@ -148,6 +150,7 @@
                     range: range.value,
                     serviceIds,
                 },
+                select: unpackMetric,
                 ...options,
                 enabled: options.enabled && serviceIds.length > 0,
             }),
@@ -164,6 +167,7 @@
                     range: range.value,
                     serviceIds,
                 },
+                select: unpackMetric,
                 ...options,
                 enabled: options.enabled && hasPostgres,
             }),
@@ -670,21 +674,24 @@
             >
                 Logs for this range
             </a>{/if}
-        <RangeControls
-            {range}
-            bind:paused={paused.current}
-            {fetching}
-            disabled={!clusterId}
-            onrefresh={() => {
-                void services.refetch();
-                for (const query of [
-                    ...metrics,
-                    ...http,
-                    ...postgres,
-                ])
-                    void query.refetch();
-            }}
-        />
+        <!-- Nothing to range over or refresh until the cluster has monitoring. -->
+        {#if cluster.reason !== "uninitialized"}
+            <RangeControls
+                {range}
+                bind:paused={paused.current}
+                {fetching}
+                disabled={!clusterId}
+                onrefresh={() => {
+                    void services.refetch();
+                    for (const query of [
+                        ...metrics,
+                        ...http,
+                        ...postgres,
+                    ])
+                        void query.refetch();
+                }}
+            />
+        {/if}
     </div>
 {/snippet}
 

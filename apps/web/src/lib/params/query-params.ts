@@ -18,15 +18,6 @@ export const pageParser = {
     defaultValue: 1,
 } satisfies Parser<number> & { defaultValue: number };
 
-export const deploymentIdParser = {
-    parse(value: string) {
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-            ? value
-            : null;
-    },
-    serialize: String,
-} satisfies Parser<string>;
-
 export const logBucketParser = createParser<LogBucket>({
     parse(value) {
         const parts = value.split(":").map(Number);

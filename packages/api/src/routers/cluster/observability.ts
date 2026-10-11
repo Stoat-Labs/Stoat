@@ -14,6 +14,7 @@ import { z } from "zod";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import {
+    chartPoints,
     counterTotalQuery,
     dnsMetricNames,
     dnsMetricQueries,
@@ -32,8 +33,9 @@ import {
     type DnsMetricName,
     type HttpMetricName,
     type MetricName,
-    type MetricSeries,
+    type ChartPoints,
     type ObservabilityRange,
+    type PackedMetricSeries,
     type PostgresMetricName,
     type ObservabilityContainer,
     type ObservabilityService,
@@ -123,7 +125,7 @@ async function queryRange(
     start: number,
     end: number,
     step: number,
-): Promise<MetricSeries[]> {
+): Promise<PackedMetricSeries[]> {
     const signal = AbortSignal.timeout(30_000);
     const { password, greptime } = monitoringAccess(cluster, uc, signal);
 
@@ -203,8 +205,8 @@ type MetricResponse = {
     start: number;
     end: number;
     step: number;
-    series: MetricSeries[];
-    totals?: MetricSeries[];
+    series: PackedMetricSeries[];
+    totals?: PackedMetricSeries[];
     /**
      * HTTP metrics: whether the services have ingress hostnames and Alloy is recording traffic.
      * Postgres metrics: whether any exporter has been scraped yet.
@@ -227,12 +229,13 @@ async function postgresMetric(
     uc: UcClient,
     name: PostgresMetricName,
     range: ObservabilityRange,
+    points: ChartPoints,
     serviceIds: string[],
 ): Promise<MetricResponse> {
-    const { start, end, step } = metricWindow(range);
+    const { start, end, step } = metricWindow(range, points);
 
     return swr(
-        `postgres:${cluster.id}:${name}:${JSON.stringify(range)}:${serviceIds.toSorted().join(",")}`,
+        `postgres:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${serviceIds.toSorted().join(",")}`,
         end,
         async () => {
             try {
@@ -260,9 +263,10 @@ async function httpMetric(
     uc: UcClient,
     name: HttpMetricName,
     range: ObservabilityRange,
+    points: ChartPoints,
     serviceIds: string[],
 ): Promise<MetricResponse> {
-    const { start, end, step } = metricWindow(range);
+    const { start, end, step } = metricWindow(range, points);
     const services = await ucServices(cluster, uc);
     const hosts = new Map<string, string[]>();
 
@@ -286,7 +290,7 @@ async function httpMetric(
     if (!queries) return { start, end, step, series: [], status: "no-routes" };
 
     return swr(
-        `http:${cluster.id}:${name}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`,
+        `http:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${JSON.stringify([...hosts].sort())}`,
         end,
         async () => {
             try {
@@ -465,18 +469,18 @@ export const observabilityRouter = {
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
                 serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
                 range: rangeInput,
+                // Sparklines ask for fewer points than full-size charts.
+                points: z.literal(chartPoints).default(120),
             }),
         )
         .use(monitoringMiddleware)
         .handler(
             async ({
                 context: { cluster, uc },
-                input: { name, range, serviceIds },
+                input: { name, range, points, serviceIds },
             }): Promise<MetricResponse> => {
-                const window = metricWindow(range);
-
                 if (isHttpMetric(name))
-                    return httpMetric(cluster, uc, name, range, serviceIds ?? []);
+                    return httpMetric(cluster, uc, name, range, points, serviceIds ?? []);
 
                 // Exporter series are only meaningful per resource, so they require a service scope.
                 if (isPostgresMetric(name)) {
@@ -485,33 +489,21 @@ export const observabilityRouter = {
                             message: "Postgres metrics need the services to scope them to.",
                         });
 
-                    return postgresMetric(cluster, uc, name, range, serviceIds);
+                    return postgresMetric(cluster, uc, name, range, points, serviceIds);
                 }
 
-                const { end, duration } = window;
-                const scoped = Boolean(serviceIds?.length);
-
-                // Service sparklines are ~96px wide, so 24 points is plenty.
-                const step =
-                    name === "serviceCpu" && !scoped
-                        ? Math.ceil(duration / 24 / window.step) * window.step
-                        : window.step;
-
-                const start =
-                    name === "serviceCpu" && !scoped
-                        ? end - Math.floor(duration / step) * step
-                        : latestOnly.has(name) && !scoped
-                          ? end
-                          : window.start;
+                const window = metricWindow(range, points);
+                const { end, step } = window;
+                const start = latestOnly.has(name) && !serviceIds?.length ? end : window.start;
 
                 return swr(
-                    `metric:${cluster.id}:${name}:${JSON.stringify(range)}:${serviceIds?.toSorted().join(",") ?? ""}`,
+                    `metric:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${serviceIds?.toSorted().join(",") ?? ""}`,
                     end,
                     async () => {
                         try {
                             const query = {
-                                ...metricQueries(cluster.id, window.step, serviceIds),
-                                ...dnsMetricQueries(cluster.id, window.step),
+                                ...metricQueries(cluster.id, step, serviceIds),
+                                ...dnsMetricQueries(cluster.id, step),
                             }[name];
 
                             const counter = name === "dnsQueries" || name === "dnsErrors";

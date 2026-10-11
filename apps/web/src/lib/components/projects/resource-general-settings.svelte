@@ -29,6 +29,7 @@
     import { Textarea } from "$lib/components/ui/textarea";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
+    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import Boxes from "@lucide/svelte/icons/boxes";
     import Link from "@lucide/svelte/icons/link";
     import Pencil from "@lucide/svelte/icons/pencil";
@@ -277,10 +278,17 @@
                                 <AvatarFallback
                                     class="rounded-none bg-transparent"
                                 >
-                                    <Boxes
-                                        class="size-6 text-muted-foreground"
-                                        aria-hidden="true"
-                                    />
+                                    {#if resourceQuery.data?.type === "bucket"}
+                                        <BucketIcon
+                                            class="size-6 text-muted-foreground"
+                                            aria-hidden="true"
+                                        />
+                                    {:else}
+                                        <Boxes
+                                            class="size-6 text-muted-foreground"
+                                            aria-hidden="true"
+                                        />
+                                    {/if}
                                 </AvatarFallback>
                             </Avatar>
                             <span

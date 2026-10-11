@@ -34,6 +34,7 @@
         rankTraffic,
         serviceRows,
         serviceSeries,
+        unpackMetric,
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
     import {
@@ -105,6 +106,7 @@
                     range: range.value,
                     serviceIds,
                 },
+                select: unpackMetric,
                 ...options,
                 enabled: options.enabled && serviceIds.length > 0,
             }),
@@ -193,16 +195,19 @@
 </svelte:head>
 
 {#snippet toolbar()}
-    <RangeControls
-        {range}
-        bind:paused={paused.current}
-        {fetching}
-        disabled={!clusterId}
-        onrefresh={() => {
-            void services.refetch();
-            for (const query of metrics) void query.refetch();
-        }}
-    />
+    <!-- Nothing to range over or refresh until the cluster has monitoring. -->
+    {#if cluster.reason !== "uninitialized"}
+        <RangeControls
+            {range}
+            bind:paused={paused.current}
+            {fetching}
+            disabled={!clusterId}
+            onrefresh={() => {
+                void services.refetch();
+                for (const query of metrics) void query.refetch();
+            }}
+        />
+    {/if}
 {/snippet}
 
 <div

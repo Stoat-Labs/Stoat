@@ -221,7 +221,7 @@ test.describe("resources", () => {
         const renamed = unique("new");
         await page.goto(`/projects/${projectId}/${resourceId}/settings`);
 
-        await page.getByRole("textbox", { name: /^Name \*?$/u }).fill(renamed);
+        await page.getByRole("textbox", { name: /^Name$/u }).fill(renamed);
         await page
             .getByRole("textbox", { name: "Description", exact: true })
             .fill("Handles payments");

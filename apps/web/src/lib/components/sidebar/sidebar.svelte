@@ -14,13 +14,14 @@
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
     import { orpc } from "$lib/api/orpc";
-    import Boxes from "@lucide/svelte/icons/boxes";
     import Activity from "@lucide/svelte/icons/activity";
+    import FolderOpen from "@lucide/svelte/icons/folder-open";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
     import Rocket from "@lucide/svelte/icons/rocket";
     import Settings from "@lucide/svelte/icons/settings-2";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
+    import Server from "@lucide/svelte/icons/server";
     import Shield from "@lucide/svelte/icons/shield";
     import { createQuery } from "@tanstack/svelte-query";
     import OrgSwitcher from "./org-switcher.svelte";
@@ -71,12 +72,12 @@
 
     const mainLinks = [
         { title: "Home", url: "/", icon: LayoutDashboard },
-        { title: "Projects", url: "/projects", icon: Boxes },
+        { title: "Projects", url: "/projects", icon: FolderOpen },
         { title: "Deployments", url: "/deployments", icon: Rocket },
     ];
 
     const configLinks = [
-        { title: "Clusters", url: "/clusters", icon: Boxes },
+        { title: "Clusters", url: "/clusters", icon: Server },
         { title: "Git", url: "/git", icon: GitBranch },
         { title: "S3 connections", url: "/s3", icon: HardDrive },
         { title: "Settings", url: "/settings", icon: Settings },
@@ -112,6 +113,7 @@
                             {link.title}
                         </SidebarNavLink>
                     {/each}
+                    <ObservabilityNav onNavigate={closeNavigation} />
                 </SidebarMenu>
             </SidebarGroupContent>
         </SidebarGroup>
@@ -121,11 +123,6 @@
             <SidebarGroupContent>
                 <SidebarMenu>
                     {#each configLinks as link (link.url)}
-                        {#if link.url === "/git"}
-                            <ObservabilityNav
-                                onNavigate={closeNavigation}
-                            />
-                        {/if}
                         <SidebarNavLink
                             href={link.url}
                             title={link.title}
@@ -171,7 +168,7 @@
                         <SidebarNavLink
                             href="/projects/{projectId}"
                             title="Project overview"
-                            icon={Boxes}
+                            icon={FolderOpen}
                             active={pathname ===
                                 `/projects/${projectId}`}
                             onclick={closeNavigation}

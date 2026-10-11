@@ -13,7 +13,7 @@ const entryPoints = (assets: string) => [
     "/s3",
     "/git",
     "/settings",
-    "/admin/settings",
+    "/admin",
     `/projects/${ids.shop}`,
     `/projects/${ids.shop}/create`,
     `/projects/${ids.shop}/${ids.api}`,

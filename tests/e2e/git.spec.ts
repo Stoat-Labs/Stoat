@@ -87,7 +87,7 @@ test("an SSH Git server is connected in a dialog", async ({ page }) => {
     const server = gitServer();
     const name = unique("Self-hosted");
     await page.goto("/git");
-    await page.getByRole("button", { name: "Add connection" }).click();
+    await page.getByRole("button", { name: "Add connection" }).first().click();
 
     const add = dialog(page);
     await add.getByLabel("Connection name").fill(name);

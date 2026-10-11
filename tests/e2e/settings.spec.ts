@@ -301,7 +301,7 @@ test.describe("as a member", () => {
 
     test("owner-only sections are hidden and settings are read-only", async ({ page }) => {
         await page.goto("/settings");
-        const nav = page.getByRole("navigation", { name: "Sections" });
+        const nav = page.getByRole("navigation", { name: "Settings" });
         await expect(nav.getByRole("button", { name: "Members" })).toBeVisible();
         await expect(nav.getByRole("button", { name: "API keys" })).toHaveCount(0);
         await expect(nav.getByRole("button", { name: "Danger zone" })).toHaveCount(0);

@@ -178,7 +178,7 @@ test.describe("instance sign-up setting", () => {
     });
 
     test("an admin can turn sign-ups off and on again", async ({ page, browser }) => {
-        await page.goto("/admin/settings");
+        await page.goto("/admin");
         const toggle = page.getByRole("switch", { name: "Allow user signups" });
         // The page has a second form (private network access) with the same button label.
         const signupsForm = page.locator("form").filter({ has: toggle });
@@ -223,7 +223,7 @@ test.describe("as a non-admin", () => {
     test.use({ storageState: memberStorageState });
 
     test("system settings are refused", async ({ page }) => {
-        const response = await page.goto("/admin/settings");
+        const response = await page.goto("/admin");
 
         expect(response?.status()).toBe(403);
         await expect(page.getByText("Admins only.")).toBeVisible();

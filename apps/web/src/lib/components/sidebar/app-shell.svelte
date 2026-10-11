@@ -40,22 +40,20 @@
 
     setHeaderActions(headerActions);
 
+    const sectionTitles = [
+        ["/settings", "Settings"],
+        ["/observability", "Observability"],
+        ["/projects", "Projects"],
+        ["/clusters", "Clusters"],
+        ["/deployments", "Deployments"],
+        ["/git", "Git"],
+        ["/s3", "S3 connections"],
+    ] as const;
+
     const pageTitle = $derived(
-        page.url.pathname.startsWith("/settings")
-            ? "Settings"
-            : page.url.pathname.startsWith("/observability")
-              ? "Observability"
-              : page.url.pathname.startsWith("/projects")
-                ? "Projects"
-                : page.url.pathname.startsWith("/clusters")
-                  ? "Clusters"
-                  : page.url.pathname.startsWith("/deployments")
-                    ? "Deployments"
-                    : page.url.pathname.startsWith("/git")
-                      ? "Git"
-                      : page.url.pathname.startsWith("/s3")
-                        ? "S3 connections"
-                        : "Home",
+        sectionTitles.find(([prefix]) =>
+            page.url.pathname.startsWith(prefix),
+        )?.[1] ?? "Home",
     );
 
     const monitoringView = $derived(
@@ -115,14 +113,12 @@
         resources.find((r) => r.id === resourceId),
     );
 
-    // /projects/:projectId/:resourceId/<tab> → "Deployments", "Settings", …
-    const resourceTab = $derived.by(() => {
-        const tab = isResourceDetail
+    // /projects/:projectId/:resourceId/<tab>, e.g. "deployments" or "settings".
+    const resourceTab = $derived(
+        isResourceDetail
             ? page.url.pathname.split("/")[4]
-            : undefined;
-
-        return tab ? tab[0].toUpperCase() + tab.slice(1) : undefined;
-    });
+            : undefined,
+    );
 
     const isCreate = $derived(
         page.route.id?.startsWith(
@@ -142,23 +138,34 @@
         }),
     );
 
-    const createSourceLabel = $derived(
-        createSource === "compose"
-            ? "Compose"
-            : createSource === "git"
-              ? "Compose from Git"
-              : createSource
-                ? (createTemplatesQuery.data?.find(
-                      (t) => t.appId === createSource,
-                  )?.name ?? "…")
-                : undefined,
-    );
+    const createSourceLabel = $derived.by(() => {
+        if (!createSource) return undefined;
+
+        if (createSource === "compose") return "Compose";
+
+        if (createSource === "git") return "Compose from Git";
+
+        if (!createTemplatesQuery.data) return "…";
+
+        // An unknown template shows its slug; the page explains it was not found.
+        return (
+            createTemplatesQuery.data.find(
+                (t) => t.appId === createSource,
+            )?.name ?? createSource
+        );
+    });
 
     const projectTab = $derived(
         page.url.pathname === `/projects/${projectId}/metrics`
-            ? "Metrics"
+            ? {
+                  label: "Metrics",
+                  href: `/projects/${projectId}/metrics`,
+              }
             : isCreate
-              ? "New resource"
+              ? {
+                    label: "New resource",
+                    href: `/projects/${projectId}/create`,
+                }
               : undefined,
     );
 
@@ -222,13 +229,18 @@
                 {
                     label: resource?.name ?? "…",
                     href: `${base}/${resourceId}`,
-                    resource: { icon: resource?.icon },
+                    resource: {
+                        icon: resource?.icon,
+                        type: resource?.type,
+                    },
                 },
                 ...(resourceTab
                     ? [
                           {
-                              label: resourceTab,
-                              href: `${base}/${resourceId}/deployments`,
+                              label:
+                                  resourceTab[0].toUpperCase() +
+                                  resourceTab.slice(1),
+                              href: `${base}/${resourceId}/${resourceTab}`,
                           },
                       ]
                     : []),
@@ -245,9 +257,7 @@
                     href: base,
                     title: project?.description ?? undefined,
                 },
-                ...(projectTab
-                    ? [{ label: projectTab, href: `${base}/create` }]
-                    : []),
+                ...(projectTab ? [projectTab] : []),
                 ...(createSourceLabel
                     ? [{ label: createSourceLabel }]
                     : []),
@@ -269,12 +279,7 @@
             page.url.pathname === "/admin" ||
             page.url.pathname.startsWith("/admin/")
         )
-            return [
-                { label: "Admin", href: "/admin" },
-                ...(page.url.pathname === "/admin/settings"
-                    ? [{ label: "Settings" }]
-                    : []),
-            ];
+            return [{ label: "Admin" }];
 
         return [{ label: pageTitle }];
     });
@@ -298,7 +303,7 @@
             : "overflow-visible border"}
     >
         <header
-            class="group/header sticky top-0 z-40 flex min-h-16 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
+            class="sticky top-0 z-40 flex min-h-16 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
         >
             <div class="flex min-w-0 max-w-full items-center gap-2">
                 <SidebarTrigger disabled={!ready} />
@@ -309,12 +314,15 @@
                             <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                class="opacity-0 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
+                                class="text-muted-foreground"
                                 aria-label="Edit project"
                                 onclick={() =>
                                     (editProjectOpen.current = true)}
                             >
-                                <Pencil class="size-3.5" />
+                                <Pencil
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
                             </Button>
                         {/if}
                     {/snippet}

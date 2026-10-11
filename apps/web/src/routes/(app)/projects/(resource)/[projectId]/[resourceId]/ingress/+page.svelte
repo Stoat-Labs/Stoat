@@ -1,6 +1,5 @@
 <script lang="ts">
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
-    import { beforeNavigate, goto } from "$app/navigation";
     import { page } from "$app/state";
     import {
         Alert,
@@ -29,7 +28,10 @@
         type DialogKind,
     } from "$lib/components/ingress/ingress-entry-dialog.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { orpc, queryClient } from "$lib/api/orpc";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
+    import { Badge } from "$lib/components/ui/badge";
+    import { orpc } from "$lib/api/orpc";
+    import { ComposeDraft } from "$lib/resources/compose-draft.svelte";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Container from "@lucide/svelte/icons/container";
     import Globe from "@lucide/svelte/icons/globe";
@@ -42,13 +44,10 @@
         type HttpIngress,
         type IngressEntry,
     } from "@stoat/workflows/ingress";
-    import {
-        createMutation,
-        createQuery,
-    } from "@tanstack/svelte-query";
-    import { onDestroy, untrack } from "svelte";
+    import { createQuery } from "@tanstack/svelte-query";
     import { z } from "zod";
-    import { Debounced } from "runed";
+
+    useHeaderActions(ingressStatus);
 
     const projectId = $derived(page.params.projectId ?? "");
 
@@ -74,146 +73,20 @@
 
     const resource = $derived(resourceQuery.data);
 
-    let compose = $state("");
+    let actionError = $state("");
 
-    const debouncedCompose = new Debounced(() => compose, 800);
-
-    let loadedResourceId = $state("");
-
-    let savedSpec = $state<string | null>(null);
-
-    type SavedSource = {
-        connectionId: string;
-        repositoryUrl: string;
-        branch: string;
-        path: string;
-        revision: string;
-    };
-
-    let savedSource = $state<SavedSource | null>(null);
-
-    function sourceOf(resource: {
-        gitConnectionId: string | null;
-        gitSource: Omit<SavedSource, "connectionId"> | null;
-    }): SavedSource | null {
-        if (!resource.gitConnectionId || !resource.gitSource)
-            return null;
-
-        return {
-            connectionId: resource.gitConnectionId,
-            ...resource.gitSource,
-        };
-    }
-
-    let generation = 0;
-
-    let active = true;
-
-    const isDirty = $derived(compose !== (savedSpec ?? ""));
-
-    // Leaving with unsaved edits saves them first, then continues, so nothing is lost.
-    // Closing or reloading the tab cannot wait for a save, so the browser asks instead.
-    let resumedTo = "";
-
-    beforeNavigate((navigation) => {
-        // The navigation this guard resumes after saving; query state may still read busy.
-        if (navigation.to?.url.href === resumedTo) return;
-
-        if (!saveMutation.isPending && !isDirty) return;
-        navigation.cancel();
-
-        if (
-            navigation.willUnload ||
-            saveMutation.isPending ||
-            !navigation.to
-        )
-            return;
-        const target = navigation.to.url;
-        void saveNow().then((saved) => {
-            if (!saved) return;
-            resumedTo = target.href;
-            void goto(target);
-        });
-    });
-
-    onDestroy(() => {
-        active = false;
-        debouncedCompose.cancel();
-    });
-
-    $effect(() => {
-        const identity = `${projectId}/${resourceId}`;
-        untrack(() => {
-            if (identity) generation++;
-            debouncedCompose.cancel();
-            loadedResourceId = "";
-            compose = "";
-            savedSpec = null;
-            savedSource = null;
-            saveMutation.reset();
+    const draft = new ComposeDraft({
+        projectId: () => projectId,
+        resourceId: () => resourceId,
+        resource: () => resource,
+        readOnly: () => readOnly,
+        busy: () => false,
+        // Never autosave text the ingress parser cannot read.
+        paused: () => snapshot === null,
+        onSwitch: () => {
             actionError = "";
-        });
+        },
     });
-
-    $effect(() => {
-        const current = resource;
-
-        if (!current || current.id !== resourceId) return;
-        untrack(() => {
-            if (loadedResourceId !== current.id) {
-                loadedResourceId = current.id;
-                compose = current.draftSpec ?? "";
-                savedSpec = current.draftSpec;
-                savedSource = sourceOf(current);
-                debouncedCompose.setImmediately(compose);
-                saveMutation.reset();
-            } else if (!isDirty && !saveMutation.isPending) {
-                compose = current.draftSpec ?? "";
-                savedSpec = current.draftSpec;
-                savedSource = sourceOf(current);
-                debouncedCompose.setImmediately(compose);
-            }
-        });
-    });
-
-    const saveMutation = createMutation(() =>
-        orpc.resources.updateComposeSpec.mutationOptions({
-            onSuccess: (updated, input) => {
-                if (
-                    active &&
-                    projectId === input.projectId &&
-                    resourceId === input.resourceId &&
-                    loadedResourceId === updated.id
-                ) {
-                    savedSpec = updated.draftSpec;
-                    savedSource = sourceOf(updated);
-                }
-
-                queryClient.setQueryData(
-                    orpc.resources.getResource.queryKey({
-                        input: {
-                            projectId: input.projectId,
-                            resourceId: input.resourceId,
-                        },
-                    }),
-                    updated,
-                );
-                void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getContainers.key({
-                        input: {
-                            projectId: input.projectId,
-                            resourceId: input.resourceId,
-                        },
-                    }),
-                });
-                void queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.queryKey({
-                        input: { projectId: input.projectId },
-                    }),
-                });
-            },
-        }),
-    );
 
     type Snapshot = ReturnType<typeof parseIngressCompose>;
 
@@ -224,7 +97,7 @@
     const envText = $derived(envSchema.parse(resource?.settings).env);
 
     const snapshot = $derived.by((): Snapshot | null => {
-        if (!compose.trim())
+        if (!draft.compose.trim())
             return {
                 services: [],
                 entries: [],
@@ -233,7 +106,7 @@
             };
 
         try {
-            return parseIngressCompose(compose, envText);
+            return parseIngressCompose(draft.compose, envText);
         } catch {
             return null;
         }
@@ -413,67 +286,6 @@
         entry: IngressEntry | null;
     } | null>(null);
 
-    let actionError = $state("");
-
-    /** Saves the Compose text without waiting for the autosave delay; false if it failed. */
-    async function saveNow() {
-        if (readOnly || loadedResourceId !== resourceId) return false;
-        debouncedCompose.cancel();
-
-        try {
-            await saveMutation.mutateAsync({
-                projectId,
-                resourceId,
-                spec: compose,
-                expectedSpec: savedSpec,
-                expectedSource: savedSource
-                    ? { ...savedSource }
-                    : null,
-            });
-
-            return true;
-        } catch {
-            // The page shows the save error.
-            return false;
-        }
-    }
-
-    // Autosave the draft after edits instead of a save button.
-    $effect(() => {
-        const target = debouncedCompose.current;
-        const debouncePending = debouncedCompose.pending;
-        const currentText = compose;
-        const baseline = savedSpec;
-        const baselineSource = savedSource;
-        const loaded = loadedResourceId;
-        const pid = projectId;
-        const rid = resourceId;
-        const valid = snapshot !== null;
-
-        if (debouncePending) return;
-
-        if (currentText !== target) return;
-
-        if (target === (baseline ?? "")) return;
-
-        if (!valid || saveMutation.isPending) return;
-
-        if (readOnly || !pid || !rid || loaded !== rid) return;
-
-        untrack(() => {
-            actionError = "";
-            saveMutation.mutate({
-                projectId: pid,
-                resourceId: rid,
-                spec: target,
-                expectedSpec: baseline,
-                expectedSource: baselineSource
-                    ? { ...baselineSource }
-                    : null,
-            });
-        });
-    });
-
     // A removal waiting for confirmation; `edit` returns the Compose text without it.
     let removal = $state<{
         description: string;
@@ -487,7 +299,7 @@
             description: `Remove "${entry.raw}" from service "${entry.service}"? The Compose file will be updated.`,
             edit: () =>
                 removeIngressFromCompose(
-                    compose,
+                    draft.compose,
                     entry.service,
                     entry.raw,
                 ),
@@ -498,7 +310,8 @@
     function deleteCaddy(entry: CaddyIngress) {
         removal = {
             description: `Remove the custom x-caddy config from service "${entry.service}"? The Compose file will be updated.`,
-            edit: () => removeServiceCaddy(compose, entry.service),
+            edit: () =>
+                removeServiceCaddy(draft.compose, entry.service),
         };
         removalOpen = true;
     }
@@ -507,7 +320,7 @@
         if (!removal) return;
 
         try {
-            compose = removal.edit();
+            draft.compose = removal.edit();
             actionError = "";
         } catch (cause) {
             actionError =
@@ -523,6 +336,26 @@
 <svelte:head>
     <title>Ingress / {resource?.name ?? "Resource"} / Stoat</title>
 </svelte:head>
+
+{#snippet ingressStatus()}
+    <div
+        class="flex flex-wrap items-center justify-end gap-2 text-sm"
+        aria-live="polite"
+    >
+        {#if draft.save.isError}
+            <span class="text-destructive-foreground" role="alert">
+                Unable to save: {draft.save.error.message}
+            </span>
+        {:else if draft.save.isPending}
+            <span class="text-muted-foreground">Saving…</span>
+        {:else if draft.isDirty}
+            <span class="text-muted-foreground">Unsaved changes</span>
+        {/if}
+        {#if readOnly}
+            <Badge variant="secondary">System-managed</Badge>
+        {/if}
+    </div>
+{/snippet}
 
 <div class="flex w-full flex-col gap-6 pt-6 xl:min-h-0 xl:flex-1">
     {#if projectQuery.isPending || resourceQuery.isPending}
@@ -584,48 +417,6 @@
             </EmptyContent>
         </Empty>
     {:else}
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <!-- <div class="min-w-0">
-                <h1 class="text-2xl font-semibold">Ingress</h1>
-                <p class="mt-1 text-sm text-muted-foreground">
-                    Publish service ports through Caddy. Every change
-                    edits the Compose file directly.
-                </p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2">
-                <div class="text-sm" aria-live="polite">
-                    {#if saveMutation.isError}
-                        <Alert
-                            variant="error"
-                            class="w-auto px-2 py-1.5"
-                        >
-                            <AlertDescription>
-                                Unable to save: {saveMutation.error
-                                    .message}
-                            </AlertDescription>
-                        </Alert>
-                    {:else if saveMutation.isPending}
-                        <p class="text-muted-foreground">Saving...</p>
-                    {:else if isDirty}
-                        <p class="text-muted-foreground">
-                            Unsaved Compose changes
-                        </p>
-                    {/if}
-                </div>
-                <Button
-                    variant="secondary"
-                    href="/projects/{projectId}/{resourceId}"
-                >
-                    Compose editor
-                </Button>
-                {#if readOnly}
-                    <Badge variant="secondary">System-managed</Badge>
-                {/if}
-            </div>
-         -->
-        </div>
-
         {#if snapshot === null}
             <Alert variant="error">
                 <AlertDescription>
@@ -634,45 +425,29 @@
                 </AlertDescription>
             </Alert>
         {:else}
-            <Frame
-                role="region"
-                aria-labelledby="ingress-flow-heading"
-            >
-                <FrameHeader class="shrink-0">
-                    <FrameTitle class="text-base">
-                        <h2 id="ingress-flow-heading">
-                            Traffic flow
-                        </h2>
-                    </FrameTitle>
-                    <FrameDescription class="mt-1">
-                        {#if entries.length === 0}
-                            Nothing is published yet. HTTPS goes
-                            through Caddy; host ports bypass it.
-                        {:else if caddyRoutes.length > 0}
-                            {httpEntries.length} HTTPS · {hostEntries.length}
-                            host · {caddyRoutes.length} custom routes
-                        {:else}
-                            {httpEntries.length} HTTPS · {hostEntries.length}
-                            host · {caddyEntries.length} custom
-                        {/if}
-                    </FrameDescription>
-                </FrameHeader>
-                <FramePanel class="overflow-hidden p-0">
-                    {#if entries.length === 0}
-                        <Empty
-                            class="m-3 rounded-xl border border-dashed border-border p-4 md:py-4"
-                        >
-                            <EmptyHeader>
-                                <EmptyMedia variant="icon">
-                                    <Globe aria-hidden="true" />
-                                </EmptyMedia>
-                                <EmptyDescription>
-                                    No published ports. Add an ingress
-                                    below to expose a service.
-                                </EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
-                    {:else}
+            <!-- With nothing published, the routes list below explains how to add ingress. -->
+            {#if entries.length > 0}
+                <Frame
+                    role="region"
+                    aria-labelledby="ingress-flow-heading"
+                >
+                    <FrameHeader class="shrink-0">
+                        <FrameTitle class="text-base">
+                            <h2 id="ingress-flow-heading">
+                                Traffic flow
+                            </h2>
+                        </FrameTitle>
+                        <FrameDescription class="mt-1">
+                            {#if caddyRoutes.length > 0}
+                                {httpEntries.length} HTTPS · {hostEntries.length}
+                                host · {caddyRoutes.length} custom routes
+                            {:else}
+                                {httpEntries.length} HTTPS · {hostEntries.length}
+                                host · {caddyEntries.length} custom
+                            {/if}
+                        </FrameDescription>
+                    </FrameHeader>
+                    <FramePanel class="overflow-hidden p-0">
                         {#each targetGroups as target, targetIndex (`${target.service}:${target.port ?? ""}`)}
                             <div
                                 class={targetIndex > 0
@@ -717,9 +492,9 @@
                                 {/each}
                             </ul>
                         {/if}
-                    {/if}
-                </FramePanel>
-            </Frame>
+                    </FramePanel>
+                </Frame>
+            {/if}
 
             {#if issues.length > 0}
                 <Alert variant="warning">
@@ -751,7 +526,7 @@
                 {caddyRoutes}
                 {services}
                 {readOnly}
-                disabled={loadedResourceId !== resourceId}
+                disabled={!draft.loaded}
                 onadd={() => (dialog = { kind: "http", entry: null })}
                 onedit={(entry) =>
                     (dialog = { kind: entry.kind, entry })}
@@ -768,8 +543,8 @@
         entry={dialog.entry}
         {entries}
         {services}
-        {compose}
-        onapply={(next) => (compose = next)}
+        compose={draft.compose}
+        onapply={(next) => (draft.compose = next)}
         onclose={() => (dialog = null)}
     />
 {/if}

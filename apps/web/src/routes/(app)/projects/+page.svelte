@@ -104,20 +104,18 @@
             </EmptyContent>
         </Empty>
     {:else}
-        <main>
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {#each projects as p (p.id)}
-                    <li>
-                        <ProjectCard
-                            name={p.name}
-                            description={p.description}
-                            resourceCount={p.resourceCount ?? 0}
-                            href="/projects/{p.id}"
-                        />
-                    </li>
-                {/each}
-            </ul>
-        </main>
+        <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {#each projects as p (p.id)}
+                <li>
+                    <ProjectCard
+                        name={p.name}
+                        description={p.description}
+                        resourceCount={p.resourceCount ?? 0}
+                        href="/projects/{p.id}"
+                    />
+                </li>
+            {/each}
+        </ul>
     {/if}
 </div>
 

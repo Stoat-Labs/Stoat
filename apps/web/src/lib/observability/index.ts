@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import {
     metricNames,
+    unpackSeries,
     type ClusterObservability,
     type MetricName,
     type MachineMetricName,
@@ -8,6 +9,7 @@ import {
     type MetricSeries,
     type ObservabilityContainer,
     type ObservabilityService,
+    type PackedMetricSeries,
 } from "@stoat/api/observability";
 
 export type ClusterData = ClusterObservability & {
@@ -25,6 +27,17 @@ export type MetricResult = {
     series: MetricSeries[];
     totals?: MetricSeries[];
 };
+
+/** Query `select` that rebuilds timestamped points from the packed wire format. */
+export function unpackMetric<
+    T extends { series: PackedMetricSeries[]; totals?: PackedMetricSeries[] },
+>(data: T): Omit<T, "series" | "totals"> & Pick<MetricResult, "series" | "totals"> {
+    return {
+        ...data,
+        series: data.series.map(unpackSeries),
+        totals: data.totals?.map(unpackSeries),
+    };
+}
 
 /** Merge the per-procedure queries of one cluster into the shape the charts consume, so each chart fills in as its metric arrives. */
 export function assembleCluster(

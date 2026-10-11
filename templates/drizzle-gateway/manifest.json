@@ -1,0 +1,6 @@
+{
+    "name": "Drizzle Gateway",
+    "description": "Self-hosted Drizzle Studio gateway to browse and edit your databases from the web.",
+    "type": "compose",
+    "tags": ["database", "development"]
+}

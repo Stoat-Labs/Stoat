@@ -34,7 +34,6 @@
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import { deploymentIdParser } from "$lib/params/query-params";
     import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Check from "@lucide/svelte/icons/check";
@@ -45,7 +44,7 @@
         createMutation,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryStates } from "nuqs-svelte";
+    import { parseAsString, useQueryState } from "nuqs-svelte";
     import { onDestroy } from "svelte";
 
     let mounted = true;
@@ -104,9 +103,9 @@
         ),
     );
 
-    const dialogs = useQueryStates(
-        { dialog: parseAsString, deployment: deploymentIdParser },
-        { shallow: true, scroll: false },
+    const dialog = useQueryState(
+        "dialog",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
     );
 
     const canInitialize = $derived(
@@ -163,13 +162,13 @@
     );
 
     function openDialog(
-        dialog:
+        next:
             | "initialize"
             | "reinitialize"
             | "monitoring"
             | "retention",
     ) {
-        void dialogs.set({ dialog, deployment: null });
+        void dialog.set(next);
     }
 
     function retryInitialization() {
@@ -391,40 +390,32 @@
                 </Alert>
             {/if}
 
-            <div class="grid gap-6 xl:grid-cols-[minmax(0,2fr)]">
-                <ClusterMachinesTable {machines} />
-            </div>
+            <ClusterMachinesTable {machines} />
 
-            <Frame class="min-w-0">
-                <FrameHeader
-                    class="flex-row items-start justify-between gap-3 px-2.5 py-3"
-                >
-                    <div class="min-w-0">
-                        <FrameTitle>Machine connections</FrameTitle>
-                        <FrameDescription>
-                            Measured paths between machines in the
-                            cluster.
-                        </FrameDescription>
-                    </div>
-                    <Badge variant="secondary" class="shrink-0">
-                        {links.length}
-                    </Badge>
-                </FrameHeader>
-                <FramePanel class="overflow-hidden p-0">
-                    {#if links.length === 0 && machines.length === 0}
-                        <Empty class="p-8 md:py-8">
-                            <EmptyHeader>
-                                <EmptyDescription>
-                                    No machine connections were
-                                    reported.
-                                </EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
-                    {:else}
+            <!-- Connections are paths between machines, so a single machine has none to show. -->
+            {#if machines.length > 1}
+                <Frame class="min-w-0">
+                    <FrameHeader
+                        class="flex-row items-start justify-between gap-3 px-2.5 py-3"
+                    >
+                        <div class="min-w-0">
+                            <FrameTitle>
+                                Machine connections
+                            </FrameTitle>
+                            <FrameDescription>
+                                Measured paths between machines in the
+                                cluster.
+                            </FrameDescription>
+                        </div>
+                        <Badge variant="secondary" class="shrink-0">
+                            {links.length}
+                        </Badge>
+                    </FrameHeader>
+                    <FramePanel class="overflow-hidden p-0">
                         <ClusterConnectionsFlow {machines} {links} />
-                    {/if}
-                </FramePanel>
-            </Frame>
+                    </FramePanel>
+                </Frame>
+            {/if}
 
             <ClusterMonitoringCard
                 {cluster}
@@ -450,35 +441,31 @@
 <InitializeClusterDialog
     bind:open={
         () =>
-            (dialogs.dialog.current === "initialize" &&
-                canInitialize) ||
-            (dialogs.dialog.current === "reinitialize" &&
-                canReinitialize),
+            (dialog.current === "initialize" && canInitialize) ||
+            (dialog.current === "reinitialize" && canReinitialize),
         (open) => {
             if (
                 mounted &&
                 !open &&
-                (dialogs.dialog.current === "initialize" ||
-                    dialogs.dialog.current === "reinitialize")
+                (dialog.current === "initialize" ||
+                    dialog.current === "reinitialize")
             ) {
-                void dialogs.set({ dialog: null, deployment: null });
+                void dialog.set(null);
             }
         }
     }
     {clusterId}
-    mode={dialogs.dialog.current === "reinitialize"
+    mode={dialog.current === "reinitialize"
         ? "reinitialize"
         : "initialize"}
     onInitialized={openDeployment}
 />
 <MonitoringConnectionDialog
     bind:open={
-        () =>
-            dialogs.dialog.current === "monitoring" &&
-            canViewMonitoring,
+        () => dialog.current === "monitoring" && canViewMonitoring,
         (open) => {
-            if (!open && dialogs.dialog.current === "monitoring") {
-                void dialogs.set({ dialog: null, deployment: null });
+            if (!open && dialog.current === "monitoring") {
+                void dialog.set(null);
             }
         }
     }
@@ -487,13 +474,10 @@
 {#if cluster && cluster.retentionDays !== null}
     <RetentionDialog
         bind:open={
-            () => dialogs.dialog.current === "retention",
+            () => dialog.current === "retention",
             (open) => {
-                if (!open && dialogs.dialog.current === "retention") {
-                    void dialogs.set({
-                        dialog: null,
-                        deployment: null,
-                    });
+                if (!open && dialog.current === "retention") {
+                    void dialog.set(null);
                 }
             }
         }

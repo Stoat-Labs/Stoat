@@ -5,6 +5,7 @@ import {
     metricNames,
     parseMetricSeries,
     serviceHosts,
+    unpackSeries,
     type ObservabilityContainer,
 } from "../../packages/api/src/observability";
 import { expect, it } from "vite-plus/test";
@@ -83,7 +84,7 @@ it("matches filesystem usage by machine, device, mount and type, preserving miss
             45,
             60,
             15,
-        );
+        ).map(unpackSeries);
 
     const cluster: ClusterData = {
         id: "a",

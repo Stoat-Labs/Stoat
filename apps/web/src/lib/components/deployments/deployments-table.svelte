@@ -208,7 +208,9 @@
 
     const meta = $derived(
         latest !== undefined
-            ? `${items.length} most recent`
+            ? total
+                ? `Latest ${items.length} of ${total}`
+                : undefined
             : total === 0
               ? "0 of 0"
               : `${(currentPage - 1) * limit + 1}–${Math.min(currentPage * limit, total)} of ${total}`,

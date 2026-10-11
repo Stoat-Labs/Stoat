@@ -1,0 +1,6 @@
+{
+    "name": "Mealie",
+    "description": "Self-hosted recipe management and meal planning",
+    "type": "compose",
+    "tags": ["recipe", "planning"]
+}

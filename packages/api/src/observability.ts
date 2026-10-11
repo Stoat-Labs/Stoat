@@ -51,17 +51,40 @@ export const metricNames = [
 
 export type MetricName = (typeof metricNames)[number];
 
+/**
+ * Wire format of a series: samples on the `start + i * step` grid (seconds), so timestamps aren't
+ * sent per point. `unpackSeries` turns it back into points.
+ */
+export type PackedMetricSeries = Omit<MetricSeries, "points"> & {
+    start: number;
+    step: number;
+    values: (number | null)[];
+};
+
+export function unpackSeries({ start, step, values, ...labels }: PackedMetricSeries): MetricSeries {
+    return {
+        ...labels,
+        points: values.map((value, index) => ({ time: (start + index * step) * 1000, value })),
+    };
+}
+
+/** Point budgets a chart can ask for: sparklines need few, full charts about one per few pixels. */
+export const chartPoints = [24, 120] as const;
+
+export type ChartPoints = (typeof chartPoints)[number];
+
 export type MetricWindow = { start: number; end: number; step: number; duration: number };
 
-/** Align a range to the 15s scrape grid with about as many points as a chart can draw (like Grafana's maxDataPoints). */
+/** Align a range to the 15s scrape grid with at most `points` samples (like Grafana's maxDataPoints). */
 export function metricWindow(
     range: ObservabilityRange,
+    points: ChartPoints = 120,
     nowSeconds = Date.now() / 1000,
 ): MetricWindow {
     const now = Math.floor(nowSeconds / 15) * 15;
     const end = range instanceof Object ? Math.min(now, Math.floor(range.to / 15) * 15) : now;
     const duration = range instanceof Object ? Math.max(60, end - range.from) : ranges[range];
-    const step = Math.max(15, Math.ceil(duration / 120 / 15) * 15);
+    const step = Math.max(15, Math.ceil(duration / points / 15) * 15);
 
     return { start: end - Math.ceil(duration / step) * step, end, step, duration };
 }
@@ -371,19 +394,16 @@ export function parseMetricSeries(
     start: number,
     end: number,
     step: number,
-): MetricSeries[] {
+): PackedMetricSeries[] {
     return matrix.parse(JSON.parse(text)).data.result.map((series) => {
-        const values = new Map(series.values);
-        const points: MetricPoint[] = [];
+        const samples = new Map(series.values);
+        const values: (number | null)[] = [];
 
         for (let time = start; time <= end; time += step) {
-            const raw = values.get(time);
+            const raw = samples.get(time);
             const value = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
-            points.push({
-                time: time * 1000,
-                // Four significant digits exceed what charts and the one-decimal labels can show.
-                value: Number.isFinite(value) ? Number(Math.max(0, value).toPrecision(4)) : null,
-            });
+            // Four significant digits exceed what charts and the one-decimal labels can show.
+            values.push(Number.isFinite(value) ? Number(Math.max(0, value).toPrecision(4)) : null);
         }
 
         return {
@@ -393,7 +413,9 @@ export function parseMetricSeries(
             device: series.metric.device,
             mountpoint: series.metric.mountpoint,
             fstype: series.metric.fstype,
-            points,
+            start,
+            step,
+            values,
         };
     });
 }

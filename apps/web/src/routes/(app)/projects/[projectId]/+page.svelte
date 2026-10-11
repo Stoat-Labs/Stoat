@@ -45,6 +45,7 @@
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Boxes from "@lucide/svelte/icons/boxes";
     import Container from "@lucide/svelte/icons/container";
+    import FolderOpen from "@lucide/svelte/icons/folder-open";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import Plus from "@lucide/svelte/icons/plus";
     import { createQuery } from "@tanstack/svelte-query";
@@ -77,40 +78,6 @@
     let now = $state(Date.now());
 
     let watchError = $state("");
-
-    const summary = $derived.by(() => {
-        const count = (match: (status: ResourceStatus) => boolean) =>
-            resources.filter(
-                (resource) =>
-                    resource.type !== "bucket" &&
-                    match(resource.deploymentStatus),
-            ).length;
-
-        return [
-            {
-                label: "deployed",
-                dot: dotClass("ready"),
-                count: count((s) => s === "ready"),
-            },
-            {
-                label: "deploying",
-                dot: dotClass("running"),
-                count: count(
-                    (s) => s === "queued" || s === "running",
-                ),
-            },
-            {
-                label: "failed",
-                dot: dotClass("failed"),
-                count: count((s) => s === "failed"),
-            },
-            {
-                label: "not deployed",
-                dot: dotClass(null),
-                count: count((s) => s === null || s === "cancelled"),
-            },
-        ].filter((item) => item.count > 0);
-    });
 
     useHeaderActions(newResourceAction);
 
@@ -181,7 +148,7 @@
         <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
                 <EmptyMedia variant="icon">
-                    <Boxes aria-hidden="true" />
+                    <FolderOpen aria-hidden="true" />
                 </EmptyMedia>
                 <EmptyTitle>Project not found</EmptyTitle>
                 <EmptyDescription>
@@ -292,182 +259,172 @@
                 </EmptyContent>
             </Empty>
         {:else}
-            <main class="space-y-4">
-                <ul
-                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-                >
-                    {#each resources as resource (resource.id)}
-                        {@const status = resource.deploymentStatus}
-                        {@const active =
-                            status !== null &&
-                            isActiveDeploymentStatus(status)}
-                        <li class="min-w-0">
-                            <Card
-                                class="relative h-full gap-0 overflow-hidden p-4 transition-colors hover:bg-accent/50 focus-within:bg-accent/50"
-                            >
-                                <CardHeader class="p-0">
-                                    <div
-                                        class="flex items-center gap-3"
+            <ul
+                class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            >
+                {#each resources as resource (resource.id)}
+                    {@const status = resource.deploymentStatus}
+                    {@const active =
+                        status !== null &&
+                        isActiveDeploymentStatus(status)}
+                    <li class="min-w-0">
+                        <Card
+                            class="relative h-full gap-0 overflow-hidden p-4 transition-colors hover:bg-accent/50 focus-within:bg-accent/50"
+                        >
+                            <CardHeader class="p-0">
+                                <div class="flex items-center gap-3">
+                                    <Avatar
+                                        class="size-9 rounded-lg border border-border bg-transparent"
                                     >
-                                        <Avatar
-                                            class="size-9 rounded-lg border border-border bg-transparent"
+                                        {#if resource.icon}<AvatarImage
+                                                src={resource.icon}
+                                                alt=""
+                                                class="object-contain"
+                                            />{/if}
+                                        <AvatarFallback
+                                            class="rounded-none bg-muted/50"
                                         >
-                                            {#if resource.icon}<AvatarImage
-                                                    src={resource.icon}
-                                                    alt=""
-                                                    class="object-contain"
-                                                />{/if}
-                                            <AvatarFallback
-                                                class="rounded-none bg-muted/50"
-                                            >
-                                                {#if resource.type === "bucket"}
-                                                    <BucketIcon
-                                                        class="size-5 text-muted-foreground"
-                                                        aria-hidden="true"
-                                                    />
-                                                {:else}
-                                                    <Boxes
-                                                        class="size-5 text-muted-foreground"
-                                                        aria-hidden="true"
-                                                    />
-                                                {/if}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div class="min-w-0 flex-1">
-                                            <CardTitle
-                                                class="block truncate text-[15px] leading-tight"
-                                            >
-                                                <a
-                                                    href="/projects/{projectId}/{resource.id}"
-                                                    class="before:absolute before:inset-0 before:rounded-xl hover:underline focus-visible:outline-none"
-                                                >
-                                                    {resource.name}
-                                                </a>
-                                            </CardTitle>
-                                            <CardDescription
-                                                class={cn(
-                                                    "mt-0.5 block truncate",
-                                                    !resource.description?.trim() &&
-                                                        "italic opacity-64",
-                                                )}
-                                            >
-                                                {resource.description?.trim() ||
-                                                    ""}
-                                            </CardDescription>
-                                        </div>
-                                        {#if resource.bucketStatus}
-                                            <Badge
-                                                variant={s3BucketStatusVariant[
-                                                    resource
-                                                        .bucketStatus
-                                                ]}
-                                                class="shrink-0 capitalize"
-                                            >
-                                                {resource.bucketStatus}
-                                            </Badge>
-                                        {:else if resource.deploymentId && status}
-                                            <Badge
-                                                variant={deploymentStatusVariant(
-                                                    status,
-                                                )}
-                                                class="relative z-10 shrink-0"
-                                                href="/projects/{resource.projectId}/{resource.id}/deployments/{resource.deploymentId}"
-                                            >
-                                                <span
-                                                    class={cn(
-                                                        "size-1.5 rounded-full",
-                                                        dotClass(
-                                                            status,
-                                                        ),
-                                                    )}
+                                            {#if resource.type === "bucket"}
+                                                <BucketIcon
+                                                    class="size-5 text-muted-foreground"
                                                     aria-hidden="true"
-                                                ></span>
-                                                {statusLabels[status]}
-                                            </Badge>
-                                        {:else}
-                                            <Badge
-                                                variant="outline"
-                                                class="shrink-0"
+                                                />
+                                            {:else}
+                                                <Boxes
+                                                    class="size-5 text-muted-foreground"
+                                                    aria-hidden="true"
+                                                />
+                                            {/if}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div class="min-w-0 flex-1">
+                                        <CardTitle
+                                            class="block truncate text-[15px] leading-tight"
+                                        >
+                                            <a
+                                                href="/projects/{projectId}/{resource.id}"
+                                                class="before:absolute before:inset-0 before:rounded-xl hover:underline focus-visible:outline-none"
                                             >
-                                                Not deployed
-                                            </Badge>
+                                                {resource.name}
+                                            </a>
+                                        </CardTitle>
+                                        {#if resource.description?.trim()}
+                                            <CardDescription
+                                                class="mt-0.5 block truncate"
+                                            >
+                                                {resource.description.trim()}
+                                            </CardDescription>
                                         {/if}
                                     </div>
-                                </CardHeader>
-                                <div
-                                    class="mt-4 flex min-w-0 items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"
-                                >
-                                    <span
-                                        class="flex min-w-0 items-center gap-1"
-                                    >
-                                        {#if active}
+                                    {#if resource.bucketStatus}
+                                        <Badge
+                                            variant={s3BucketStatusVariant[
+                                                resource.bucketStatus
+                                            ]}
+                                            class="shrink-0 capitalize"
+                                        >
+                                            {resource.bucketStatus}
+                                        </Badge>
+                                    {:else if resource.deploymentId && status}
+                                        <Badge
+                                            variant={deploymentStatusVariant(
+                                                status,
+                                            )}
+                                            class="relative z-10 shrink-0"
+                                            href="/projects/{resource.projectId}/{resource.id}/deployments/{resource.deploymentId}"
+                                        >
                                             <span
-                                                class="spinner w-3 shrink-0 text-warning"
+                                                class={cn(
+                                                    "size-1.5 rounded-full",
+                                                    dotClass(status),
+                                                )}
                                                 aria-hidden="true"
                                             ></span>
-                                            <span class="truncate">
-                                                {deployStep(
-                                                    status,
-                                                    resource.deploymentProgress,
-                                                )}…
-                                            </span>
-                                        {:else if resource.gitBranch}
-                                            <GitBranch
-                                                class="size-3.5 shrink-0"
-                                                aria-hidden="true"
-                                            />
-                                            <span class="truncate">
-                                                {resource.gitBranch}
-                                            </span>
-                                        {:else}
-                                            <span class="truncate">
-                                                {resource.engine ??
-                                                    resource.type ??
-                                                    "compose"}
-                                            </span>
-                                        {/if}
-                                    </span>
-                                    {#if active && resource.deploymentCreatedAt}
-                                        <span
-                                            class="shrink-0 tabular-nums"
-                                        >
-                                            {elapsed(
-                                                resource.deploymentCreatedAt,
-                                                now,
-                                            )}
-                                        </span>
-                                    {:else if resource.deploymentCreatedAt}
-                                        {@const at = active
-                                            ? resource.deploymentCreatedAt
-                                            : (resource.deploymentFinishedAt ??
-                                              resource.deploymentCreatedAt)}
-                                        <time
-                                            class="shrink-0"
-                                            datetime={new Date(
-                                                at,
-                                            ).toISOString()}
-                                        >
-                                            {active
-                                                ? "started"
-                                                : status === "ready"
-                                                  ? "deployed"
-                                                  : status}
-                                            {ago(at, now)}
-                                        </time>
+                                            {statusLabels[status]}
+                                        </Badge>
                                     {:else}
-                                        <span class="shrink-0">
-                                            updated {ago(
-                                                resource.updatedAt,
-                                                now,
-                                            )}
-                                        </span>
+                                        <Badge
+                                            variant="outline"
+                                            class="shrink-0"
+                                        >
+                                            Not deployed
+                                        </Badge>
                                     {/if}
                                 </div>
-                            </Card>
-                        </li>
-                    {/each}
-                </ul>
-            </main>
+                            </CardHeader>
+                            <div
+                                class="mt-4 flex min-w-0 items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"
+                            >
+                                <span
+                                    class="flex min-w-0 items-center gap-1"
+                                >
+                                    {#if active}
+                                        <span
+                                            class="spinner w-3 shrink-0 text-warning"
+                                            aria-hidden="true"
+                                        ></span>
+                                        <span class="truncate">
+                                            {deployStep(
+                                                status,
+                                                resource.deploymentProgress,
+                                            )}…
+                                        </span>
+                                    {:else if resource.gitBranch}
+                                        <GitBranch
+                                            class="size-3.5 shrink-0"
+                                            aria-hidden="true"
+                                        />
+                                        <span class="truncate">
+                                            {resource.gitBranch}
+                                        </span>
+                                    {:else}
+                                        <span class="truncate">
+                                            {resource.engine ??
+                                                resource.type ??
+                                                "compose"}
+                                        </span>
+                                    {/if}
+                                </span>
+                                {#if active && resource.deploymentCreatedAt}
+                                    <span
+                                        class="shrink-0 tabular-nums"
+                                    >
+                                        {elapsed(
+                                            resource.deploymentCreatedAt,
+                                            now,
+                                        )}
+                                    </span>
+                                {:else if resource.deploymentCreatedAt}
+                                    {@const at = active
+                                        ? resource.deploymentCreatedAt
+                                        : (resource.deploymentFinishedAt ??
+                                          resource.deploymentCreatedAt)}
+                                    <time
+                                        class="shrink-0"
+                                        datetime={new Date(
+                                            at,
+                                        ).toISOString()}
+                                    >
+                                        {active
+                                            ? "started"
+                                            : status === "ready"
+                                              ? "deployed"
+                                              : status}
+                                        {ago(at, now)}
+                                    </time>
+                                {:else}
+                                    <span class="shrink-0">
+                                        updated {ago(
+                                            resource.updatedAt,
+                                            now,
+                                        )}
+                                    </span>
+                                {/if}
+                            </div>
+                        </Card>
+                    </li>
+                {/each}
+            </ul>
         {/if}
     {/if}
 </div>

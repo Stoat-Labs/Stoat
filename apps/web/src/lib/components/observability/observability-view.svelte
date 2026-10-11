@@ -51,6 +51,7 @@
         serviceRows,
         serviceSeries,
         topServices,
+        unpackMetric,
         type ClusterData,
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
@@ -136,6 +137,15 @@
         clusters.filter((cluster) => selected.includes(cluster.id)),
     );
 
+    // Only clusters with monitoring are queried; the rest would only answer "set up monitoring first".
+    const monitoredSelection = $derived(
+        selection.filter((cluster) => cluster.monitored),
+    );
+
+    const unmonitoredSelection = $derived(
+        selection.filter((cluster) => !cluster.monitored),
+    );
+
     // Live refresh only makes sense for ranges ending now; a custom range is a fixed window.
     const options = $derived({
         enabled: browser,
@@ -148,7 +158,7 @@
     });
 
     const machineQueries = createQueries(() => ({
-        queries: selection.map((cluster) =>
+        queries: monitoredSelection.map((cluster) =>
             orpc.cluster.getObservabilityMachines.queryOptions({
                 input: { clusterId: cluster.id },
                 ...options,
@@ -157,7 +167,7 @@
     }));
 
     const serviceQueries = createQueries(() => ({
-        queries: selection.map((cluster) =>
+        queries: monitoredSelection.map((cluster) =>
             orpc.cluster.getObservabilityServices.queryOptions({
                 input: { clusterId: cluster.id },
                 ...options,
@@ -168,14 +178,17 @@
 
     // One query per metric so each chart renders as soon as its own data arrives.
     const metricQueries = createQueries(() => ({
-        queries: selection.flatMap((cluster) =>
+        queries: monitoredSelection.flatMap((cluster) =>
             machineMetricNames.map((name) =>
                 orpc.cluster.getObservabilityMetric.queryOptions({
                     input: {
                         clusterId: cluster.id,
                         name,
                         range: range.value,
+                        // Only drawn as the services table's ~96px sparkline.
+                        points: name === "serviceCpu" ? 24 : 120,
                     },
+                    select: unpackMetric,
                     ...options,
                 }),
             ),
@@ -199,7 +212,7 @@
     const data = $derived.by(() => {
         if (refetching && heldData.length) return heldData;
 
-        heldData = selection.flatMap(
+        heldData = monitoredSelection.flatMap(
             (cluster, index): ClusterData[] => {
                 const machines = machineQueries[index];
                 const services = serviceQueries[index];
@@ -294,7 +307,7 @@
 
     // The table's queries only carry the latest sample (and a coarse CPU sparkline), so fetch full history for the charted services only.
     const chartedIds = $derived(
-        selection.map((cluster) =>
+        monitoredSelection.map((cluster) =>
             [
                 ...new Set(
                     [rankCpu, rankMemory, rankTraffic].flatMap(
@@ -312,22 +325,25 @@
     );
 
     const chartQueries = createQueries(() => ({
-        queries: (view === "services" ? selection : []).flatMap(
-            (cluster, index) =>
-                serviceNames.map((name) =>
-                    orpc.cluster.getObservabilityMetric.queryOptions({
-                        input: {
-                            clusterId: cluster.id,
-                            name,
-                            range: range.value,
-                            serviceIds: chartedIds[index] ?? [],
-                        },
-                        ...options,
-                        enabled:
-                            options.enabled &&
-                            Boolean(chartedIds[index]?.length),
-                    }),
-                ),
+        queries: (view === "services"
+            ? monitoredSelection
+            : []
+        ).flatMap((cluster, index) =>
+            serviceNames.map((name) =>
+                orpc.cluster.getObservabilityMetric.queryOptions({
+                    input: {
+                        clusterId: cluster.id,
+                        name,
+                        range: range.value,
+                        serviceIds: chartedIds[index] ?? [],
+                    },
+                    select: unpackMetric,
+                    ...options,
+                    enabled:
+                        options.enabled &&
+                        Boolean(chartedIds[index]?.length),
+                }),
+            ),
         ),
     }));
 
@@ -352,7 +368,7 @@
         if (chartsRefetching && heldChartData.length)
             return heldChartData;
 
-        heldChartData = selection.flatMap(
+        heldChartData = monitoredSelection.flatMap(
             (cluster, index): ClusterData[] => {
                 const machines = machineQueries[index];
                 const services = serviceQueries[index];
@@ -503,37 +519,39 @@
                 </div>
             </PopoverContent>
         </Popover>
-        <Select
-            value={filters.machine.current}
-            items={machineOptions}
-            onValueChange={(value) => {
-                filters.machine.current = value ?? "";
-            }}
-        >
-            <SelectTrigger
-                aria-label="Filter by machine"
-                class="w-full sm:w-52"
+        <!-- Machine, range and live controls only apply to clusters with monitoring. -->
+        {#if monitoredSelection.length}
+            <Select
+                value={filters.machine.current}
+                items={machineOptions}
+                onValueChange={(value) => {
+                    filters.machine.current = value ?? "";
+                }}
             >
-                <SelectValue placeholder="All machines" />
-            </SelectTrigger>
-            <SelectContent>
-                {#each machineOptions as option (option.value)}<SelectItem
-                        value={option.value}
-                        label={option.label}
-                    />{/each}
-            </SelectContent>
-        </Select>
-        <RangeControls
-            {range}
-            bind:paused={filters.paused.current}
-            fetching={fetching ||
-                chartQueries.some((query) => query.isFetching)}
-            disabled={!selection.length}
-            onrefresh={() => {
-                for (const query of [...queries, ...chartQueries])
-                    void query.refetch();
-            }}
-        />
+                <SelectTrigger
+                    aria-label="Filter by machine"
+                    class="w-full sm:w-52"
+                >
+                    <SelectValue placeholder="All machines" />
+                </SelectTrigger>
+                <SelectContent>
+                    {#each machineOptions as option (option.value)}<SelectItem
+                            value={option.value}
+                            label={option.label}
+                        />{/each}
+                </SelectContent>
+            </Select>
+            <RangeControls
+                {range}
+                bind:paused={filters.paused.current}
+                fetching={fetching ||
+                    chartQueries.some((query) => query.isFetching)}
+                onrefresh={() => {
+                    for (const query of [...queries, ...chartQueries])
+                        void query.refetch();
+                }}
+            />
+        {/if}
     </div>
 {/snippet}
 
@@ -572,6 +590,20 @@
             </div>
         </Skeleton>
     {/if}
+    {#each unmonitoredSelection as cluster (cluster.id)}
+        <Alert variant="warning">
+            <AlertTitle>{cluster.name}</AlertTitle>
+            <AlertDescription>
+                <p>Initialize monitoring to collect metrics.</p>
+                <a
+                    class="w-fit underline underline-offset-2"
+                    href={`/clusters/${cluster.id}`}
+                >
+                    Open cluster
+                </a>
+            </AlertDescription>
+        </Alert>
+    {/each}
     {#each data as cluster (cluster.id)}
         {#if cluster.reason}
             <Alert variant="warning">
