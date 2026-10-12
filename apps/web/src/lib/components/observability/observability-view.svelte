@@ -663,6 +663,7 @@
                 {visibleMachines}
                 {start}
                 {end}
+                {metricPending}
                 filesystemsLoading={metricPending([
                     "filesystemUsed",
                     "filesystemTotal",

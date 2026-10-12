@@ -31,6 +31,7 @@
         start,
         end,
         filesystemsLoading,
+        metricPending,
         machine = $bindable(""),
     }: {
         machines: MachineData[];
@@ -38,6 +39,7 @@
         start: number;
         end: number;
         filesystemsLoading: boolean;
+        metricPending: (names: MachineMetricName[]) => boolean;
         machine?: string;
     } = $props();
 
@@ -165,6 +167,7 @@
     <FramePanel class="min-w-0 p-4">
         <MetricChart
             series={chartSeries(visibleMachines, "cpu")}
+            loading={metricPending(["cpu"])}
             {start}
             {end}
             bind:hoveredMachine
@@ -217,6 +220,7 @@
         <FramePanel class="min-w-0 p-4">
             <MetricChart
                 series={chartSeries(visibleMachines, "memory")}
+                loading={metricPending(["memory"])}
                 {start}
                 {end}
                 unit="bytes"
@@ -246,6 +250,7 @@
                     "disk",
                     "diskTotal",
                 )}
+                loading={metricPending(["disk", "diskTotal"])}
                 {start}
                 {end}
                 max={100}
@@ -279,6 +284,7 @@
                     ["networkIn", "receive"],
                     ["networkOut", "send"],
                 )}
+                loading={metricPending(["networkIn", "networkOut"])}
                 {start}
                 {end}
                 unit="rate"
@@ -314,6 +320,7 @@
                     ["diskRead", "read"],
                     ["diskWrite", "write"],
                 )}
+                loading={metricPending(["diskRead", "diskWrite"])}
                 {start}
                 {end}
                 unit="rate"

@@ -13,6 +13,7 @@
         type MetricUnit,
     } from "$lib/observability";
     import CanvasChart from "./canvas-chart.svelte";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import { metricChartCursor } from "./chart-sync";
     import {
         crosshair,
@@ -37,6 +38,7 @@
         unit = "percent",
         max,
         compact = false,
+        loading = false,
         tooltipRows = 16,
         markers = [],
         hoveredMachine = $bindable(""),
@@ -48,6 +50,7 @@
         unit?: MetricUnit;
         max?: number;
         compact?: boolean;
+        loading?: boolean;
         tooltipRows?: number;
         markers?: { key: string; time: number; label: string }[];
         hoveredMachine?: string;
@@ -381,6 +384,12 @@
             />
         </div>
     {/if}
+{:else if loading}
+    <Skeleton loading loading-label="Loading chart">
+        <div class={compact ? "h-8 w-24" : "h-40 sm:h-48"}>
+            Loading chart
+        </div>
+    </Skeleton>
 {:else}
     <div
         class={compact
