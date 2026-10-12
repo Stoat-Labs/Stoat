@@ -66,7 +66,7 @@ services:
         restart: unless-stopped
 
     sidecar:
-        image: ghcr.io/stoat-labs/sidecar:latest
+        image: ghcr.io/irazvan2745/sidecar:latest
         env_file: .env
         environment:
             # Required by every endpoint except /healthz; the sidecar won't start without it.
