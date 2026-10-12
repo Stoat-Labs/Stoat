@@ -203,8 +203,16 @@ beforeAll(async () => {
     await sql(
         `CREATE TABLE monitoring.caddy_http_request_duration_seconds_bucket (customer_id STRING, handler STRING, host STRING, code STRING, le STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,handler,host,code,le))`,
     );
+    await sql(
+        `CREATE TABLE monitoring.caddy_http_response_size_bytes_sum (customer_id STRING, handler STRING, host STRING, code STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,handler,host,code))`,
+    );
+    await sql(
+        `CREATE TABLE monitoring.loki_process_custom_http_visitor_requests_total (customer_id STRING, host STRING, country STRING, client STRING, proto STRING, greptime_value DOUBLE, greptime_timestamp TIMESTAMP TIME INDEX, PRIMARY KEY(customer_id,host,country,client,proto))`,
+    );
     const requests: string[] = [];
     const buckets: string[] = [];
+    const sizes: string[] = [];
+    const visitors: string[] = [];
 
     for (let index = 0; index <= 8; index++) {
         const timestamp = new Date((end - 120 + index * 15) * 1000).toISOString();
@@ -228,7 +236,23 @@ beforeAll(async () => {
                 buckets.push(
                     `('${clusterId}','${handler}','${host}','${status}','${le}',${index * 15 * rate * share},'${timestamp}')`,
                 );
+
+            // 1 KB per response.
+            sizes.push(
+                `('${clusterId}','${handler}','${host}','${status}',${index * 15 * rate * 1000},'${timestamp}')`,
+            );
         }
+
+        // Requests with no known country have a NULL country column.
+        for (const [host, country, client, proto, rate] of [
+            ["app.example.com", "'US'", "desktop", "HTTP/2.0", 1],
+            ["app.example.com", "'DE'", "bot", "HTTP/1.1", 0.5],
+            ["app.example.com", "NULL", "mobile", "HTTP/1.1", 0.5],
+            ["other.example.com", "'FR'", "desktop", "HTTP/2.0", 100],
+        ] as const)
+            visitors.push(
+                `('${clusterId}','${host}',${country},'${client}','${proto}',${index * 15 * rate},'${timestamp}')`,
+            );
     }
 
     await sql(
@@ -236,6 +260,12 @@ beforeAll(async () => {
     );
     await sql(
         `INSERT INTO monitoring.caddy_http_request_duration_seconds_bucket VALUES ${buckets.join(",")}`,
+    );
+    await sql(
+        `INSERT INTO monitoring.caddy_http_response_size_bytes_sum VALUES ${sizes.join(",")}`,
+    );
+    await sql(
+        `INSERT INTO monitoring.loki_process_custom_http_visitor_requests_total VALUES ${visitors.join(",")}`,
     );
 }, 60000);
 
@@ -475,6 +505,40 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         status: "ok",
         series: [{ serviceId: "web-id" }],
     });
+
+    // Status classes are summed across services; redirects (308, static_response) stay out.
+    const status = await http("httpStatus");
+    expect(
+        Object.fromEntries(status.series.map((item) => [item.statusClass, item.values.at(-1)])),
+    ).toEqual({ "2xx": expect.closeTo(1.5), "5xx": expect.closeTo(0.5) });
+    expect((await http("httpBandwidth")).series[0]?.values.at(-1)).toBeCloseTo(2000);
+
+    const summary = await call(
+        observabilityRouter.getHttpSummary,
+        { clusterId, range, serviceIds: ["web-id"] },
+        { context },
+    );
+
+    expect(summary.status).toBe("ok");
+    expect(summary.latency).toBeGreaterThan(0);
+
+    // The counters move for 120s: 180 2xx and 60 5xx responses of 1 KB each.
+    const [web] = summary.services;
+    expect(web).toMatchObject({ serviceId: "web-id", hosts: ["app.example.com"] });
+    expect(web!.requests).toBeGreaterThan(200);
+    expect(web!.requests).toBeLessThan(280);
+    expect(web!.errors / web!.requests).toBeCloseTo(0.25, 1);
+    expect(web!.bytes / web!.requests).toBeCloseTo(1000, -1);
+
+    // Other hosts (FR) stay out; requests without a known country have the empty key.
+    const share = (rows: { key: string; requests: number }[]) =>
+        Object.fromEntries(
+            rows.map(({ key, requests }) => [key, Number((requests / web!.requests).toFixed(2))]),
+        );
+
+    expect(share(summary.visitors!.countries)).toEqual({ US: 0.5, DE: 0.25, "": 0.25 });
+    expect(share(summary.visitors!.clients)).toEqual({ desktop: 0.5, bot: 0.25, mobile: 0.25 });
+    expect(share(summary.visitors!.protocols)).toEqual({ "HTTP/2.0": 0.5, "HTTP/1.1": 0.5 });
 }, 60000);
 
 it("preserves missing, NaN and stale samples as gaps rather than inventing zeros", () => {

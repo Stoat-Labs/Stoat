@@ -744,6 +744,9 @@ export async function pushGitFile(
         author: { name: string; email: string };
         // Defaults to the directory of `path`.
         watchPath?: string;
+        // The watched directory's tree at `expectedRevision`. A newer branch head with the same
+        // watched tree only changed unrelated files, so the commit goes on top of it instead.
+        expectedTree?: string;
     },
 ): Promise<{ revision: string; blob: string; tree: string }> {
     const path = validateGitPath(input.path);
@@ -779,7 +782,13 @@ export async function pushGitFile(
     }
 
     return withRepository(repo, async (run, current, url, branch) => {
-        if (current !== input.expectedRevision)
+        if (
+            current !== input.expectedRevision &&
+            (!input.expectedTree ||
+                // A deleted watched directory is a change too.
+                (await directoryTree(run, current, watchPath).catch(() => undefined)) !==
+                    input.expectedTree)
+        )
             throw new ORPCError("CONFLICT", {
                 message: "Git branch changed; reload before saving",
             });

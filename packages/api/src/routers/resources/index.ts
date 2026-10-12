@@ -195,6 +195,7 @@ export const resourcesRouter = {
                     message: input.message ?? `Deploy ${resource.name} from Stoat`,
                     author: { name: session.user.name, email: session.user.email },
                     watchPath: source.watchPath,
+                    expectedTree: source.tree,
                 });
 
                 await tx

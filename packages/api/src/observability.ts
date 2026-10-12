@@ -27,6 +27,8 @@ export type MetricSeries = {
     device?: string;
     mountpoint?: string;
     fstype?: string;
+    /** HTTP status class such as "2xx", for the httpStatus chart. */
+    statusClass?: string;
     points: MetricPoint[];
 };
 
@@ -97,7 +99,17 @@ export const httpMetricNames = [
     "httpLatencyP99",
 ] as const;
 
-export type HttpMetricName = (typeof httpMetricNames)[number];
+/** The HTTP traffic page's charts; resource pages chart httpMetricNames. */
+export const httpTrafficMetricNames = [
+    "httpRequests",
+    "httpStatus",
+    "httpLatency",
+    "httpBandwidth",
+] as const;
+
+export type HttpMetricName =
+    | (typeof httpMetricNames)[number]
+    | (typeof httpTrafficMetricNames)[number];
 
 export const dnsMetricNames = ["dnsQueries", "dnsErrors", "dnsAvailability"] as const;
 
@@ -325,48 +337,140 @@ export function serviceHosts(label: string | undefined) {
     return [...hosts];
 }
 
+// caddy_http_requests_total has no status code, so requests are counted from the histogram.
+const caddyRequests = "caddy_http_request_duration_seconds_count";
+
+const caddyBuckets = "caddy_http_request_duration_seconds_bucket";
+
+const caddyBytes = "caddy_http_response_size_bytes_sum";
+
+/** Counted by Alloy from Caddy's access logs, with country, client, and proto labels. */
+export const visitorRequests = "loki_process_custom_http_visitor_requests_total";
+
+/** Every table the HTTP traffic charts and summary query. */
+export const caddyMetricTables = [caddyRequests, caddyBuckets, caddyBytes] as const;
+
+type Selector = (metric: string, extra?: string) => string;
+
+// Hostnames match hostnamePattern, so escaping dots is the only regex quoting needed.
+function hostMatcher(clusterId: string, names: string[]) {
+    return `customer_id=${JSON.stringify(clusterId)},host=~${JSON.stringify(names.map((name) => name.replaceAll(".", "\\.")).join("|"))}`;
+}
+
+/** Selects Caddy series for these hosts. Sites always run as a subroute, which leaves out automatic HTTP-to-HTTPS redirects. */
+function caddySelector(clusterId: string, names: string[]): Selector {
+    return (metric, extra = "") =>
+        `${metric}{${hostMatcher(clusterId, names)},handler="subroute"${extra}}`;
+}
+
 /**
- * HTTP metrics are Caddy's own per-host metrics, pushed over OTLP through Alloy. Hosts are
- * mapped back to services here, one `or` branch per service, so each series carries its service ID.
+ * Hosts are mapped back to services here, one `or` branch per service, so each series carries
+ * its service ID.
  */
+function perService(
+    clusterId: string,
+    hosts: [string, string[]][],
+    build: (selector: Selector) => string,
+) {
+    return hosts
+        .map(
+            ([serviceId, names]) =>
+                `label_replace(${build(caddySelector(clusterId, names))}, "container_label_uncloud_service_id", ${JSON.stringify(serviceId)}, "", "")`,
+        )
+        .join(" or ");
+}
+
+function routedHosts(hosts: Map<string, string[]>) {
+    return [...hosts].filter(([, names]) => names.length);
+}
+
+/** HTTP metrics are Caddy's own per-host metrics, pushed over OTLP through Alloy. */
 export function httpQueries(
     clusterId: string,
     step: number,
     hosts: Map<string, string[]>,
 ): Record<HttpMetricName, string> | null {
-    const entries = [...hosts].filter(([, names]) => names.length);
+    const entries = routedHosts(hosts);
 
     if (!entries.length) return null;
     const window = `${Math.max(60, step * 2)}s`;
 
-    const each = (build: (selector: (metric: string, extra?: string) => string) => string) =>
-        entries
-            .map(([serviceId, names]) => {
-                // Hostnames match hostnamePattern, so escaping dots is the only regex quoting needed.
-                // Sites always run as a subroute; this leaves out automatic HTTP-to-HTTPS redirects.
-                const matcher = `customer_id=${JSON.stringify(clusterId)},handler="subroute",host=~${JSON.stringify(names.map((name) => name.replaceAll(".", "\\.")).join("|"))}`;
+    const all = caddySelector(
+        clusterId,
+        entries.flatMap(([, names]) => names),
+    );
 
-                return `label_replace(${build((metric, extra = "") => `${metric}{${matcher}${extra}}`)}, "container_label_uncloud_service_id", ${JSON.stringify(serviceId)}, "", "")`;
-            })
-            .join(" or ");
-
-    // caddy_http_requests_total has no status code, so requests are counted from the histogram.
-    const requests = "caddy_http_request_duration_seconds_count";
-    const buckets = "caddy_http_request_duration_seconds_bucket";
-
-    const latency = (quantile: number) => (selector: (metric: string, extra?: string) => string) =>
-        `histogram_quantile(${quantile}, sum by (le) (rate(${selector(buckets)}[${window}])))`;
+    const latency = (quantile: number) => (selector: Selector) =>
+        `histogram_quantile(${quantile}, sum by (le) (rate(${selector(caddyBuckets)}[${window}])))`;
 
     return {
-        httpRequests: each((selector) => `sum(rate(${selector(requests)}[${window}]))`),
-        // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
-        httpErrors: each(
-            (selector) =>
-                `(sum(rate(${selector(requests, ',code=~"5.."')}[${window}])) or sum(rate(${selector(requests)}[${window}])) * 0)`,
+        httpRequests: perService(
+            clusterId,
+            entries,
+            (selector) => `sum(rate(${selector(caddyRequests)}[${window}]))`,
         ),
-        httpLatency: each(latency(0.95)),
-        httpLatencyP50: each(latency(0.5)),
-        httpLatencyP99: each(latency(0.99)),
+        // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
+        httpErrors: perService(
+            clusterId,
+            entries,
+            (selector) =>
+                `(sum(rate(${selector(caddyRequests, ',code=~"5.."')}[${window}])) or sum(rate(${selector(caddyRequests)}[${window}])) * 0)`,
+        ),
+        httpLatency: perService(clusterId, entries, latency(0.95)),
+        httpLatencyP50: perService(clusterId, entries, latency(0.5)),
+        httpLatencyP99: perService(clusterId, entries, latency(0.99)),
+        // One series per status class (2xx, 3xx, …) across all the selected services.
+        httpStatus: `sum by (status_class) (label_replace(rate(${all(caddyRequests)}[${window}]), "status_class", "\${1}xx", "code", "([1-5]).."))`,
+        httpBandwidth: perService(
+            clusterId,
+            entries,
+            (selector) => `sum(rate(${selector(caddyBytes)}[${window}]))`,
+        ),
+    };
+}
+
+/** Totals over the whole range, evaluated once at its end like counterTotalQuery. */
+export function httpSummaryQueries(
+    clusterId: string,
+    duration: number,
+    hosts: Map<string, string[]>,
+) {
+    const entries = routedHosts(hosts);
+
+    if (!entries.length) return null;
+    const window = `${duration}s`;
+    const names = entries.flatMap(([, list]) => list);
+
+    const visitors = (label: string) =>
+        `sum by (${label}) (increase(${visitorRequests}{${hostMatcher(clusterId, names)}}[${window}]))`;
+
+    return {
+        requests: perService(
+            clusterId,
+            entries,
+            (selector) => `sum(increase(${selector(caddyRequests)}[${window}]))`,
+        ),
+        errors: perService(
+            clusterId,
+            entries,
+            (selector) => `sum(increase(${selector(caddyRequests, ',code=~"5.."')}[${window}]))`,
+        ),
+        bytes: perService(
+            clusterId,
+            entries,
+            (selector) => `sum(increase(${selector(caddyBytes)}[${window}]))`,
+        ),
+        latency: perService(
+            clusterId,
+            entries,
+            (selector) =>
+                `histogram_quantile(0.95, sum by (le) (increase(${selector(caddyBuckets)}[${window}])))`,
+        ),
+        // Per-service P95s cannot be combined, so the overall one is its own query.
+        totalLatency: `histogram_quantile(0.95, sum by (le) (increase(${caddySelector(clusterId, names)(caddyBuckets)}[${window}])))`,
+        countries: visitors("country"),
+        clients: visitors("client"),
+        protocols: visitors("proto"),
     };
 }
 
@@ -383,6 +487,7 @@ const matrix = z.object({
                     device: z.string().optional(),
                     mountpoint: z.string().optional(),
                     fstype: z.string().optional(),
+                    status_class: z.string().optional(),
                 }),
                 values: z.array(z.tuple([z.number().finite(), z.string()])),
             }),
@@ -415,9 +520,61 @@ export function parseMetricSeries(
             device: series.metric.device,
             mountpoint: series.metric.mountpoint,
             fstype: series.metric.fstype,
+            statusClass: series.metric.status_class,
             start,
             step,
             values,
         };
     });
 }
+
+const vector = z.object({
+    status: z.literal("success"),
+    data: z.object({
+        result: z.array(
+            z.object({
+                metric: z.record(z.string(), z.string()),
+                values: z.array(z.tuple([z.number().finite(), z.string()])),
+            }),
+        ),
+    }),
+});
+
+export type HttpBreakdown = { key: string; requests: number };
+
+/**
+ * Reads a start=end range query as one value per series, keyed by `label`. A series without the
+ * label (e.g. requests from an IP with no known country) gets the empty key.
+ */
+export function parseTotals(text: string, label: string): HttpBreakdown[] {
+    return vector.parse(JSON.parse(text)).data.result.flatMap((series) => {
+        const value = Number(series.values.at(-1)?.[1]);
+
+        return Number.isFinite(value) && value > 0
+            ? [{ key: series.metric[label] ?? "", requests: value }]
+            : [];
+    });
+}
+
+export type HttpServiceSummary = {
+    serviceId: string;
+    /** Ingress hostnames the figures cover. */
+    hosts: string[];
+    requests: number;
+    errors: number;
+    bytes: number;
+    /** P95 in seconds; null without requests. */
+    latency: number | null;
+};
+
+export type HttpSummary = {
+    status: "ok" | "no-routes" | "not-collecting";
+    services: HttpServiceSummary[];
+    latency: number | null;
+    /** Null until Alloy has counted the first access log with a config that records visitors. */
+    visitors: {
+        countries: HttpBreakdown[];
+        clients: HttpBreakdown[];
+        protocols: HttpBreakdown[];
+    } | null;
+};

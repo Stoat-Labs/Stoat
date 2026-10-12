@@ -37,10 +37,10 @@
         <AlertDialogHeader>
             <AlertDialogTitle>Git branch changed</AlertDialogTitle>
             <AlertDialogDescription class="break-words">
-                The branch has new commits since this draft was
-                loaded. Reload to replace the draft with the latest
-                file from Git, or deploy anyway to commit your draft
-                on top of the new head.
+                New commits changed the Compose file or its directory
+                since this draft was loaded. Reload to replace the
+                draft with the latest file from Git, or deploy anyway
+                to commit your draft on top of the new head.
             </AlertDialogDescription>
         </AlertDialogHeader>
         {#if reloadError}

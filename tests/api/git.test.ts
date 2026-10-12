@@ -752,6 +752,43 @@ describe("Git plumbing and transport isolation", () => {
         expect(fixtureGit(["rev-parse", "refs/heads/main"])).toBe(initial);
     });
 
+    it("commits on top of a newer head when the watched directory is unchanged", async () => {
+        const expectedTree = fixtureGit(["rev-parse", `${initial}:bin`]);
+        addFixture("compose.yaml", "unrelated\n");
+        const unrelated = commitFixture(initial);
+
+        const result = await pushGitFile(repo, {
+            path: "bin/run.sh",
+            content: "ours\n",
+            expectedRevision: initial,
+            expectedTree,
+            message: "Ours",
+            author,
+        });
+
+        expect(fixtureGit(["show", "-s", "--format=%P", result.revision])).toBe(unrelated);
+        expect(fixtureGit(["show", `${result.revision}:compose.yaml`])).toBe("unrelated");
+        expect(fixtureGit(["show", `${result.revision}:bin/run.sh`])).toBe("ours");
+    });
+
+    it("rejects a newer head that changed the watched directory", async () => {
+        const expectedTree = fixtureGit(["rev-parse", `${initial}:bin`]);
+        addFixture("bin/config.env", "changed\n");
+        const changed = commitFixture(initial);
+
+        await expect(
+            pushGitFile(repo, {
+                path: "bin/run.sh",
+                content: "ours\n",
+                expectedRevision: initial,
+                expectedTree,
+                message: "Ours",
+                author,
+            }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(fixtureGit(["rev-parse", "refs/heads/main"])).toBe(changed);
+    });
+
     it("rejects a push race without overwriting the concurrent commit", async () => {
         let concurrent = "";
         network.beforeCommand = (args) => {

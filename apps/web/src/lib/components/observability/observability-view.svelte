@@ -696,12 +696,13 @@
                 loading={metricPending(["dnsAvailability"])}
             />
         {/if}
+        <!--  removing this removes scrolling on the metrics page
         <p class="text-xs text-muted-foreground">
             Charts show the selected range; numbers show its latest
             sample. Gaps mean missing data. {pending ||
             data.some((cluster) => !cluster.available)
                 ? "Totals include reporting clusters only."
                 : ""}
-        </p>
+        </p> -->
     {/if}
 </div>

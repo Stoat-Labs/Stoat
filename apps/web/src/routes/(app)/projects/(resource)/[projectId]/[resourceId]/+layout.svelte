@@ -43,6 +43,8 @@
 <AppShell fullWidth={fullPage} fullHeight={fullPage}>
     {#snippet children()}
         {@render pageContent()}
+    {/snippet}
+    {#snippet persistent()}
         {#key `${data.activeOrganizationId}/${page.params.projectId}/${page.params.resourceId}`}
             <ResourceLogs
                 projectId={page.params.projectId ?? ""}

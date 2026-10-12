@@ -100,8 +100,37 @@ async function waitForService(
 // Sidecar calls get their own ceilings so a hung endpoint fails fast with a
 // clear error instead of stalling the attempt forever. Combined with the
 // attempt signal so cancellation still propagates.
+// Installed by the Stoat sidecar; Alloy bind-mounts its directory (see compose.yaml).
+const GEOIP_DATABASE = "/var/lib/stoat/geoip/country.mmdb";
+
 function bounded(signal: AbortSignal, ms: number) {
     return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
+}
+
+/**
+ * Alloy refuses to start without the GeoIP database, which the Stoat sidecar installs on every
+ * machine. Returns the names of machines that lack it, e.g. because their sidecar is older.
+ */
+async function machinesWithoutGeoip(
+    uc: UcClient,
+    machines: readonly { id: string; name: string }[],
+    signal: AbortSignal,
+) {
+    const results = await Promise.all(
+        machines.map(async (machine) => {
+            const { exitCode } = await unwrap(
+                uc.POST("/api/v1/machines/{id}/exec", {
+                    params: { path: { id: machine.id } },
+                    body: { command: ["test", "-s", GEOIP_DATABASE] },
+                    signal,
+                }),
+            );
+
+            return exitCode === 0 ? [] : [machine.name];
+        }),
+    );
+
+    return results.flat();
 }
 
 async function checkOwnership(uc: UcClient, clusterId: string, signal: AbortSignal) {
@@ -196,6 +225,18 @@ export function createInitializeClusterHandler(
                 `Using machine "${target.name}" for GreptimeDB storage (${config.retentionDays}-day retention).`,
             );
             await checkOwnership(uc, clusterId, bounded(signal, 60_000));
+
+            const withoutGeoip = await machinesWithoutGeoip(
+                uc,
+                machines.items,
+                bounded(signal, 60_000),
+            );
+
+            if (withoutGeoip.length) {
+                const message = `Update the Stoat sidecar on : it installs the GeoIP database Alloy needs.`;
+                await log(message, "error");
+                throw new Error(message);
+            }
 
             const state = await prepareMonitoring(
                 db,

@@ -20,6 +20,12 @@ import {
     dnsMetricQueries,
     httpMetricNames,
     httpQueries,
+    httpSummaryQueries,
+    httpTrafficMetricNames,
+    caddyMetricTables,
+    parseTotals,
+    visitorRequests,
+    type HttpSummary,
     metricNames,
     metricQueries,
     metricWindow,
@@ -103,15 +109,15 @@ function monitoringPassword(cluster: MonitoringCluster) {
     return decryptMonitoringPassword(cluster.password, process.env.APP_SECRET ?? "", cluster.id);
 }
 
-async function queryRange(
+function queryText(
     cluster: MonitoringCluster,
     uc: UcClient,
     query: string,
     start: number,
     end: number,
     step: number,
-): Promise<PackedMetricSeries[]> {
-    const text = await monitoringRequest(
+) {
+    return monitoringRequest(
         uc,
         monitoringPassword(cluster),
         `/v1/prometheus/api/v1/query_range?db=${MONITORING_DATABASE}`,
@@ -123,8 +129,22 @@ async function queryRange(
         }),
         AbortSignal.timeout(30_000),
     );
+}
 
-    return parseMetricSeries(text, start, end, step);
+async function queryRange(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    query: string,
+    start: number,
+    end: number,
+    step: number,
+): Promise<PackedMetricSeries[]> {
+    return parseMetricSeries(
+        await queryText(cluster, uc, query, start, end, step),
+        start,
+        end,
+        step,
+    );
 }
 
 /**
@@ -194,7 +214,7 @@ type MetricResponse = {
 type ObservabilityMetricName = MetricName | HttpMetricName | DnsMetricName | PostgresMetricName;
 
 function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
-    return httpMetricNames.some((item) => item === name);
+    return [...httpMetricNames, ...httpTrafficMetricNames].some((item) => item === name);
 }
 
 function isPostgresMetric(name: ObservabilityMetricName): name is PostgresMetricName {
@@ -235,19 +255,11 @@ async function postgresMetric(
     );
 }
 
-async function httpMetric(
-    cluster: MonitoringCluster,
-    uc: UcClient,
-    name: HttpMetricName,
-    range: ObservabilityRange,
-    points: ChartPoints,
-    serviceIds: string[],
-): Promise<MetricResponse> {
-    const { start, end, step } = metricWindow(range, points);
+/** Each service's ingress hostnames. No service filter means the whole cluster. */
+async function serviceHostMap(cluster: MonitoringCluster, uc: UcClient, serviceIds: string[]) {
     const services = await ucServices(cluster, uc);
     const hosts = new Map<string, string[]>();
 
-    // No service filter means the whole cluster, as on the HTTP traffic page.
     for (const service of services.items)
         if (!serviceIds.length || serviceIds.includes(service.id))
             hosts.set(service.id, [
@@ -262,6 +274,19 @@ async function httpMetric(
                 ),
             ]);
 
+    return hosts;
+}
+
+async function httpMetric(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    name: HttpMetricName,
+    range: ObservabilityRange,
+    points: ChartPoints,
+    serviceIds: string[],
+): Promise<MetricResponse> {
+    const { start, end, step } = metricWindow(range, points);
+    const hosts = await serviceHostMap(cluster, uc, serviceIds);
     const queries = httpQueries(cluster.id, step, hosts);
 
     if (!queries) return { start, end, step, series: [], status: "no-routes" };
@@ -271,12 +296,7 @@ async function httpMetric(
         end,
         async () => {
             try {
-                if (
-                    !(await collecting(cluster, uc, "http", [
-                        "caddy_http_request_duration_seconds_count",
-                        "caddy_http_request_duration_seconds_bucket",
-                    ]))
-                )
+                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
                     return { start, end, step, series: [], status: "not-collecting" as const };
 
                 return {
@@ -285,6 +305,90 @@ async function httpMetric(
                     step,
                     series: await queryRange(cluster, uc, queries[name], start, end, step),
                     status: "ok" as const,
+                };
+            } catch {
+                throw unreachable();
+            }
+        },
+    );
+}
+
+const noTraffic = (status: HttpSummary["status"]): HttpSummary => ({
+    status,
+    services: [],
+    latency: null,
+    visitors: null,
+});
+
+/** Range totals for the HTTP traffic page: per-service figures and who sent the requests. */
+async function httpSummary(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    range: ObservabilityRange,
+    serviceIds: string[],
+): Promise<HttpSummary> {
+    const { end, duration } = metricWindow(range);
+    const hosts = await serviceHostMap(cluster, uc, serviceIds);
+    const queries = httpSummaryQueries(cluster.id, duration, hosts);
+
+    if (!queries) return noTraffic("no-routes");
+
+    return swr(
+        `http-summary:${cluster.id}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`,
+        end,
+        async () => {
+            try {
+                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
+                    return noTraffic("not-collecting");
+
+                const total = async (query: string, label: string) =>
+                    parseTotals(await queryText(cluster, uc, query, end, end, 15), label);
+
+                const perService = async (query: string) =>
+                    new Map(
+                        (await total(query, "container_label_uncloud_service_id")).map(
+                            ({ key, requests }) => [key, requests],
+                        ),
+                    );
+
+                const [requests, errors, bytes, latency, [overall], visitors] = await Promise.all([
+                    perService(queries.requests),
+                    perService(queries.errors),
+                    perService(queries.bytes),
+                    perService(queries.latency),
+                    total(queries.totalLatency, ""),
+                    collecting(cluster, uc, "visitors", [visitorRequests]).then(async (recorded) =>
+                        recorded
+                            ? {
+                                  countries: await total(queries.countries, "country"),
+                                  clients: await total(queries.clients, "client"),
+                                  protocols: await total(queries.protocols, "proto"),
+                              }
+                            : null,
+                    ),
+                ]);
+
+                // Every service with a hostname gets a row, including those without traffic.
+                const services = [...hosts].flatMap(([serviceId, names]) =>
+                    names.length
+                        ? [
+                              {
+                                  serviceId,
+                                  hosts: names,
+                                  requests: Math.round(requests.get(serviceId) ?? 0),
+                                  errors: Math.round(errors.get(serviceId) ?? 0),
+                                  bytes: Math.round(bytes.get(serviceId) ?? 0),
+                                  latency: latency.get(serviceId) ?? null,
+                              },
+                          ]
+                        : [],
+                );
+
+                return {
+                    status: "ok" as const,
+                    services,
+                    latency: overall?.requests ?? null,
+                    visitors,
                 };
             } catch {
                 throw unreachable();
@@ -433,6 +537,17 @@ export const observabilityRouter = {
                 },
             ),
         ),
+    getHttpSummary: organizationProcedure
+        .input(
+            clusterInput.extend({
+                range: rangeInput,
+                serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
+            }),
+        )
+        .use(monitoringMiddleware)
+        .handler(({ context: { cluster, uc }, input: { range, serviceIds } }) =>
+            httpSummary(cluster, uc, range, serviceIds ?? []),
+        ),
     // HTTP, DNS, and Postgres metrics share this procedure to stay within tsc's router type serialization limit.
     getObservabilityMetric: organizationProcedure
         .input(
@@ -440,6 +555,7 @@ export const observabilityRouter = {
                 name: z.enum([
                     ...metricNames,
                     ...httpMetricNames,
+                    ...httpTrafficMetricNames,
                     ...dnsMetricNames,
                     ...postgresMetricNames,
                 ]),

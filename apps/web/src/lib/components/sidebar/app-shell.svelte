@@ -27,11 +27,14 @@
     const {
         children,
         sidebar,
+        persistent,
         fullWidth = false,
         fullHeight = false,
     }: {
         children: Snippet;
         sidebar: Snippet;
+        /** Rendered after the page but outside its pathname key, so it survives tab navigation. */
+        persistent?: Snippet;
         fullWidth?: boolean;
         fullHeight?: boolean;
     } = $props();
@@ -346,6 +349,7 @@
             {#key page.url.pathname}
                 {@render children?.()}
             {/key}
+            {@render persistent?.()}
         </div>
     </SidebarInset>
 </SidebarProvider>

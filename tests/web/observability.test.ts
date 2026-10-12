@@ -293,7 +293,7 @@ it("maps ingress hostnames to per-service HTTP queries", () => {
 
     const queries = httpQueries("cluster", 15, new Map([["web", ["app.example.com"]]]));
     expect(queries?.httpRequests).toContain(
-        'caddy_http_request_duration_seconds_count{customer_id="cluster",handler="subroute",host=~"app\\\\.example\\\\.com"',
+        'caddy_http_request_duration_seconds_count{customer_id="cluster",host=~"app\\\\.example\\\\.com",handler="subroute"}',
     );
     expect(queries?.httpRequests).toContain('"container_label_uncloud_service_id", "web"');
     expect(queries?.httpErrors).toContain('code=~"5.."');

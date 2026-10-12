@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.irazz.lol/stoat/sidecar/internal/cluster"
+	"git.irazz.lol/stoat/sidecar/internal/geoip"
 	"git.irazz.lol/stoat/sidecar/internal/httpapi"
 	"github.com/spf13/cobra"
 )
@@ -34,6 +35,8 @@ type options struct {
 	hostService    string
 	requestTimeout time.Duration
 	execTimeout    time.Duration
+	geoipDatabase  string
+	geoipDir       string
 }
 
 func main() {
@@ -70,6 +73,10 @@ func newCommand() *cobra.Command {
 		"Maximum duration of a request that is neither a command execution nor an event stream.")
 	cmd.Flags().DurationVar(&opts.execTimeout, "exec-timeout", httpapi.DefaultExecTimeout,
 		"Maximum duration of a container or host command execution.")
+	cmd.Flags().StringVar(&opts.geoipDatabase, "geoip-database", "/usr/share/stoat/geoip/"+geoip.FileName,
+		"GeoIP database shipped with the sidecar.")
+	cmd.Flags().StringVar(&opts.geoipDir, "geoip-dir", "",
+		"Host directory Alloy reads the GeoIP database from, through the host root mount. Empty skips installing it.")
 	return cmd
 }
 
@@ -94,6 +101,13 @@ func run(ctx context.Context, opts options) error {
 	token, err := authToken()
 	if err != nil {
 		return err
+	}
+
+	if opts.geoipDir != "" {
+		// Not fatal: the API must stay up. Monitoring setup checks for the file on every machine.
+		if _, err := geoip.Install(opts.geoipDatabase, opts.geoipDir); err != nil {
+			fmt.Fprintf(os.Stderr, "install GeoIP database: %v\n", err)
+		}
 	}
 
 	specs, err := connectionSpecs(opts)

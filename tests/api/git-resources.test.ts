@@ -2223,6 +2223,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 message: "Update Compose",
                 author: { name: "admin", email: "admin@example.test" },
                 watchPath: "deploy",
+                expectedTree: tree,
             },
         );
         expect(result).toMatchObject({
@@ -2599,6 +2600,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     message: "Deploy Compose from Stoat",
                     author: { name: "admin", email: "admin@example.test" },
                     watchPath: "deploy",
+                    expectedTree: tree,
                 },
             );
             expect((await storedResource()).gitSource).toMatchObject(pushed);

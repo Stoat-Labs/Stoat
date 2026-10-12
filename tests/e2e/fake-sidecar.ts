@@ -255,6 +255,17 @@ export async function startFakeSidecar() {
 
         if (get && path === "/api/v1/machines") return json(response, 200, { items: [MACHINE] });
 
+        // Initialization checks that the sidecar installed the GeoIP database on each machine.
+        if (request.method === "POST" && /^\/api\/v1\/machines\/[^/]+\/exec$/u.test(path))
+            return json(response, 200, {
+                machineId: MACHINE.id,
+                machineName: MACHINE.name,
+                exitCode: 0,
+                stdout: "",
+                stderr: "",
+                truncated: false,
+            });
+
         if (get && path === "/api/v1/services")
             return json(response, 200, { items: [...services.values()] });
 

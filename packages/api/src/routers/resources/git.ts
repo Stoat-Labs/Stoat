@@ -349,6 +349,7 @@ export const resourceGitRouter = {
                     message: input.message,
                     author: { name: session.user.name, email: session.user.email },
                     watchPath: resource.gitSource.watchPath,
+                    expectedTree: resource.gitSource.tree,
                 });
 
                 const [updated] = await tx

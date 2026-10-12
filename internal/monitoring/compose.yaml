@@ -108,6 +108,12 @@ services:
               target: /dev/disk
               read_only: true
 
+            # The Stoat sidecar writes the GeoIP database here before monitoring is set up.
+            - type: bind
+              source: /var/lib/stoat/geoip
+              target: /etc/alloy/geoip
+              read_only: true
+
         configs:
             - source: alloy_config
               target: /etc/alloy/config.alloy
@@ -410,6 +416,7 @@ configs:
 
               forward_to = [
                 loki.process.docker.receiver,
+                loki.process.visitors.receiver,
               ]
             }
 
@@ -418,6 +425,127 @@ configs:
 
               forward_to = [
                 loki.write.greptime.receiver,
+              ]
+            }
+
+
+            // ----------------------------------------------------
+            // Visitor metrics from Caddy access logs
+            // ----------------------------------------------------
+
+            // Counts requests per host by country, client type, and HTTP version. Client IPs
+            // and user agents are only read here; the counter keeps the four labels below.
+            // Nothing is forwarded: the stored logs come from loki.process.docker.
+            loki.process "visitors" {
+              stage.docker {}
+
+              stage.match {
+                selector = "{uncloud_service=\"caddy\"} |= \"handled request\""
+
+                stage.json {
+                  expressions = {
+                    http_host  = "request.host",
+                    client_ip  = "request.client_ip",
+                    proto       = "request.proto",
+                    user_agent  = "request.headers.\"User-Agent\"[0]",
+                    status      = "status",
+                    tls_version = "request.tls.version",
+                  }
+                }
+
+                // Caddy's automatic HTTP-to-HTTPS redirect is a 308 over plain HTTP; counting it
+                // would count every browser visit twice.
+                stage.template {
+                  source   = "tls"
+                  template = "{{ if .tls_version }}yes{{ else }}no{{ end }}"
+                }
+
+                stage.drop {
+                  source     = "status,tls"
+                  expression = "308;no"
+                }
+
+                // Drop the port and case so the host matches the service's ingress hostname.
+                stage.regex {
+                  source     = "http_host"
+                  expression = "^(?P<http_host>[^:]+)"
+                }
+
+                stage.template {
+                  source   = "http_host"
+                  template = "{{ ToLower .Value }}"
+                }
+
+                // DB-IP Country Lite, which the Stoat sidecar keeps on every machine.
+                stage.geoip {
+                  db      = "/etc/alloy/geoip/country.mmdb"
+                  source  = "client_ip"
+                  db_type = "country"
+                }
+
+                // Bots first: many crawlers also claim to be Mozilla.
+                stage.template {
+                  source   = "client"
+                  template = "{{ if regexMatch \"(?i)bot|crawl|spider|slurp|scan|monitor|uptime|preview|fetch|curl|wget|python|go-http|java/|okhttp|axios|headless\" .user_agent }}bot{{ else if regexMatch \"(?i)mobi|android|iphone|ipad|ipod\" .user_agent }}mobile{{ else if regexMatch \"(?i)mozilla|opera\" .user_agent }}desktop{{ else }}other{{ end }}"
+                }
+
+                stage.labels {
+                  values = {
+                    host    = "http_host",
+                    country = "geoip_country_code",
+                    client  = "client",
+                    proto   = "proto",
+                  }
+                }
+
+                // Container names change on every Caddy redeploy; keeping them would start
+                // new series each time.
+                stage.label_keep {
+                  values = ["host", "country", "client", "proto"]
+                }
+
+                // Only DNS names: requests to raw IPs (scanners, health probes) would add
+                // unbounded host labels.
+                stage.match {
+                  selector = "{host=~\"[a-z0-9-]+(\\\\.[a-z0-9-]+)*\\\\.[a-z][a-z0-9-]+\"}"
+
+                  stage.metrics {
+                    metric.counter {
+                      name        = "http_visitor_requests_total"
+                      description = "Requests proxied by Caddy, by country, client type, and HTTP version"
+                      match_all   = true
+                      action      = "inc"
+
+                      // Every new series loses its first request to increase(), so keep
+                      // quiet countries around instead of recreating them.
+                      max_idle_duration = "24h"
+                    }
+                  }
+                }
+              }
+
+              forward_to = []
+            }
+
+            // stage.metrics series are exposed on Alloy's own /metrics endpoint.
+            prometheus.scrape "visitors" {
+              targets         = [{"__address__" = "127.0.0.1:12345"}]
+              scrape_interval = "15s"
+
+              forward_to = [
+                prometheus.relabel.visitors.receiver,
+              ]
+            }
+
+            prometheus.relabel "visitors" {
+              rule {
+                source_labels = ["__name__"]
+                regex         = "loki_process_custom_http_visitor_requests_total"
+                action        = "keep"
+              }
+
+              forward_to = [
+                prometheus.remote_write.greptime.receiver,
               ]
             }
 
