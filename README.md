@@ -40,10 +40,22 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
 
 ### Prerequisites
 
-- An [Uncloud](https://uncloud.run/) cluster
-- Uncloud cli
+- A Linux server you can SSH into as `root`, or as a user with passwordless sudo
+- A domain with a DNS record pointing to that server
 
-### Install
+### Quick Install
+
+Run this on your own computer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Stoat-Labs/Stoat/master/scripts/install.sh | bash
+```
+
+The script installs the Uncloud CLI if it's missing, sets up an [Uncloud](https://uncloud.run/) cluster on your server (or uses the one you already have), generates `.env` with random secrets and deploys Stoat with `uc deploy`. When it's done, open your domain and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster with the sidecar URL and token the script prints.
+
+### Manual install
+
+If you already have an [Uncloud](https://uncloud.run/) cluster and the Uncloud CLI, you can also set Stoat up by hand:
 
 1. **Download `compose.yml` and `.env.example`**
 
@@ -61,7 +73,7 @@ Stoat does not talk to your servers directly. A small **sidecar** runs globally 
     uc deploy
     ```
 
-3. Open `https://stoat.example` or whatever you set and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster. Enjoy :D
+3. Open `https://stoat.example` or whatever you set and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster (sidecar URL `http://sidecar.internal`, token is your `SIDECAR_TOKEN`). Enjoy :D
 
 <!--## Project Structure
 
