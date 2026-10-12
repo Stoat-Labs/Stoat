@@ -42,7 +42,7 @@
     let hoveredService = $state("");
 </script>
 
-<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+<div class="grid shrink-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
     {#each charts as chart (chart.title)}
         <Frame class="min-w-0">
             <FrameHeader>

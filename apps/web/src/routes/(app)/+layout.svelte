@@ -7,7 +7,8 @@
     const { children, data } = $props();
 
     const fullPage = $derived(
-        page.route.id === "/(app)/deployments/[deploymentId]",
+        page.route.id === "/(app)/deployments/[deploymentId]" ||
+            page.route.id === "/(app)/observability/services",
     );
 </script>
 

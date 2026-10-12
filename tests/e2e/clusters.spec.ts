@@ -121,12 +121,13 @@ test("an unreachable sidecar shows as unknown instead of breaking the page", asy
     // The home page checks each cluster's health; an unreachable one is no server error.
     const health = page.waitForResponse(
         (response) =>
-            response.url().includes("/rpc/cluster/healthz") &&
+            (response.request().postData() ?? "").includes(`"url":"/rpc/cluster/healthz"`) &&
             (response.request().postData() ?? "").includes(cluster.id),
     );
 
     await page.goto("/");
-    expect((await health).status()).toBe(200);
+    // oRPC batches the home page's calls into one response, which it reports as 207.
+    expect((await health).ok()).toBe(true);
 });
 
 test.describe("monitoring", () => {

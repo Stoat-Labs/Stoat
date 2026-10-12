@@ -253,6 +253,12 @@ export async function startFakeSidecar() {
             return json(response, 200, diagnostics);
         }
 
+        if (get && path === "/api/v1/caddy")
+            return json(response, 200, { deployed: false, image: "", caddyfile: "" });
+
+        if (get && path === "/api/v1/caddy/configs")
+            return json(response, 200, { items: [], drift: false });
+
         if (get && path === "/api/v1/machines") return json(response, 200, { items: [MACHINE] });
 
         // Initialization checks that the sidecar installed the GeoIP database on each machine.

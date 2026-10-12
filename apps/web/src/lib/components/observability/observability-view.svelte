@@ -472,12 +472,12 @@
 </script>
 
 <svelte:head>
-    <title>{title} · Observability · Stoat</title>
+    <title>{title} / Stoat</title>
 </svelte:head>
 
 {#snippet toolbar()}
     <div
-        class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
+        class="flex w-full flex-wrap items-center justify-end gap-2 -mt-4 sm:w-auto"
     >
         <Popover>
             <PopoverTrigger
@@ -556,7 +556,11 @@
 {/snippet}
 
 <div
-    class="min-w-0 w-full space-y-4 overflow-x-clip pt-4 sm:space-y-6 sm:pt-6"
+    class={[
+        "min-w-0 w-full space-y-4 overflow-x-clip pt-4 sm:space-y-6 sm:pt-6",
+        view === "services" &&
+            "xl:flex xl:min-h-0 xl:flex-1 xl:flex-col",
+    ]}
 >
     {#if list.isError}<Alert variant="error">
             <AlertDescription>

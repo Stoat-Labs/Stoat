@@ -246,7 +246,7 @@
     </TableCell>
 {/snippet}
 
-<Frame>
+<Frame class="xl:min-h-0 xl:flex-1">
     <FrameHeader
         class="flex-row flex-wrap items-center justify-between gap-3"
     >
@@ -267,7 +267,9 @@
             class="max-w-64"
         />
     </FrameHeader>
-    <FramePanel class="overflow-hidden p-0">
+    <FramePanel
+        class="overflow-hidden p-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+    >
         {#if missingMetrics}<p
                 class="border-b px-4 py-3 text-sm text-muted-foreground"
             >
@@ -278,7 +280,7 @@
         <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to scroll the virtualized viewport.) -->
         <div
             bind:this={viewport}
-            class="max-h-[60vh] overflow-auto"
+            class="max-h-[60vh] overflow-auto xl:max-h-none xl:min-h-0 xl:flex-1"
             tabindex="0"
             role="region"
             aria-label="Services usage table"

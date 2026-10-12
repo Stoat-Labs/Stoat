@@ -30,7 +30,10 @@
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import { pageParser } from "$lib/params/query-params";
+    import {
+        listPageSize,
+        pageParser,
+    } from "$lib/params/query-params";
     import {
         createMutation,
         createQuery,
@@ -53,11 +56,9 @@
         onDeploymentChange?: () => void;
     } = $props();
 
-    const pageSize = 15;
-
     const limit = $derived(
         latest === undefined
-            ? pageSize
+            ? listPageSize
             : Math.min(100, Math.max(1, Math.floor(latest))),
     );
 
