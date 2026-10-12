@@ -306,13 +306,13 @@
         </Frame>
     {/if}
 
-    <section aria-labelledby="projects-title" class="space-y-3">
-        <div
-            class="flex flex-wrap items-center justify-between gap-3"
+    <Frame class="min-w-0">
+        <FrameHeader
+            class="flex-row flex-wrap items-center justify-between gap-2 py-3"
         >
-            <h2 id="projects-title" class="text-base font-semibold">
-                Projects
-            </h2>
+            <FrameTitle class="text-base">
+                <h2>Projects</h2>
+            </FrameTitle>
             <div class="flex max-w-full flex-wrap gap-2">
                 <Select
                     items={clusterItems}
@@ -368,10 +368,10 @@
                     </SelectContent>
                 </Select>
             </div>
-        </div>
+        </FrameHeader>
         {#if projectsQuery.isPending}
             <Skeleton loading loading-label="Loading projects">
-                <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <ul class="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
                     {#each { length: 3 }, index (index)}
                         <li class="min-w-0">
                             <ProjectCard
@@ -388,15 +388,17 @@
                 </ul>
             </Skeleton>
         {:else if projectsQuery.isError}
-            <Alert variant="error">
-                <AlertDescription>
-                    Unable to load projects: {projectsQuery.error
-                        .message}
-                </AlertDescription>
-            </Alert>
+            <FramePanel>
+                <Alert variant="error">
+                    <AlertDescription>
+                        Unable to load projects: {projectsQuery.error
+                            .message}
+                    </AlertDescription>
+                </Alert>
+            </FramePanel>
         {:else if projects.length === 0}
             <Empty
-                class="rounded-xl border border-dashed border-border"
+                class="rounded-xl border border-dashed border-border bg-background"
             >
                 <EmptyHeader>
                     <EmptyMedia variant="icon">
@@ -420,21 +422,24 @@
             </Empty>
         {:else if filtered.length === 0}
             <p
-                class="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground"
+                class="rounded-xl border border-dashed border-border bg-background p-8 text-center text-sm text-muted-foreground"
             >
                 No projects match these filters.
                 <Button
                     size="sm"
                     variant="ghost"
                     onclick={() => {
-                        void params.set({ q: null, cluster: null });
+                        void params.set({
+                            q: null,
+                            cluster: null,
+                        });
                     }}
                 >
                     Clear filters
                 </Button>
             </p>
         {:else}
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
                 {#each filtered as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard
@@ -446,7 +451,7 @@
                 {/each}
             </ul>
         {/if}
-    </section>
+    </Frame>
 
     <Frame class="min-w-0">
         <FrameHeader
@@ -456,10 +461,6 @@
                 <FrameTitle class="text-base">
                     <h2>Clusters</h2>
                 </FrameTitle>
-                <FrameDescription class="mt-0.5">
-                    Current resource usage across each cluster's
-                    machines.
-                </FrameDescription>
             </div>
             <Button size="sm" variant="ghost" href="/clusters">
                 View all

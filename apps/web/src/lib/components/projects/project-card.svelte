@@ -1,12 +1,12 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
     import {
-        Card,
         CardDescription,
         CardFooter,
         CardHeader,
         CardTitle,
     } from "$lib/components/ui/card";
+    import { FramePanel } from "$lib/components/ui/frame";
     import LayoutGrid from "@lucide/svelte/icons/layout-grid";
 
     let {
@@ -24,8 +24,8 @@
     } = $props();
 </script>
 
-<Card
-    class="group h-full min-w-0 gap-0 p-4 transition-colors hover:border-input"
+<FramePanel
+    class="group flex h-full min-w-0 flex-col p-4 transition-colors bg-card hover:border-input"
     data-slot="project-card"
 >
     <CardHeader class="min-h-9 space-y-0 p-0">
@@ -43,7 +43,7 @@
                     {#if href}
                         <a
                             {href}
-                            class="before:absolute before:inset-0 before:rounded-2xl group-hover:underline focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring"
+                            class="before:absolute before:inset-0 before:rounded-xl group-hover:underline focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring"
                         >
                             {name}
                         </a>
@@ -78,4 +78,4 @@
             </span>
         {/if}
     </CardFooter>
-</Card>
+</FramePanel>
