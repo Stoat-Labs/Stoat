@@ -44,6 +44,7 @@
         "@tanstack/svelte-virtual": "^3.13.39",
         "@tanstack/table-core": "^8.21.3",
         "@varlock/vite-integration": "1.5.1",
+        "@xyflow/svelte": "1.7.0",
         "better-auth": "catalog:",
         "codemirror": "^6.0.2",
         "drizzle-kit": "^0.31.10",

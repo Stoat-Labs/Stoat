@@ -71,6 +71,7 @@ import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
 import { insertResourceDeployment, readComposeConfigFiles } from "../../resource-deployment";
 import { pushGitFile, readGitHead } from "../../git";
+import { buildProjectGraph } from "../../project-graph";
 
 // A deployable resource of the organization, with the cluster its project runs on.
 function deployTarget(
@@ -91,6 +92,33 @@ function deployTarget(
                 eq(clusters.organizationId, organizationId),
             ),
         );
+}
+
+// Internal projects are only visible to organization admins.
+async function assertProjectVisible(
+    db: Pick<Database, "select">,
+    organizationId: string,
+    organizationRole: string,
+    projectId: string,
+) {
+    const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+        .where(
+            and(
+                eq(projects.id, projectId),
+                isOrganizationAdmin(organizationRole)
+                    ? undefined
+                    : sql`${projects.isInternal} is not true`,
+                eq(clusters.organizationId, organizationId),
+            ),
+        )
+        .limit(1);
+
+    if (!project) {
+        throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+    }
 }
 
 export const resourcesRouter = {
@@ -404,24 +432,7 @@ export const resourcesRouter = {
     listResources: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
-            const [project] = await db
-                .select({ id: projects.id })
-                .from(projects)
-                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                .where(
-                    and(
-                        eq(projects.id, input.projectId),
-                        isOrganizationAdmin(organizationRole)
-                            ? undefined
-                            : sql`${projects.isInternal} is not true`,
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                )
-                .limit(1);
-
-            if (!project) {
-                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
-            }
+            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
 
             const latest = db
                 .selectDistinctOn([deployments.resourceId], {
@@ -467,6 +478,27 @@ export const resourcesRouter = {
                 .leftJoin(s3Buckets, eq(s3Buckets.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
+        }),
+
+    // Services and same-project references for the project canvas; status comes from
+    // `listResources`. Only resource ids leave the server, never `.env` values.
+    getProjectGraph: organizationProcedure
+        .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
+
+            const rows = await db
+                .select({
+                    id: resources.id,
+                    spec: resources.spec,
+                    draftSpec: resources.draftSpec,
+                    settings: resources.settings,
+                })
+                .from(resources)
+                .where(eq(resources.projectId, input.projectId))
+                .orderBy(asc(resources.createdAt));
+
+            return buildProjectGraph(rows, templates);
         }),
 
     // Keys only: values never leave the server for autocomplete.

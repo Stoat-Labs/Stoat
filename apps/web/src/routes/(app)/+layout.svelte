@@ -8,7 +8,8 @@
 
     const fullPage = $derived(
         page.route.id === "/(app)/deployments/[deploymentId]" ||
-            page.route.id === "/(app)/observability/services",
+            page.route.id === "/(app)/observability/services" ||
+            page.route.id === "/(app)/projects/[projectId]/canvas",
     );
 </script>
 

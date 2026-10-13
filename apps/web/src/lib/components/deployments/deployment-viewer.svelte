@@ -53,7 +53,7 @@
     import { untrack, tick } from "svelte";
     import DeploymentTimeline from "./deployment-timeline.svelte";
 
-    useHeaderActions(cancelAction);
+    useHeaderActions(cancelAction, () => !embedded);
 
     type DeploymentEvent =
         Awaited<
@@ -67,7 +67,13 @@
     let {
         deploymentId,
         backHref = "/deployments",
-    }: { deploymentId: string; backHref?: string } = $props();
+        embedded = false,
+    }: {
+        deploymentId: string;
+        backHref?: string;
+        /** Inside the project canvas panel: actions render inline and the page title is left alone. */
+        embedded?: boolean;
+    } = $props();
 
     let deployment = $state<DeploymentEvent["deployment"] | null>(
         null,
@@ -515,7 +521,9 @@
     }
 </script>
 
-<svelte:head><title>{title} / Stoat</title></svelte:head>
+<svelte:head>
+    {#if !embedded}<title>{title} / Stoat</title>{/if}
+</svelte:head>
 
 {#snippet cancelAction()}
     {#if deployment?.spec}
@@ -612,8 +620,15 @@
 {/snippet}
 
 <div
-    class="flex h-[calc(100dvh-7rem)] min-h-120 w-full min-w-0 flex-col pt-3 xl:h-auto xl:min-h-0 xl:flex-1"
+    class={embedded
+        ? "flex h-full min-h-0 w-full min-w-0 flex-col gap-3"
+        : "flex h-[calc(100dvh-7rem)] min-h-120 w-full min-w-0 flex-col pt-3 xl:h-auto xl:min-h-0 xl:flex-1"}
 >
+    {#if embedded}
+        <div class="flex flex-wrap justify-end gap-2 empty:hidden">
+            {@render cancelAction()}
+        </div>
+    {/if}
     <Frame class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <FrameHeader class="shrink-0 gap-2 px-3 py-2">
             <div class="flex flex-wrap items-center gap-2">
