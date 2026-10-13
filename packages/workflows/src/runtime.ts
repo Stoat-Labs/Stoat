@@ -324,6 +324,7 @@ async function recordFailureAsync(failure: Worker.JobFailure) {
             await setDeploymentStatus(db, deployment.id, "queued", TERMINAL_FAILURE_MESSAGE).catch(
                 () => {},
             );
+            await setInitializationStatus(db, clusterId, "retrying", null).catch(() => {});
 
             return;
         }

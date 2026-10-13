@@ -233,7 +233,7 @@ export function createInitializeClusterHandler(
             );
 
             if (withoutGeoip.length) {
-                const message = `Update the Stoat sidecar on : it installs the GeoIP database Alloy needs.`;
+                const message = `Update the Stoat sidecar on ${withoutGeoip.join(", ")}: it installs the GeoIP database Alloy needs.`;
                 await log(message, "error");
                 throw new Error(message);
             }

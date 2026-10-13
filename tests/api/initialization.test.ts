@@ -10,6 +10,9 @@ import {
     resources,
 } from "@stoat/db/schema/index";
 import * as uncloud from "@stoat/uncloud";
+import { getDeploymentWithLogs } from "@stoat/db/deployments";
+import { setInitializationStatus } from "@stoat/db/initialization";
+import { createInitializeClusterHandler } from "@stoat/workflows/initialize-cluster";
 import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -826,5 +829,90 @@ describe("cluster initialization API (PostgreSQL)", () => {
         await expect(
             call(clusterRouter.updateRetention, { clusterId, retentionDays: 30 }, { context }),
         ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("rejects sidecar URLs that are not http(s) URLs", async () => {
+        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
+
+        for (const sidecarUrl of ["sidecar.test", "ftp://sidecar.test", "not a url"]) {
+            await expect(
+                call(
+                    clusterRouter.createCluster,
+                    { name: "Bad", sidecarUrl, sidecarToken: "token" },
+                    { context },
+                ),
+            ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        }
+    });
+
+    it("keeps a custom GreptimeDB URL when initialization becomes ready", async () => {
+        const created = await call(
+            clusterRouter.createCluster,
+            {
+                name: "Custom",
+                sidecarUrl: "http://sidecar.test",
+                sidecarToken: "token",
+                greptimeUrl: "http://greptime.custom:4006",
+            },
+            { context },
+        );
+
+        const plain = await call(
+            clusterRouter.createCluster,
+            { name: "Plain", sidecarUrl: "http://sidecar.test", sidecarToken: "token" },
+            { context },
+        );
+
+        await setInitializationStatus(db, created.id!, "ready", null);
+        await setInitializationStatus(db, plain.id!, "ready", null);
+        const [custom] = await db.select().from(clusters).where(eq(clusters.id, created.id!));
+        const [fallback] = await db.select().from(clusters).where(eq(clusters.id, plain.id!));
+        expect(custom?.greptimeUrl).toBe("http://greptime.custom:4006");
+        expect(fallback?.greptimeUrl).toBe("http://stoat-monitoring-greptimedb.internal:4006");
+    });
+
+    it("names the machines whose sidecar lacks the GeoIP database", async () => {
+        const created = await call(
+            clusterRouter.createCluster,
+            { name: "Geoip", sidecarUrl: "http://sidecar.test", sidecarToken: "token" },
+            { context },
+        );
+
+        await call(
+            clusterRouter.initializeCluster,
+            { clusterId: created.id!, configuration: config },
+            { context },
+        );
+        const response = new Response(null, { status: 200 });
+
+        const outdated = {
+            GET: async (path: string) => ({
+                response,
+                data:
+                    path === "/api/v1/machines"
+                        ? { items: [{ id: "machine-1", name: "First", state: "up" }] }
+                        : { items: [] },
+            }),
+            POST: async () => ({ response, data: { exitCode: 1 } }),
+        };
+
+        // SAFETY: the handler only issues the GET and POST requests answered above.
+        vi.spyOn(uncloud, "ucClient").mockReturnValueOnce(
+            outdated as typeof outdated & ReturnType<typeof uncloud.ucClient>,
+        );
+        vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const [deployment] = await db
+            .select({ id: deployments.id })
+            .from(deployments)
+            .where(eq(deployments.clusterId, created.id!));
+
+        const handler = createInitializeClusterHandler(db, "x".repeat(32), {
+            deploymentId: deployment!.id,
+        });
+
+        await expect(handler(created.id!, new AbortController().signal)).rejects.toThrow();
+        const detail = await getDeploymentWithLogs(db, deployment!.id);
+        expect(detail?.logs.some((entry) => entry.text.includes("sidecar on First:"))).toBe(true);
     });
 });

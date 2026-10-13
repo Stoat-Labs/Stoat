@@ -192,7 +192,13 @@ export const clusterRouter = {
         .input(
             v.object({
                 name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
-                sidecarUrl: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(500)),
+                sidecarUrl: v.pipe(
+                    v.string(),
+                    v.trim(),
+                    v.maxLength(500),
+                    v.url("Enter a valid sidecar URL."),
+                    v.regex(/^https?:\/\//i, "The sidecar URL must start with http:// or https://."),
+                ),
                 sidecarToken: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(500)),
                 greptimeUrl: v.optional(
                     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(500)),

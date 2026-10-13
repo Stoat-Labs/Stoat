@@ -56,9 +56,26 @@
         onDeploymentChange?: () => void;
     } = $props();
 
+    // Rows that fit the viewport, so the list fills the page without scrolling.
+    // 49px per row; the rest is header, table chrome, pagination and padding.
+    const rowHeight = 49;
+    const pageChrome = 290;
+
+    let viewportHeight = $state(900);
+
+    const pageSize = $derived(
+        Math.min(
+            listPageSize,
+            Math.max(
+                5,
+                Math.floor((viewportHeight - pageChrome) / rowHeight),
+            ),
+        ),
+    );
+
     const limit = $derived(
         latest === undefined
-            ? listPageSize
+            ? pageSize
             : Math.min(100, Math.max(1, Math.floor(latest))),
     );
 
@@ -272,6 +289,8 @@
             : `/deployments/${deployment.id}`;
     }
 </script>
+
+<svelte:window bind:innerHeight={viewportHeight} />
 
 {#snippet statusFilters()}
     <div

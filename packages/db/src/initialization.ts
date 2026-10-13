@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import type { Database } from "./index";
 import { clusterMonitoring, clusters, projects, resources } from "./schema";
@@ -86,14 +87,15 @@ export async function setInitializationStatus(
     status: "running" | "retrying" | "failed" | "ready",
     error: string | null,
 ) {
-    const changes: Partial<typeof clusters.$inferInsert> = {
+    const changes: PgUpdateSetSource<typeof clusters> = {
         initializationStatus: status,
         initializationError: error,
     };
 
     if (status === "ready") {
         changes.initializedAt = new Date();
-        changes.greptimeUrl = "http://stoat-monitoring-greptimedb.internal:4006";
+        // A URL given when the cluster was created wins over the internal default.
+        changes.greptimeUrl = sql`coalesce(${clusters.greptimeUrl}, 'http://stoat-monitoring-greptimedb.internal:4006')`;
     }
 
     await db

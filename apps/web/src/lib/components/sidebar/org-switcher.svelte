@@ -67,15 +67,14 @@
     // its portals) mounted, so close on every route change as a fallback.
     const pathname = $derived(page.url.pathname);
 
+    // Lazy: this mounts with the mobile sheet, so an initial run would close it.
     watch(
         () => pathname,
-        (currentPathname) => {
-            // Track the route so an open menu never survives navigation.
-            if (currentPathname) {
-                open = false;
-                sidebar.setOpenMobile(false);
-            }
+        () => {
+            open = false;
+            sidebar.setOpenMobile(false);
         },
+        { lazy: true },
     );
 
     async function switchOrganization(organizationId: string) {
