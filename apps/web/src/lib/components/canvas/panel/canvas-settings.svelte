@@ -1,0 +1,829 @@
+<script lang="ts">
+    import { page } from "$app/state";
+    import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import {
+        Alert,
+        AlertDescription,
+    } from "$lib/components/ui/alert";
+    import { Button } from "$lib/components/ui/button";
+    import { Input } from "$lib/components/ui/input";
+    import { Skeleton } from "$lib/components/ui/skeleton";
+    import { Switch } from "$lib/components/ui/switch";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
+    import Code from "@lucide/svelte/icons/code";
+    import Copy from "@lucide/svelte/icons/copy";
+    import FileCode2 from "@lucide/svelte/icons/file-code-2";
+    import Flame from "@lucide/svelte/icons/flame";
+    import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
+    import GitBranch from "@lucide/svelte/icons/git-branch";
+    import Globe from "@lucide/svelte/icons/globe";
+    import Network from "@lucide/svelte/icons/network";
+    import Pencil from "@lucide/svelte/icons/pencil";
+    import Rocket from "@lucide/svelte/icons/rocket";
+    import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+    import { createQuery } from "@tanstack/svelte-query";
+    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import type { Component } from "svelte";
+    import { z } from "zod";
+    import CanvasSourceDialog from "./canvas-source-dialog.svelte";
+    import { getCanvasActions } from "../context";
+    import type { CanvasResource, CanvasService } from "../graph";
+
+    let {
+        resource,
+        services,
+    }: {
+        resource: CanvasResource;
+        services: CanvasService[];
+    } = $props();
+
+    const actions = getCanvasActions();
+
+    const input = $derived({
+        projectId: resource.projectId,
+        resourceId: resource.id,
+    });
+
+    const resourceQuery = createQuery(() =>
+        orpc.resources.getResource.queryOptions({ input }),
+    );
+
+    const projectQuery = createQuery(() =>
+        orpc.projects.getProject.queryOptions({
+            input: { projectId: resource.projectId },
+        }),
+    );
+
+    const connectionsQuery = createQuery(() =>
+        orpc.connections.list.queryOptions(),
+    );
+
+    const details = $derived(resourceQuery.data);
+
+    const isAdmin = $derived(page.data.isOrganizationAdmin === true);
+
+    // System-managed resources keep their source and cannot be deleted.
+    // Treated as internal until the project loads, so Source and Delete never flash for one.
+    const isInternal = $derived(
+        !projectQuery.isSuccess ||
+            projectQuery.data.isInternal === true,
+    );
+
+    const git = new GitSourceActions(
+        () => resource.projectId,
+        () => resource.id,
+        () => details,
+    );
+
+    const source = $derived(git.savedSource);
+
+    const connection = $derived(
+        connectionsQuery.data?.connections.find(
+            (candidate) => candidate.id === source?.connectionId,
+        ),
+    );
+
+    const repositoryName = $derived(
+        source?.repositoryUrl
+            .replace(/^[a-z]+:\/\/[^/]+\//u, "")
+            .replace(/^[^@]+@[^:]+:/u, "")
+            .replace(/\.git$/u, "") ?? "",
+    );
+
+    // SSH remotes have no page to open; HTTPS ones drop the `.git` suffix.
+    const repositoryHref = $derived(
+        source?.repositoryUrl.startsWith("https://")
+            ? source.repositoryUrl.replace(/\.git$/u, "")
+            : undefined,
+    );
+
+    let sourceDialogOpen = $state(false);
+
+    // Follows the saved value until edited; saving or a refetch resets it.
+    let watchPath = $derived(source?.watchPath ?? ".");
+
+    let commitMessage = $state("");
+
+    const settingsSchema = z
+        .object({ prefixNames: z.boolean().catch(true) })
+        .catch({ prefixNames: true });
+
+    const prefixNames = $derived(
+        settingsSchema.parse(details?.settings).prefixNames,
+    );
+
+    let savingPrefix = $state(false);
+
+    let prefixError = $state("");
+
+    async function setPrefixNames(checked: boolean) {
+        savingPrefix = true;
+        prefixError = "";
+
+        try {
+            const updated = await client.resources.updateSettings({
+                ...input,
+                prefixNames: checked,
+            });
+
+            queryClient.setQueryData(
+                orpc.resources.getResource.queryKey({ input }),
+                updated,
+            );
+        } catch (cause) {
+            prefixError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not save.";
+        } finally {
+            savingPrefix = false;
+        }
+    }
+
+    const domains = $derived(
+        services.flatMap((service) =>
+            service.domains.map((domain) => ({
+                domain,
+                service: service.name,
+            })),
+        ),
+    );
+
+    // Railway's settings search; kept in the URL like the open tab.
+    const filter = useQueryState(
+        "settingsFilter",
+        parseAsString
+            .withDefault("")
+            .withOptions({ shallow: true, scroll: false }),
+    );
+
+    const needle = $derived(filter.current.trim().toLowerCase());
+
+    function shows(...words: string[]) {
+        return (
+            !needle ||
+            words.some((word) => word.toLowerCase().includes(needle))
+        );
+    }
+
+    type Section = {
+        id: string;
+        title: string;
+        icon: Component;
+        visible: boolean;
+    };
+
+    const sections: Section[] = $derived([
+        {
+            id: "source",
+            title: "Source",
+            icon: Code,
+            visible:
+                !isInternal &&
+                shows(
+                    "source",
+                    "repo",
+                    "git",
+                    "branch",
+                    "compose file",
+                    "watch directory",
+                    "auto deploy",
+                    "pull",
+                    "push",
+                    "commit",
+                ),
+        },
+        {
+            id: "networking",
+            title: "Networking",
+            icon: Network,
+            visible: shows("networking", "public", "domain", "port"),
+        },
+        {
+            id: "deploy",
+            title: "Deploy",
+            icon: Rocket,
+            visible: shows("deploy", "prefix names", "compose"),
+        },
+        {
+            id: "general",
+            title: "General",
+            icon: SlidersHorizontal,
+            visible: shows("general", "name", "rename", "icon"),
+        },
+        {
+            id: "danger",
+            title: "Danger",
+            icon: Flame,
+            visible:
+                isAdmin && !isInternal && shows("danger", "delete"),
+        },
+    ]);
+
+    const visibleSections = $derived(
+        sections.filter((section) => section.visible),
+    );
+
+    let filterInput = $state<HTMLInputElement | null>(null);
+
+    function jump(id: string) {
+        document
+            .getElementById(`settings-${id}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+</script>
+
+<svelte:window
+    onkeydown={(event) => {
+        // Railway focuses the settings filter on "/", unless something else has focus.
+        if (
+            event.key === "/" &&
+            event.target instanceof HTMLElement &&
+            !event.target.closest(
+                "input, textarea, [contenteditable]",
+            )
+        ) {
+            event.preventDefault();
+            filterInput?.focus();
+        }
+    }}
+/>
+
+{#snippet title(text: string, description?: string)}
+    <h4 class="text-sm font-semibold">{text}</h4>
+    {#if description}
+        <p class="mt-1 text-sm text-muted-foreground">
+            {description}
+        </p>
+    {/if}
+{/snippet}
+
+<!-- A Railway toggle row: a tinted bar holding the switch and its label. -->
+{#snippet toggleRow(
+    label: string,
+    checked: boolean,
+    disabled: boolean,
+    onchange: (checked: boolean) => void,
+)}
+    <label
+        class="mt-3 flex cursor-pointer items-center gap-4 rounded-md bg-muted/60 px-4 py-3"
+    >
+        <Switch
+            {checked}
+            {disabled}
+            onCheckedChange={(next) => onchange(next)}
+        />
+        <span class="text-base">{label}</span>
+    </label>
+{/snippet}
+
+{#snippet sourceSection()}
+    {#if source}
+        {#if shows("source", "repo", "git")}
+            <div>
+                {@render title("Source Repo")}
+                <div
+                    class="mt-3 flex items-center gap-4 rounded-md bg-muted/60 px-4 py-3"
+                >
+                    {#if connection}
+                        <ProviderIcon
+                            provider={connection.provider}
+                        />
+                    {:else}
+                        <FolderGit2
+                            class="size-4 shrink-0"
+                            aria-hidden="true"
+                        />
+                    {/if}
+                    <div class="min-w-0 flex-1">
+                        {#if repositoryHref}
+                            <a
+                                href={repositoryHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                class="block truncate text-base hover:underline"
+                            >
+                                {repositoryName}
+                            </a>
+                        {:else}
+                            <p class="truncate text-base">
+                                {repositoryName}
+                            </p>
+                        {/if}
+                        <p
+                            class="truncate text-xs text-muted-foreground"
+                        >
+                            {connection?.name ?? "Git"} · at
+                            <span
+                                class="font-mono"
+                                title={source.revision}
+                            >
+                                {source.revision.slice(0, 7)}
+                            </span>
+                        </p>
+                    </div>
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Change source"
+                        disabled={git.pending}
+                        onclick={() => (sourceDialogOpen = true)}
+                    >
+                        <Pencil class="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={git.pending}
+                        onclick={() => void git.run("detach")}
+                    >
+                        Disconnect
+                    </Button>
+                </div>
+            </div>
+        {/if}
+
+        {#if shows("branch", "source")}
+            <div>
+                {@render title(
+                    "Branch",
+                    "Pushes to this branch are what auto deploy picks up.",
+                )}
+                <div
+                    class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
+                >
+                    <GitBranch
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <span
+                        class="min-w-0 flex-1 truncate font-mono text-sm"
+                    >
+                        {source.branch}
+                    </span>
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Change branch"
+                        disabled={git.pending}
+                        onclick={() => (sourceDialogOpen = true)}
+                    >
+                        <Pencil class="size-4" aria-hidden="true" />
+                    </Button>
+                </div>
+            </div>
+        {/if}
+
+        {#if shows("compose file", "config", "source")}
+            <div>
+                {@render title(
+                    "Compose File",
+                    "The Compose file deployed from the repository. Relative config files it references are read from Git too; build contexts are not.",
+                )}
+                <div
+                    class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
+                >
+                    <FileCode2
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <span
+                        class="min-w-0 flex-1 truncate font-mono text-sm"
+                    >
+                        {source.path}
+                    </span>
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Change Compose file"
+                        disabled={git.pending}
+                        onclick={() => (sourceDialogOpen = true)}
+                    >
+                        <Pencil class="size-4" aria-hidden="true" />
+                    </Button>
+                </div>
+            </div>
+        {/if}
+
+        {#if isAdmin && shows("watch directory", "auto deploy", "deploy")}
+            <form
+                onsubmit={(event) => {
+                    event.preventDefault();
+                    void git.run("watch", undefined, undefined, {
+                        autoDeploy: source.autoDeploy,
+                        watchPath: watchPath.trim(),
+                    });
+                }}
+            >
+                {@render title(
+                    "Watch Directory",
+                    "Only pushes that change files in this directory start a new deployment.",
+                )}
+                <div class="mt-3 flex gap-2">
+                    <Input
+                        bind:value={watchPath}
+                        placeholder="."
+                        aria-label="Watch directory"
+                        class="font-mono"
+                        disabled={git.pending}
+                    />
+                    <Button
+                        type="submit"
+                        variant="outline"
+                        disabled={git.pending ||
+                            watchPath.trim() === source.watchPath}
+                    >
+                        Save
+                    </Button>
+                </div>
+            </form>
+
+            <div>
+                {@render title(
+                    "Auto Deploy",
+                    `Pull and deploy when ${source.branch} changes. Checked every minute, and paused while the draft has changes that are not in Git.`,
+                )}
+                {@render toggleRow(
+                    "Deploy on push",
+                    source.autoDeploy,
+                    git.pending,
+                    (checked) =>
+                        void git.run("watch", undefined, undefined, {
+                            autoDeploy: checked,
+                            watchPath: source.watchPath,
+                        }),
+                )}
+            </div>
+        {/if}
+
+        {#if shows("pull", "push", "commit", "sync")}
+            <div>
+                {@render title(
+                    "Sync",
+                    `Pull replaces the saved draft with ${source.branch}. Deploying commits draft changes to ${source.branch} first.`,
+                )}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        disabled={git.pending}
+                        onclick={() => void git.run("pull")}
+                    >
+                        Pull from Git
+                    </Button>
+                </div>
+                {#if isAdmin}
+                    <form
+                        class="mt-3 flex gap-2"
+                        onsubmit={async (event) => {
+                            event.preventDefault();
+
+                            if (
+                                await git.run(
+                                    "push",
+                                    undefined,
+                                    commitMessage,
+                                )
+                            )
+                                commitMessage = "";
+                        }}
+                    >
+                        <Input
+                            bind:value={commitMessage}
+                            placeholder="Update Compose configuration"
+                            aria-label="Commit message"
+                            disabled={git.pending}
+                        />
+                        <Button
+                            type="submit"
+                            disabled={git.pending ||
+                                !commitMessage.trim()}
+                        >
+                            Commit &amp; push
+                        </Button>
+                    </form>
+                {/if}
+            </div>
+        {/if}
+    {:else}
+        <div>
+            {@render title(
+                "Source Repo",
+                "Compose is edited in Stoat. Connect a repository to deploy its Compose file and configs from Git instead.",
+            )}
+            <div class="mt-3 flex flex-wrap gap-2">
+                <Button
+                    variant="outline"
+                    disabled={git.pending}
+                    onclick={() => (sourceDialogOpen = true)}
+                >
+                    <FolderGit2 class="size-4" aria-hidden="true" />
+                    Connect Repo
+                </Button>
+                <Button
+                    variant="ghost"
+                    href="/projects/{resource.projectId}/{resource.id}"
+                >
+                    Open editor
+                </Button>
+            </div>
+        </div>
+    {/if}
+
+    {#if git.error}
+        <Alert variant="error">
+            <AlertDescription>{git.error}</AlertDescription>
+        </Alert>
+    {:else if git.status}
+        <Alert variant="success" role="status">
+            <AlertDescription>{git.status}</AlertDescription>
+        </Alert>
+    {/if}
+{/snippet}
+
+{#snippet networkingSection()}
+    <div>
+        {@render title(
+            "Public Networking",
+            "Domains published with x-ports in the Compose file.",
+        )}
+        {#each domains as entry (entry.domain)}
+            <div
+                class="mt-3 flex items-center gap-4 rounded-md border px-4 py-3"
+            >
+                <Globe
+                    class="size-5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1">
+                    <a
+                        href="https://{entry.domain}"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="block truncate hover:underline"
+                    >
+                        {entry.domain}
+                    </a>
+                    <p class="truncate text-xs text-muted-foreground">
+                        → {entry.service}
+                    </p>
+                </div>
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Copy {entry.domain}"
+                    onclick={() =>
+                        void navigator.clipboard.writeText(
+                            `https://${entry.domain}`,
+                        )}
+                >
+                    <Copy class="size-4" aria-hidden="true" />
+                </Button>
+            </div>
+        {:else}
+            <p
+                class="mt-3 rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+            >
+                Nothing is public yet. Add an HTTP entry under
+                <code class="font-mono">x-ports</code>
+                in the Compose file.
+            </p>
+        {/each}
+    </div>
+{/snippet}
+
+{#snippet deploySection()}
+    <div>
+        {@render title(
+            "Prefix Names",
+            "Prefix service, network and volume names with this project's and resource's IDs, so they stay unique across the cluster. Changing it renames everything on the next deploy: services are replaced, and volumes start empty under their new names. The old volumes stay on the machines.",
+        )}
+        {@render toggleRow(
+            "Prefix names",
+            prefixNames,
+            savingPrefix || isInternal,
+            (checked) => void setPrefixNames(checked),
+        )}
+        {#if prefixError}
+            <Alert variant="error" class="mt-3">
+                <AlertDescription>{prefixError}</AlertDescription>
+            </Alert>
+        {/if}
+    </div>
+{/snippet}
+
+{#snippet generalSection()}
+    <div>
+        {@render title("Name")}
+        <div
+            class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
+        >
+            <span class="min-w-0 flex-1 truncate">
+                {resource.name}
+            </span>
+            <Button
+                size="sm"
+                variant="outline"
+                onclick={() => actions.edit("rename", resource.id)}
+            >
+                Rename
+            </Button>
+        </div>
+    </div>
+    <div>
+        {@render title(
+            "Icon",
+            "Shown on the canvas and in the sidebar.",
+        )}
+        <div class="mt-3 flex flex-wrap gap-2">
+            <Button
+                variant="outline"
+                onclick={() =>
+                    actions.edit("icon-upload", resource.id)}
+            >
+                Upload image
+            </Button>
+            <Button
+                variant="outline"
+                onclick={() => actions.edit("icon-link", resource.id)}
+            >
+                Use a link
+            </Button>
+        </div>
+    </div>
+{/snippet}
+
+{#snippet dangerSection()}
+    <div>
+        <h4 class="text-sm font-medium text-destructive-foreground">
+            Delete Resource
+        </h4>
+        <p class="mt-1 text-sm text-destructive-foreground">
+            Stops its services on the cluster and removes it from the
+            project. This cannot be undone.
+        </p>
+        <Button
+            variant="destructive"
+            class="mt-4"
+            onclick={() => actions.remove(resource.id)}
+        >
+            Delete resource
+        </Button>
+    </div>
+{/snippet}
+
+{#snippet body(id: string)}
+    {#if id === "source"}
+        {@render sourceSection()}
+    {:else if id === "networking"}
+        {@render networkingSection()}
+    {:else if id === "deploy"}
+        {@render deploySection()}
+    {:else if id === "general"}
+        {@render generalSection()}
+    {:else}
+        {@render dangerSection()}
+    {/if}
+{/snippet}
+
+<div class="@container flex min-h-full flex-col">
+    <!-- Railway's filter bar, pinned under the tabs. -->
+    <div class="sticky top-0 z-10 border-b bg-card px-3 py-3">
+        <div class="relative">
+            <Input
+                bind:ref={filterInput}
+                value={filter.current}
+                oninput={(event) =>
+                    void filter.set(
+                        event.currentTarget.value || null,
+                    )}
+                placeholder="Filter settings..."
+                aria-label="Filter settings"
+            />
+            <kbd
+                class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border px-1.5 font-mono text-xs text-muted-foreground"
+            >
+                /
+            </kbd>
+        </div>
+    </div>
+
+    {#if resourceQuery.isPending}
+        <Skeleton
+            loading
+            loading-label="Loading settings"
+            class="px-7 pt-10"
+        >
+            <div class="space-y-6 pl-16">
+                <p class="text-xl">Source</p>
+                <div class="h-16 rounded-md border"></div>
+                <div class="h-16 rounded-md border"></div>
+            </div>
+        </Skeleton>
+    {:else if resourceQuery.isError}
+        <Alert variant="error" class="m-7">
+            <AlertDescription>
+                Unable to load settings: {resourceQuery.error.message}
+            </AlertDescription>
+        </Alert>
+    {:else}
+        <div class="flex gap-12 px-7 pt-10 pb-16">
+            <!-- Railway's timeline: one icon per section on a thin vertical rule. -->
+            <div class="relative min-w-0 max-w-[600px] flex-1">
+                <div
+                    class="absolute top-5 bottom-0 left-5 w-px bg-border"
+                    aria-hidden="true"
+                ></div>
+                {#each visibleSections as section (section.id)}
+                    <section
+                        id="settings-{section.id}"
+                        class="relative scroll-mt-20 pb-14 pl-16"
+                        aria-labelledby="settings-{section.id}-title"
+                    >
+                        <span
+                            class={[
+                                "absolute top-0 left-0 flex size-10 items-center justify-center rounded-full border bg-card",
+                                section.id === "danger"
+                                    ? "text-destructive-foreground"
+                                    : "text-muted-foreground",
+                            ]}
+                            aria-hidden="true"
+                        >
+                            <section.icon class="size-4" />
+                        </span>
+                        {#if section.id !== "danger"}
+                            <h3
+                                id="settings-{section.id}-title"
+                                class="flex h-10 items-center text-xl text-muted-foreground"
+                            >
+                                {section.title}
+                            </h3>
+                        {:else}
+                            <h3
+                                id="settings-{section.id}-title"
+                                class="sr-only"
+                            >
+                                {section.title}
+                            </h3>
+                        {/if}
+                        <div
+                            class={[
+                                "space-y-8",
+                                section.id === "danger"
+                                    ? "pt-2"
+                                    : "pt-6",
+                            ]}
+                        >
+                            {@render body(section.id)}
+                        </div>
+                    </section>
+                {:else}
+                    <p class="pl-16 text-sm text-muted-foreground">
+                        No settings match "{filter.current}".
+                    </p>
+                {/each}
+            </div>
+
+            <!-- Railway's section rail, only where the panel is wide enough. -->
+            <nav
+                class="sticky top-24 hidden h-fit w-36 shrink-0 @3xl:block"
+                aria-label="Settings sections"
+            >
+                <ul class="space-y-3 text-sm text-muted-foreground">
+                    {#each visibleSections as section (section.id)}
+                        <li>
+                            <button
+                                type="button"
+                                class="transition-colors hover:text-foreground"
+                                onclick={() => jump(section.id)}
+                            >
+                                {section.title}
+                            </button>
+                        </li>
+                    {/each}
+                </ul>
+            </nav>
+        </div>
+    {/if}
+</div>
+
+<CanvasSourceDialog
+    bind:open={sourceDialogOpen}
+    {source}
+    busy={git.pending}
+    onsubmit={(next) => git.run("source", next)}
+/>
+
+<ConfirmDialog
+    bind:open={
+        () => git.confirmation !== null,
+        (open) => {
+            if (!open) git.answer(false);
+        }
+    }
+    title={git.confirmation?.title ?? ""}
+    description={git.confirmation?.description ?? ""}
+    confirmLabel={git.confirmation?.confirmLabel ?? "Confirm"}
+    onconfirm={() => git.answer(true)}
+/>

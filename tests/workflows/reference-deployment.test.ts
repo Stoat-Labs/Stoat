@@ -62,6 +62,14 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
 
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
 
+        // A deploy lists the cluster's services to find ones it should remove.
+        if (request.method === "GET" && request.url === "/api/v1/services") {
+            response.writeHead(200, { "Content-Type": "application/json" });
+            response.end(JSON.stringify({ items: [] }));
+
+            return;
+        }
+
         if (request.url?.startsWith("/api/v1/cluster/domain")) {
             domainRequests++;
             response.writeHead(200, { "Content-Type": "application/json" });

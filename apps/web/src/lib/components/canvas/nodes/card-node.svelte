@@ -8,7 +8,7 @@
         CARD_HEIGHT,
         VOLUME_OVERLAP,
         type CardData,
-    } from "./graph";
+    } from "../graph";
     import NodeHandles from "./node-handles.svelte";
     import ResourceStatus from "./resource-status.svelte";
 
@@ -37,6 +37,14 @@
         )}
         style:height="{CARD_HEIGHT}px"
     >
+        {#if service?.isNew}
+            <!-- Railway's staged badge: in the draft, not deployed yet. -->
+            <span
+                class="absolute top-2.5 right-2.5 rounded-sm bg-success/24 px-1.5 py-0.5 text-[10px] font-semibold text-success-foreground"
+            >
+                New
+            </span>
+        {/if}
         <!-- Railway's header: 24px icon, then the name with the public domain beneath it. -->
         <div class="flex min-w-0 items-start gap-3">
             {#if data.icon}

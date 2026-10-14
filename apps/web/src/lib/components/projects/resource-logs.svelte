@@ -60,10 +60,13 @@
         projectId,
         resourceId,
         active = true,
+        embedded = false,
     }: {
         projectId: string;
         resourceId: string;
         active?: boolean;
+        /** Inside the canvas panel: fills it edge to edge as Railway's plain log table. */
+        embedded?: boolean;
     } = $props();
 
     type ViewLog = DisplayLog & { key: string };
@@ -770,14 +773,16 @@
 </script>
 
 <svelte:head>
-    {#if active}<title>
+    {#if active && !embedded}<title>
             Logs / {resourceQuery.data?.name ?? "Resource"} / Stoat
         </title>{/if}
 </svelte:head>
 
 {#if active}
     <div
-        class="flex h-[calc(100dvh-7rem)] min-h-160 min-w-0 w-full flex-col gap-3 pt-3 xl:h-auto xl:min-h-0 xl:flex-1"
+        class={embedded
+            ? "flex h-full min-h-0 min-w-0 w-full flex-col"
+            : "flex h-[calc(100dvh-7rem)] min-h-160 min-w-0 w-full flex-col gap-3 pt-3 xl:h-auto xl:min-h-0 xl:flex-1"}
     >
         {#if resourceQuery.isError}
             <Alert variant="error">
@@ -835,13 +840,18 @@
             >
                 <Frame
                     inert={loading}
-                    class="min-h-0 min-w-0 flex-1 overflow-hidden {view
-                        .logMode.current === 'search' &&
+                    class="min-h-0 min-w-0 flex-1 overflow-hidden {embedded
+                        ? 'rounded-none bg-transparent p-0'
+                        : ''} {view.logMode.current === 'search' &&
                     view.logRange.current === 'custom'
                         ? 'max-xl:min-h-192'
                         : ''}"
                 >
-                    <FrameHeader class="shrink-0 gap-3 px-3 py-2">
+                    <FrameHeader
+                        class="shrink-0 gap-3 {embedded
+                            ? 'border-b px-6 py-3'
+                            : 'px-3 py-2'}"
+                    >
                         <div
                             class="flex flex-wrap items-center gap-2"
                         >
@@ -912,7 +922,9 @@
                                 size="sm"
                                 type="search"
                                 aria-label="Filter loaded logs"
-                                placeholder="Filter loaded logs..."
+                                placeholder={embedded
+                                    ? "Filter and search logs"
+                                    : "Filter loaded logs..."}
                                 bind:value={
                                     () => view.logText.current,
                                     (value) =>
@@ -976,9 +988,12 @@
                         </FramePanel>
                     {:else}
                         <FramePanel
-                            class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0"
+                            class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-0 {embedded
+                                ? 'rounded-none border-0 bg-transparent shadow-none before:hidden'
+                                : ''}"
                         >
                             <LogViewer
+                                flat={embedded}
                                 logs={matchedLogs}
                                 {loading}
                                 {pending}

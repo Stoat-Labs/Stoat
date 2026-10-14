@@ -1,23 +1,14 @@
 <script lang="ts">
     import DeploymentViewer from "$lib/components/deployments/deployment-viewer.svelte";
-    import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
-    import ResourceContainersCard from "$lib/components/projects/resource-containers-card.svelte";
     import ResourceLogs from "$lib/components/projects/resource-logs.svelte";
     import ResourceMetricsView from "$lib/components/projects/resource-metrics-view.svelte";
     import ResourceSettingsView from "$lib/components/projects/resource-settings-view.svelte";
     import ResourceVariablesView from "$lib/components/projects/resource-variables-view.svelte";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
-    import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
-    import { orpc } from "$lib/api/orpc";
-    import {
-        deploymentStatusVariant,
-        isActiveDeploymentStatus,
-    } from "$lib/deployments/status";
     import Box from "@lucide/svelte/icons/box";
     import ExternalLink from "@lucide/svelte/icons/external-link";
     import X from "@lucide/svelte/icons/x";
-    import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsString,
         parseAsStringLiteral,
@@ -26,8 +17,10 @@
     import { cubicOut } from "svelte/easing";
     import { prefersReducedMotion } from "svelte/motion";
     import { fly } from "svelte/transition";
-    import type { CanvasResource, CanvasService } from "./graph";
-    import ResourceStatus from "./resource-status.svelte";
+    import type { CanvasResource, CanvasService } from "../graph";
+    import CanvasDeployments from "./canvas-deployments.svelte";
+    import CanvasSettings from "./canvas-settings.svelte";
+    import CanvasVariables from "./canvas-variables.svelte";
 
     let {
         clusterId,
@@ -35,6 +28,7 @@
         services,
         selectedService,
         icon,
+        changed,
         width,
         onclose,
     }: {
@@ -43,6 +37,8 @@
         services: CanvasService[];
         selectedService: string | undefined;
         icon: string | null;
+        /** Whether the resource has staged edits that are not deployed yet. */
+        changed: boolean;
         /** Pixel width, shared with the canvas so it can keep the opened node in view. */
         width: number;
         onclose: () => void;
@@ -91,37 +87,15 @@
             : visibleTabs[0],
     );
 
+    const fullBleed = $derived(
+        active === "logs" || (active === "settings" && !isBucket),
+    );
+
     const slide = $derived({
         x: 48,
         duration: prefersReducedMotion.current ? 0 : 240,
         easing: cubicOut,
     });
-
-    const containersQuery = createQuery(() =>
-        orpc.resources.getContainers.queryOptions({
-            input: {
-                clusterId,
-                projectId: resource.projectId,
-                resourceId: resource.id,
-            },
-            enabled:
-                active === "deployments" &&
-                !isBucket &&
-                clusterId.length > 0 &&
-                services.length > 0,
-        }),
-    );
-
-    const status = $derived(resource.deploymentStatus);
-
-    // Railway names the live deployment "Active" rather than "Ready".
-    const statusLabel = $derived(
-        status === "ready"
-            ? "Active"
-            : status && isActiveDeploymentStatus(status)
-              ? "Deploying"
-              : (status ?? ""),
-    );
 </script>
 
 {#snippet resourceIcon()}
@@ -203,70 +177,30 @@
     </div>
 
     <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
+    <!-- Settings and logs run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
     <div
-        class="min-h-0 flex-1 overflow-y-auto px-12 pt-8 pb-12"
+        class={[
+            "min-h-0 flex-1 overflow-y-auto",
+            !fullBleed && "px-12 pt-8 pb-12",
+        ]}
         role="tabpanel"
     >
         {#if active === "deployments"}
-            <div class="space-y-6">
-                {#if resource.deploymentId && status}
-                    <section
-                        class={[
-                            "flex items-center gap-4 rounded-xl border p-4",
-                            status === "ready"
-                                ? "border-success/24 bg-success/6"
-                                : status === "failed"
-                                  ? "border-destructive/24 bg-destructive/6"
-                                  : isActiveDeploymentStatus(status)
-                                    ? "border-warning/24 bg-warning/6"
-                                    : "border-border bg-card",
-                        ]}
-                        aria-label="Latest deployment"
-                    >
-                        <Badge
-                            variant={deploymentStatusVariant(status)}
-                            class="uppercase"
-                        >
-                            {statusLabel}
-                        </Badge>
-                        <div class="min-w-0 flex-1">
-                            <p class="truncate text-sm font-medium">
-                                {resource.name}
-                            </p>
-                            <ResourceStatus
-                                {resource}
-                                draftOnly={false}
-                            />
-                        </div>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onclick={() =>
-                                void deployment.set(
-                                    resource.deploymentId,
-                                )}
-                        >
-                            View logs
-                        </Button>
-                    </section>
-                {/if}
-                <ResourceContainersCard
-                    containers={containersQuery.data ?? []}
-                    hasSpec={services.length > 0}
-                    loaded={containersQuery.data !== undefined}
-                    pending={containersQuery.isPending}
-                    errorMessage={containersQuery.error?.message}
-                />
-                <DeploymentsTable
-                    resourceId={resource.id}
-                    latest={20}
-                />
-            </div>
-        {:else if active === "variables"}
+            <CanvasDeployments
+                {clusterId}
+                {resource}
+                {services}
+                {selectedService}
+                {icon}
+                {changed}
+            />
+        {:else if active === "variables" && isBucket}
             <ResourceVariablesView
                 projectId={resource.projectId}
                 resourceId={resource.id}
             />
+        {:else if active === "variables"}
+            <CanvasVariables {resource} />
         {:else if active === "metrics"}
             <ResourceMetricsView
                 projectId={resource.projectId}
@@ -274,17 +208,20 @@
                 embedded
             />
         {:else if active === "logs"}
-            <div class="h-[calc(100dvh-20rem)] min-h-96">
-                <ResourceLogs
+            <ResourceLogs
+                projectId={resource.projectId}
+                resourceId={resource.id}
+                embedded
+            />
+        {:else if isBucket}
+            <div class="px-12 pt-8 pb-12">
+                <ResourceSettingsView
                     projectId={resource.projectId}
                     resourceId={resource.id}
                 />
             </div>
         {:else}
-            <ResourceSettingsView
-                projectId={resource.projectId}
-                resourceId={resource.id}
-            />
+            <CanvasSettings {resource} {services} />
         {/if}
     </div>
 </aside>

@@ -56,7 +56,13 @@
         createQueries,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { parseAsBoolean, useQueryState } from "nuqs-svelte";
+    import LayoutGrid from "@lucide/svelte/icons/layout-grid";
+    import Rows3 from "@lucide/svelte/icons/rows-3";
+    import {
+        parseAsBoolean,
+        parseAsStringLiteral,
+        useQueryState,
+    } from "nuqs-svelte";
 
     const names = [
         "serviceCpu",
@@ -660,12 +666,52 @@
     }
 
     useHeaderActions(toolbar, () => !embedded);
+
+    // Railway's list or grid of charts in the canvas panel.
+    const layout = useQueryState(
+        "metricsLayout",
+        parseAsStringLiteral(["grid", "list"])
+            .withDefault("grid")
+            .withOptions({ shallow: true, scroll: false }),
+    );
 </script>
 
 {#snippet toolbar()}
     <div
         class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
     >
+        {#if embedded}
+            <div
+                class="flex overflow-hidden rounded-md border"
+                role="group"
+                aria-label="Chart layout"
+            >
+                {#each [{ value: "list", label: "List", icon: Rows3 }, { value: "grid", label: "Grid", icon: LayoutGrid }] as const as option (option.value)}
+                    <button
+                        type="button"
+                        class={[
+                            "flex size-8 items-center justify-center transition-colors",
+                            layout.current === option.value
+                                ? "bg-accent text-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                        ]}
+                        aria-label="{option.label} layout"
+                        aria-pressed={layout.current === option.value}
+                        onclick={() =>
+                            void layout.set(
+                                option.value === "grid"
+                                    ? null
+                                    : option.value,
+                            )}
+                    >
+                        <option.icon
+                            class="size-4"
+                            aria-hidden="true"
+                        />
+                    </button>
+                {/each}
+            </div>
+        {/if}
         {#if cluster.available && rows.length}<a
                 class={buttonVariants({
                     variant: "outline",
@@ -705,19 +751,19 @@
     total?: string;
     series: ChartSeries[];
 })}
-    <Frame class="min-w-0">
-        <FrameHeader
-            class="flex-row flex-wrap items-center justify-between gap-2"
-        >
-            <FrameTitle>
-                {chart.title}
-            </FrameTitle>{#if chart.total}<span
-                    class="text-xs font-medium tabular-nums"
-                >
-                    {chart.total}
-                </span>{/if}
-        </FrameHeader>
-        <FramePanel class="min-w-0 p-4">
+    {#if embedded}
+        <!-- Railway's chart card: one flat surface, the title and current value on top. -->
+        <section class="min-w-0 rounded-lg border bg-card p-4">
+            <header
+                class="mb-3 flex items-center justify-between gap-2"
+            >
+                <h4 class="font-medium">{chart.title}</h4>
+                {#if chart.total}<span
+                        class="text-xs text-muted-foreground tabular-nums"
+                    >
+                        {chart.total}
+                    </span>{/if}
+            </header>
             <MetricChart
                 series={chart.series}
                 start={cluster.start}
@@ -726,8 +772,32 @@
                 {markers}
                 onselecttime={(time) => (selectedTime = time)}
             />
-        </FramePanel>
-    </Frame>
+        </section>
+    {:else}
+        <Frame class="min-w-0">
+            <FrameHeader
+                class="flex-row flex-wrap items-center justify-between gap-2"
+            >
+                <FrameTitle>
+                    {chart.title}
+                </FrameTitle>{#if chart.total}<span
+                        class="text-xs font-medium tabular-nums"
+                    >
+                        {chart.total}
+                    </span>{/if}
+            </FrameHeader>
+            <FramePanel class="min-w-0 p-4">
+                <MetricChart
+                    series={chart.series}
+                    start={cluster.start}
+                    end={cluster.end}
+                    unit={chart.unit}
+                    {markers}
+                    onselecttime={(time) => (selectedTime = time)}
+                />
+            </FramePanel>
+        </Frame>
+    {/if}
 {/snippet}
 
 {#if embedded}
@@ -735,7 +805,7 @@
 {/if}
 
 <div
-    class="min-w-0 w-full space-y-4 overflow-x-clip pt-4 sm:space-y-6 sm:pt-6"
+    class="@container min-w-0 w-full space-y-4 overflow-x-clip pt-4 sm:space-y-6 sm:pt-6"
 >
     {#if project.isError}
         <Alert variant="error">
@@ -800,37 +870,44 @@
             </EmptyHeader>
         </Empty>
     {:else if cluster.available}
-        <div class="flex flex-wrap gap-3">
-            {#each summary as item (item.label)}
-                <div
-                    class="min-w-36 flex-1 rounded-lg border p-3 {item.tone ===
-                    'error'
-                        ? 'border-destructive/40'
-                        : item.tone === 'warning'
-                          ? 'border-warning/40'
-                          : ''}"
-                >
-                    <p class="text-xs text-muted-foreground">
-                        {item.label}
-                    </p>
-                    <p
-                        class="mt-1 text-xl font-semibold tabular-nums"
-                    >
-                        {item.value}
-                    </p>
-                    <p
-                        class="mt-0.5 text-xs {item.tone === 'error'
-                            ? 'text-destructive-foreground'
+        {#if !embedded}<div class="flex flex-wrap gap-3">
+                {#each summary as item (item.label)}
+                    <div
+                        class="min-w-36 flex-1 rounded-lg border p-3 {item.tone ===
+                        'error'
+                            ? 'border-destructive/40'
                             : item.tone === 'warning'
-                              ? 'text-warning-foreground'
-                              : 'text-muted-foreground'}"
+                              ? 'border-warning/40'
+                              : ''}"
                     >
-                        {item.detail}
-                    </p>
-                </div>
-            {/each}
-        </div>
-        <div class="grid gap-4 lg:grid-cols-2">
+                        <p class="text-xs text-muted-foreground">
+                            {item.label}
+                        </p>
+                        <p
+                            class="mt-1 text-xl font-semibold tabular-nums"
+                        >
+                            {item.value}
+                        </p>
+                        <p
+                            class="mt-0.5 text-xs {item.tone ===
+                            'error'
+                                ? 'text-destructive-foreground'
+                                : item.tone === 'warning'
+                                  ? 'text-warning-foreground'
+                                  : 'text-muted-foreground'}"
+                        >
+                            {item.detail}
+                        </p>
+                    </div>
+                {/each}
+            </div>{/if}
+        <div
+            class={embedded
+                ? layout.current === "grid"
+                    ? "grid gap-4 @2xl:grid-cols-2"
+                    : "grid gap-4"
+                : "grid gap-4 lg:grid-cols-2"}
+        >
             {#each charts as chart (chart.title)}{@render chartFrame(
                     chart,
                 )}{/each}
@@ -861,7 +938,7 @@
                 </AlertDescription>
             </Alert>
         {/if}
-        <ServicesTable data={rows} expandAll />
+        {#if !embedded}<ServicesTable data={rows} expandAll />{/if}
         <p class="text-xs text-muted-foreground" role="status">
             One line per service, all containers combined · 100% CPU =
             one core · dotted lines mark deployments · dashed latency

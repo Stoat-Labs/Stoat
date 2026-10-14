@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import ProjectCanvas from "$lib/components/project-canvas/project-canvas.svelte";
+    import ProjectCanvas from "$lib/components/canvas/project-canvas.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -77,6 +77,9 @@
                 });
                 void queryClient.invalidateQueries({
                     queryKey: orpc.resources.getProjectGraph.key(),
+                });
+                void queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listAllDeployments.key(),
                 });
             },
             (streamError, reconnecting) => {

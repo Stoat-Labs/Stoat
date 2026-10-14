@@ -17,14 +17,21 @@
     import { page } from "$app/state";
     import {
         ContextMenu,
+        ContextMenuCheckboxItem,
         ContextMenuGroup,
         ContextMenuGroupLabel,
         ContextMenuItem,
         ContextMenuLinkItem,
         ContextMenuPopup,
         ContextMenuSeparator,
+        ContextMenuSub,
+        ContextMenuSubPopup,
+        ContextMenuSubTrigger,
         ContextMenuTrigger,
     } from "$lib/components/ui/context-menu";
+    import Group from "@lucide/svelte/icons/group";
+    import Plus from "@lucide/svelte/icons/plus";
+    import Ungroup from "@lucide/svelte/icons/ungroup";
     import ChartColumn from "@lucide/svelte/icons/chart-column";
     import Database from "@lucide/svelte/icons/database";
     import ExternalLink from "@lucide/svelte/icons/external-link";
@@ -38,10 +45,13 @@
     import Zap from "@lucide/svelte/icons/zap";
     import type { Snippet } from "svelte";
     import type { AddPage } from "./add-palette.svelte";
+    import { getCanvasActions } from "../context";
+    import Trash2 from "@lucide/svelte/icons/trash-2";
 
     let {
         projectId,
         target,
+        groups,
         children,
         onaddpage,
         onopen,
@@ -49,6 +59,8 @@
         projectId: string;
         /** Set by the canvas' own context-menu handlers just before this menu opens. */
         target: MenuTarget | undefined;
+        /** Resources drawn as frames, Railway's groups: their right-click gets the group actions. */
+        groups: { id: string; name: string }[];
         children: Snippet;
         onaddpage: (page: AddPage) => void;
         onopen: (nodeId: string, tab: PanelTab) => void;
@@ -60,6 +72,25 @@
         target?.kind === "node"
             ? target.nodeId.split(":")[0]
             : undefined,
+    );
+
+    const actions = getCanvasActions();
+
+    // A frame or a lone card stands for the whole resource; a card in a frame is one service.
+    const wholeResource = $derived(
+        target?.kind === "node" && !target.nodeId.includes(":"),
+    );
+
+    const isFrame = $derived(
+        wholeResource &&
+            groups.some((group) => group.id === resourceId),
+    );
+
+    // A service card, in a frame or alone: Railway's "Group ›" moves it between groups.
+    const isCard = $derived(target?.kind === "node" && !isFrame);
+
+    const inGroup = $derived(
+        target?.kind === "node" && target.nodeId.includes(":"),
     );
 
     const views: {
@@ -81,6 +112,46 @@
     </ContextMenuTrigger>
     <ContextMenuPopup class="min-w-56">
         {#if target?.kind === "node"}
+            {#if isCard && target.kind === "node"}
+                {@const nodeId = target.nodeId}
+                <!-- Railway's service menu starts with its group: start a new one, or tick another. -->
+                <ContextMenuSub>
+                    <ContextMenuSubTrigger>
+                        <Group aria-hidden="true" />
+                        Group
+                    </ContextMenuSubTrigger>
+                    <ContextMenuSubPopup class="min-w-52">
+                        <ContextMenuItem
+                            disabled={!inGroup}
+                            onclick={() =>
+                                actions.regroup(nodeId, null)}
+                        >
+                            <Plus aria-hidden="true" />
+                            New Group
+                        </ContextMenuItem>
+                        {#if groups.length}
+                            <ContextMenuSeparator />
+                        {/if}
+                        {#each groups as group (group.id)}
+                            <!-- Picking a group acts at once, like Railway, so the menu closes. -->
+                            <ContextMenuCheckboxItem
+                                closeOnClick
+                                checked={group.id === resourceId}
+                                onCheckedChange={() =>
+                                    actions.regroup(
+                                        nodeId,
+                                        group.id === resourceId
+                                            ? null
+                                            : group.id,
+                                    )}
+                            >
+                                {group.name}
+                            </ContextMenuCheckboxItem>
+                        {/each}
+                    </ContextMenuSubPopup>
+                </ContextMenuSub>
+                <ContextMenuSeparator />
+            {/if}
             {#each views as view (view.tab)}
                 <ContextMenuItem
                     onclick={() => {
@@ -92,6 +163,37 @@
                     {view.label}
                 </ContextMenuItem>
             {/each}
+            {#if isFrame && resourceId}
+                {@const id = resourceId}
+                <ContextMenuSeparator />
+                <!-- Railway's group actions, on the frame's own right-click too. -->
+                <ContextMenuItem
+                    onclick={() => actions.edit("rename", id)}
+                >
+                    Rename
+                </ContextMenuItem>
+                <ContextMenuItem
+                    onclick={() => actions.edit("icon-upload", id)}
+                >
+                    Upload icon
+                </ContextMenuItem>
+                <ContextMenuItem
+                    onclick={() => actions.edit("icon-link", id)}
+                >
+                    Icon from link
+                </ContextMenuItem>
+                <ContextMenuItem
+                    onclick={() => actions.toggleCollapsed(id)}
+                >
+                    {actions.isCollapsed(id)
+                        ? "Show contents"
+                        : "Hide contents"}
+                </ContextMenuItem>
+                <ContextMenuItem onclick={() => actions.ungroup(id)}>
+                    <Ungroup aria-hidden="true" />
+                    Remove Group
+                </ContextMenuItem>
+            {/if}
             <ContextMenuSeparator />
             <ContextMenuLinkItem
                 href="/projects/{projectId}/{resourceId}"
@@ -99,6 +201,17 @@
                 <ExternalLink aria-hidden="true" />
                 Open resource page
             </ContextMenuLinkItem>
+            {#if wholeResource && resourceId}
+                {@const id = resourceId}
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                    variant="destructive"
+                    onclick={() => actions.remove(id)}
+                >
+                    <Trash2 aria-hidden="true" />
+                    Delete resource
+                </ContextMenuItem>
+            {/if}
         {:else}
             <!-- Railway's canvas menu: the same choices as + Add. -->
             <ContextMenuGroup>

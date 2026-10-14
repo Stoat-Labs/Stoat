@@ -29,7 +29,14 @@
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import type { Component } from "svelte";
 
-    let { projectId }: { projectId: string } = $props();
+    let {
+        projectId,
+        inline = false,
+    }: {
+        projectId: string;
+        /** Railway's empty project: the palette sits open on the canvas instead of in a dialog. */
+        inline?: boolean;
+    } = $props();
 
     type Entry = {
         id: string;
@@ -50,13 +57,14 @@
         }),
     );
 
+    // Inline, the palette is always open, so no page means the first one.
+    const current = $derived(add.current ?? (inline ? "root" : null));
+
     let query = $state("");
 
     const templatesQuery = createQuery(() =>
         orpc.resources.listTemplates.queryOptions({
-            enabled:
-                add.current === "template" ||
-                add.current === "database",
+            enabled: current === "template" || current === "database",
         }),
     );
 
@@ -114,7 +122,7 @@
     const templateEntries = $derived(
         (templatesQuery.data ?? []).flatMap((template): Entry[] =>
             (template.type === "database") ===
-            (add.current === "database")
+            (current === "database")
                 ? [
                       {
                           id: template.appId,
@@ -132,7 +140,7 @@
     );
 
     const items = $derived(
-        add.current === "root" ? rootEntries : templateEntries,
+        current === "root" ? rootEntries : templateEntries,
     );
 
     const placeholders: Record<AddPage, string> = {
@@ -141,7 +149,7 @@
         database: "Choose a database...",
     };
 
-    const placeholder = $derived(placeholders[add.current ?? "root"]);
+    const placeholder = $derived(placeholders[current ?? "root"]);
 
     function choose(entry: Entry) {
         if ("page" in entry.target) {
@@ -155,88 +163,101 @@
     }
 </script>
 
-<CommandDialog
-    bind:open={
-        () => add.current !== null,
-        (open) => {
-            if (!open) {
-                query = "";
-                void add.set(null);
+{#snippet palette()}
+    <Command
+        {items}
+        bind:value={query}
+        itemToStringValue={(entry: Entry) =>
+            `${entry.label} ${entry.description ?? ""}`}
+    >
+        <CommandInput
+            {placeholder}
+            aria-label={placeholder}
+            onkeydown={(event) => {
+                // Backspace on an empty search returns to the first page, as in Railway.
+                if (
+                    event.key === "Backspace" &&
+                    query === "" &&
+                    current !== "root"
+                )
+                    void add.set("root");
+            }}
+        />
+        <CommandEmpty>
+            {#if templatesQuery.isPending && current !== "root"}
+                Loading templates...
+            {:else}
+                Nothing matches "{query}".
+            {/if}
+        </CommandEmpty>
+        <CommandList>
+            <CommandCollection>
+                {#snippet children(entry: Entry)}
+                    <CommandItem
+                        value={entry}
+                        class="min-h-11 gap-3 rounded-lg px-3 py-3 text-muted-foreground data-highlighted:text-foreground sm:min-h-11"
+                        onclick={() => choose(entry)}
+                    >
+                        {#if entry.logo}
+                            <img
+                                src={entry.logo}
+                                alt=""
+                                aria-hidden="true"
+                                class="size-4 shrink-0 object-contain"
+                            />
+                        {:else}
+                            <entry.icon
+                                class="size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                        {/if}
+                        <span class="min-w-0 flex-1">
+                            <span class="block truncate">
+                                {entry.label}
+                            </span>
+                            {#if entry.description}
+                                <span
+                                    class="block truncate text-xs text-muted-foreground"
+                                >
+                                    {entry.description}
+                                </span>
+                            {/if}
+                        </span>
+                        {#if "page" in entry.target}
+                            <ChevronRight
+                                class="size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                        {/if}
+                    </CommandItem>
+                {/snippet}
+            </CommandCollection>
+        </CommandList>
+    </Command>
+{/snippet}
+
+{#if inline}
+    <!-- The dialog's size and surface, but part of the page. -->
+    <div
+        class="flex max-h-105 w-[420px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-popover text-popover-foreground shadow-lg/5"
+    >
+        {@render palette()}
+    </div>
+{:else}
+    <CommandDialog
+        bind:open={
+            () => add.current !== null,
+            (open) => {
+                if (!open) {
+                    query = "";
+                    void add.set(null);
+                }
             }
         }
-    }
->
-    <!-- Railway's palette: 420px wide, search on top, 44px rows with 16px icons. -->
-    <CommandDialogPopup class="max-w-[420px]">
-        <Command
-            {items}
-            bind:value={query}
-            itemToStringValue={(entry: Entry) =>
-                `${entry.label} ${entry.description ?? ""}`}
-        >
-            <CommandInput
-                {placeholder}
-                aria-label={placeholder}
-                onkeydown={(event) => {
-                    // Backspace on an empty search returns to the first page, as in Railway.
-                    if (
-                        event.key === "Backspace" &&
-                        query === "" &&
-                        add.current !== "root"
-                    )
-                        void add.set("root");
-                }}
-            />
-            <CommandEmpty>
-                {#if templatesQuery.isPending && add.current !== "root"}
-                    Loading templates...
-                {:else}
-                    Nothing matches "{query}".
-                {/if}
-            </CommandEmpty>
-            <CommandList>
-                <CommandCollection>
-                    {#snippet children(entry: Entry)}
-                        <CommandItem
-                            value={entry}
-                            class="min-h-11 gap-3 rounded-lg px-3 py-3 text-muted-foreground data-highlighted:text-foreground sm:min-h-11"
-                            onclick={() => choose(entry)}
-                        >
-                            {#if entry.logo}
-                                <img
-                                    src={entry.logo}
-                                    alt=""
-                                    aria-hidden="true"
-                                    class="size-4 shrink-0 object-contain"
-                                />
-                            {:else}
-                                <entry.icon
-                                    class="size-4 shrink-0"
-                                    aria-hidden="true"
-                                />
-                            {/if}
-                            <span class="min-w-0 flex-1">
-                                <span class="block truncate">
-                                    {entry.label}
-                                </span>
-                                {#if entry.description}
-                                    <span
-                                        class="block truncate text-xs text-muted-foreground"
-                                    >
-                                        {entry.description}
-                                    </span>
-                                {/if}
-                            </span>
-                            {#if "page" in entry.target}
-                                <ChevronRight
-                                    class="size-4 shrink-0"
-                                    aria-hidden="true"
-                                />
-                            {/if}
-                        </CommandItem>
-                    {/snippet}
-                </CommandCollection>
-            </CommandList>
-        </Command>
-    </CommandDialogPopup>
-</CommandDialog>
+    >
+        <!-- Railway's palette: 420px wide, search on top, 44px rows with 16px icons. -->
+        <CommandDialogPopup class="max-w-[420px]">
+            {@render palette()}
+        </CommandDialogPopup>
+    </CommandDialog>
+{/if}

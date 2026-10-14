@@ -4,8 +4,8 @@
     import CircleCheck from "@lucide/svelte/icons/circle-check";
     import CircleX from "@lucide/svelte/icons/circle-x";
     import LoaderCircle from "@lucide/svelte/icons/loader-circle";
-    import { getCanvasClock } from "./context";
-    import type { CanvasResource } from "./graph";
+    import { getCanvasClock } from "../context";
+    import type { CanvasResource } from "../graph";
 
     let {
         resource,

@@ -15,7 +15,8 @@
         TabsPanel,
         TabsTab,
     } from "$lib/components/ui/tabs";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { orpc } from "$lib/api/orpc";
+    import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
     import {
         gitProviderLabels,
         gitProviders,
@@ -52,17 +53,13 @@
         )?.provider ?? null,
     );
 
-    // Settings has no editor, so the saved draft is the only Compose to compare and push.
-    const savedSpec = $derived(resource?.draftSpec ?? null);
-
-    const savedSource = $derived(
-        resource?.gitConnectionId && resource.gitSource
-            ? {
-                  connectionId: resource.gitConnectionId,
-                  ...resource.gitSource,
-              }
-            : null,
+    const git = new GitSourceActions(
+        () => projectId,
+        () => resourceId,
+        () => resource,
     );
+
+    const savedSource = $derived(git.savedSource);
 
     const sourceTabs = ["raw", ...gitProviders] as const;
 
@@ -76,164 +73,6 @@
     );
 
     const activeTab = $derived(tab.current ?? savedProvider ?? "raw");
-
-    let pending = $state(false);
-
-    let error = $state("");
-
-    let status = $state("");
-
-    const statusMessages = {
-        source: "Compose imported from Git.",
-        pull: "Compose imported from Git.",
-        push: "Commit pushed and draft saved.",
-        detach: "Git source detached. Compose retained.",
-        watch: "Auto-deploy settings saved.",
-    };
-
-    // A Git action waiting for an answer in the confirmation dialog.
-    let confirmation = $state<{
-        title: string;
-        description: string;
-        confirmLabel: string;
-        answer: (confirmed: boolean) => void;
-    } | null>(null);
-
-    function confirm(
-        title: string,
-        description: string,
-        confirmLabel: string,
-    ) {
-        return new Promise<boolean>((answer) => {
-            confirmation = {
-                title,
-                description,
-                confirmLabel,
-                answer,
-            };
-        });
-    }
-
-    function answer(confirmed: boolean) {
-        confirmation?.answer(confirmed);
-        confirmation = null;
-    }
-
-    async function gitAction(
-        action: "source" | "pull" | "detach" | "push" | "watch",
-        source?: {
-            connectionId: string;
-            repositoryUrl: string;
-            branch: string;
-            path: string;
-        },
-        message?: string,
-        watch?: { autoDeploy: boolean; watchPath: string },
-    ) {
-        if (pending || !resource) return false;
-
-        if (
-            (action === "source" || action === "pull") &&
-            savedSpec !== null &&
-            !(await confirm(
-                "Replace the Compose draft?",
-                "The Git version replaces the saved draft.",
-                "Replace",
-            ))
-        )
-            return false;
-
-        if (
-            action === "detach" &&
-            !(await confirm(
-                "Detach the Git source?",
-                "The current Compose draft is kept.",
-                "Detach",
-            ))
-        )
-            return false;
-
-        if (pending) return false;
-        const input = { projectId, resourceId };
-        const expectedSpec = savedSpec;
-
-        const expectedSource = savedSource
-            ? { ...savedSource }
-            : null;
-
-        const expectedRevision = expectedSource?.revision;
-        pending = true;
-        error = status = "";
-
-        try {
-            let updated;
-
-            if (action === "source" && source) {
-                updated = await client.resources.setGitSource({
-                    ...input,
-                    ...source,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (action === "pull") {
-                updated = await client.resources.pullGitSource({
-                    ...input,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (action === "detach") {
-                updated = await client.resources.detachGitSource({
-                    ...input,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else if (
-                action === "push" &&
-                expectedRevision &&
-                message?.trim()
-            ) {
-                updated = await client.resources.pushGitSource({
-                    ...input,
-                    spec: expectedSpec ?? "",
-                    expectedSpec,
-                    expectedSource,
-                    expectedRevision,
-                    message: message.trim(),
-                });
-            } else if (action === "watch" && watch) {
-                updated = await client.resources.setGitWatch({
-                    ...input,
-                    ...watch,
-                    expectedSpec,
-                    expectedSource,
-                });
-            } else return false;
-            queryClient.setQueryData(
-                orpc.resources.getResource.queryKey({ input }),
-                updated,
-            );
-            void queryClient.invalidateQueries({
-                queryKey: orpc.resources.listResources.queryKey({
-                    input: { projectId: input.projectId },
-                }),
-            });
-            void queryClient.invalidateQueries({
-                queryKey: orpc.resources.getContainers.key({ input }),
-            });
-            status = statusMessages[action];
-
-            return true;
-        } catch (cause) {
-            error =
-                cause instanceof Error
-                    ? cause.message
-                    : "Git operation failed.";
-
-            return false;
-        } finally {
-            pending = false;
-        }
-    }
 </script>
 
 <section
@@ -311,10 +150,9 @@
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    loading={pending}
-                                    disabled={pending}
-                                    onclick={() =>
-                                        gitAction("detach")}
+                                    loading={git.pending}
+                                    disabled={git.pending}
+                                    onclick={() => git.run("detach")}
                                 >
                                     Detach Git source
                                 </Button>
@@ -344,10 +182,11 @@
                             connectionId={savedSource?.connectionId ??
                                 null}
                             source={savedSource}
-                            busy={pending}
-                            onaction={gitAction}
+                            busy={git.pending}
+                            onaction={(action, source, message) =>
+                                git.run(action, source, message)}
                             onwatch={(autoDeploy, watchPath) =>
-                                gitAction(
+                                git.run(
                                     "watch",
                                     undefined,
                                     undefined,
@@ -361,13 +200,13 @@
                 {/each}
             </Tabs>
         {/if}
-        {#if error}
+        {#if git.error}
             <Alert variant="error">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{git.error}</AlertDescription>
             </Alert>
-        {:else if status}
+        {:else if git.status}
             <Alert variant="success" role="status">
-                <AlertDescription>{status}</AlertDescription>
+                <AlertDescription>{git.status}</AlertDescription>
             </Alert>
         {/if}
     </div>
@@ -375,13 +214,13 @@
 
 <ConfirmDialog
     bind:open={
-        () => confirmation !== null,
+        () => git.confirmation !== null,
         (open) => {
-            if (!open) answer(false);
+            if (!open) git.answer(false);
         }
     }
-    title={confirmation?.title ?? ""}
-    description={confirmation?.description ?? ""}
-    confirmLabel={confirmation?.confirmLabel ?? "Confirm"}
-    onconfirm={() => answer(true)}
+    title={git.confirmation?.title ?? ""}
+    description={git.confirmation?.description ?? ""}
+    confirmLabel={git.confirmation?.confirmLabel ?? "Confirm"}
+    onconfirm={() => git.answer(true)}
 />

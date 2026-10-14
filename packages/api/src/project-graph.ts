@@ -3,7 +3,7 @@ import { referencedResourceIds } from "@stoat/workflows/references";
 import * as v from "valibot";
 import YAML from "yaml";
 
-import { resourceEnv } from "./compose";
+import { resourceComposePrefix, resourceEnv } from "./compose";
 import type { Template } from "./templates";
 
 // Named volumes only; bind mounts (`./data`, `/srv`) and anonymous volumes are not shown.
@@ -55,6 +55,8 @@ const composeSchema = v.object({
 export type GraphService = {
     name: string;
     image: string | undefined;
+    /** In the draft but not in the deployed spec, e.g. just moved here. */
+    isNew: boolean;
     /** App id of the bundled template whose logo fits this image. */
     template: string | undefined;
     /** Public HTTP hostnames from `x-ports`, shown under the name like Railway's domains. */
@@ -65,9 +67,12 @@ export type GraphService = {
 
 export type GraphResourceInput = {
     id: string;
+    projectId: string;
     spec: string | null;
     draftSpec: string | null;
     settings: unknown;
+    /** The `.env` and name prefix of the latest successful deploy; null if it never deployed. */
+    deployed: { env: string; prefix: string } | null;
 };
 
 type GraphTemplate = Pick<Template, "appId" | "logo" | "versions">;
@@ -132,6 +137,26 @@ function templateImages(templates: GraphTemplate[]) {
     return images;
 }
 
+/** Service names of the deployed spec, or undefined when nothing was deployed or it can't be read. */
+// An unreadable `.env` compares as empty; the Variables page reports the error itself.
+function safeEnv(row: GraphResourceInput) {
+    try {
+        return resourceEnv(row);
+    } catch {
+        return "";
+    }
+}
+
+function deployedServiceNames(spec: string | null) {
+    if (!spec?.trim()) return undefined;
+
+    try {
+        return new Set(composeServices(spec).map((service) => service.name));
+    } catch {
+        return undefined;
+    }
+}
+
 /** Hostnames each service publishes; `.env` fills in `${VAR}` hostnames. */
 function serviceDomains(compose: string, row: GraphResourceInput) {
     const domains = new Map<string, string[]>();
@@ -163,7 +188,9 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
     const logos: Record<string, string> = {};
 
     const resources = rows.map((row) => {
-        const compose = row.spec?.trim() ? row.spec : row.draftSpec?.trim() ? row.draftSpec : null;
+        // The canvas shows staged edits, like Railway: the draft wins, and what changed is flagged.
+        const compose = row.draftSpec?.trim() ? row.draftSpec : row.spec?.trim() ? row.spec : null;
+        const deployed = deployedServiceNames(row.spec);
         let services: GraphService[] = [];
         let parseError = false;
 
@@ -173,6 +200,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
 
                 services = composeServices(compose).map((service) => ({
                     ...service,
+                    isNew: deployed !== undefined && !deployed.has(service.name),
                     template: images.get(imageRepository(service.image) ?? ""),
                     domains: domains.get(service.name) ?? [],
                 }));
@@ -197,9 +225,26 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             // Unparseable `.env` contributes no edges; the Variables page reports it.
         }
 
+        const draftOnly = !row.spec?.trim() && compose !== null;
+
+        // A different prefix renames every service, so the next deploy replaces all of them.
+        const prefixChanged =
+            row.deployed !== null && row.deployed.prefix !== (resourceComposePrefix(row) ?? "");
+
+        const kept = new Set(services.map((service) => service.name));
+
         return {
             id: row.id,
-            draftOnly: !row.spec?.trim() && compose !== null,
+            draftOnly,
+            // Anything the next deploy would change, like Railway's staged changes: a first deploy,
+            // Compose edits, variables, or the prefix setting.
+            changed:
+                draftOnly ||
+                Boolean(row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec) ||
+                (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
+                prefixChanged,
+            // Running services the next deploy stops and removes (their volumes stay).
+            removed: [...(deployed ?? [])].filter((name) => prefixChanged || !kept.has(name)),
             parseError,
             services,
             references,

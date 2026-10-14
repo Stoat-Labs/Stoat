@@ -12,6 +12,7 @@ import {
 } from "./compose";
 import { deployCompose, DeploymentError, environmentCredentials } from "./deploy-compose";
 import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
+import { deployedServiceNames, staleServices } from "./stale-services";
 
 export const RESOURCE_FAILURE_MESSAGE =
     "Resource deployment failed. Check the Compose configuration and sidecar connectivity, then retry.";
@@ -140,6 +141,53 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             }
 
             await log(`Formatted ${compose.serviceCount} service(s).`);
+
+            // Renamed, deleted or moved services would otherwise keep running beside their replacement,
+            // possibly on the same volume, so they go before the new Compose starts. Volumes stay.
+            step = "Removing services the Compose file no longer has.";
+
+            const deployed = await deployedServiceNames(
+                db,
+                deployment.clusterId,
+                deployment.resourceId,
+            );
+
+            // Services left by a failed deploy are in no snapshot, but still carry this resource's prefix.
+            const leftovers = input.prefix
+                ? await unwrap(uc.GET("/api/v1/services", { signal })).then(
+                      ({ items }) =>
+                          items
+                              .map((item) => item.name)
+                              .filter((name) => name.startsWith(`${input.prefix}-`)),
+                      () => [],
+                  )
+                : [];
+
+            for (const name of staleServices(
+                [...deployed.own, ...leftovers],
+                compose.serviceNames,
+                deployed.others,
+            )) {
+                signal.throwIfAborted();
+                await log(
+                    `Removing ${name}: it is no longer in the Compose file. Its volumes are kept.`,
+                );
+
+                const result = await uc
+                    .DELETE("/api/v1/services/{id}", {
+                        params: { path: { id: name } },
+                        signal,
+                    })
+                    .catch(() => null);
+
+                // Already gone is what we wanted; anything else is reported but does not stop the deploy.
+                if (!result || (!result.response.ok && result.response.status !== 404))
+                    await log(
+                        `Could not remove ${name}: ${result?.error?.error ?? "the sidecar did not respond"}. Remove it from the cluster by hand.`,
+                        "error",
+                    );
+            }
+
             step = "Deploying Compose to the cluster.";
             await log(step);
 
