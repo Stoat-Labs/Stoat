@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invalidateAll } from "$app/navigation";
+    import { invalidate } from "$app/navigation";
     import { orpc } from "$lib/api/orpc";
     import {
         Alert,
@@ -14,7 +14,7 @@
 
     const updateMutation = createMutation(() =>
         orpc.userSettings.update.mutationOptions({
-            onSuccess: () => invalidateAll(),
+            onSuccess: () => invalidate("app:user-settings"),
         }),
     );
 </script>

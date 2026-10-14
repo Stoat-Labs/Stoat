@@ -4,7 +4,9 @@ import { listUserOrganizations } from "@stoat/db/organizations";
 import { getUserSettings } from "@stoat/db/settings";
 import { getAuth, getDb } from "../../services";
 
-export const load = async ({ url, request, locals: { session } }) => {
+export const load = async ({ url, request, depends, locals: { session } }) => {
+    depends("app:user-settings");
+
     // Come back here after logging in. The login page sends a fresh install on to /setup.
     if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
 

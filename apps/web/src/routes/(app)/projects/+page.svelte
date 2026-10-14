@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
@@ -111,7 +112,9 @@
                         name={p.name}
                         description={p.description}
                         resourceCount={p.resourceCount ?? 0}
-                        href="/projects/{p.id}"
+                        href={page.data.canvasMode
+                            ? `/projects/${p.id}/canvas`
+                            : `/projects/${p.id}`}
                     />
                 </li>
             {/each}
