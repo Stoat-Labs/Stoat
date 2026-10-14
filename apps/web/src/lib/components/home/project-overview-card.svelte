@@ -48,6 +48,7 @@
 </script>
 
 <script lang="ts">
+    import { page } from "$app/state";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
 
     let {
@@ -64,5 +65,7 @@
     description={project.description}
     resourceCount={project.resources.length}
     clusterName={showCluster ? project.clusterName : undefined}
-    href="/projects/{project.id}"
+    href={page.data.canvasMode
+        ? `/projects/${project.id}/canvas`
+        : `/projects/${project.id}`}
 />

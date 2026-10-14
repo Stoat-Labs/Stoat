@@ -1,12 +1,17 @@
 import { redirect } from "@sveltejs/kit";
 import { isOrganizationAdmin } from "@stoat/api";
 import { listUserOrganizations } from "@stoat/db/organizations";
+import { getUserSettings } from "@stoat/db/settings";
 import { getAuth, getDb } from "../../services";
 
 export const load = async ({ url, request, locals: { session } }) => {
     // Come back here after logging in. The login page sends a fresh install on to /setup.
     if (!session) redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
-    const organizations = await listUserOrganizations(getDb(), session.user.id);
+
+    const [organizations, { canvasMode }] = await Promise.all([
+        listUserOrganizations(getDb(), session.user.id),
+        getUserSettings(getDb(), session.user.id),
+    ]);
 
     // Everything in the app is scoped to an organization; /setup creates the first one.
     if (organizations.length === 0) redirect(303, "/setup");
@@ -28,6 +33,7 @@ export const load = async ({ url, request, locals: { session } }) => {
             role: session.user.role ?? null,
         },
         organizations,
+        canvasMode,
         activeOrganizationId,
         // Pages hide actions the API would refuse; the API still enforces them.
         isOrganizationAdmin: isOrganizationAdmin(

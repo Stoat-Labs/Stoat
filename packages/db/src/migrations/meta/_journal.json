@@ -1,27 +1,34 @@
 {
-    "version": "7",
-    "dialect": "postgresql",
-    "entries": [
-        {
-            "idx": 0,
-            "version": "7",
-            "when": 1791638637419,
-            "tag": "0000_puzzling_photon",
-            "breakpoints": true
-        },
-        {
-            "idx": 1,
-            "version": "7",
-            "when": 1791641245248,
-            "tag": "0001_deployment_notify",
-            "breakpoints": true
-        },
-        {
-            "idx": 2,
-            "version": "7",
-            "when": 1791653233269,
-            "tag": "0002_deployment_config_files",
-            "breakpoints": true
-        }
-    ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791638637419,
+      "tag": "0000_puzzling_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791641245248,
+      "tag": "0001_deployment_notify",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791653233269,
+      "tag": "0002_deployment_config_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792001087155,
+      "tag": "0003_tough_hedge_knight",
+      "breakpoints": true
+    }
+  ]
 }

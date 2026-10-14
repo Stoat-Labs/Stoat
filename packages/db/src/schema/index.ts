@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
-import { organization } from "./auth";
+import { organization, user } from "./auth";
 
 export type MonitoringStorage = { type: "volume" | "bind"; source: string };
 
@@ -12,6 +12,14 @@ export const instanceSettings = t.pgTable(
     },
     (table) => [t.check("instance_settings_singleton", sql`${table.id} = 1`)],
 );
+
+export const userSettings = t.pgTable("user_settings", {
+    userId: t
+        .text("user_id")
+        .primaryKey()
+        .references(() => user.id, { onDelete: "cascade" }),
+    canvasMode: t.boolean("canvas_mode").notNull().default(true),
+});
 
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
