@@ -59,6 +59,7 @@
     // Rows that fit the viewport, so the list fills the page without scrolling.
     // 49px per row; the rest is header, table chrome, pagination and padding.
     const rowHeight = 49;
+
     const pageChrome = 290;
 
     let viewportHeight = $state(900);

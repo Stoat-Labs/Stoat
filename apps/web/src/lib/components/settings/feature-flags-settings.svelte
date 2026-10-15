@@ -14,6 +14,7 @@
     import SettingsSection from "./settings-section.svelte";
 
     const queryClient = useQueryClient();
+
     const canvasModeQuery = createCanvasModeQuery();
 
     const updateMutation = createMutation(() =>

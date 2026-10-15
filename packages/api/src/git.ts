@@ -653,6 +653,7 @@ async function directoryTree(run: Run, treeish: string, path: string): Promise<s
 
     // Without -r, ls-tree prints the directory's own entry rather than its contents.
     const output = await run(["ls-tree", "-z", treeish, "--", validateGitPath(path)]);
+
     const match = /^040000 tree ([0-9a-f]{40}|[0-9a-f]{64})\t([^\0]*)\0/u.exec(
         output.toString("utf8"),
     );

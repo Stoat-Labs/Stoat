@@ -71,10 +71,12 @@ test.describe("account", () => {
         const otherPage = await other.newPage();
         await otherPage.goto("/projects");
         await expect(otherPage).toHaveURL(/\/login/u);
+
         const response = await other.request.post("/rpc/projects/listProjects", {
             data: { json: {} },
             headers: { origin: process.env.E2E_BASE_URL! },
         });
+
         expect(response.status()).toBe(401);
         await page.goto("/projects");
         await expect(page).toHaveURL(/\/projects$/u);

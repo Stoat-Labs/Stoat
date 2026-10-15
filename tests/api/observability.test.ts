@@ -18,6 +18,7 @@ import {
     type MetricName,
     type ObservabilityRange,
 } from "../../packages/api/src/observability";
+import type { HttpMetricName } from "../../packages/api/src/observability";
 import { observabilityRouter } from "../../packages/api/src/routers/cluster/observability";
 import { metricsRouter } from "../../packages/api/src/routers/cluster/metrics";
 
@@ -473,7 +474,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     expect(fetch.mock.calls).toHaveLength(before);
 
     const http = (
-        name: "httpRequests" | "httpErrors" | "httpLatency" | "httpLatencyP50" | "httpLatencyP99",
+        name: HttpMetricName,
         serviceIds = ["web-id"],
     ) =>
         call(

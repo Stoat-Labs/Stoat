@@ -150,8 +150,8 @@
                                 <code class="font-mono">
                                     {data.prefix.next || "none"}
                                 </code>
-                                , so every service is recreated under
-                                its new name and volumes start empty.
+                                , so every service is recreated under its
+                                new name and volumes start empty.
                             </p>
                         {/if}
                         {#if removed.length}
