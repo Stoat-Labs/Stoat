@@ -19,10 +19,9 @@ const quotes = new Set(['"', "'", "`"]);
 function unquote(raw: string, lines: string[], index: number) {
     const quote = raw[0];
 
-    if (!quote || !quotes.has(quote)) {
-        // Unquoted values end at an inline comment.
-        return { value: raw.replace(/\s+#.*$/u, "").trim(), end: index };
-    }
+    // Unquoted values end at the first `#`, even without a space before it.
+    if (!quote || !quotes.has(quote))
+        return { value: (raw.split("#")[0] ?? "").trim(), end: index };
 
     let text = raw.slice(1);
 
@@ -36,7 +35,10 @@ function unquote(raw: string, lines: string[], index: number) {
 
     const close = text.indexOf(quote);
 
-    const value = close === -1 ? text : text.slice(0, close);
+    // Without a closing quote anywhere, the quote is part of a plain one-line value.
+    if (close === -1) return { value: raw.trim(), end: index };
+
+    const value = text.slice(0, close);
 
     return { value: quote === '"' ? value.replaceAll("\\n", "\n") : value, end };
 }
@@ -53,7 +55,7 @@ export function parseEnvLines(text: string) {
     return [...variables.values()].toSorted((left, right) => left.start - right.start);
 }
 
-/** Writes a value so `parseEnv` reads it back unchanged. */
+/** Writes a value so `parseEnv` reads it back unchanged, or throws when no quoting can. */
 export function formatEnvValue(value: string) {
     if (/^[^\s#"'`\\]*$/u.test(value)) return value;
 
@@ -61,7 +63,9 @@ export function formatEnvValue(value: string) {
 
     if (!value.includes("'")) return `'${value}'`;
 
-    return `\`${value}\``;
+    if (!value.includes("`")) return `\`${value}\``;
+
+    throw new Error("This value mixes \", ' and ` quotes in a way a .env file can't store.");
 }
 
 function withoutLines(text: string, ranges: { start: number; end: number }[]) {

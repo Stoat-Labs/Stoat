@@ -14,6 +14,7 @@ import * as v from "valibot";
 
 import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
+import { unpinVolumeNames } from "../../compose-move";
 import { composeResourceTypes } from "../../databases";
 
 type Executor = Pick<Database, "select">;
@@ -137,12 +138,24 @@ export const resourceTransferRouter = {
                             "It was deployed with Prefix names on, so its names carry this project. Copy it to the other project instead.",
                     });
 
-                const issue =
-                    from.clusterId === to.clusterId
-                        ? null
-                        : await crossClusterIssue(tx, from.clusterId, resource, true);
+                if (from.clusterId !== to.clusterId) {
+                    // Its services stay on the old cluster, and removal would only look on the new one.
+                    const [deployed] = await tx
+                        .select({ id: deployments.id })
+                        .from(deployments)
+                        .where(eq(deployments.resourceId, resource.id))
+                        .limit(1);
 
-                if (issue) throw new ORPCError("CONFLICT", { message: issue });
+                    if (deployed)
+                        throw new ORPCError("CONFLICT", {
+                            message:
+                                "It has been deployed on its current cluster. Copy it to the other project instead.",
+                        });
+
+                    const issue = await crossClusterIssue(tx, from.clusterId, resource, true);
+
+                    if (issue) throw new ORPCError("CONFLICT", { message: issue });
+                }
 
                 const [moved] = await tx
                     .update(resources)
@@ -175,6 +188,8 @@ export const resourceTransferRouter = {
 
                 if (issue) throw new ORPCError("BAD_REQUEST", { message: issue });
 
+                const spec = resource.draftSpec ?? resource.spec;
+
                 const [copy] = await tx
                     .insert(resources)
                     .values({
@@ -183,7 +198,7 @@ export const resourceTransferRouter = {
                         description: resource.description,
                         icon: resource.icon,
                         type: resource.type,
-                        draftSpec: resource.draftSpec ?? resource.spec,
+                        draftSpec: spec === null ? null : unpinVolumeNames(spec),
                         settings: resource.settings,
                         gitConnectionId: resource.gitConnectionId,
                         gitSource: resource.gitSource,

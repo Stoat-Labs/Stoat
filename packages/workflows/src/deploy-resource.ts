@@ -192,12 +192,14 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     })
                     .catch(() => null);
 
-                // Already gone is what we wanted; anything else is reported but does not stop the deploy.
-                if (!result || (!result.response.ok && result.response.status !== 404))
-                    await log(
-                        `Could not remove ${name}: ${result?.error?.error ?? "the sidecar did not respond"}. Remove it from the cluster by hand.`,
-                        "error",
-                    );
+                // Already gone is what we wanted. Anything else stops the deploy: the old service may
+                // still run on the volume its replacement would start on.
+                if (!result || (!result.response.ok && result.response.status !== 404)) {
+                    const reason = `Could not remove ${name}: ${result?.error?.error ?? "the sidecar did not respond"}. Remove it from the cluster by hand, then deploy again.`;
+
+                    await log(reason, "error", "attempt-failed");
+                    throw new DeploymentError(reason);
+                }
             }
 
             step = "Deploying Compose to the cluster.";

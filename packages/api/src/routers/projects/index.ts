@@ -1,5 +1,4 @@
 import { ORPCError } from "@orpc/server";
-import { cache } from "@stoat/cache";
 import {
     clusters,
     deployments,
@@ -16,10 +15,6 @@ import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure 
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
 import { removeResources } from "../../resource-removal";
-
-function canvasLayoutKey(projectId: string) {
-    return `canvas-layout:${projectId}`;
-}
 
 /** The first service's image, or null for an empty or unreadable spec. */
 function firstImage(compose: string | null) {
@@ -77,6 +72,7 @@ export const projectsRouter = {
                     createdAt: projects.createdAt,
                     updatedAt: projects.updatedAt,
                     isInternal: projects.isInternal,
+                    canvasLayout: projects.canvasLayout,
                 })
                 .from(projects)
                 .innerJoin(clusters, eq(projects.clusterId, clusters.id))
@@ -91,22 +87,10 @@ export const projectsRouter = {
             if (!row || (row.isInternal && !isOrganizationAdmin(organizationRole)))
                 throw new ORPCError("NOT_FOUND", { message: "Project not found." });
 
-            const { clusterName, ...project } = row;
-
-            // Layout saves are frequent and reads happen on every canvas visit, so the jsonb
-            // column is only read on a cache miss.
-            const key = canvasLayoutKey(project.id);
-            let canvasLayout = await cache.getItem<CanvasLayout>(key);
-
-            if (!canvasLayout) {
-                const [stored] = await db
-                    .select({ layout: projects.canvasLayout })
-                    .from(projects)
-                    .where(eq(projects.id, project.id));
-
-                canvasLayout = stored?.layout ?? {};
-                await cache.setItem(key, canvasLayout);
-            }
+            // Read with the row itself: a separate cache would serve another replica's stale
+            // layout for its whole TTL and saves nothing over this primary-key lookup.
+            const { clusterName, canvasLayout: storedLayout, ...project } = row;
+            const canvasLayout: CanvasLayout = storedLayout ?? {};
 
             // Derived so existing clusters and cluster renames need no data migration.
             return project.isInternal
@@ -185,6 +169,10 @@ export const projectsRouter = {
 
             if (rows.length === 0) return [];
 
+            const projectIds = rows.map((row) => row.id);
+
+            // Scoped to these projects' resources, so it reads a few index entries instead of
+            // every deployment of every organization.
             const latest = db
                 .selectDistinctOn([deployments.resourceId], {
                     resourceId: deployments.resourceId,
@@ -192,7 +180,18 @@ export const projectsRouter = {
                     createdAt: deployments.createdAt,
                 })
                 .from(deployments)
-                .where(eq(deployments.name, "DeployResource"))
+                .where(
+                    and(
+                        eq(deployments.name, "DeployResource"),
+                        inArray(
+                            deployments.resourceId,
+                            db
+                                .select({ id: resources.id })
+                                .from(resources)
+                                .where(inArray(resources.projectId, projectIds)),
+                        ),
+                    ),
+                )
                 .orderBy(deployments.resourceId, desc(deployments.createdAt))
                 .as("latest");
 
@@ -211,13 +210,10 @@ export const projectsRouter = {
                 })
                 .from(resources)
                 .leftJoin(latest, eq(latest.resourceId, resources.id))
-                .where(
-                    inArray(
-                        resources.projectId,
-                        rows.map((row) => row.id),
-                    ),
-                )
+                .where(inArray(resources.projectId, projectIds))
                 .orderBy(asc(resources.createdAt));
+
+            const resourcesByProject = Map.groupBy(resourceRows, (row) => row.projectId);
 
             // API keys have no user, so nothing is starred for them.
             const favorites = new Set(
@@ -234,7 +230,7 @@ export const projectsRouter = {
             const templateFor = templateMatcher(templates);
 
             return rows.map((project) => {
-                const items = resourceRows.filter((row) => row.projectId === project.id);
+                const items = resourcesByProject.get(project.id) ?? [];
 
                 const activity = items.reduce(
                     (value, item) =>
@@ -383,9 +379,6 @@ export const projectsRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Project not found." });
             }
 
-            // Written through after the database, so the next read never sees an older layout.
-            await cache.setItem(canvasLayoutKey(project.id), input.layout);
-
             return project;
         }),
 
@@ -418,7 +411,6 @@ export const projectsRouter = {
 
                 await removeResources(tx, project.clusterId, owned);
                 await tx.delete(projects).where(eq(projects.id, project.id));
-                await cache.removeItem(canvasLayoutKey(project.id));
 
                 return { id: project.id };
             }),

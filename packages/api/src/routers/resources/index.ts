@@ -276,26 +276,29 @@ export const resourcesRouter = {
 
                 // Other Compose files in the same watched directory were at the old head too; their
                 // own files are untouched, so they follow the branch instead of looking conflicted.
-                await tx
-                    .update(resources)
-                    .set({
-                        gitSource: sql`${resources.gitSource} || ${JSON.stringify({
-                            revision: pushed.revision,
-                            message: pushed.message,
-                            tree: pushed.tree,
-                        })}::jsonb`,
-                    })
-                    .where(
-                        and(
-                            eq(resources.gitConnectionId, unpushed.connectionId),
-                            sql`${resources.id} <> ${resource.id}`,
-                            sql`${resources.gitSource}->>'repositoryUrl' = ${source.repositoryUrl}`,
-                            sql`${resources.gitSource}->>'branch' = ${source.branch}`,
-                            sql`${resources.gitSource}->>'watchPath' is not distinct from ${source.watchPath ?? null}::text`,
-                            sql`${resources.gitSource}->>'revision' = ${source.revision}`,
-                            sql`${resources.gitSource}->>'path' <> ${source.path}`,
-                        ),
-                    );
+                // A forced push may sit on remote commits that changed them, so the watcher syncs
+                // those siblings instead.
+                if ((forcedRevision ?? source.revision) === source.revision)
+                    await tx
+                        .update(resources)
+                        .set({
+                            gitSource: sql`${resources.gitSource} || ${JSON.stringify({
+                                revision: pushed.revision,
+                                message: pushed.message,
+                                tree: pushed.tree,
+                            })}::jsonb`,
+                        })
+                        .where(
+                            and(
+                                eq(resources.gitConnectionId, unpushed.connectionId),
+                                sql`${resources.id} <> ${resource.id}`,
+                                sql`${resources.gitSource}->>'repositoryUrl' = ${source.repositoryUrl}`,
+                                sql`${resources.gitSource}->>'branch' = ${source.branch}`,
+                                sql`${resources.gitSource}->>'watchPath' is not distinct from ${source.watchPath ?? null}::text`,
+                                sql`${resources.gitSource}->>'revision' = ${source.revision}`,
+                                sql`${resources.gitSource}->>'path' <> ${source.path}`,
+                            ),
+                        );
 
                 return deploymentId;
             });
@@ -1185,7 +1188,18 @@ export const resourcesRouter = {
 
                 const references = resolveReferences(envText, targets, undefined, resource.id);
 
-                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references);
+                const [project] = await db
+                    .select({ name: projects.name })
+                    .from(projects)
+                    .where(eq(projects.id, resource.projectId));
+
+                // `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` resolve like the deploy does.
+                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references, {
+                    projectId: resource.projectId,
+                    projectName: project?.name ?? "",
+                    resourceId: resource.id,
+                    resourceName: resource.name,
+                });
             } catch {
                 env = parseEnv(envText);
             }

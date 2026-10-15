@@ -148,6 +148,10 @@
                 orpc.resources.getResource.queryKey({ input }),
                 updated,
             );
+            // The Apply bar reads pending changes from the graph, which this setting changes.
+            void queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            });
         } catch (cause) {
             prefixError =
                 cause instanceof Error

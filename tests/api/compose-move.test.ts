@@ -1,7 +1,13 @@
+import { parseEnv } from "node:util";
+
 import { describe, expect, it } from "vite-plus/test";
 import YAML from "yaml";
 
-import { ComposeMoveError, moveComposeService } from "../../packages/api/src/compose-move";
+import {
+    ComposeMoveError,
+    moveComposeService,
+    unpinVolumeNames,
+} from "../../packages/api/src/compose-move";
 
 const source = `# app stack
 services:
@@ -26,13 +32,16 @@ const target = `services:
     image: alpine
 `;
 
-function move(service: string, overrides: { target?: string; targetEnv?: string } = {}) {
+function move(
+    service: string,
+    overrides: { target?: string; targetEnv?: string; sourceEnv?: string } = {},
+) {
     return moveComposeService({
         service,
         source,
         target: overrides.target ?? target,
         sourcePrefix: "aaaaaaaa-bbbbbbbb",
-        sourceEnv: "API_KEY=key\nDB_PASSWORD='p@ss'\n",
+        sourceEnv: overrides.sourceEnv ?? "API_KEY=key\nDB_PASSWORD='p@ss'\n",
         targetEnv: overrides.targetEnv ?? "OTHER=1\n",
     });
 }
@@ -68,6 +77,20 @@ describe("moveComposeService", () => {
         expect(move("db").targetEnv).toBe("OTHER=1\nDB_PASSWORD='p@ss'\n");
         expect(move("db", { targetEnv: "DB_PASSWORD=mine\n" }).targetEnv).toBe(
             "DB_PASSWORD=mine\n",
+        );
+    });
+
+    it("copies multiline values whole", () => {
+        const sourceEnv = "DB_PASSWORD='first\nsecond'\nAPI_KEY=key\n";
+
+        expect(parseEnv(move("db", { sourceEnv }).targetEnv).DB_PASSWORD).toBe("first\nsecond");
+    });
+
+    it("copies the variables a copied value interpolates", () => {
+        const sourceEnv = "BASE=secret\nDB_PASSWORD=${BASE}\nAPI_KEY=key\n";
+
+        expect(move("db", { sourceEnv }).targetEnv).toBe(
+            "OTHER=1\nBASE=secret\nDB_PASSWORD=${BASE}\n",
         );
     });
 
@@ -114,5 +137,31 @@ describe("moveComposeService", () => {
         expect(result.target).toMatch(/^services:\n {2}db:\n/u);
         expect(result.targetEnv).toBe("DB_PASSWORD='p@ss'\n");
         expect(YAML.parse(result.source).services).not.toHaveProperty("db");
+    });
+});
+
+describe("unpinVolumeNames", () => {
+    it("drops pinned volume names, keeping external ones", () => {
+        const compose = `services:
+  db:
+    image: postgres
+volumes:
+  pg-data:
+    name: aaaaaaaa-bbbbbbbb-pg-data
+  shared:
+    external: true
+    name: shared-data
+`;
+
+        expect(YAML.parse(unpinVolumeNames(compose)).volumes).toEqual({
+            "pg-data": {},
+            shared: { external: true, name: "shared-data" },
+        });
+    });
+
+    it("leaves files without pinned names untouched", () => {
+        const compose = "services:\n  db:   {image: postgres}\nvolumes:\n  pg-data:\n";
+
+        expect(unpinVolumeNames(compose)).toBe(compose);
     });
 });

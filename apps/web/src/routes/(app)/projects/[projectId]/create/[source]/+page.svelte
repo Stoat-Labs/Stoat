@@ -391,7 +391,8 @@
                         <FrameDescription class="mt-1">
                             {!fromTemplate
                                 ? "Name it now; you can edit the spec after it's created."
-                                : template && template.versions.length > 1
+                                : template &&
+                                    template.versions.length > 1
                                   ? "Pick a version and fill in what the template needs."
                                   : "Fill in what the template needs."}
                         </FrameDescription>

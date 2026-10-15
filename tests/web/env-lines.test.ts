@@ -27,6 +27,15 @@ describe("parseEnvLines", () => {
 
         expect(rows).toEqual(parseEnv(sample));
     });
+
+    it.each(["K=abc#comment", 'K="unclosed', "K='a\nb'\nB=1"])(
+        "matches parseEnv for %j",
+        (text) => {
+            const rows = Object.fromEntries(parseEnvLines(text).map((row) => [row.key, row.value]));
+
+            expect(rows).toEqual(parseEnv(text));
+        },
+    );
 });
 
 describe("setEnvVariable", () => {
@@ -73,4 +82,8 @@ describe("formatEnvValue", () => {
             expect(parseEnv(`K=${formatEnvValue(value)}`).K).toBe(value);
         },
     );
+
+    it.each(["a\"b'c`d", "a\\nb'c`d"])("rejects %j, which no quoting keeps", (value) => {
+        expect(() => formatEnvValue(value)).toThrow();
+    });
 });

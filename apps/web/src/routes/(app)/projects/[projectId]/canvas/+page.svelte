@@ -122,6 +122,7 @@
                 <ProjectCanvas
                     {projectId}
                     clusterId={loaded.project.clusterId}
+                    isInternal={loaded.project.isInternal === true}
                     resources={loaded.resources}
                     graph={loaded.graph.resources}
                     logos={loaded.graph.logos}

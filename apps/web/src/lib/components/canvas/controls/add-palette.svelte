@@ -13,6 +13,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
+    import { ORPCError } from "@orpc/client";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import {
         Alert,
@@ -261,7 +262,8 @@
                     logo: null,
                     icon: GitBranch,
                     provider: connection.provider,
-                    // Without a known default branch, the create page asks for one.
+                    // Without a known default branch, the create page asks for one. Quick creation
+                    // reads the root; without a Compose file there, it falls back to that page too.
                     target: repository.defaultBranch
                         ? {
                               create: {
@@ -391,6 +393,24 @@
 
             if (resource) oncreated(resource.id);
         } catch (cause) {
+            // No Compose file at the repository root: let the Git form pick the file or branch.
+            if (
+                input.git &&
+                cause instanceof ORPCError &&
+                cause.code === "NOT_FOUND"
+            ) {
+                open(null);
+                void goto(
+                    `${create}/git?${new URLSearchParams({
+                        connectionId: input.git.connectionId,
+                        repositoryUrl: input.git.repositoryUrl,
+                        branch: input.git.branch,
+                    })}`,
+                );
+
+                return;
+            }
+
             createError =
                 cause instanceof Error
                     ? cause.message

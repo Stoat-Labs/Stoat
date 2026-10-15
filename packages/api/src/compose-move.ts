@@ -94,13 +94,55 @@ function dropDependency(service: YAMLMap, name: string) {
         service.delete("depends_on");
 }
 
-/** Raw `.env` lines for `keys`, so quoting and comments-free values copy exactly. */
+/**
+ * Raw `.env` assignments for `keys`, so quoting copies exactly. Like Node's `parseEnv`, a quoted
+ * value runs to its closing quote, across lines when needed.
+ */
 function envLines(envText: string, keys: Set<string>) {
-    return envText.split("\n").filter((line) => {
-        const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u.exec(line);
+    const lines = envText.split("\n");
+    const copied: string[] = [];
 
-        return match?.[1] !== undefined && keys.has(match[1]);
-    });
+    for (let index = 0; index < lines.length; index++) {
+        const match = /^\s*(?:export\s+)?([\w.-]+)\s*=\s*(.*)$/u.exec(lines[index] ?? "");
+
+        if (!match) continue;
+
+        const [, key = "", value = ""] = match;
+        const quote = value[0];
+        let end = index;
+
+        if (quote === '"' || quote === "'" || quote === "`") {
+            const closing = lines.findIndex((line, at) =>
+                at > index ? line.includes(quote) : at === index && value.slice(1).includes(quote),
+            );
+
+            if (closing !== -1) end = closing;
+        }
+
+        if (keys.has(key)) copied.push(...lines.slice(index, end + 1));
+
+        index = end;
+    }
+
+    return copied;
+}
+
+/** `keys` plus every source variable their values interpolate, transitively. */
+function withDependencies(keys: Iterable<string>, values: Record<string, string | undefined>) {
+    const needed = new Set<string>();
+    const pending = [...keys];
+
+    for (let key = pending.pop(); key !== undefined; key = pending.pop()) {
+        const value = values[key];
+
+        if (needed.has(key) || value === undefined) continue;
+
+        needed.add(key);
+
+        for (const [, name = ""] of value.matchAll(VARIABLE)) pending.push(name);
+    }
+
+    return needed;
 }
 
 /**
@@ -208,14 +250,15 @@ export function moveComposeService(options: {
         warnings.push(`A service left behind no longer waits for "${name}".`);
     }
 
-    // Variables the service interpolates follow it unless the target already sets them.
-    const used = new Set(
-        [...JSON.stringify(service.toJSON()).matchAll(VARIABLE)].map((match) => match[1] ?? ""),
+    // Variables the service interpolates follow it, with the ones their values use, unless the
+    // target already sets them.
+    const used = [...JSON.stringify(service.toJSON()).matchAll(VARIABLE)].map(
+        (match) => match[1] ?? "",
     );
 
     const targetKeys = new Set(Object.keys(parseEnv(options.targetEnv)));
-    const sourceKeys = new Set(Object.keys(parseEnv(options.sourceEnv)));
-    const missing = new Set([...used].filter((key) => sourceKeys.has(key) && !targetKeys.has(key)));
+    const needed = withDependencies(used, parseEnv(options.sourceEnv));
+    const missing = new Set([...needed].filter((key) => !targetKeys.has(key)));
     const copiedLines = envLines(options.sourceEnv, missing);
 
     const targetEnv = copiedLines.length
@@ -229,4 +272,24 @@ export function moveComposeService(options: {
         sourceEmpty: remaining.length === 0,
         warnings,
     };
+}
+
+/**
+ * Drops the Docker volume names moves pin, so a copy's volumes get its own names instead of
+ * opening the original's data. External volumes keep their names; they are shared on purpose.
+ */
+export function unpinVolumeNames(compose: string) {
+    const doc = YAML.parseDocument(compose);
+    const volumes = doc.get("volumes", true);
+
+    if (doc.errors.length || !isMap(volumes)) return compose;
+
+    const pinned = volumes.items.flatMap(({ value }) =>
+        isMap(value) && value.has("name") && value.get("external") !== true ? [value] : [],
+    );
+
+    for (const volume of pinned) volume.delete("name");
+
+    // Untouched files keep their exact text.
+    return pinned.length ? doc.toString() : compose;
 }
