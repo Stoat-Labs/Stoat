@@ -3,7 +3,6 @@
     import { page } from "$app/state";
     import { orpc } from "$lib/api/orpc";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
-    import OrgSwitcher from "$lib/components/sidebar/org-switcher.svelte";
     import SidebarAppFooter from "$lib/components/sidebar/sidebar-footer.svelte";
     import {
         Sidebar,
@@ -85,11 +84,9 @@
 
 <Sidebar variant="inset" collapsible="icon">
     <SidebarHeader class={edgeRow}>
-        <OrgSwitcher
-            {organizations}
-            {activeOrganizationId}
-            onNavigate={closeNavigation}
-        />
+        <a href="/" class="w-full flex items-center justify-center">
+            <img src="/stoat.png" class=" size-8" alt="logo" />
+        </a>
     </SidebarHeader>
     <SidebarContent class="overflow-x-hidden">
         <SidebarGroup class="px-0">
