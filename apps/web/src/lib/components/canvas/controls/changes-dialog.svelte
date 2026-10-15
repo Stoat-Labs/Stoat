@@ -28,6 +28,7 @@
         canDeploy,
         deploying,
         ondeploy,
+        ondiscard,
     }: {
         open?: boolean;
         projectId: string;
@@ -35,6 +36,7 @@
         canDeploy: boolean;
         deploying: boolean;
         ondeploy: () => void;
+        ondiscard: () => void;
     } = $props();
 
     // Fetched only while open: each one carries the resource's variables.
@@ -150,8 +152,8 @@
                                 <code class="font-mono">
                                     {data.prefix.next || "none"}
                                 </code>
-                                , so every service is recreated under
-                                its new name and volumes start empty.
+                                , so every service is recreated under its
+                                new name and volumes start empty.
                             </p>
                         {/if}
                         {#if removed.length}
@@ -169,6 +171,16 @@
             {/each}
         </DialogPanel>
         <DialogFooter>
+            {#if canDeploy}
+                <Button
+                    class="sm:me-auto"
+                    variant="destructive-outline"
+                    disabled={deploying}
+                    onclick={ondiscard}
+                >
+                    Discard changes
+                </Button>
+            {/if}
             <Button variant="outline" onclick={() => (open = false)}>
                 Close
             </Button>

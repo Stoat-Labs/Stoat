@@ -42,6 +42,12 @@
 
     let error = $state("");
 
+    let discarding = $state(false);
+
+    let discardOpen = $state(false);
+
+    let discardError = $state("");
+
     async function finished(deploymentId: string) {
         for (;;) {
             const deployment = await client.cluster.getDeployment({
@@ -120,6 +126,39 @@
             });
         }
     }
+
+    // Every staged resource goes back to its last deploy; one that never deployed is removed.
+    async function discard() {
+        discarding = true;
+        discardError = "";
+
+        try {
+            await client.resources.discardChanges({
+                projectId,
+                resourceIds: changes.map(
+                    ({ resource }) => resource.id,
+                ),
+            });
+
+            discardOpen = false;
+            details.current = false;
+        } catch (cause) {
+            discardError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Discard failed.";
+        } finally {
+            discarding = false;
+            await queryClient.invalidateQueries({
+                queryKey: orpc.resources.key(),
+            });
+        }
+    }
+
+    function startDiscard() {
+        discardError = "";
+        discardOpen = true;
+    }
 </script>
 
 <!-- Railway's staged-changes bar: what is saved but not live yet, and one button to ship it. -->
@@ -177,6 +216,19 @@
         details.current = false;
         startDeploy();
     }}
+    ondiscard={startDiscard}
+/>
+
+<ConfirmDialog
+    bind:open={discardOpen}
+    title="Discard {changes.length === 1
+        ? 'this change'
+        : `${changes.length} changes`}?"
+    description="Each resource goes back to what it last deployed, and resources that were never deployed are removed. This can't be undone."
+    confirmLabel="Discard changes"
+    pending={discarding}
+    error={discardError}
+    onconfirm={() => void discard()}
 />
 
 <ConfirmDialog
