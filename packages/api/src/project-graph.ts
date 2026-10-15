@@ -3,7 +3,7 @@ import { referencedResourceIds } from "@stoat/workflows/references";
 import * as v from "valibot";
 import YAML from "yaml";
 
-import { resourceComposePrefix, resourceEnv } from "./compose";
+import { internalHostname, resourceComposePrefix, resourceEnv } from "./compose";
 import type { Template } from "./templates";
 
 // Named volumes only; bind mounts (`./data`, `/srv`) and anonymous volumes are not shown.
@@ -61,6 +61,8 @@ export type GraphService = {
     template: string | undefined;
     /** Public HTTP hostnames from `x-ports`, shown under the name like Railway's domains. */
     domains: string[];
+    /** Cluster DNS name of the deployed service; null until it is deployed. */
+    internalHostname: string | null;
     dependsOn: string[];
     volumes: string[];
 };
@@ -137,6 +139,13 @@ function templateImages(templates: GraphTemplate[]) {
     return images;
 }
 
+/** The template app an image runs, matched like the canvas does, for logos shown elsewhere. */
+export function templateMatcher(templates: GraphTemplate[]) {
+    const images = templateImages(templates);
+
+    return (image: string | null) => images.get(imageRepository(image ?? undefined) ?? "") ?? null;
+}
+
 /** Service names of the deployed spec, or undefined when nothing was deployed or it can't be read. */
 // An unreadable `.env` compares as empty; the Variables page reports the error itself.
 function safeEnv(row: GraphResourceInput) {
@@ -203,6 +212,11 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
                     isNew: deployed !== undefined && !deployed.has(service.name),
                     template: images.get(imageRepository(service.image) ?? ""),
                     domains: domains.get(service.name) ?? [],
+                    // Named with the deployed prefix, since that is what runs on the cluster.
+                    internalHostname:
+                        row.deployed && deployed?.has(service.name)
+                            ? internalHostname(service.name, row.deployed.prefix || undefined)
+                            : null,
                 }));
             } catch {
                 parseError = true;

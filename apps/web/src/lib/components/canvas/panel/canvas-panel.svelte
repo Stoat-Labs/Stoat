@@ -1,6 +1,6 @@
 <script lang="ts">
-    import DeploymentViewer from "$lib/components/deployments/deployment-viewer.svelte";
-    import ResourceLogs from "$lib/components/projects/resource-logs.svelte";
+    import CanvasDeploymentLogs from "./canvas-deployment-logs.svelte";
+    import CanvasResourceLogs from "./canvas-resource-logs.svelte";
     import ResourceMetricsView from "$lib/components/projects/resource-metrics-view.svelte";
     import ResourceSettingsView from "$lib/components/projects/resource-settings-view.svelte";
     import ResourceVariablesView from "$lib/components/projects/resource-variables-view.svelte";
@@ -14,7 +14,7 @@
         parseAsStringLiteral,
         useQueryState,
     } from "nuqs-svelte";
-    import { cubicOut } from "svelte/easing";
+    import { cubicOut, expoOut } from "svelte/easing";
     import { prefersReducedMotion } from "svelte/motion";
     import { fly } from "svelte/transition";
     import type { CanvasResource, CanvasService } from "../graph";
@@ -30,6 +30,7 @@
         icon,
         changed,
         width,
+        inset,
         onclose,
     }: {
         clusterId: string;
@@ -41,6 +42,8 @@
         changed: boolean;
         /** Pixel width, shared with the canvas so it can keep the opened node in view. */
         width: number;
+        /** Narrow canvases hide the graph: the panel floats over all of it, inset from the sides. */
+        inset: boolean;
         onclose: () => void;
     } = $props();
 
@@ -91,11 +94,26 @@
         active === "logs" || (active === "settings" && !isBucket),
     );
 
-    const slide = $derived({
-        x: 48,
-        duration: prefersReducedMotion.current ? 0 : 240,
+    // Railway: the panel travels a fifth of its width while fading, settling slowly on open and leaving faster.
+    const enter = $derived({
+        x: width * 0.2,
+        duration: prefersReducedMotion.current ? 0 : 400,
+        easing: expoOut,
+    });
+
+    const leave = $derived({
+        x: width * 0.2,
+        duration: prefersReducedMotion.current ? 0 : 250,
         easing: cubicOut,
     });
+
+    const stacked = $derived(Boolean(deployment.current));
+
+    const edge = $derived(
+        inset
+            ? "right-5 rounded-t-xl border"
+            : "right-0 rounded-tl-xl border-t border-l",
+    );
 </script>
 
 {#snippet resourceIcon()}
@@ -119,10 +137,15 @@
 
 <!-- Railway's panel: flush right and bottom, 24px below the canvas top, only the top-left corner rounded. -->
 <aside
-    class="absolute top-6 right-0 bottom-0 z-10 flex flex-col overflow-hidden rounded-tl-xl border-t border-l border-border bg-card shadow-md/10"
+    class={[
+        "absolute bottom-0 z-10 flex flex-col overflow-hidden border-border bg-card shadow-md/10 transition-[top] duration-300",
+        stacked ? "top-12" : "top-6",
+        edge,
+    ]}
     style:width="{width}px"
     aria-label="{resource.name} details"
-    transition:fly={slide}
+    in:fly|global={enter}
+    out:fly|global={leave}
 >
     <header class="flex items-center gap-4 px-12 pt-12 pb-6">
         {@render resourceIcon()}
@@ -180,7 +203,8 @@
     <!-- Settings and logs run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
     <div
         class={[
-            "min-h-0 flex-1 overflow-y-auto",
+            "min-h-0 flex-1",
+            active === "logs" ? "overflow-hidden" : "overflow-y-auto",
             !fullBleed && "px-12 pt-8 pb-12",
         ]}
         role="tabpanel"
@@ -205,13 +229,13 @@
             <ResourceMetricsView
                 projectId={resource.projectId}
                 resourceId={resource.id}
-                embedded
             />
         {:else if active === "logs"}
-            <ResourceLogs
+            <CanvasResourceLogs
                 projectId={resource.projectId}
                 resourceId={resource.id}
-                embedded
+                serviceName={selectedService}
+                focused={!stacked}
             />
         {:else if isBucket}
             <div class="px-12 pt-8 pb-12">
@@ -227,42 +251,21 @@
 </aside>
 
 {#if deployment.current}
-    <!-- Stacked over the resource panel, offset so the panel beneath stays visible, like Railway. -->
+    <!-- Sits higher and 24px narrower than the resource panel, which drops down behind it so its left and top edges stay visible, like Railway. -->
     <aside
-        class="absolute top-12 right-0 bottom-0 z-20 flex flex-col overflow-hidden rounded-tl-xl border-t border-l border-border bg-card shadow-xl/15"
-        style:width="{width}px"
+        class="absolute top-6 bottom-0 z-20 flex flex-col overflow-hidden border-border bg-card shadow-xl/15 {edge}"
+        style:width="{width - 24}px"
         aria-label="Deployment logs"
-        transition:fly={slide}
+        in:fly|global={enter}
+        out:fly|global={leave}
     >
-        <header class="flex items-center gap-4 px-12 pt-12 pb-6">
-            {@render resourceIcon()}
-            <h2
-                class="min-w-0 flex-1 truncate text-2xl font-semibold"
-            >
-                {resource.name}
-                <span
-                    class="font-mono text-lg font-normal text-muted-foreground"
-                >
-                    / {deployment.current.slice(0, 8)}
-                </span>
-            </h2>
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close deployment logs"
-                onclick={() => void deployment.set(null)}
-            >
-                <X class="size-4" aria-hidden="true" />
-            </Button>
-        </header>
-        <div class="min-h-0 flex-1 px-12 pb-12">
-            {#key deployment.current}
-                <DeploymentViewer
-                    deploymentId={deployment.current}
-                    backHref="/projects/{resource.projectId}/canvas?node={resource.id}"
-                    embedded
-                />
-            {/key}
-        </div>
+        {#key deployment.current}
+            <CanvasDeploymentLogs
+                deploymentId={deployment.current}
+                name={resource.name}
+                {icon}
+                onclose={() => void deployment.set(null)}
+            />
+        {/key}
     </aside>
 {/if}

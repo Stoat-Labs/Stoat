@@ -3,6 +3,7 @@
         useNodesInitialized,
         useSvelteFlow,
     } from "@xyflow/svelte";
+    import type { Viewport } from "@xyflow/svelte";
     import { untrack } from "svelte";
 
     let {
@@ -15,6 +16,8 @@
         coveredWidth: number;
     } = $props();
 
+    const glide = 250;
+
     // Only usable inside <SvelteFlow>, which is why this lives in its own component.
     const flow = useSvelteFlow();
 
@@ -23,10 +26,20 @@
     // Live refetches rebuild the nodes; only a newly opened node moves the camera.
     let focused: string | undefined;
 
+    // Where the camera was before the panel opened, so closing it glides back there like Railway.
+    let before: Viewport | undefined;
+
     // Glide to the opened node and centre it in the part of the canvas the panel leaves visible.
     $effect(() => {
         // Closing the panel lets the same node glide into focus again next time.
-        if (!nodeId) focused = undefined;
+        if (!nodeId) {
+            focused = undefined;
+
+            if (before) {
+                void flow.setViewport(before, { duration: glide });
+                before = undefined;
+            }
+        }
 
         // Wait for the canvas width too, or a deep link centres the node behind the panel.
         if (
@@ -50,6 +63,7 @@
         if (!node) return;
 
         focused = id;
+        before ??= flow.getViewport();
 
         const { x, y } = node.internals.positionAbsolute;
         const width = node.measured.width ?? node.width ?? 0;
@@ -61,7 +75,7 @@
 
         void flow.setCenter(x + width / 2 + offset, y + height / 2, {
             zoom,
-            duration: 450,
+            duration: glide,
         });
     }
 </script>

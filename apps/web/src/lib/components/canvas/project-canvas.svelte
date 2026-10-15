@@ -1,16 +1,5 @@
 <script lang="ts">
-    import "@xyflow/svelte/dist/style.css";
-    import {
-        Background,
-        BackgroundVariant,
-        ConnectionMode,
-        MarkerType,
-        SelectionMode,
-        Panel,
-        SvelteFlow,
-        type Edge,
-        type NodeTypes,
-    } from "@xyflow/svelte";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
@@ -18,8 +7,19 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
     import Plus from "@lucide/svelte/icons/plus";
+    import {
+        Background,
+        BackgroundVariant,
+        ConnectionMode,
+        MarkerType,
+        Panel,
+        SelectionMode,
+        SvelteFlow,
+        type Edge,
+        type NodeTypes,
+    } from "@xyflow/svelte";
+    import "@xyflow/svelte/dist/style.css";
     import {
         parseAsArrayOf,
         parseAsBoolean,
@@ -29,6 +29,13 @@
         useQueryStates,
     } from "nuqs-svelte";
     import { onMount, untrack } from "svelte";
+    import CanvasApi from "./canvas-api.svelte";
+    import CanvasFocus from "./canvas-focus.svelte";
+    import {
+        setCanvasActions,
+        setCanvasClock,
+        type GroupAction,
+    } from "./context";
     import AddPalette, {
         addPages,
     } from "./controls/add-palette.svelte";
@@ -37,37 +44,27 @@
         type MenuTarget,
         type PanelTab,
     } from "./controls/canvas-context-menu.svelte";
-    import CanvasFocus from "./canvas-focus.svelte";
-    import CanvasPanel from "./panel/canvas-panel.svelte";
-    import CanvasApi from "./canvas-api.svelte";
     import CanvasControls, {
         edgeLayers,
         type EdgeLayer,
     } from "./controls/canvas-controls.svelte";
-    import CardNode from "./nodes/card-node.svelte";
-    import {
-        setCanvasActions,
-        setCanvasClock,
-        type GroupAction,
-    } from "./context";
     import GroupDialogs from "./controls/group-dialogs.svelte";
     import {
         buildCanvas,
         buildEdges,
-        freeSlot,
-        frameRect,
-        nearestFree,
-        nodeRect,
-        slotBelow,
-        clearPositions,
         COLUMN_GAP,
-        refitFrames,
-        repairOverlaps,
-        settle,
+        frameRect,
+        freeSlot,
         loadCollapsed,
         loadPositions,
+        nearestFree,
+        nodeRect,
+        refitFrames,
+        repairOverlaps,
         saveCollapsed,
         savePositions,
+        settle,
+        slotBelow,
         type CanvasGraph,
         type CanvasLogos,
         type CanvasNode,
@@ -75,7 +72,9 @@
         type Positions,
         type Rect,
     } from "./graph";
+    import CardNode from "./nodes/card-node.svelte";
     import StackNode from "./nodes/stack-node.svelte";
+    import CanvasPanel from "./panel/canvas-panel.svelte";
 
     let {
         projectId,
@@ -83,12 +82,14 @@
         resources,
         graph,
         logos,
+        layout,
     }: {
         projectId: string;
         clusterId: string;
         resources: CanvasResource[];
         graph: CanvasGraph;
         logos: CanvasLogos;
+        layout: Positions;
     } = $props();
 
     const nodeTypes: NodeTypes = { card: CardNode, stack: StackNode };
@@ -187,9 +188,13 @@
         const [action, resourceId] = (edit.current ?? "").split(":");
 
         return {
-            action: ["rename", "icon-upload", "icon-link"].find(
-                (name): name is GroupAction => name === action,
-            ),
+            action: [
+                "rename",
+                "icon-upload",
+                "icon-link",
+                "move",
+                "copy",
+            ].find((name): name is GroupAction => name === action),
             resource: resources.find(
                 (resource) => resource.id === resourceId,
             ),
@@ -214,6 +219,14 @@
             );
             deleteError = "";
         },
+        redeploy: (resourceId) => {
+            pendingRedeploy = resources.find(
+                (resource) => resource.id === resourceId,
+            );
+            redeployError = "";
+        },
+        canRedeploy: (resourceId) =>
+            !graph.find((item) => item.id === resourceId)?.changed,
         regroup: (nodeId, toResourceId) =>
             void regroup(nodeId, toResourceId),
         ungroup: (resourceId) => void ungroup(resourceId),
@@ -260,6 +273,96 @@
         }
     }
 
+    // Railway's "Redeploy": recreates the containers from the live config, even when nothing changed.
+    let pendingRedeploy = $state<CanvasResource>();
+
+    let redeploying = $state(false);
+
+    let redeployError = $state("");
+
+    async function redeployResource() {
+        if (!pendingRedeploy) return;
+
+        const resourceId = pendingRedeploy.id;
+
+        redeploying = true;
+        redeployError = "";
+
+        try {
+            await client.resources.deploy({
+                projectId,
+                resourceId,
+                recreate: true,
+            });
+
+            pendingRedeploy = undefined;
+            openPanel(resourceId, "deployments");
+            await Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listAllDeployments.key(),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: orpc.resources.getProjectGraph.key(),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: orpc.resources.listResources.key(),
+                }),
+            ]);
+        } catch (error) {
+            redeployError =
+                error instanceof Error
+                    ? error.message
+                    : "The resource could not be redeployed.";
+        } finally {
+            redeploying = false;
+        }
+    }
+
+    // The layout is shared by the project, so it is saved to the server; a burst of drags and
+    // undos collapses into one write of the latest snapshot.
+    let pendingLayout: Positions | undefined;
+
+    let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function persistLayout(next: Positions) {
+        savePositions(projectId, next);
+        pendingLayout = next;
+        clearTimeout(layoutTimer);
+        layoutTimer = setTimeout(flushLayout, 500);
+    }
+
+    function flushLayout() {
+        clearTimeout(layoutTimer);
+
+        if (!pendingLayout) return;
+
+        const saved = pendingLayout;
+        const savedFor = projectId;
+
+        pendingLayout = undefined;
+
+        client.projects
+            .setCanvasLayout({ projectId: savedFor, layout: saved })
+            .then(() => {
+                // A later visit must not paint the older layout from the cache.
+                queryClient.setQueryData(
+                    orpc.projects.getProject.queryKey({
+                        input: { projectId: savedFor },
+                    }),
+                    (project) =>
+                        project && {
+                            ...project,
+                            canvasLayout: saved,
+                        },
+                );
+            })
+            .catch(() => {
+                // An unsaved layout only resets on the next visit.
+            });
+    }
+
+    onMount(() => flushLayout);
+
     // Railway's undo/redo, for layout: each entry is a whole snapshot of card positions.
     let past = $state.raw<Positions[]>([]);
 
@@ -269,7 +372,7 @@
         past = [...past.slice(-49), positions];
         future = [];
         positions = next;
-        savePositions(projectId, next);
+        persistLayout(next);
     }
 
     function undo() {
@@ -280,7 +383,7 @@
         past = past.slice(0, -1);
         future = [positions, ...future];
         positions = previous;
-        savePositions(projectId, previous);
+        persistLayout(previous);
     }
 
     function redo() {
@@ -291,12 +394,13 @@
         future = rest;
         past = [...past, positions];
         positions = next;
-        savePositions(projectId, next);
+        persistLayout(next);
     }
 
     // Runs before the build effect, so the first render already uses the saved layout.
     $effect.pre(() => {
-        positions = loadPositions(projectId);
+        // Only a project switch reloads; refetches must not clobber local drags.
+        positions = loadPositions(projectId) ?? untrack(() => layout);
         collapsed = loadCollapsed(projectId);
     });
 
@@ -405,10 +509,21 @@
 
     let canvasWidth = $state(0);
 
-    // Railway docks its panel flush right at about two thirds of the canvas, 1008px at most.
-    const panelWidth = $derived(
-        Math.min(1008, Math.round(canvasWidth * 0.645)),
-    );
+    // Railway hides the graph on narrow screens and gives the panel all of it, inset 20px per side.
+    const narrow = $derived(canvasWidth < 900);
+
+    // Wider canvases step the docked panel up to a fixed width, as Railway does: 70% to 1150px, then 904, 1008 and 1184px.
+    const panelWidth = $derived.by(() => {
+        if (narrow) return Math.max(canvasWidth - 40, 0);
+
+        if (canvasWidth < 1150) return Math.round(canvasWidth * 0.7);
+
+        if (canvasWidth < 1400) return 904;
+
+        if (canvasWidth < 1700) return 1008;
+
+        return 1184;
+    });
 
     function contains(frame: Rect, point: { x: number; y: number }) {
         return (
@@ -554,7 +669,7 @@
         const next = { ...positions, [id]: position };
 
         positions = next;
-        savePositions(projectId, next);
+        persistLayout(next);
     }
 
     let moveNotice = $state<{
@@ -695,7 +810,7 @@
             };
 
             positions = next;
-            savePositions(projectId, next);
+            persistLayout(next);
             pendingMerge = undefined;
             moveNotice = {
                 message: result.removedResourceId
@@ -869,7 +984,7 @@
             };
         } finally {
             positions = next;
-            savePositions(projectId, next);
+            persistLayout(next);
             moving = false;
             await Promise.all([
                 queryClient.invalidateQueries({
@@ -883,7 +998,6 @@
     }
 
     function resetLayout() {
-        clearPositions(projectId);
         commit({});
     }
 
@@ -1047,64 +1161,72 @@
                 nodeId={selectedResource
                     ? (selected.current ?? undefined)
                     : undefined}
-                coveredWidth={panelWidth}
+                coveredWidth={narrow ? 0 : panelWidth}
             />
-            {#if !empty}
-                <Panel position="top-right" class="m-4!">
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        class="bg-card"
-                        onclick={() => void add.set("root")}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        Add
-                    </Button>
-                </Panel>
-            {/if}
-            {#if changes.length && !moveNotice}
-                <Panel position="top-center" class="m-4!">
-                    <ApplyBar {projectId} {changes} />
-                </Panel>
-            {/if}
-            {#if moveNotice}
-                <Panel
-                    position="top-center"
-                    class="m-4! w-[min(32rem,90%)]"
-                >
-                    <Alert
-                        variant={moveNotice.warnings.length
-                            ? "warning"
-                            : "info"}
-                    >
-                        <AlertDescription>
-                            <p>{moveNotice.message}</p>
-                            {#each moveNotice.warnings as warning (warning)}
-                                <p>{warning}</p>
-                            {/each}
-                        </AlertDescription>
-                        <AlertAction>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                onclick={() =>
-                                    (moveNotice = undefined)}
-                            >
-                                Dismiss
-                            </Button>
-                        </AlertAction>
-                    </Alert>
-                </Panel>
-            {/if}
         </SvelteFlow>
     </CanvasContextMenu>
+
+    <!-- Stops where the resource panel starts, so notices and actions never sit on top of it. -->
+    <div
+        class="pointer-events-none absolute inset-y-0 left-0 z-30"
+        class:hidden={narrow && selectedResource}
+        style:right="{selectedResource ? panelWidth : 0}px"
+    >
+        {#if !empty}
+            <div class="pointer-events-auto absolute top-4 right-4">
+                <Button
+                    size="sm"
+                    variant="outline"
+                    class="backdrop-blur-lg"
+                    onclick={() => void add.set("root")}
+                >
+                    <Plus class="size-4" aria-hidden="true" />
+                    Add
+                </Button>
+            </div>
+        {/if}
+        {#if changes.length && !moveNotice}
+            <div
+                class="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2"
+            >
+                <ApplyBar {projectId} {changes} />
+            </div>
+        {/if}
+        {#if moveNotice}
+            <div
+                class="pointer-events-auto absolute top-4 left-1/2 w-[min(32rem,90%)] -translate-x-1/2"
+            >
+                <Alert
+                    variant={moveNotice.warnings.length
+                        ? "warning"
+                        : "info"}
+                >
+                    <AlertDescription>
+                        <p>{moveNotice.message}</p>
+                        {#each moveNotice.warnings as warning (warning)}
+                            <p>{warning}</p>
+                        {/each}
+                    </AlertDescription>
+                    <AlertAction>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onclick={() => (moveNotice = undefined)}
+                        >
+                            Dismiss
+                        </Button>
+                    </AlertAction>
+                </Alert>
+            </div>
+        {/if}
+    </div>
 
     {#if empty}
         <div
             class="pointer-events-none absolute inset-0 flex items-center justify-center p-4"
         >
             <div class="pointer-events-auto">
-                <AddPalette {projectId} inline />
+                <AddPalette {projectId} inline oncreated={select} />
             </div>
         </div>
     {/if}
@@ -1119,6 +1241,7 @@
                 icon={selectedIcon}
                 changed={selectedGraph?.changed ?? false}
                 width={panelWidth}
+                inset={narrow}
                 onclose={() => select(null)}
             />
         {/key}
@@ -1126,7 +1249,7 @@
 </div>
 
 {#if !empty}
-    <AddPalette {projectId} />
+    <AddPalette {projectId} oncreated={select} />
 {/if}
 
 {#if pendingDelete}
@@ -1143,6 +1266,24 @@
         pending={deleting}
         error={deleteError}
         onconfirm={() => void deleteResource()}
+    />
+{/if}
+
+{#if pendingRedeploy}
+    <ConfirmDialog
+        bind:open={
+            () => pendingRedeploy !== undefined,
+            (open) => {
+                if (!open && !redeploying)
+                    pendingRedeploy = undefined;
+            }
+        }
+        title={`Redeploy ${pendingRedeploy.name}?`}
+        description="Its containers are recreated from the live configuration, even if nothing changed. Services may be briefly unavailable while they restart."
+        confirmLabel="Redeploy"
+        pending={redeploying}
+        error={redeployError}
+        onconfirm={() => void redeployResource()}
     />
 {/if}
 

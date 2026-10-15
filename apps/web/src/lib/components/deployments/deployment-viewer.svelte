@@ -29,17 +29,10 @@
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
-    import { subscribeToStream } from "$lib/deployments/stream";
-    import {
-        deploymentStatusLabel,
-        deploymentStatusVariant,
-        isActiveDeploymentStatus,
-        isTerminalDeploymentStatus,
-    } from "$lib/deployments/status";
+    import { DeploymentStream } from "$lib/deployments/deployment-stream.svelte";
     import { formatDurationMs } from "$lib/format";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
-    import { classifyLog, type LogRow } from "$lib/resources/logs";
-    import { deploymentSteps } from "$lib/deployments/steps";
+    import { orpc, queryClient } from "$lib/api/orpc";
+    import { logsAsText } from "$lib/deployments/log-text";
     import Check from "@lucide/svelte/icons/check";
     import Copy from "@lucide/svelte/icons/copy";
     import Download from "@lucide/svelte/icons/download";
@@ -50,61 +43,18 @@
         parseAsStringLiteral,
         useQueryStates,
     } from "nuqs-svelte";
-    import { untrack, tick } from "svelte";
+    import { tick } from "svelte";
     import DeploymentTimeline from "./deployment-timeline.svelte";
 
-    useHeaderActions(cancelAction, () => !embedded);
-
-    type DeploymentEvent =
-        Awaited<
-            ReturnType<typeof client.cluster.streamDeployment>
-        > extends AsyncIterable<infer T>
-            ? T
-            : never;
-
-    type ViewerRow = LogRow & { event?: string };
+    useHeaderActions(cancelAction);
 
     let {
         deploymentId,
         backHref = "/deployments",
-        embedded = false,
     }: {
         deploymentId: string;
         backHref?: string;
-        /** Inside the project canvas panel: actions render inline and the page title is left alone. */
-        embedded?: boolean;
     } = $props();
-
-    let deployment = $state<DeploymentEvent["deployment"] | null>(
-        null,
-    );
-
-    // Names come from the snapshot only: stream events carry no project or resource names.
-    let origin = $state<{
-        projectId: string | null;
-        projectName: string | null;
-        resourceName: string | null;
-    }>({ projectId: null, projectName: null, resourceName: null });
-
-    const resourceLabel = $derived(
-        origin.resourceName
-            ? `${origin.projectName ? `${origin.projectName} / ` : ""}${origin.resourceName}`
-            : "",
-    );
-
-    const resourceHref = $derived(
-        origin.projectId && deployment?.resourceId
-            ? `/projects/${origin.projectId}/${deployment.resourceId}`
-            : null,
-    );
-
-    let rows = $state.raw<ViewerRow[]>([]);
-
-    let cancelAllowed = $state(false);
-
-    let streamError = $state("");
-
-    let reconnecting = $state(false);
 
     const view = useQueryStates(
         {
@@ -117,34 +67,24 @@
         { shallow: true, scroll: false, history: "replace" },
     );
 
+    const stream = new DeploymentStream(
+        () => deploymentId,
+        () => {
+            view.deploymentFollowing.current = true;
+            cancelMutationState.reset();
+        },
+    );
+
+    const deployment = $derived(stream.deployment);
+
     let copied = $state(false);
-
-    let now = $state(Date.now());
-
-    function toRow(line: DeploymentEvent["logs"][number]): ViewerRow {
-        const level = line.metadata?.level ?? "info";
-        const time = new Date(line.createdAt).getTime();
-
-        return {
-            id: line.id,
-            key: String(line.id),
-            time,
-            timestamp: new Date(time).toISOString(),
-            message: line.text,
-            level:
-                level === "error" ? "error" : classifyLog(line.text),
-            label: level === "debug" ? "debug" : undefined,
-            muted: level === "debug",
-            event: line.metadata?.event,
-        };
-    }
 
     const visibleLogs = $derived.by(() => {
         const needle = view.deploymentQuery.current
             .trim()
             .toLowerCase();
 
-        return rows.filter(
+        return stream.rows.filter(
             (row) =>
                 (view.deploymentDebug.current || !row.muted) &&
                 (!needle ||
@@ -152,182 +92,17 @@
         );
     });
 
-    $effect(() => {
-        const id = deploymentId;
-
-        if (!id) return;
-
-        deployment = null;
-        origin = {
-            projectId: null,
-            projectName: null,
-            resourceName: null,
-        };
-        rows = [];
-        cancelAllowed = false;
-        streamError = "";
-        reconnecting = false;
-        // The nuqs setter reads its own state; tracking it would restart the stream on every view change.
-        untrack(() => {
-            view.deploymentFollowing.current = true;
-            cancelMutationState.reset();
-        });
-        let disposed = false;
-        let stopStream: (() => void) | undefined;
-        let afterId = 0;
-        let completed = false;
-        let streamComplete = false;
-        const rawLogs: DeploymentEvent["logs"] = [];
-
-        // IDs are ordered by the server, including chunked replay and reconnects.
-        function appendLines(lines: DeploymentEvent["logs"]) {
-            const fresh = lines.filter((line) => line.id > afterId);
-
-            if (!fresh.length) return;
-            rows = rows.concat(fresh.map(toRow));
-            rawLogs.push(...fresh);
-            afterId = fresh.at(-1)!.id;
-        }
-
-        function startStream() {
-            stopStream = subscribeToStream(
-                (signal) =>
-                    client.cluster.streamDeployment(
-                        { deploymentId: id, afterId },
-                        { signal },
-                    ),
-                (event) => {
-                    if (disposed) return;
-                    streamComplete = event.complete;
-                    deployment = event.deployment;
-                    cancelAllowed = event.canCancel;
-                    streamError = "";
-                    reconnecting = false;
-                    appendLines(event.logs);
-
-                    if (
-                        !completed &&
-                        isTerminalDeploymentStatus(
-                            event.deployment.status,
-                        )
-                    ) {
-                        completed = true;
-                        // Cache the finished deployment so revisits render without a stream.
-                        // Narrow invalidation keeps this entry fresh while lists still refresh.
-                        queryClient.setQueryData(
-                            orpc.cluster.getDeployment.queryKey({
-                                input: { deploymentId: id },
-                            }),
-                            {
-                                ...event.deployment,
-                                ...origin,
-                                logs: rawLogs,
-                                canCancel: event.canCancel,
-                            },
-                        );
-                        void queryClient.invalidateQueries({
-                            queryKey:
-                                orpc.cluster.listAllDeployments.key(),
-                        });
-                        void queryClient.invalidateQueries({
-                            queryKey:
-                                orpc.cluster.listDeployments.key(),
-                        });
-                        void queryClient.invalidateQueries({
-                            queryKey:
-                                orpc.cluster.getCluster.queryKey({
-                                    input: {
-                                        clusterId:
-                                            event.deployment
-                                                .clusterId,
-                                    },
-                                }),
-                        });
-
-                        if (event.deployment.resourceId) {
-                            void queryClient.invalidateQueries({
-                                queryKey: orpc.resources.key(),
-                            });
-                        }
-                    }
-                },
-                (error, retrying) => {
-                    if (disposed) return;
-                    streamError =
-                        error.message ||
-                        "Unable to stream deployment logs.";
-                    reconnecting = retrying;
-                },
-                () => streamComplete,
-            );
-        }
-
-        // Cache-first: finished deployments render from getDeployment without ever
-        // opening a stream; active ones seed from it, then follow deltas via afterId.
-        void queryClient
-            .fetchQuery(
-                orpc.cluster.getDeployment.queryOptions({
-                    input: { deploymentId: id },
-                    staleTime: Infinity,
-                    gcTime: 30 * 60_000,
-                    retry: false,
-                }),
-            )
-            .then((snapshot) => {
-                if (disposed) return;
-
-                const {
-                    logs: snapshotLogs,
-                    canCancel: snapshotCanCancel,
-                    projectId,
-                    projectName,
-                    resourceName,
-                    ...snapshotDeployment
-                } = snapshot;
-
-                deployment = snapshotDeployment;
-                origin = { projectId, projectName, resourceName };
-                cancelAllowed = snapshotCanCancel;
-                rows = snapshotLogs.map(toRow);
-                rawLogs.push(...snapshotLogs);
-                afterId = snapshotLogs.at(-1)?.id ?? 0;
-
-                if (
-                    isTerminalDeploymentStatus(
-                        snapshotDeployment.status,
-                    )
-                ) {
-                    completed = true;
-
-                    return;
-                }
-
-                startStream();
-            })
-            .catch(() => {
-                if (!disposed) startStream();
-            });
-
-        return () => {
-            disposed = true;
-            stopStream?.();
-        };
-    });
-
-    const status = $derived(deployment?.status ?? "queued");
-
-    const isActive = $derived(isActiveDeploymentStatus(status));
-
-    // A queued deployment carrying an error is waiting for its next attempt.
-    const retrying = $derived(
-        status === "queued" && !!deployment?.error,
+    const resourceLabel = $derived(
+        stream.origin.resourceName
+            ? `${stream.origin.projectName ? `${stream.origin.projectName} / ` : ""}${stream.origin.resourceName}`
+            : "",
     );
 
-    const statusLabel = $derived(
-        deploymentStatusLabel(status, retrying),
+    const resourceHref = $derived(
+        stream.origin.projectId && deployment?.resourceId
+            ? `/projects/${stream.origin.projectId}/${deployment.resourceId}`
+            : null,
     );
-
-    const statusVariant = $derived(deploymentStatusVariant(status));
 
     const title = $derived(
         deployment?.name === "DeployResource"
@@ -339,25 +114,16 @@
                 : (deployment?.name ?? "Deployment"),
     );
 
-    const canCancel = $derived(cancelAllowed && isActive);
-
     const raw = $derived(view.deploymentDebug.current);
-
-    const steps = $derived(
-        deploymentSteps(
-            rows.filter((row) => !row.muted),
-            isActive,
-        ),
-    );
 
     const visibleSteps = $derived.by(() => {
         const needle = view.deploymentQuery.current
             .trim()
             .toLowerCase();
 
-        if (!needle) return steps;
+        if (!needle) return stream.steps;
 
-        return steps.filter((step) =>
+        return stream.steps.filter((step) =>
             [
                 step.title,
                 step.label,
@@ -377,7 +143,7 @@
     $effect(() => {
         void visibleSteps.at(-1)?.history.length;
         void visibleSteps.length;
-        void status;
+        void stream.status;
 
         if (!stepsViewport || !view.deploymentFollowing.current)
             return;
@@ -398,49 +164,11 @@
             view.deploymentFollowing.current = atBottom;
     }
 
-    const startedAt = $derived(
-        deployment ? new Date(deployment.createdAt).getTime() : 0,
-    );
-
-    const durationMs = $derived(
-        deployment
-            ? Math.max(
-                  0,
-                  (deployment.finishedAt
-                      ? new Date(deployment.finishedAt).getTime()
-                      : now) - startedAt,
-              )
-            : null,
-    );
-
-    $effect(() => {
-        if (!isActive) return;
-        const timer = setInterval(() => (now = Date.now()), 1000);
-
-        return () => clearInterval(timer);
-    });
-
-    // Elapsed since the deployment started, e.g. 00:07 or 01:02:07.
-    function offset(value: Date | string) {
-        const ms = Math.max(0, new Date(value).getTime() - startedAt);
-
-        return new Date(ms)
-            .toISOString()
-            .slice(ms >= 3_600_000 ? 11 : 14, 19);
-    }
-
-    function plainText() {
-        return visibleLogs
-            .map(
-                (row) =>
-                    `${row.timestamp} ${(row.label ?? (row.level === "error" ? "error" : "info")).toUpperCase().padEnd(5)} ${row.message}`,
-            )
-            .join("\n");
-    }
-
     async function copyLogs() {
         try {
-            await navigator.clipboard.writeText(plainText());
+            await navigator.clipboard.writeText(
+                logsAsText(visibleLogs),
+            );
             copied = true;
             setTimeout(() => (copied = false), 1500);
         } catch {
@@ -450,7 +178,9 @@
 
     function downloadLogs() {
         const url = URL.createObjectURL(
-            new Blob([plainText() + "\n"], { type: "text/plain" }),
+            new Blob([logsAsText(visibleLogs) + "\n"], {
+                type: "text/plain",
+            }),
         );
 
         const link = document.createElement("a");
@@ -464,7 +194,7 @@
         orpc.cluster.cancelDeployment.mutationOptions({
             onSuccess: (_data, input) => {
                 if (deploymentId === input.deploymentId)
-                    cancelAllowed = false;
+                    stream.cancelAllowed = false;
                 void queryClient.invalidateQueries({
                     queryKey: orpc.cluster.listAllDeployments.key(),
                 });
@@ -502,10 +232,6 @@
         }),
     );
 
-    const canDelete = $derived(
-        cancelAllowed && !isActive && !!deployment,
-    );
-
     function closeDialog() {
         view.dialog.current = null;
     }
@@ -513,7 +239,7 @@
     function cancelDeployment() {
         if (
             !deploymentId ||
-            !canCancel ||
+            !stream.canCancel ||
             cancelMutationState.isPending
         )
             return;
@@ -522,7 +248,7 @@
 </script>
 
 <svelte:head>
-    {#if !embedded}<title>{title} / Stoat</title>{/if}
+    <title>{title} / Stoat</title>
 </svelte:head>
 
 {#snippet cancelAction()}
@@ -535,7 +261,7 @@
             View spec
         </Button>
     {/if}
-    {#if canDelete}
+    {#if stream.canDelete}
         <Button
             variant="destructive-outline"
             size="sm"
@@ -544,7 +270,7 @@
             Delete deployment
         </Button>
     {/if}
-    {#if canCancel}
+    {#if stream.canCancel}
         <Button
             variant="destructive-outline"
             size="sm"
@@ -570,7 +296,7 @@
     >
         Raw logs
         <span class="font-mono tabular-nums text-muted-foreground">
-            {rows.length}
+            {stream.rows.length}
         </span>
     </Button>
     <Button
@@ -602,16 +328,16 @@
     <Empty class="h-full">
         <EmptyHeader>
             <EmptyTitle>
-                {rows.length
+                {stream.rows.length
                     ? "No matching lines"
-                    : !deployment || isActive
+                    : !deployment || stream.isActive
                       ? "Waiting for output"
                       : "No logs recorded"}
             </EmptyTitle>
             <EmptyDescription>
-                {rows.length
+                {stream.rows.length
                     ? "Clear the filter to see all lines."
-                    : !deployment || isActive
+                    : !deployment || stream.isActive
                       ? "Deployment output appears here as it runs."
                       : "This deployment finished without output."}
             </EmptyDescription>
@@ -620,15 +346,8 @@
 {/snippet}
 
 <div
-    class={embedded
-        ? "flex h-full min-h-0 w-full min-w-0 flex-col gap-3"
-        : "flex h-[calc(100dvh-7rem)] min-h-120 w-full min-w-0 flex-col pt-3 xl:h-auto xl:min-h-0 xl:flex-1"}
+    class="flex h-[calc(100dvh-7rem)] min-h-120 w-full min-w-0 flex-col pt-3 xl:h-auto xl:min-h-0 xl:flex-1"
 >
-    {#if embedded}
-        <div class="flex flex-wrap justify-end gap-2 empty:hidden">
-            {@render cancelAction()}
-        </div>
-    {/if}
     <Frame class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <FrameHeader class="shrink-0 gap-2 px-3 py-2">
             <div class="flex flex-wrap items-center gap-2">
@@ -646,18 +365,18 @@
                 </h1>
                 {#if deployment}
                     <span role="status">
-                        <Badge variant={statusVariant}>
-                            {#if isActive && !retrying}<Spinner
+                        <Badge variant={stream.statusVariant}>
+                            {#if stream.isActive && !stream.retrying}<Spinner
                                     aria-hidden="true"
                                 />{/if}
-                            {statusLabel}
+                            {stream.statusLabel}
                         </Badge>
                     </span>
                 {/if}
-                {#if durationMs !== null}<span
+                {#if stream.durationMs !== null}<span
                         class="text-xs text-muted-foreground"
                     >
-                        · {formatDurationMs(durationMs)}
+                        · {formatDurationMs(stream.durationMs)}
                     </span>{/if}
                 {#if cancelMutationState.error}<span
                         class="text-xs text-destructive-foreground"
@@ -689,9 +408,9 @@
                     logs={visibleLogs}
                     label="Deployment logs"
                     timeWidth="8ch"
-                    formatTime={offset}
+                    formatTime={stream.offset}
                     highlight={view.deploymentQuery.current}
-                    start={deployment ? startedAt : undefined}
+                    start={deployment ? stream.startedAt : undefined}
                     end={deployment?.finishedAt
                         ? new Date(deployment.finishedAt).getTime()
                         : undefined}
@@ -733,28 +452,26 @@
                                 </p>
                             {/each}
                         </Skeleton>
-                    {:else if !visibleSteps.length && (isActive || !rows.length || view.deploymentQuery.current)}
+                    {:else if !visibleSteps.length && (stream.isActive || !stream.rows.length || view.deploymentQuery.current)}
                         {@render emptyState()}
-                    {:else}
-                        {#if deployment && durationMs !== null}
-                            <DeploymentTimeline
-                                steps={visibleSteps}
-                                {now}
-                                {startedAt}
-                                active={isActive}
-                                {retrying}
-                                {status}
-                                name={deployment.name}
-                                error={deployment.error}
-                                {durationMs}
-                                outcomeAt={new Date(
-                                    retrying
-                                        ? deployment.updatedAt
-                                        : (deployment.finishedAt ??
-                                              deployment.updatedAt),
-                                ).getTime()}
-                            />
-                        {/if}
+                    {:else if stream.durationMs !== null}
+                        <DeploymentTimeline
+                            steps={visibleSteps}
+                            now={stream.now}
+                            startedAt={stream.startedAt}
+                            active={stream.isActive}
+                            retrying={stream.retrying}
+                            status={stream.status}
+                            name={deployment.name}
+                            error={deployment.error}
+                            durationMs={stream.durationMs}
+                            outcomeAt={new Date(
+                                stream.retrying
+                                    ? deployment.updatedAt
+                                    : (deployment.finishedAt ??
+                                          deployment.updatedAt),
+                            ).getTime()}
+                        />
                     {/if}
                 </div>
             {/if}

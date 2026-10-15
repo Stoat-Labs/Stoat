@@ -18,6 +18,7 @@
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import type { GroupAction } from "../context";
     import type { CanvasResource } from "../graph";
+    import TransferDialog from "./transfer-dialog.svelte";
 
     let {
         projectId,
@@ -123,6 +124,10 @@
         </form>
     </DialogContent>
 </Dialog>
+
+{#if resource && (action === "move" || action === "copy")}
+    <TransferDialog mode={action} {projectId} {resource} {onclose} />
+{/if}
 
 <ResourceIconUploadDialog
     bind:open={

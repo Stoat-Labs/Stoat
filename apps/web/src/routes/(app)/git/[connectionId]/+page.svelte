@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
+    import ConnectionField from "$lib/components/clusters/connection-field.svelte";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
@@ -57,6 +58,13 @@
 
     const repositories = $derived(
         repositoriesQuery.data?.repositories ?? [],
+    );
+
+    const webhookQuery = createQuery(() =>
+        orpc.connections.webhook.queryOptions({
+            input: { connectionId },
+            enabled: Boolean(connection) && canManage,
+        }),
     );
 
     let deleteOpen = $state(false);
@@ -292,6 +300,56 @@
                 {/if}
             </FramePanel>
         </Frame>
+
+        {#if canManage}
+            <Frame>
+                <FrameHeader>
+                    <FrameTitle class="text-base">
+                        <h2>Push webhook</h2>
+                    </FrameTitle>
+                </FrameHeader>
+                <FramePanel class="space-y-4">
+                    <p class="text-sm text-muted-foreground">
+                        Add a push webhook to each repository with
+                        these values (content type <span
+                            class="font-mono"
+                        >
+                            application/json
+                        </span>
+                        ). Resources with auto deploy on are checked
+                        right after a push instead of on the next
+                        minute.
+                    </p>
+                    {#if webhookQuery.isError}
+                        <Alert variant="error">
+                            <AlertDescription>
+                                Unable to load the webhook: {webhookQuery
+                                    .error.message}
+                            </AlertDescription>
+                        </Alert>
+                    {:else}
+                        <Skeleton
+                            loading={webhookQuery.isPending}
+                            loading-label="Loading webhook"
+                        >
+                            <div class="grid gap-4 sm:grid-cols-2">
+                                <ConnectionField
+                                    label="Target URL"
+                                    value={webhookQuery.data?.url ??
+                                        ""}
+                                />
+                                <ConnectionField
+                                    label="Secret"
+                                    value={webhookQuery.data
+                                        ?.secret ?? ""}
+                                    secret
+                                />
+                            </div>
+                        </Skeleton>
+                    {/if}
+                </FramePanel>
+            </Frame>
+        {/if}
 
         <ConfirmDialog
             bind:open={deleteOpen}

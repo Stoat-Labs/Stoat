@@ -33,11 +33,15 @@
     import Plus from "@lucide/svelte/icons/plus";
     import Ungroup from "@lucide/svelte/icons/ungroup";
     import ChartColumn from "@lucide/svelte/icons/chart-column";
+    import Container from "@lucide/svelte/icons/container";
+    import Copy from "@lucide/svelte/icons/copy";
+    import FolderInput from "@lucide/svelte/icons/folder-input";
     import Database from "@lucide/svelte/icons/database";
     import ExternalLink from "@lucide/svelte/icons/external-link";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Layers from "@lucide/svelte/icons/layers";
+    import RotateCw from "@lucide/svelte/icons/rotate-cw";
     import ScrollText from "@lucide/svelte/icons/scroll-text";
     import Settings from "@lucide/svelte/icons/settings";
     import SquareTerminal from "@lucide/svelte/icons/square-terminal";
@@ -163,6 +167,18 @@
                     {view.label}
                 </ContextMenuItem>
             {/each}
+            {#if page.data.isOrganizationAdmin && resourceId}
+                {@const id = resourceId}
+                <ContextMenuSeparator />
+                <!-- Staged edits ship through the apply bar instead. -->
+                <ContextMenuItem
+                    disabled={!actions.canRedeploy(id)}
+                    onclick={() => actions.redeploy(id)}
+                >
+                    <RotateCw aria-hidden="true" />
+                    Redeploy
+                </ContextMenuItem>
+            {/if}
             {#if isFrame && resourceId}
                 {@const id = resourceId}
                 <ContextMenuSeparator />
@@ -194,6 +210,22 @@
                     Remove Group
                 </ContextMenuItem>
             {/if}
+            {#if wholeResource && resourceId}
+                {@const id = resourceId}
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                    onclick={() => actions.edit("move", id)}
+                >
+                    <FolderInput aria-hidden="true" />
+                    Move to Project…
+                </ContextMenuItem>
+                <ContextMenuItem
+                    onclick={() => actions.edit("copy", id)}
+                >
+                    <Copy aria-hidden="true" />
+                    Copy to Project…
+                </ContextMenuItem>
+            {/if}
             <ContextMenuSeparator />
             <ContextMenuLinkItem
                 href="/projects/{projectId}/{resourceId}"
@@ -218,9 +250,7 @@
                 <ContextMenuGroupLabel>
                     Add New Service
                 </ContextMenuGroupLabel>
-                <ContextMenuItem
-                    onclick={() => void goto(`${create}/git`)}
-                >
+                <ContextMenuItem onclick={() => onaddpage("git")}>
                     <GitBranch aria-hidden="true" />
                     Git Repository
                 </ContextMenuItem>
@@ -235,6 +265,10 @@
                 >
                     <Database aria-hidden="true" />
                     Database
+                </ContextMenuItem>
+                <ContextMenuItem onclick={() => onaddpage("docker")}>
+                    <Container aria-hidden="true" />
+                    Docker Image
                 </ContextMenuItem>
                 {#if page.data.isOrganizationAdmin}
                     <ContextMenuItem

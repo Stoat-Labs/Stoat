@@ -29,6 +29,27 @@
       "when": 1792001087155,
       "tag": "0003_tough_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792031118415,
+      "tag": "0004_smooth_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792063244358,
+      "tag": "0005_perfect_tomas",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792074136501,
+      "tag": "0006_brave_excalibur",
+      "breakpoints": true
     }
   ]
 }

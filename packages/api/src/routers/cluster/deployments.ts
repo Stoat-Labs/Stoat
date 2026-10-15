@@ -220,55 +220,59 @@ export const deploymentsRouter = {
             const resourceId = input?.resourceId ?? "";
             const projectId = input?.projectId ?? "";
 
-            // New deployments expire the 15s window on their own; no manual bust needed.
-            const page = await swr(
-                `deployments:list:${organizationId}:${status}:${limit}:${offset}:${resourceId}:${projectId}`,
-                currentWindow(),
-                async () => {
-                    const where = and(
-                        eq(clusters.organizationId, organizationId),
-                        input?.status ? eq(deployments.status, input.status) : undefined,
-                        input?.resourceId
-                            ? eq(deployments.resourceId, input.resourceId)
-                            : undefined,
-                        input?.projectId ? eq(resources.projectId, input.projectId) : undefined,
-                    );
+            const load = async () => {
+                const where = and(
+                    eq(clusters.organizationId, organizationId),
+                    input?.status ? eq(deployments.status, input.status) : undefined,
+                    input?.resourceId ? eq(deployments.resourceId, input.resourceId) : undefined,
+                    input?.projectId ? eq(resources.projectId, input.projectId) : undefined,
+                );
 
-                    const items = await db
-                        .select({
-                            id: deployments.id,
-                            clusterId: deployments.clusterId,
-                            clusterName: clusters.name,
-                            name: deployments.name,
-                            status: deployments.status,
-                            spec: deployments.spec,
-                            createdAt: deployments.createdAt,
-                            updatedAt: deployments.updatedAt,
-                            finishedAt: deployments.finishedAt,
-                            resourceId: deployments.resourceId,
-                            resourceName: resources.name,
-                            projectId: projects.id,
-                            projectName: projects.name,
-                        })
-                        .from(deployments)
-                        .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
-                        .leftJoin(resources, eq(deployments.resourceId, resources.id))
-                        .leftJoin(projects, eq(resources.projectId, projects.id))
-                        .where(where)
-                        .orderBy(desc(deployments.createdAt))
-                        .limit(limit)
-                        .offset(offset);
+                const items = await db
+                    .select({
+                        id: deployments.id,
+                        clusterId: deployments.clusterId,
+                        clusterName: clusters.name,
+                        name: deployments.name,
+                        status: deployments.status,
+                        spec: deployments.spec,
+                        metadata: deployments.metadata,
+                        createdAt: deployments.createdAt,
+                        updatedAt: deployments.updatedAt,
+                        finishedAt: deployments.finishedAt,
+                        resourceId: deployments.resourceId,
+                        resourceName: resources.name,
+                        projectId: projects.id,
+                        projectName: projects.name,
+                    })
+                    .from(deployments)
+                    .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                    .leftJoin(resources, eq(deployments.resourceId, resources.id))
+                    .leftJoin(projects, eq(resources.projectId, projects.id))
+                    .where(where)
+                    .orderBy(desc(deployments.createdAt))
+                    .limit(limit)
+                    .offset(offset);
 
-                    const [row] = await db
-                        .select({ count: sql<number>`count(*)::int` })
-                        .from(deployments)
-                        .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
-                        .leftJoin(resources, eq(deployments.resourceId, resources.id))
-                        .where(where);
+                const [row] = await db
+                    .select({ count: sql<number>`count(*)::int` })
+                    .from(deployments)
+                    .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
+                    .leftJoin(resources, eq(deployments.resourceId, resources.id))
+                    .where(where);
 
-                    return { items, total: row?.count ?? 0 };
-                },
-            );
+                return { items, total: row?.count ?? 0 };
+            };
+
+            // New deployments expire the 15s window on their own, but status changes do not, so a
+            // resource's list (the canvas panel, driven by live events) skips the cache.
+            const page = resourceId
+                ? await load()
+                : await swr(
+                      `deployments:list:${organizationId}:${status}:${limit}:${offset}:${projectId}`,
+                      currentWindow(),
+                      load,
+                  );
 
             // The cached page is shared by the whole org, so the role is attached per request.
             return { ...page, canDelete: canInitializeRole(organizationRole) };

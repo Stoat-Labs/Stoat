@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
     assertNoComposeReference,
     ComposeVariableError,
+    composeSystemVariables,
     composeVariables,
     interpolateCompose,
 } from "../../packages/workflows/src/compose";
@@ -358,5 +359,100 @@ describe("Compose files that must keep deploying", () => {
         expect(() =>
             assertNoComposeReference(`services:\n  a:\n    labels:\n      ${line}\n`),
         ).not.toThrow();
+    });
+});
+
+describe("system variables", () => {
+    const identity = {
+        projectId: PROJECT_ID,
+        projectName: "Shop",
+        resourceId: POSTGRES_ID,
+        resourceName: "postgres",
+    };
+
+    const web = [
+        "services:",
+        "  web:",
+        "    image: nginx",
+        "    environment:",
+        "      SELF: https://${WEB_PUBLIC_DOMAIN}",
+        "    x-ports:",
+        "      - shop.${STOAT_DOMAIN}:80/https",
+        "  worker:",
+        "    image: busybox",
+        "",
+    ].join("\n");
+
+    it("adds Railway's project and resource variables when the identity is known", () => {
+        expect(composeVariables(web, "", undefined, undefined, undefined, identity)).toMatchObject({
+            STOAT_PROJECT_ID: PROJECT_ID,
+            STOAT_PROJECT_NAME: "Shop",
+            STOAT_RESOURCE_ID: POSTGRES_ID,
+            STOAT_RESOURCE_NAME: "postgres",
+        });
+    });
+
+    it("resolves public domains built from STOAT_DOMAIN, in Compose and in Variables", () => {
+        const env = "LINK=${WEB_PUBLIC_DOMAIN}/login\n";
+
+        expect(composeVariables(web, env, undefined, "example.com")).toMatchObject({
+            WEB_PUBLIC_DOMAIN: "shop.example.com",
+            LINK: "shop.example.com/login",
+        });
+        expect(composeVariables(web, env, undefined, "example.com")).not.toHaveProperty(
+            "WORKER_PUBLIC_DOMAIN",
+        );
+        expect(interpolateCompose(web, env, undefined, "example.com")).toContain(
+            "SELF: https://shop.example.com",
+        );
+    });
+
+    it("only requires a public domain once it could have been resolved", () => {
+        expect(
+            composeVariables(web, "LINK=${WEB_PUBLIC_DOMAIN:?}\n", undefined, "example.com"),
+        ).toMatchObject({ LINK: "shop.example.com" });
+        expect(() =>
+            composeVariables(web, "LINK=${WORKER_PUBLIC_DOMAIN:?}\n", undefined, "example.com"),
+        ).toThrow(ComposeVariableError);
+        expect(() => composeVariables("services: {}\n", "A=${MISSING:?}\n")).toThrow(
+            ComposeVariableError,
+        );
+    });
+
+    it("lets a same-named user variable override a built-in", () => {
+        expect(
+            composeVariables(
+                web,
+                "STOAT_RESOURCE_NAME=custom\n",
+                undefined,
+                undefined,
+                undefined,
+                identity,
+            ),
+        ).toMatchObject({ STOAT_RESOURCE_NAME: "custom" });
+    });
+
+    it("lists the same keys that references can read", () => {
+        const shop = target(POSTGRES_ID, "postgres", "", web);
+
+        const keys = composeSystemVariables(
+            web,
+            "",
+            "aaaaaaaa-11111111",
+            "example.com",
+            identity,
+        ).map((variable) => variable.key);
+
+        expect(Object.keys(referenceVariables(shop, "example.com")).toSorted()).toEqual(
+            keys.toSorted(),
+        );
+        expect(keys).toEqual(
+            expect.arrayContaining([
+                "STOAT_PROJECT_NAME",
+                "STOAT_RESOURCE_ID",
+                "WEB_INTERNAL_HOST",
+                "WEB_PUBLIC_DOMAIN",
+            ]),
+        );
     });
 });

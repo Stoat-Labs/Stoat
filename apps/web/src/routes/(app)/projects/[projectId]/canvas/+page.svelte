@@ -1,5 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProjectCanvas from "$lib/components/canvas/project-canvas.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
@@ -9,7 +10,6 @@
     import { Button } from "$lib/components/ui/button";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { subscribeToStream } from "$lib/deployments/stream";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
     import LayoutList from "@lucide/svelte/icons/layout-list";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
@@ -102,25 +102,22 @@
     </Button>
 {/snippet}
 
-<div
-    class="flex h-[calc(100dvh-7rem)] w-full flex-col gap-3 pt-4 xl:h-auto xl:min-h-0 xl:flex-1"
->
+<!-- Fills the canvas shell's card. -->
+<div class="flex min-h-0 flex-1 flex-col">
     {#if watchError}
-        <Alert variant="warning">
+        <Alert variant="warning" class="mx-3 mt-3 w-auto">
             <AlertDescription>{watchError}</AlertDescription>
         </Alert>
     {/if}
 
     {#if error}
-        <Alert variant="error">
+        <Alert variant="error" class="mx-3 mt-3 w-auto">
             <AlertDescription>
                 Unable to load the canvas: {error.message}
             </AlertDescription>
         </Alert>
     {:else}
-        <div
-            class="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-border"
-        >
+        <div class="relative min-h-0 flex-1 overflow-hidden">
             {#if loaded}
                 <ProjectCanvas
                     {projectId}
@@ -128,6 +125,7 @@
                     resources={loaded.resources}
                     graph={loaded.graph.resources}
                     logos={loaded.graph.logos}
+                    layout={loaded.project.canvasLayout ?? {}}
                 />
             {:else}
                 <Skeleton

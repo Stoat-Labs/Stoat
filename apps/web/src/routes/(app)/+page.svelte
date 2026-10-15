@@ -3,7 +3,9 @@
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
     import ProjectOverviewCard from "$lib/components/home/project-overview-card.svelte";
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
-    import ProjectCard from "$lib/components/projects/project-card.svelte";
+    import ProjectCard, {
+        placeholderResources,
+    } from "$lib/components/projects/project-card.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -112,6 +114,9 @@
         );
 
         return matches.sort((a, b) => {
+            // Starred projects lead, whatever the order below them.
+            if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+
             if (params.sort.current === "name")
                 return a.name.localeCompare(b.name);
 
@@ -376,8 +381,7 @@
                         <li class="min-w-0">
                             <ProjectCard
                                 name="Project workspace"
-                                description="Project resources and environments"
-                                resourceCount={3}
+                                resources={placeholderResources}
                                 clusterName={params.cluster
                                     .current === "all"
                                     ? "Cluster name"

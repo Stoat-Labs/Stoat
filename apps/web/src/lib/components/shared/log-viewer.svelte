@@ -55,7 +55,6 @@
         scroll = $bindable(0),
         entry = $bindable(null),
         viewport = $bindable(),
-        flat = false,
     }: {
         /** Loaded logs after any text filtering; level and time filters are applied here. */
         logs: T[];
@@ -83,17 +82,7 @@
         scroll?: number;
         entry?: string | null;
         viewport?: HTMLDivElement;
-        /** Railway's plain log table: no activity chart, a Time/Data header, and a level bar instead of a badge. */
-        flat?: boolean;
     } = $props();
-
-    // A coloured bar per level replaces the badge in the flat table.
-    const levelBars: Record<LogLevel, string> = {
-        error: "bg-destructive",
-        warning: "bg-warning",
-        success: "bg-success",
-        other: "bg-info",
-    };
 
     let copiedId = $state<number | null>(null);
 
@@ -234,18 +223,18 @@
     }
 </script>
 
-{#if !flat}<LogActivity
-        {logs}
-        {activity}
-        {chartStart}
-        {chartEnd}
-        {start}
-        {loading}
-        {pending}
-        bind:level
-        {bucket}
-        onSelect={selectBucket}
-    />{/if}
+<LogActivity
+    {logs}
+    {activity}
+    {chartStart}
+    {chartEnd}
+    {start}
+    {loading}
+    {pending}
+    bind:level
+    {bucket}
+    onSelect={selectBucket}
+/>
 
 {@render children?.()}
 {#if copyError}<Alert variant="error" class="m-2 shrink-0 px-3 py-2">
@@ -255,31 +244,13 @@
 <div
     class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5"
 >
-    {#if flat}
-        <p
-            class="flex gap-2 pl-1.5 text-xs font-medium"
-            style:--log-time={timeWidth}
-        >
-            <!-- Columns are sized in the rows' mono `ch`, so the labels line up with them. -->
-            <span class="w-(--log-time) font-mono">
-                <span class="font-sans">Time</span>
-            </span>
-            {#if source}<span
-                    class="hidden w-[22ch] font-mono md:inline"
-                >
-                    <span class="font-sans">Source</span>
-                </span>{/if}
-            <span>Data</span>
-        </p>
-    {:else}
-        <p class="text-xs text-muted-foreground">
-            {visibleLogs.length.toLocaleString()} lines{#if level}
-                / {logSeries.find((item) => item.key === level)
-                    ?.label}{/if}{#if note}<span class="ml-2">
-                    {note}
-                </span>{/if}
-        </p>
-    {/if}
+    <p class="text-xs text-muted-foreground">
+        {visibleLogs.length.toLocaleString()} lines{#if level}
+            / {logSeries.find((item) => item.key === level)
+                ?.label}{/if}{#if note}<span class="ml-2">
+                {note}
+            </span>{/if}
+    </p>
     {#if selectedRange}
         <p
             class="min-w-0 text-xs text-muted-foreground"
@@ -370,13 +341,11 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex (The named scroll region must support keyboard scrolling.) -->
 <div
     bind:this={viewport}
-    class="min-h-0 min-w-0 flex-1 overflow-auto px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {flat
-        ? ''
-        : 'bg-code dark:bg-black/20'} {loading || !visibleLogs.length
+    class="min-h-0 min-w-0 flex-1 overflow-auto bg-code px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:bg-black/20 {loading ||
+    !visibleLogs.length
         ? 'py-1.5'
         : ''}"
     class:has-source={!!source}
-    class:flat
     style:--log-time={timeWidth}
     tabindex="0"
     role="region"
@@ -443,29 +412,18 @@
                             >
                                 {formatTime(log.timestamp)}
                             </time>
-                            {#if flat}
-                                <span
-                                    class="level-bar {levelBars[
-                                        log.level
-                                    ]}"
-                                    aria-label={log.level === "other"
-                                        ? "info"
-                                        : log.level}
-                                ></span>
-                            {:else}
-                                <Badge
-                                    size="sm"
-                                    variant={log.level === "other"
-                                        ? "secondary"
-                                        : log.level}
-                                    class="mt-px w-full h-4 justify-self-start self-start font-mono text-[10px] uppercase tracking-normal"
-                                >
-                                    {log.label ??
-                                        (log.level === "other"
-                                            ? "INFO"
-                                            : log.level)}
-                                </Badge>
-                            {/if}
+                            <Badge
+                                size="sm"
+                                variant={log.level === "other"
+                                    ? "secondary"
+                                    : log.level}
+                                class="mt-px w-full h-4 justify-self-start self-start font-mono text-[10px] uppercase tracking-normal"
+                            >
+                                {log.label ??
+                                    (log.level === "other"
+                                        ? "INFO"
+                                        : log.level)}
+                            </Badge>
                             {#if source}<span
                                     class="min-w-0 truncate text-muted-foreground"
                                     title={source(log)}
@@ -580,20 +538,6 @@
     .has-source .log-message {
         grid-column: 1 / -1;
     }
-    /* Flat rows: the level bar sits in the left gutter, so only time, source and message take columns. */
-    .flat .log-row {
-        position: relative;
-        grid-template-columns: var(--log-time) minmax(0, 1fr);
-        padding-left: 0.75rem;
-    }
-    .level-bar {
-        position: absolute;
-        top: 2px;
-        bottom: 2px;
-        left: 0;
-        width: 2px;
-        border-radius: 1px;
-    }
     .nowrap .log-message {
         max-height: 18px;
         white-space: pre;
@@ -617,12 +561,6 @@
         }
         .has-source .log-message {
             grid-column: auto;
-        }
-        .flat.has-source .log-row {
-            grid-template-columns: var(--log-time) 22ch minmax(
-                    0,
-                    1fr
-                );
         }
     }
 </style>

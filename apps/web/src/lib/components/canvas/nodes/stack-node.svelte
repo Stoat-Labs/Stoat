@@ -102,6 +102,17 @@
                 Remove Group
             </MenuItem>
             <MenuSeparator />
+            <MenuItem
+                onclick={() => actions.edit("move", data.resource.id)}
+            >
+                Move to Project…
+            </MenuItem>
+            <MenuItem
+                onclick={() => actions.edit("copy", data.resource.id)}
+            >
+                Copy to Project…
+            </MenuItem>
+            <MenuSeparator />
             <MenuLinkItem
                 href="/projects/{data.resource.projectId}/{data
                     .resource.id}"

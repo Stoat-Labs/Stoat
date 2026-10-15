@@ -157,6 +157,7 @@ import {
     gitBlobId,
     readGitFile,
     readGitFiles,
+    readGitSources,
     readGitHead,
     pushGitFile,
     validateGitUrl,
@@ -193,6 +194,7 @@ describe("Git validation", () => {
             "readGitFile",
             "readGitFiles",
             "readGitHead",
+            "readGitSources",
             "validateGitBranch",
             "validateGitPath",
             "validateGitUrl",
@@ -592,12 +594,35 @@ describe("Git plumbing and transport isolation", () => {
 
         expect(await readGitFile(repo, "compose.yaml")).toEqual({
             revision: initial,
+            message: fixtureGit(["show", "-s", "--format=%B", initial]),
             path: "compose.yaml",
             content: "services:\n  web:\n    image: nginx\n",
             blob: fixtureGit(["rev-parse", `${initial}:compose.yaml`]),
             tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
         });
         expect(fixtureGit(["rev-parse", "refs/heads/main"])).not.toBe(initial);
+    });
+
+    it("reads Compose sources from one fetch, failing only the unreadable ones", async () => {
+        const [compose, missing, script] = await readGitSources(repo, [
+            { path: "compose.yaml", watchPath: "." },
+            { path: "missing.yaml", watchPath: "." },
+            { path: "bin/run.sh", watchPath: "bin" },
+        ]);
+
+        expect(compose).toEqual({
+            revision: initial,
+            message: fixtureGit(["show", "-s", "--format=%B", initial]),
+            path: "compose.yaml",
+            content: "services:\n  web:\n    image: nginx\n",
+            blob: fixtureGit(["rev-parse", `${initial}:compose.yaml`]),
+            tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
+        });
+        expect(missing).toMatchObject({ code: "NOT_FOUND" });
+        expect(script).toMatchObject({ tree: fixtureGit(["rev-parse", `${initial}:bin`]) });
+        expect(
+            network.calls.filter((call) => call.args.includes("fetch")),
+        ).toHaveLength(1);
     });
 
     it("reads several files from one snapshot and rejects missing or non-regular ones", async () => {
@@ -661,6 +686,7 @@ describe("Git plumbing and transport isolation", () => {
 
         expect(result).toEqual({
             revision: initial,
+            message: fixtureGit(["show", "-s", "--format=%B", initial]),
             blob: fixtureGit(["rev-parse", `${initial}:compose.yaml`]),
             tree: fixtureGit(["rev-parse", `${initial}^{tree}`]),
         });

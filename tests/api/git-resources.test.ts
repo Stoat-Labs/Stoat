@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, ORPCError } from "@orpc/server";
 import { createDb } from "@stoat/db";
@@ -23,9 +23,11 @@ import * as gitOAuth from "../../packages/api/src/git-oauth";
 import * as gitProvider from "../../packages/api/src/git-provider";
 import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
 import { watchGitSources } from "../../packages/api/src/git-watch";
+import { gitWebhookSecret, receiveGitWebhook } from "../../packages/api/src/git-webhook";
 import { connectionsRouter } from "../../packages/api/src/routers/connections";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { resolveComposePath } from "../../packages/api/src/routers/resources/git";
+import * as runtime from "@stoat/workflows/runtime";
 import { insertUserWithOrganization } from "../users";
 
 const revision = "a".repeat(40);
@@ -42,7 +44,12 @@ const draftSpec = rawSpec.replace("nginx:alpine", "nginx:stable");
 
 const deployedSpec = rawSpec.replace("nginx:alpine", "nginx:1.27");
 
-const pushed = { revision: nextRevision, blob: gitBlobId(draftSpec, nextRevision), tree };
+const pushed = {
+    revision: nextRevision,
+    message: "Deploy",
+    blob: gitBlobId(draftSpec, nextRevision),
+    tree,
+};
 
 const credentials = { username: "git-test-user", password: "git-test-token-never-return" };
 
@@ -124,6 +131,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
     const refresh = vi.spyOn(gitOAuth, "refreshGitOAuthCredentials");
     const list = vi.spyOn(git, "listGitFiles");
     const read = vi.spyOn(git, "readGitFile");
+    const readSources = vi.spyOn(git, "readGitSources");
     const readFiles = vi.spyOn(git, "readGitFiles");
     const push = vi.spyOn(git, "pushGitFile");
     const head = vi.spyOn(git, "readGitHead");
@@ -269,6 +277,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         list.mockReset().mockResolvedValue({ revision, files: ["deploy/compose.yaml"] });
         read.mockReset().mockImplementation(async (_repo, path) => ({
             revision,
+            message: "Update Compose",
             path,
             content: rawSpec,
             blob: gitBlobId(rawSpec, revision),
@@ -281,6 +290,12 @@ describe("Git connections/resources (PostgreSQL)", () => {
             );
         push.mockReset().mockResolvedValue(pushed);
         head.mockReset().mockResolvedValue(revision);
+        // The watcher reads every source from one fetch; here each read goes through `read`.
+        readSources
+            .mockReset()
+            .mockImplementation(async (repo, sources) =>
+                Promise.all(sources.map(({ path, watchPath }) => read(repo, path, watchPath))),
+            );
 
         for (const context of [adminContext, foreignContext]) {
             const clusterId = randomUUID();
@@ -318,6 +333,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     branch: "release",
                     path: "deploy/compose.yaml",
                     revision,
+                    message: "Update Compose",
                     blob: gitBlobId(rawSpec, revision),
                     tree,
                     autoDeploy: false,
@@ -1230,6 +1246,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                                     branch: "release",
                                     path: "deploy/compose.yaml",
                                     revision,
+                                    message: "Update Compose",
                                     blob: gitBlobId(rawSpec, revision),
                                     tree,
                                     autoDeploy: false,
@@ -1258,6 +1275,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                         });
                         read.mockImplementation(async (_repo, path) => ({
                             revision: nextRevision,
+                            message: "Update Compose",
                             path,
                             content: draftSpec,
                             blob: gitBlobId(draftSpec, nextRevision),
@@ -1272,6 +1290,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                             gitSource: {
                                 ...before.gitSource,
                                 revision: nextRevision,
+                                message: action === "push" ? pushed.message : "Update Compose",
                                 blob: gitBlobId(draftSpec, nextRevision),
                             },
                         });
@@ -1565,6 +1584,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
 
         expect(file).toEqual({
             revision,
+            message: "Update Compose",
             path: "deploy/compose.yaml",
             content: rawSpec,
             blob: gitBlobId(rawSpec, revision),
@@ -1790,6 +1810,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
     it("imports raw YAML from a directory and uses the read revision, not the earlier listing", async () => {
         read.mockResolvedValueOnce({
             revision: nextRevision,
+            message: "Update Compose",
             path: "deploy/compose.yaml",
             content: rawSpec,
             blob: gitBlobId(rawSpec, nextRevision),
@@ -1854,6 +1875,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         });
         read.mockResolvedValueOnce({
             revision: nextRevision,
+            message: "Update Compose",
             path: "deploy/compose.yaml",
             content: draftSpec,
             blob: gitBlobId(draftSpec, nextRevision),
@@ -2039,6 +2061,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     } else if (changed === "revision") {
                         read.mockResolvedValueOnce({
                             revision: nextRevision,
+                            message: "Update Compose",
                             path: "deploy/compose.yaml",
                             content: rawSpec,
                             blob: gitBlobId(rawSpec, nextRevision),
@@ -2429,6 +2452,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
 
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content,
                 blob: gitBlobId(content, nextRevision),
@@ -2459,6 +2483,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         const before = await storedResource();
         read.mockResolvedValueOnce({
             revision: nextRevision,
+            message: "Update Compose",
             path: "deploy/compose.yaml",
             content: "services: [",
             blob: gitBlobId("services: [", nextRevision),
@@ -2605,7 +2630,16 @@ describe("Git connections/resources (PostgreSQL)", () => {
             );
             expect((await storedResource()).gitSource).toMatchObject(pushed);
             expect(await resourceDeployments()).toEqual([
-                expect.objectContaining({ id: result.id, spec: draftSpec }),
+                expect.objectContaining({
+                    id: result.id,
+                    spec: draftSpec,
+                    // The pushed commit, not the one the draft started from.
+                    metadata: {
+                        source: "git",
+                        trigger: "manual",
+                        commit: { sha: nextRevision, message: "Deploy" },
+                    },
+                }),
             ]);
         });
 
@@ -2633,7 +2667,15 @@ describe("Git connections/resources (PostgreSQL)", () => {
 
             expectNoGitIO();
             expect((await storedResource()).gitSource).toEqual(before.gitSource);
-            expect(await resourceDeployments()).toHaveLength(1);
+            expect(await resourceDeployments()).toEqual([
+                expect.objectContaining({
+                    metadata: {
+                        source: "git",
+                        trigger: "manual",
+                        commit: { sha: revision, message: "Update Compose" },
+                    },
+                }),
+            ]);
         });
 
         it("queues nothing when the push is rejected", async () => {
@@ -2761,6 +2803,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: draftSpec,
                 blob: gitBlobId(draftSpec, nextRevision),
@@ -2779,7 +2822,15 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 },
             });
             expect(await resourceDeployments()).toEqual([
-                expect.objectContaining({ status: "queued", spec: draftSpec }),
+                expect.objectContaining({
+                    status: "queued",
+                    spec: draftSpec,
+                    metadata: {
+                        source: "git",
+                        trigger: "poll",
+                        commit: { sha: nextRevision, message: "Update Compose" },
+                    },
+                }),
             ]);
 
             // The pulled revision is now synced, so the next tick does nothing.
@@ -2794,6 +2845,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: rawSpec,
                 blob: gitBlobId(rawSpec, nextRevision),
@@ -2819,6 +2871,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: configSpec,
                 blob: gitBlobId(configSpec, nextRevision),
@@ -2839,6 +2892,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue("e".repeat(40));
             read.mockResolvedValue({
                 revision: "e".repeat(40),
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: configSpec,
                 blob: gitBlobId(configSpec, "e".repeat(40)),
@@ -2861,6 +2915,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: rawSpec,
                 blob: gitBlobId(rawSpec, nextRevision),
@@ -2885,6 +2940,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: draftSpec,
                 blob: gitBlobId(draftSpec, nextRevision),
@@ -2906,6 +2962,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: draftSpec,
                 blob: gitBlobId(draftSpec, nextRevision),
@@ -2938,6 +2995,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             head.mockResolvedValue(nextRevision);
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: draftSpec,
                 blob: gitBlobId(draftSpec, nextRevision),
@@ -2954,6 +3012,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             const before = await storedResource();
             read.mockResolvedValue({
                 revision: nextRevision,
+                message: "Update Compose",
                 path: "deploy/compose.yaml",
                 content: rawSpec,
                 blob: gitBlobId(rawSpec, nextRevision),
@@ -2979,6 +3038,94 @@ describe("Git connections/resources (PostgreSQL)", () => {
             await watch();
 
             expect(head).not.toHaveBeenCalled();
+        });
+
+        it("checks only the webhook's connection", async () => {
+            await watchGitSources(db, new AbortController().signal, randomUUID());
+            expect(head).not.toHaveBeenCalled();
+
+            await watchGitSources(db, new AbortController().signal, connectionId);
+            expect(head).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe("push webhook", () => {
+        const queue = vi.spyOn(runtime, "queueGitWatch");
+
+        beforeEach(() => {
+            queue.mockReset().mockResolvedValue();
+        });
+
+        const deliver = (event: string, body: string, signature: string) =>
+            receiveGitWebhook(
+                db,
+                connectionId,
+                new Headers({ "x-forgejo-event": event, "x-forgejo-signature": signature }),
+                Buffer.from(body),
+            );
+
+        const sign = (body: string) =>
+            createHmac("sha256", gitWebhookSecret(connectionId)).update(body).digest("hex");
+
+        it("queues a check of the connection for a signed push", async () => {
+            const body = JSON.stringify({ ref: "refs/heads/release" });
+
+            expect(await deliver("push", body, sign(body))).toMatchObject({ status: 202 });
+            expect(queue).toHaveBeenCalledExactlyOnceWith(connectionId);
+        });
+
+        it("accepts GitHub's prefixed signature", async () => {
+            const body = "{}";
+
+            const result = await receiveGitWebhook(
+                db,
+                connectionId,
+                new Headers({
+                    "x-github-event": "push",
+                    "x-hub-signature-256": `sha256=${sign(body)}`,
+                }),
+                Buffer.from(body),
+            );
+
+            expect(result).toMatchObject({ status: 202 });
+            expect(queue).toHaveBeenCalledOnce();
+        });
+
+        it("rejects a wrong or missing signature", async () => {
+            expect(await deliver("push", "{}", sign("{ }"))).toMatchObject({ status: 401 });
+            expect(await deliver("push", "{}", "")).toMatchObject({ status: 401 });
+            expect(queue).not.toHaveBeenCalled();
+        });
+
+        it("answers pings and ignores other events", async () => {
+            expect(await deliver("ping", "{}", sign("{}"))).toMatchObject({ status: 200 });
+            expect(await deliver("issues", "{}", sign("{}"))).toMatchObject({ status: 202 });
+            expect(queue).not.toHaveBeenCalled();
+        });
+
+        it("does not know other connection ids", async () => {
+            const result = await receiveGitWebhook(
+                db,
+                randomUUID(),
+                new Headers({ "x-forgejo-event": "push" }),
+                Buffer.from("{}"),
+            );
+
+            expect(result).toMatchObject({ status: 404 });
+        });
+
+        it("shows admins the URL and secret it verifies with", async () => {
+            vi.stubEnv("APP_URL", "https://stoat.example.com/base");
+
+            expect(
+                await call(connectionsRouter.webhook, { connectionId }, { context: adminContext }),
+            ).toEqual({
+                url: `https://stoat.example.com/base/git/webhook/${connectionId}`,
+                secret: gitWebhookSecret(connectionId),
+            });
+            await expect(
+                call(connectionsRouter.webhook, { connectionId }, { context: foreignContext }),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
         });
     });
 });

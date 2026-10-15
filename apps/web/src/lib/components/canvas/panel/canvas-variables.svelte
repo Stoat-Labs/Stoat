@@ -26,6 +26,7 @@
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import Braces from "@lucide/svelte/icons/braces";
     import Check from "@lucide/svelte/icons/check";
+    import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import Copy from "@lucide/svelte/icons/copy";
     import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
     import Eye from "@lucide/svelte/icons/eye";
@@ -36,7 +37,11 @@
     import X from "@lucide/svelte/icons/x";
     import type { EditorView } from "@codemirror/view";
     import { createQuery } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import {
+        parseAsBoolean,
+        parseAsString,
+        useQueryState,
+    } from "nuqs-svelte";
     import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
     import { z } from "zod";
     import CanvasReferenceMenu from "./canvas-reference-menu.svelte";
@@ -107,6 +112,27 @@
         variables.filter((variable) =>
             variable.key.toLowerCase().includes(needle),
         ),
+    );
+
+    const systemQuery = createQuery(() =>
+        orpc.resources.listSystemVariables.queryOptions({ input }),
+    );
+
+    // A same-named user variable overrides a built-in; it already has its own row above.
+    const systemVariables = $derived(
+        (systemQuery.data ?? []).filter(
+            (variable) =>
+                !variables.some((own) => own.key === variable.key) &&
+                variable.key.toLowerCase().includes(needle),
+        ),
+    );
+
+    // Railway's collapsed "variables added by Railway", open state kept in the URL.
+    const systemOpen = useQueryState(
+        "systemVariables",
+        parseAsBoolean
+            .withDefault(false)
+            .withOptions({ shallow: true, scroll: false }),
     );
 
     let revealed = $state(new Set<string>());
@@ -605,6 +631,132 @@
                 </li>
             {/each}
         </ul>
+    {/if}
+
+    {#if systemVariables.length}
+        <div class="border-t"></div>
+        <!-- Railway's "variables added by Railway": built-ins, read-only, collapsed by default. -->
+        <section>
+            <button
+                type="button"
+                class="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground"
+                aria-expanded={systemOpen.current}
+                onclick={() =>
+                    void systemOpen.set(!systemOpen.current)}
+            >
+                <ChevronRight
+                    class={[
+                        "size-4 transition-transform",
+                        systemOpen.current && "rotate-90",
+                    ]}
+                    aria-hidden="true"
+                />
+                {systemVariables.length}
+                {systemVariables.length === 1
+                    ? "variable"
+                    : "variables"}
+                added by Stoat
+            </button>
+
+            {#if systemOpen.current}
+                <p class="mt-4 px-4 text-sm text-muted-foreground">
+                    Stoat provides these to every resource. Use them
+                    as
+                    <code class="font-mono">${"{NAME}"}</code>
+                    in Compose and Variables, or reference them from other
+                    resources. Set a variable with the same name to override
+                    one.
+                </p>
+                <ul class="mt-3">
+                    {#each systemVariables as variable (variable.key)}
+                        {@const visible = revealed.has(variable.key)}
+                        <li
+                            class="group grid min-h-14 grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-4 rounded-md px-4 py-1.5 hover:bg-accent/50"
+                        >
+                            <div class="min-w-0">
+                                <p
+                                    class="truncate font-mono text-sm"
+                                    title={variable.key}
+                                >
+                                    {variable.key}
+                                </p>
+                                <p
+                                    class="truncate text-xs text-muted-foreground"
+                                    title={variable.description}
+                                >
+                                    {variable.description}
+                                </p>
+                            </div>
+                            <div
+                                class="flex min-w-0 items-center gap-2"
+                            >
+                                <span
+                                    class="min-w-0 truncate font-mono text-sm"
+                                    title={visible
+                                        ? variable.value
+                                        : undefined}
+                                >
+                                    {visible
+                                        ? variable.value || "(empty)"
+                                        : "*******"}
+                                </span>
+                                <span
+                                    class="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+                                >
+                                    <Button
+                                        size="icon-xs"
+                                        variant="ghost"
+                                        aria-label={visible
+                                            ? `Hide ${variable.key}`
+                                            : `Show ${variable.key}`}
+                                        onclick={() =>
+                                            toggle(variable.key)}
+                                    >
+                                        {#if visible}
+                                            <EyeOff
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        {:else}
+                                            <Eye
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        {/if}
+                                    </Button>
+                                    <Button
+                                        size="icon-xs"
+                                        variant="ghost"
+                                        aria-label="Copy {variable.key}"
+                                        onclick={() =>
+                                            void navigator.clipboard.writeText(
+                                                variable.value,
+                                            )}
+                                    >
+                                        <Copy
+                                            class="size-4"
+                                            aria-hidden="true"
+                                        />
+                                    </Button>
+                                </span>
+                            </div>
+                            <!-- Railway's "Reference": copies the interpolation to paste into Compose or Variables. -->
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                class="text-muted-foreground"
+                                onclick={() =>
+                                    void navigator.clipboard.writeText(
+                                        `\${${variable.key}}`,
+                                    )}
+                            >
+                                Reference
+                            </Button>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </section>
     {/if}
 </div>
 

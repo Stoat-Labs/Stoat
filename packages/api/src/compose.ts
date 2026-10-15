@@ -4,6 +4,7 @@ import YAML from "yaml";
 export {
     composeConfigFiles,
     formatComposeFile,
+    internalHostname,
     resourceComposePrefix,
     resourceEnv,
     rewriteComposeHostname,

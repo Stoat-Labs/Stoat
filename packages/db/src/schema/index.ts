@@ -58,6 +58,9 @@ export const clusters = t.pgTable("clusters", {
         .$onUpdate(() => new Date()),
 });
 
+// Card and frame positions on the project canvas, keyed by node id.
+export type CanvasLayout = Record<string, { x: number; y: number }>;
+
 export const projects = t.pgTable("projects", {
     id: t.uuid("id").primaryKey(),
     name: t.text("name").notNull(),
@@ -71,12 +74,29 @@ export const projects = t.pgTable("projects", {
         .notNull()
         .$defaultFn(() => new Date()),
     isInternal: t.boolean("is_internal").default(false),
+    canvasLayout: t.jsonb("canvas_layout").$type<CanvasLayout>(),
     updatedAt: t
         .timestamp("updated_at", { withTimezone: true })
         .notNull()
         .$defaultFn(() => new Date())
         .$onUpdate(() => new Date()),
 });
+
+// Railway's starred projects, per user.
+export const projectFavorites = t.pgTable(
+    "project_favorites",
+    {
+        userId: t
+            .text("user_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        projectId: t
+            .uuid("project_id")
+            .notNull()
+            .references(() => projects.id, { onDelete: "cascade" }),
+    },
+    (table) => [t.primaryKey({ columns: [table.userId, table.projectId] })],
+);
 
 export type GitAccount = { id: string; login: string; name: string | null };
 
@@ -137,6 +157,8 @@ export type ResourceGitSource = {
     branch: string;
     path: string;
     revision: string;
+    // The commit message of `revision`.
+    message: string;
     // Object ids at `revision`: the Compose file's blob and the watched directory's tree.
     // A draft whose blob id differs from `blob` has changes that are not in Git yet.
     blob: string;
@@ -229,6 +251,13 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 
+// Where a resource deployment came from. "docker" is a Compose edited in Stoat, without Git.
+export type DeploymentMetadata = {
+    source: "forgejo" | "github" | "git" | "docker";
+    trigger: "manual" | "webhook" | "poll";
+    commit?: { sha: string; message: string };
+};
+
 export const deployments = t.pgTable(
     "deployments",
     {
@@ -245,6 +274,8 @@ export const deployments = t.pgTable(
         jobId: t.text("job_id").notNull().unique(),
         // Compose spec captured at deploy time. Null for cluster initialization.
         spec: t.text("spec"),
+        // Null for cluster initialization.
+        metadata: t.jsonb("metadata").$type<DeploymentMetadata>(),
         configuration: t.jsonb("configuration").$type<ClusterInitializationConfiguration>(),
         error: t.text("error"),
         progress: t.smallint("progress").notNull().default(0),

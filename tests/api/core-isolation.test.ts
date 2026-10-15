@@ -53,6 +53,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         branch: "main",
         path: "compose.yaml",
         revision: "a".repeat(40),
+        message: "Initial commit",
         blob: "b".repeat(40),
         tree: "c".repeat(40),
         autoDeploy: false,
@@ -391,6 +392,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     deploymentProgress: null,
                     deploymentCreatedAt: null,
                     deploymentFinishedAt: null,
+                    deploymentSource: null,
                     bucketStatus: null,
                 }),
             ),
@@ -460,6 +462,250 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         });
         expect(await storedResource(created!.id)).toEqual(created);
         expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("starts a resource from a Compose draft without deploying it", async () => {
+        const compose = "services:\n  whoami:\n    image: traefik/whoami\n";
+
+        const created = await client.createResource({ projectId, name: "whoami", compose });
+
+        expect(created).toMatchObject({ draftSpec: compose, spec: null });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    describe("moving and copying resources between projects", () => {
+        it("moves a draft and refuses one deployed with prefixed names", async () => {
+            const draft = await resource({ spec: null });
+            const live = await resource();
+            const deploymentId = randomUUID();
+
+            // Its services were named after this project, so moving would orphan them.
+            await db.insert(deployments).values({
+                id: deploymentId,
+                jobId: deploymentId,
+                clusterId,
+                resourceId: live.id,
+                name: "DeployResource",
+                status: "ready",
+            });
+            await db
+                .insert(resourceDeploymentInputs)
+                .values({ deploymentId, prefix: "owned-prefix" });
+
+            try {
+                const moved = await client.moveResource({
+                    projectId,
+                    resourceId: draft.id,
+                    toProjectId: legacyProjectId,
+                });
+
+                expect(moved).toMatchObject({ id: draft.id, projectId: legacyProjectId });
+                await expect(
+                    client.moveResource({
+                        projectId,
+                        resourceId: live.id,
+                        toProjectId: legacyProjectId,
+                    }),
+                ).rejects.toMatchObject({ code: "CONFLICT" });
+                expect((await storedResource(live.id)).projectId).toBe(projectId);
+            } finally {
+                await db.delete(deployments).where(eq(deployments.id, deploymentId));
+                await db.delete(resources).where(inArray(resources.id, [draft.id, live.id]));
+            }
+        });
+
+        it("refuses to move a draft to another cluster while it is referenced", async () => {
+            const draft = await resource({ spec: null });
+
+            const reader = await resource({
+                name: "Reader",
+                settings: { env: `URL={{ ${draft.id}.URL }}\n` },
+            });
+
+            try {
+                await expect(
+                    client.moveResource({
+                        projectId,
+                        resourceId: draft.id,
+                        toProjectId: otherProjectId,
+                    }),
+                ).rejects.toMatchObject({ code: "CONFLICT" });
+                expect((await storedResource(draft.id)).projectId).toBe(projectId);
+            } finally {
+                await db.delete(resources).where(inArray(resources.id, [draft.id, reader.id]));
+            }
+        });
+
+        it("copies the configuration as a new draft, never the deployment", async () => {
+            const original = await resource();
+
+            try {
+                const copy = await client.copyResource({
+                    projectId,
+                    resourceId: original.id,
+                    toProjectId: otherProjectId,
+                    name: "  Copy  ",
+                });
+
+                expect(copy).toMatchObject({
+                    projectId: otherProjectId,
+                    name: "Copy",
+                    icon: original.icon,
+                    spec: null,
+                    draftSpec,
+                    settings,
+                    gitConnectionId,
+                    gitSource,
+                });
+                expect(copy?.id).not.toBe(original.id);
+                await db.delete(resources).where(eq(resources.id, copy!.id));
+            } finally {
+                await db.delete(resources).where(eq(resources.id, original.id));
+            }
+        });
+
+        it("keeps resources out of foreign and internal projects", async () => {
+            const draft = await resource({ spec: null });
+
+            try {
+                for (const toProjectId of [foreignProjectId, internalProjectId]) {
+                    await expect(
+                        client.moveResource({ projectId, resourceId: draft.id, toProjectId }),
+                    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+                    await expect(
+                        client.copyResource({
+                            projectId,
+                            resourceId: draft.id,
+                            toProjectId,
+                            name: "Leak",
+                        }),
+                    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+                }
+
+                expect((await storedResource(draft.id)).projectId).toBe(projectId);
+            } finally {
+                await db.delete(resources).where(eq(resources.id, draft.id));
+            }
+        });
+    });
+
+    it("discards staged changes back to the last deploy, removing never-deployed drafts", async () => {
+        const live = await resource({
+            settings: { env: "STAGED=1\n", prefixNames: true, custom: "kept" },
+        });
+        const draft = await resource({ spec: null });
+        const deploymentId = randomUUID();
+
+        await db.insert(deployments).values({
+            id: deploymentId,
+            jobId: deploymentId,
+            clusterId,
+            resourceId: live.id,
+            name: "DeployResource",
+            status: "ready",
+            finishedAt: new Date("2021-02-01"),
+        });
+        await db
+            .insert(resourceDeploymentInputs)
+            .values({ deploymentId, prefix: "", env: "LIVE=1\n" });
+
+        const input = { projectId, resourceIds: [live.id, draft.id] };
+
+        try {
+            // Discarding throws away work, so it is for admins, like deploying.
+            await expect(client.discardChanges(input)).rejects.toMatchObject({
+                code: "FORBIDDEN",
+            });
+            await db.$client.query(
+                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
+            );
+
+            expect(await client.discardChanges(input)).toEqual({ restored: 1, removed: 1 });
+            expect(await storedResource(live.id)).toMatchObject({
+                draftSpec: spec,
+                settings: { env: "LIVE=1\n", prefixNames: false, custom: "kept" },
+            });
+            expect(await db.select().from(resources).where(eq(resources.id, draft.id))).toEqual([]);
+        } finally {
+            await db.$client.query(
+                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+            );
+            await db.delete(deployments).where(eq(deployments.id, deploymentId));
+            await db.delete(resources).where(inArray(resources.id, [live.id, draft.id]));
+        }
+    });
+
+    it("compares what a resource runs with what its next deploy ships", async () => {
+        const staged = await resource({ settings: { env: "NEXT=1\n", prefixNames: true } });
+
+        try {
+            const changes = await client.getPendingChanges({ projectId, resourceId: staged.id });
+
+            expect(changes).toEqual({
+                firstDeploy: false,
+                compose: { live: spec, next: draftSpec },
+                // Never deployed through a recorded deploy, so nothing is live to compare with.
+                env: { live: "", next: "NEXT=1\n" },
+                prefix: { live: null, next: expect.any(String) },
+            });
+            await expect(
+                client.getPendingChanges({
+                    projectId: foreignProjectId,
+                    resourceId: foreignResourceId,
+                }),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        } finally {
+            await db.delete(resources).where(eq(resources.id, staged.id));
+        }
+    });
+
+    it("stars projects per user and shows each resource's tile in the overview", async () => {
+        const overview = async () =>
+            (await call(projectsRouter.listProjectOverviews, undefined, { context })).find(
+                (row) => row.id === projectId,
+            );
+
+        await call(projectsRouter.setFavorite, { projectId, favorite: true }, { context });
+        // Starring twice is harmless.
+        await call(projectsRouter.setFavorite, { projectId, favorite: true }, { context });
+
+        const starred = await overview();
+
+        expect(starred?.favorite).toBe(true);
+        expect(starred?.resources.find((row) => row.id === resourceId)).toMatchObject({
+            image: "nginx:alpine",
+            icon: null,
+        });
+        expect(JSON.stringify(starred)).not.toContain("ORIGINAL=1");
+
+        await call(projectsRouter.setFavorite, { projectId, favorite: false }, { context });
+        expect((await overview())?.favorite).toBe(false);
+
+        for (const deniedProjectId of [foreignProjectId, internalProjectId])
+            await expect(
+                call(
+                    projectsRouter.setFavorite,
+                    { projectId: deniedProjectId, favorite: true },
+                    { context },
+                ),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("rejects an invalid Compose draft and one combined with a template", async () => {
+        const before = await db.select().from(resources).orderBy(asc(resources.id));
+
+        await expect(
+            client.createResource({ projectId, name: "broken", compose: "services: [" }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        await expect(
+            client.createResource({
+                projectId,
+                name: "both",
+                compose: "services:\n  web:\n    image: nginx\n",
+                template: { appId: "postgresql", version: "18" },
+            }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        expect(await db.select().from(resources).orderBy(asc(resources.id))).toEqual(before);
     });
 
     describe.each([

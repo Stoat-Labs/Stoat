@@ -9,6 +9,7 @@ import {
     inlineComposeConfigs,
     interpolateCompose,
     resourceEnv,
+    type ResourceIdentity,
 } from "./compose";
 import { deployCompose, DeploymentError, environmentCredentials } from "./deploy-compose";
 import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
@@ -90,6 +91,16 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             signal.throwIfAborted();
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
+            const {
+                rows: [identity],
+            } = await db.$client.query<ResourceIdentity>(
+                `SELECT r.id AS "resourceId", r.name AS "resourceName",
+                        p.id AS "projectId", p.name AS "projectName"
+                 FROM resources r JOIN projects p ON p.id = r.project_id
+                 WHERE r.id = $1`,
+                [deployment.resourceId],
+            );
+
             const referencedIds = referencedResourceIds(input.env);
 
             const targets = referencedIds.length
@@ -121,6 +132,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     input.prefix ?? undefined,
                     domain,
                     references,
+                    identity,
                 );
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;

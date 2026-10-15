@@ -114,7 +114,7 @@
         {#if active === "profile"}
             <ProfileSettings user={data.user} />
         {:else if active === "feature-flags"}
-            <FeatureFlagsSettings canvasMode={data.canvasMode} />
+            <FeatureFlagsSettings />
         {:else if active === "security"}
             <PasswordSettings />
         {:else if organization}

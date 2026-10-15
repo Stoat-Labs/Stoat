@@ -99,7 +99,7 @@ export function parseEnvText(envText: string): Map<string, string> {
     return vars;
 }
 
-type VarLookup = (name: string) => string | undefined;
+export type VarLookup = (name: string) => string | undefined;
 
 const isVarChar = (char: string): boolean => /[\w]/u.test(char);
 
@@ -773,16 +773,21 @@ function readServices(composeText: string): RawServices {
  * resource's Variables (`envText`); entries keep the raw spec for edits.
  */
 export function parseIngressCompose(composeText: string, envText = ""): IngressSnapshot {
+    const vars = parseEnvText(envText);
+
+    return parseIngressComposeWith(composeText, (name) => vars.get(name));
+}
+
+/** `parseIngressCompose` with variables from `lookup`, e.g. an already resolved environment. */
+export function parseIngressComposeWith(composeText: string, lookup: VarLookup): IngressSnapshot {
     const services = readServices(composeText);
     const names = Object.keys(services);
     const entries: IngressEntry[] = [];
     const caddyRoutes: CaddyRoute[] = [];
     const issues: IngressIssue[] = [];
     const seenHostnames = new Map<string, string>();
-    const vars = parseEnvText(envText);
 
-    const expand = (value: string): string =>
-        interpolateComposeVariables(value, (name) => vars.get(name));
+    const expand = (value: string): string => interpolateComposeVariables(value, lookup);
 
     for (const name of names) {
         const service = services[name];

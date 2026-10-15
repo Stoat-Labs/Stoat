@@ -1,10 +1,13 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import { ORPCError } from "@orpc/client";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { isTerminalDeploymentStatus } from "$lib/deployments/status";
+    import { parseAsBoolean, useQueryState } from "nuqs-svelte";
     import type { CanvasResource } from "../graph";
+    import ChangesDialog from "./changes-dialog.svelte";
 
     let {
         projectId,
@@ -23,7 +26,17 @@
         ),
     );
 
+    // Railway's "Details": the diffs behind the count, in the URL like other canvas dialogs.
+    const details = useQueryState(
+        "changes",
+        parseAsBoolean
+            .withDefault(false)
+            .withOptions({ shallow: true, scroll: false }),
+    );
+
     let confirming = $state(false);
+
+    let conflicted = $state(false);
 
     let deploying = $state(false);
 
@@ -41,9 +54,17 @@
         }
     }
 
+    // Removing services is confirmed first, from the bar or from the details dialog.
+    function startDeploy() {
+        error = "";
+
+        if (removals.length) confirming = true;
+        else void deploy();
+    }
+
     // Resources that drop services go first and finish before the rest start: a service moved to
     // another resource keeps its volume, and two containers must never run on it at once.
-    async function deploy() {
+    async function deploy(force = false) {
         deploying = true;
         error = "";
 
@@ -58,6 +79,7 @@
                 const { id } = await client.resources.deploy({
                     projectId,
                     resourceId: resource.id,
+                    force,
                 });
 
                 if (rest.length) await finished(id);
@@ -68,10 +90,22 @@
                 await client.resources.deploy({
                     projectId,
                     resourceId: resource.id,
+                    force,
                 });
 
             confirming = false;
+            conflicted = false;
         } catch (cause) {
+            if (
+                cause instanceof ORPCError &&
+                cause.code === "CONFLICT"
+            ) {
+                confirming = false;
+                conflicted = true;
+
+                return;
+            }
+
             error =
                 cause instanceof Error
                     ? cause.message
@@ -110,17 +144,19 @@
             {error}
         </span>
     {/if}
+    <Button
+        size="sm"
+        variant="outline"
+        onclick={() => (details.current = true)}
+    >
+        Details
+    </Button>
     {#if isAdmin}
         <Button
             size="sm"
             loading={deploying}
             disabled={deploying}
-            onclick={() => {
-                error = "";
-
-                if (removals.length) confirming = true;
-                else void deploy();
-            }}
+            onclick={startDeploy}
         >
             Deploy
         </Button>
@@ -130,6 +166,18 @@
         </span>
     {/if}
 </div>
+
+<ChangesDialog
+    bind:open={details.current}
+    {projectId}
+    {changes}
+    canDeploy={isAdmin}
+    {deploying}
+    ondeploy={() => {
+        details.current = false;
+        startDeploy();
+    }}
+/>
 
 <ConfirmDialog
     bind:open={confirming}
@@ -143,4 +191,13 @@
     pending={deploying}
     {error}
     onconfirm={() => void deploy()}
+/>
+
+<ConfirmDialog
+    bind:open={conflicted}
+    title="Git branch changed"
+    description="New commits changed a Compose file or its directory since these changes were saved. Deploying anyway commits them on top of the new head."
+    confirmLabel="Deploy anyway"
+    pending={deploying}
+    onconfirm={() => void deploy(true)}
 />

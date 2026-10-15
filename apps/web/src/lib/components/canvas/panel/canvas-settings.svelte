@@ -12,6 +12,9 @@
     import { Switch } from "$lib/components/ui/switch";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
+    import ArrowRight from "@lucide/svelte/icons/arrow-right";
+    import Cable from "@lucide/svelte/icons/cable";
+    import CircleCheck from "@lucide/svelte/icons/circle-check";
     import Code from "@lucide/svelte/icons/code";
     import Copy from "@lucide/svelte/icons/copy";
     import FileCode2 from "@lucide/svelte/icons/file-code-2";
@@ -21,12 +24,25 @@
     import Globe from "@lucide/svelte/icons/globe";
     import Network from "@lucide/svelte/icons/network";
     import Pencil from "@lucide/svelte/icons/pencil";
+    import Plus from "@lucide/svelte/icons/plus";
     import Rocket from "@lucide/svelte/icons/rocket";
     import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+    import Trash2 from "@lucide/svelte/icons/trash-2";
+    import {
+        parseIngressCompose,
+        removeIngressFromCompose,
+        removeServiceCaddy,
+        type HostIngress,
+        type HttpIngress,
+        type IngressEntry,
+    } from "@stoat/workflows/ingress";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
-    import type { Component } from "svelte";
+    import type { Component, Snippet } from "svelte";
     import { z } from "zod";
+    import CanvasIngressDialog, {
+        type IngressMode,
+    } from "./canvas-ingress-dialog.svelte";
     import CanvasSourceDialog from "./canvas-source-dialog.svelte";
     import { getCanvasActions } from "../context";
     import type { CanvasResource, CanvasService } from "../graph";
@@ -142,12 +158,117 @@
         }
     }
 
-    const domains = $derived(
+    const envSchema = z
+        .object({ env: z.string().catch("") })
+        .catch({ env: "" });
+
+    // Ingress is edited in the draft, like the Ingress page; the next deploy publishes it.
+    const draftCompose = $derived(details?.draftSpec ?? "");
+
+    const ingress = $derived.by(() => {
+        try {
+            return parseIngressCompose(
+                draftCompose,
+                envSchema.parse(details?.settings).env,
+            );
+        } catch {
+            return null;
+        }
+    });
+
+    const ingressEntries = $derived(ingress?.entries ?? []);
+
+    let ingressDialog = $state<{
+        mode: IngressMode;
+        entry: HttpIngress | HostIngress | null;
+    } | null>(null);
+
+    let ingressRemoval = $state<IngressEntry | null>(null);
+
+    let savingIngress = $state(false);
+
+    let ingressError = $state("");
+
+    const canEditIngress = $derived(
+        !isInternal && ingress !== null && !savingIngress,
+    );
+
+    /** Saves the draft with new ingress; resolves to the error message, or null once saved. */
+    async function saveIngress(compose: string) {
+        if (!details) return "The resource is still loading.";
+
+        savingIngress = true;
+        ingressError = "";
+
+        try {
+            const updated = await client.resources.updateComposeSpec({
+                ...input,
+                spec: compose,
+                expectedSpec: details.draftSpec,
+                expectedSource: source ? { ...source } : null,
+            });
+
+            queryClient.setQueryData(
+                orpc.resources.getResource.queryKey({ input }),
+                updated,
+            );
+            await queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            });
+
+            return null;
+        } catch (cause) {
+            return cause instanceof Error
+                ? cause.message
+                : "Unable to update the Compose file.";
+        } finally {
+            savingIngress = false;
+        }
+    }
+
+    async function removeIngress(entry: IngressEntry) {
+        try {
+            ingressError =
+                (await saveIngress(
+                    entry.kind === "caddy"
+                        ? removeServiceCaddy(
+                              draftCompose,
+                              entry.service,
+                          )
+                        : removeIngressFromCompose(
+                              draftCompose,
+                              entry.service,
+                              entry.raw,
+                          ),
+                )) ?? "";
+        } catch (cause) {
+            ingressError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Unable to update the Compose file.";
+        }
+    }
+
+    function ingressLabel(entry: IngressEntry) {
+        if (entry.kind === "http")
+            return entry.hostname ?? "Cluster default domain";
+
+        if (entry.kind === "host")
+            return `${entry.bind ?? "*"}:${entry.hostPort}`;
+
+        return "Custom Caddy";
+    }
+
+    const privateHosts = $derived(
         services.flatMap((service) =>
-            service.domains.map((domain) => ({
-                domain,
-                service: service.name,
-            })),
+            service.internalHostname
+                ? [
+                      {
+                          hostname: service.internalHostname,
+                          service: service.name,
+                      },
+                  ]
+                : [],
         ),
     );
 
@@ -199,7 +320,15 @@
             id: "networking",
             title: "Networking",
             icon: Network,
-            visible: shows("networking", "public", "domain", "port"),
+            visible: shows(
+                "networking",
+                "public",
+                "domain",
+                "port",
+                "private",
+                "internal",
+                "dns",
+            ),
         },
         {
             id: "deploy",
@@ -211,7 +340,16 @@
             id: "general",
             title: "General",
             icon: SlidersHorizontal,
-            visible: shows("general", "name", "rename", "icon"),
+            visible: shows(
+                "general",
+                "name",
+                "rename",
+                "icon",
+                "project",
+                "move",
+                "copy",
+                "duplicate",
+            ),
         },
         {
             id: "danger",
@@ -443,7 +581,7 @@
             <div>
                 {@render title(
                     "Auto Deploy",
-                    `Pull and deploy when ${source.branch} changes. Checked every minute, and paused while the draft has changes that are not in Git.`,
+                    `Pull and deploy when ${source.branch} changes. Right away with the Git connection's push webhook, otherwise within a minute. Paused while the draft has changes that are not in Git.`,
                 )}
                 {@render toggleRow(
                     "Deploy on push",
@@ -542,55 +680,220 @@
     {/if}
 {/snippet}
 
-{#snippet networkingSection()}
-    <div>
-        {@render title(
-            "Public Networking",
-            "Domains published with x-ports in the Compose file.",
-        )}
-        {#each domains as entry (entry.domain)}
-            <div
-                class="mt-3 flex items-center gap-4 rounded-md border px-4 py-3"
+<!-- Railway's networking row: icon, a name with a muted line beneath, actions on the right. -->
+{#snippet networkRow(
+    icon: Component,
+    iconClass: string,
+    name: string,
+    href: string | undefined,
+    detail: Snippet,
+    copyText: string | undefined,
+    entry: IngressEntry | null,
+)}
+    {@const Icon = icon}
+    <div class="flex items-center gap-4 rounded-md border px-4 py-3">
+        <Icon
+            class={["size-5 shrink-0", iconClass]}
+            aria-hidden="true"
+        />
+        <div class="min-w-0 flex-1">
+            {#if href}
+                <a
+                    {href}
+                    target="_blank"
+                    rel="noreferrer"
+                    class="block truncate hover:underline"
+                >
+                    {name}
+                </a>
+            {:else}
+                <p class="truncate">{name}</p>
+            {/if}
+            <p
+                class="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"
             >
-                <Globe
-                    class="size-5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                <div class="min-w-0 flex-1">
-                    <a
-                        href="https://{entry.domain}"
-                        target="_blank"
-                        rel="noreferrer"
-                        class="block truncate hover:underline"
-                    >
-                        {entry.domain}
-                    </a>
-                    <p class="truncate text-xs text-muted-foreground">
-                        → {entry.service}
-                    </p>
-                </div>
+                {@render detail()}
+            </p>
+        </div>
+        <div class="flex shrink-0 items-center">
+            {#if copyText}
                 <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Copy {entry.domain}"
+                    aria-label="Copy {name}"
                     onclick={() =>
-                        void navigator.clipboard.writeText(
-                            `https://${entry.domain}`,
-                        )}
+                        void navigator.clipboard.writeText(copyText)}
                 >
                     <Copy class="size-4" aria-hidden="true" />
                 </Button>
-            </div>
-        {:else}
-            <p
-                class="mt-3 rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-            >
-                Nothing is public yet. Add an HTTP entry under
-                <code class="font-mono">x-ports</code>
-                in the Compose file.
-            </p>
-        {/each}
+            {/if}
+            {#if entry && !isInternal}
+                {#if entry.kind === "caddy"}
+                    <!-- A Caddyfile has no Railway form; the Ingress page edits it. -->
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Edit {name} on the Ingress page"
+                        href="/projects/{resource.projectId}/{resource.id}/ingress"
+                    >
+                        <Pencil class="size-4" aria-hidden="true" />
+                    </Button>
+                {:else}
+                    <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Edit {name}"
+                        disabled={!canEditIngress}
+                        onclick={() =>
+                            (ingressDialog = {
+                                mode:
+                                    entry.kind === "http"
+                                        ? "domain"
+                                        : "tcp",
+                                entry,
+                            })}
+                    >
+                        <Pencil class="size-4" aria-hidden="true" />
+                    </Button>
+                {/if}
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Remove {name}"
+                    disabled={!canEditIngress}
+                    onclick={() => (ingressRemoval = entry)}
+                >
+                    <Trash2 class="size-4" aria-hidden="true" />
+                </Button>
+            {/if}
+        </div>
     </div>
+{/snippet}
+
+{#snippet networkingSection()}
+    {#if shows("networking", "public", "domain", "port")}
+        <div>
+            {@render title(
+                "Public Networking",
+                "Access your application over HTTP with the following domains.",
+            )}
+            <div class="mt-3 space-y-2">
+                {#each ingressEntries as entry (entry.kind === "caddy" ? `caddy/${entry.service}` : `${entry.service}/${entry.raw}`)}
+                    {@const url =
+                        entry.kind === "http" && entry.hostname
+                            ? `${entry.protocol}://${entry.hostname}`
+                            : undefined}
+                    {#snippet detail()}
+                        {#if entry.kind === "caddy"}
+                            Caddyfile routes
+                        {:else}
+                            <ArrowRight
+                                class="size-3 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Port {entry.containerPort}
+                            {#if entry.kind === "host"}
+                                · {entry.protocol.toUpperCase()}
+                            {/if}
+                        {/if}
+                        {#if services.length > 1}
+                            · {entry.service}
+                        {/if}
+                    {/snippet}
+                    {@render networkRow(
+                        entry.kind === "http" ? Globe : Cable,
+                        "text-muted-foreground",
+                        ingressLabel(entry),
+                        url,
+                        detail,
+                        url ??
+                            (entry.kind === "host"
+                                ? ingressLabel(entry)
+                                : undefined),
+                        entry,
+                    )}
+                {:else}
+                    <p
+                        class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+                    >
+                        {ingress === null
+                            ? "The Compose draft is not valid YAML, so its ingress can't be read."
+                            : "Nothing is public yet."}
+                    </p>
+                {/each}
+            </div>
+            {#if ingressError}
+                <Alert variant="error" class="mt-3">
+                    <AlertDescription>
+                        {ingressError}
+                    </AlertDescription>
+                </Alert>
+            {/if}
+            {#if !isInternal}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        disabled={!canEditIngress}
+                        onclick={() =>
+                            (ingressDialog = {
+                                mode: "domain",
+                                entry: null,
+                            })}
+                    >
+                        <Plus class="size-4" aria-hidden="true" />
+                        Custom Domain
+                    </Button>
+                    <Button
+                        variant="outline"
+                        disabled={!canEditIngress}
+                        onclick={() =>
+                            (ingressDialog = {
+                                mode: "tcp",
+                                entry: null,
+                            })}
+                    >
+                        <Plus class="size-4" aria-hidden="true" />
+                        TCP Proxy
+                    </Button>
+                </div>
+            {/if}
+        </div>
+    {/if}
+
+    {#if shows("networking", "private", "internal", "dns")}
+        <div>
+            {@render title(
+                "Private Networking",
+                "Communicate with this service from anywhere in the cluster.",
+            )}
+            <div class="mt-3 space-y-2">
+                {#each privateHosts as entry (entry.hostname)}
+                    {#snippet detail()}
+                        Ready to talk privately
+                        {#if services.length > 1}
+                            <span>· {entry.service}</span>
+                        {/if}
+                    {/snippet}
+                    {@render networkRow(
+                        CircleCheck,
+                        "text-success-foreground",
+                        entry.hostname,
+                        undefined,
+                        detail,
+                        entry.hostname,
+                        null,
+                    )}
+                {:else}
+                    <p
+                        class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+                    >
+                        Private hostnames appear after the first
+                        deploy.
+                    </p>
+                {/each}
+            </div>
+        </div>
+    {/if}
 {/snippet}
 
 {#snippet deploySection()}
@@ -652,6 +955,28 @@
             </Button>
         </div>
     </div>
+    {#if !isInternal && shows("project", "move", "copy", "duplicate")}
+        <div>
+            {@render title(
+                "Project",
+                "Move it to another project, or copy its configuration into one. Resources deployed with Prefix names on can't move.",
+            )}
+            <div class="mt-3 flex flex-wrap gap-2">
+                <Button
+                    variant="outline"
+                    onclick={() => actions.edit("move", resource.id)}
+                >
+                    Move to Project
+                </Button>
+                <Button
+                    variant="outline"
+                    onclick={() => actions.edit("copy", resource.id)}
+                >
+                    Copy to Project
+                </Button>
+            </div>
+        </div>
+    {/if}
 {/snippet}
 
 {#snippet dangerSection()}
@@ -813,6 +1138,37 @@
     {source}
     busy={git.pending}
     onsubmit={(next) => git.run("source", next)}
+/>
+
+{#if ingressDialog}
+    <CanvasIngressDialog
+        mode={ingressDialog.mode}
+        entry={ingressDialog.entry}
+        entries={ingressEntries}
+        services={ingress?.services ?? []}
+        compose={draftCompose}
+        busy={savingIngress}
+        onsubmit={saveIngress}
+        onclose={() => (ingressDialog = null)}
+    />
+{/if}
+
+<ConfirmDialog
+    bind:open={
+        () => ingressRemoval !== null,
+        (open) => {
+            if (!open) ingressRemoval = null;
+        }
+    }
+    title="Remove {ingressRemoval
+        ? ingressLabel(ingressRemoval)
+        : 'ingress'}?"
+    description="It is removed from the Compose draft and stops being published on the next deploy."
+    confirmLabel="Remove"
+    onconfirm={() => {
+        if (ingressRemoval) void removeIngress(ingressRemoval);
+        ingressRemoval = null;
+    }}
 />
 
 <ConfirmDialog

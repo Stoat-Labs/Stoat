@@ -64,6 +64,13 @@ export function referenceVariables(target: ReferenceTarget, domain?: string) {
             resourceEnv(target),
             resourceComposePrefix(target),
             domain,
+            undefined,
+            {
+                projectId: target.projectId,
+                projectName: target.projectName,
+                resourceId: target.id,
+                resourceName: target.name,
+            },
         );
     } catch (error) {
         const reason = error instanceof Error ? error.message : "Invalid variables.";

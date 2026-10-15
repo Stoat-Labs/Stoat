@@ -23,7 +23,21 @@
         resource.deploymentFinishedAt ?? resource.deploymentCreatedAt,
     );
 
-    const via = $derived(resource.gitBranch ? " via Git" : "");
+    const sources = {
+        forgejo: "Forgejo",
+        github: "GitHub",
+        git: "Git",
+        docker: "",
+    };
+
+    // Deployments from before metadata existed fall back to the resource's current source.
+    const via = $derived.by(() => {
+        const source =
+            resource.deploymentSource ??
+            (resource.gitBranch ? "git" : "docker");
+
+        return sources[source] ? ` via ${sources[source]}` : "";
+    });
 
     const state = $derived.by(() => {
         if (resource.bucketStatus) return "bucket";

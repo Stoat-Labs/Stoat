@@ -136,7 +136,21 @@
 
     const containers = $derived(containersQuery.data ?? []);
 
-    const via = $derived(resource.gitBranch ? "Git" : "Docker");
+    const sources = {
+        forgejo: "Forgejo",
+        github: "GitHub",
+        git: "Git",
+        docker: "Docker",
+    };
+
+    // Deployments from before metadata existed fall back to the resource's current source.
+    function via(deployment: Deployment) {
+        const source =
+            deployment.metadata?.source ??
+            (resource.gitBranch ? "git" : "docker");
+
+        return sources[source];
+    }
 
     type Tone = "success" | "info" | "error" | "neutral";
 
@@ -233,8 +247,14 @@
         return [...new Set(selected ? [selected, ...all] : all)];
     }
 
-    // Railway titles a Docker deploy by its image; with a service open, only that one counts.
+    // Railway titles a Git deploy by its commit and a Docker deploy by its image; with a service
+    // open, only that one counts.
     function title(deployment: Deployment) {
+        const message =
+            deployment.metadata?.commit?.message.split("\n")[0];
+
+        if (message) return message;
+
         const [first, ...rest] = images(deployment.spec);
 
         if (!first) return resource.name;
@@ -346,7 +366,17 @@
                     {title(deployment)}
                 </p>
                 <p class="truncate text-sm text-muted-foreground">
-                    {ago(deployment.createdAt, clock.now)} via {via}
+                    {ago(deployment.createdAt, clock.now)} via {via(
+                        deployment,
+                    )}
+                    {#if deployment.metadata?.commit}
+                        · <span class="font-mono">
+                            {deployment.metadata.commit.sha.slice(
+                                0,
+                                7,
+                            )}
+                        </span>
+                    {/if}
                 </p>
             </button>
             <div class="flex items-center gap-2">

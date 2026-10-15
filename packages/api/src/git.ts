@@ -685,11 +685,27 @@ export async function readGitHead(repo: GitRepository): Promise<string> {
     );
 }
 
+// The full message of a commit, which a shallow fetch still includes.
+async function commitMessage(run: Run, revision: string): Promise<string> {
+    return (await run(["show", "-s", "--format=%B", revision], undefined, 64 * 1024))
+        .toString("utf8")
+        .trim();
+}
+
+export type GitFileSnapshot = {
+    revision: string;
+    message: string;
+    path: string;
+    content: string;
+    blob: string;
+    tree: string;
+};
+
 export async function readGitFile(
     repo: GitRepository,
     path: string,
     watchPath = posix.dirname(path),
-): Promise<{ revision: string; path: string; content: string; blob: string; tree: string }> {
+): Promise<GitFileSnapshot> {
     validateGitPath(path);
 
     return withRepository(repo, async (run, revision) => {
@@ -698,8 +714,47 @@ export async function readGitFile(
         if (!entry) throw new ORPCError("NOT_FOUND", { message: "Git file not found" });
         const content = await readText(run, entry);
         const tree = await directoryTree(run, revision, watchPath);
+        const message = await commitMessage(run, revision);
 
-        return { revision, path, content, blob: entry.oid, tree };
+        return { revision, message, path, content, blob: entry.oid, tree };
+    });
+}
+
+/**
+ * Several Compose files and their watched directories from one fetch of the branch head.
+ * Results are in input order; a file that cannot be read is an Error, so the others still sync.
+ */
+export async function readGitSources(
+    repo: GitRepository,
+    sources: { path: string; watchPath: string }[],
+): Promise<(GitFileSnapshot | Error)[]> {
+    return withRepository(repo, async (run, revision) => {
+        const tree = await entries(run, revision);
+        const message = await commitMessage(run, revision);
+        const results: (GitFileSnapshot | Error)[] = [];
+
+        for (const { path, watchPath } of sources) {
+            try {
+                const entry = tree.find((item) => item.path === validateGitPath(path));
+
+                if (!entry) throw new ORPCError("NOT_FOUND", { message: "Git file not found" });
+                const content = await readText(run, entry);
+                const watchTree = await directoryTree(run, revision, watchPath);
+
+                results.push({
+                    revision,
+                    message,
+                    path,
+                    content,
+                    blob: entry.oid,
+                    tree: watchTree,
+                });
+            } catch (error) {
+                results.push(error instanceof Error ? error : new Error("Git file not readable"));
+            }
+        }
+
+        return results;
     });
 }
 
@@ -748,7 +803,7 @@ export async function pushGitFile(
         // watched tree only changed unrelated files, so the commit goes on top of it instead.
         expectedTree?: string;
     },
-): Promise<{ revision: string; blob: string; tree: string }> {
+): Promise<{ revision: string; message: string; blob: string; tree: string }> {
     const path = validateGitPath(input.path);
     const watchPath = input.watchPath ?? posix.dirname(path);
 
@@ -802,6 +857,7 @@ export async function pushGitFile(
         if (existing?.oid === gitBlobId(input.content, current))
             return {
                 revision: current,
+                message: await commitMessage(run, current),
                 blob: existing.oid,
                 tree: await directoryTree(run, current, watchPath),
             };
@@ -855,6 +911,6 @@ export async function pushGitFile(
             `${revision}:refs/heads/${branch}`,
         ]);
 
-        return { revision, blob, tree: watchTree };
+        return { revision, message: input.message.trim(), blob, tree: watchTree };
     });
 }

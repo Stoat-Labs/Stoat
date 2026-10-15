@@ -582,35 +582,47 @@ export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
 }
 
 function storageKey(projectId: string) {
-    // v2: cards inside frames have their own absolute positions now.
-    return `stoat:canvas:v2:${projectId}`;
+    // v3: entries carry a TTL.
+    return `stoat:canvas:v3:${projectId}`;
 }
 
-// Layout is a per-browser convenience: private windows and blocked storage fall back to auto.
-export function loadPositions(projectId: string): Positions {
+// Teammates share the layout, so the local copy only wins for a short while.
+const POSITIONS_TTL_MS = 5 * 60_000;
+
+type StoredPositions = { positions: Positions; expiresAt: number };
+
+// Local copy of the project's layout: it is written first, so a reload inside the server save's
+// debounce window or after a failed save keeps the latest drags. Every change renews its TTL;
+// once expired (or with blocked storage) the server layout is used.
+export function loadPositions(projectId: string): Positions | undefined {
     try {
         const stored = localStorage.getItem(storageKey(projectId));
 
+        if (!stored) return undefined;
+
         // SAFETY: this key is only written by savePositions below.
-        return stored ? (JSON.parse(stored) as Positions) : {};
+        const entry = JSON.parse(stored) as StoredPositions;
+
+        if (entry.expiresAt > Date.now()) return entry.positions;
+
+        localStorage.removeItem(storageKey(projectId));
+
+        return undefined;
     } catch {
-        return {};
+        return undefined;
     }
 }
 
 export function savePositions(projectId: string, positions: Positions) {
     try {
-        localStorage.setItem(storageKey(projectId), JSON.stringify(positions));
-    } catch {
-        // Unsaved layout only resets on the next visit.
-    }
-}
+        const entry: StoredPositions = {
+            positions,
+            expiresAt: Date.now() + POSITIONS_TTL_MS,
+        };
 
-export function clearPositions(projectId: string) {
-    try {
-        localStorage.removeItem(storageKey(projectId));
+        localStorage.setItem(storageKey(projectId), JSON.stringify(entry));
     } catch {
-        // Nothing stored to clear.
+        // The server copy still saves.
     }
 }
 
