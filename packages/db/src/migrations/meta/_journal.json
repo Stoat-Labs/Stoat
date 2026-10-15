@@ -50,6 +50,13 @@
       "when": 1792074136501,
       "tag": "0006_brave_excalibur",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792082679825,
+      "tag": "0007_fk_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -514,6 +514,35 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             }
         });
 
+        it("refuses to move a deployed resource to another cluster", async () => {
+            const live = await resource();
+            const deploymentId = randomUUID();
+
+            // Unprefixed, so only the cluster change would orphan its services.
+            await db.insert(deployments).values({
+                id: deploymentId,
+                jobId: deploymentId,
+                clusterId,
+                resourceId: live.id,
+                name: "DeployResource",
+                status: "ready",
+            });
+
+            try {
+                await expect(
+                    client.moveResource({
+                        projectId,
+                        resourceId: live.id,
+                        toProjectId: otherProjectId,
+                    }),
+                ).rejects.toMatchObject({ code: "CONFLICT" });
+                expect((await storedResource(live.id)).projectId).toBe(projectId);
+            } finally {
+                await db.delete(deployments).where(eq(deployments.id, deploymentId));
+                await db.delete(resources).where(eq(resources.id, live.id));
+            }
+        });
+
         it("refuses to move a draft to another cluster while it is referenced", async () => {
             const draft = await resource({ spec: null });
 
@@ -593,6 +622,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         const live = await resource({
             settings: { env: "STAGED=1\n", prefixNames: true, custom: "kept" },
         });
+
         const draft = await resource({ spec: null });
         const deploymentId = randomUUID();
 
