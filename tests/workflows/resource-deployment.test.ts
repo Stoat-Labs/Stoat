@@ -70,6 +70,7 @@ describe("resource deployment worker", () => {
     // Services the fake cluster runs, and the ones a deploy removed, in order.
     let running: string[] = [];
     const removed: string[] = [];
+    let removalFails = false;
     let requestBody = "";
     let authorization: string | undefined;
     let received = Promise.withResolvers<void>();
@@ -91,8 +92,14 @@ describe("resource deployment worker", () => {
 
         if (request.method === "DELETE" && request.url?.startsWith("/api/v1/services/")) {
             removed.push(decodeURIComponent(request.url.slice("/api/v1/services/".length)));
-            response.writeHead(204);
-            response.end();
+
+            if (removalFails) {
+                response.writeHead(500, { "Content-Type": "application/json" });
+                response.end(JSON.stringify({ error: "machine unreachable" }));
+            } else {
+                response.writeHead(204);
+                response.end();
+            }
 
             return;
         }
@@ -201,6 +208,7 @@ describe("resource deployment worker", () => {
         mode = "success";
         running = [];
         removed.length = 0;
+        removalFails = false;
         received = Promise.withResolvers<void>();
         closed = Promise.withResolvers<void>();
         finish.resolve();
@@ -280,6 +288,19 @@ describe("resource deployment worker", () => {
         expect(result.logs.some((log) => log.text.includes("Removing project-resource-web"))).toBe(
             true,
         );
+    });
+
+    it("stops before deploying when a stale service can't be removed", async () => {
+        running = ["project-resource-ghost"];
+        removalFails = true;
+        const id = await snapshot();
+        const count = requestCount;
+        await queueResourceDeployment(id);
+        const result = await terminal(id);
+
+        expect(result.status).toBe("failed");
+        expect(result.error).toContain("Could not remove project-resource-ghost");
+        expect(requestCount).toBe(count);
     });
 
     it("enqueues immediately, formats the private snapshot on pickup, and streams all sanitized progress", async () => {

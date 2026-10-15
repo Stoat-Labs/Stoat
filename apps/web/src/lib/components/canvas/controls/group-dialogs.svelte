@@ -44,23 +44,27 @@
     });
 
     // updateDetails replaces all three fields, so the ones not being edited are sent unchanged.
-    async function save(changes: { name?: string; icon?: string }) {
+    async function update(changes: { name?: string; icon?: string }) {
         if (!resource) return;
 
+        await client.resources.updateDetails({
+            projectId,
+            resourceId: resource.id,
+            name: changes.name ?? resource.name,
+            description: resource.description ?? undefined,
+            icon: changes.icon ?? resource.icon ?? undefined,
+        });
+        await queryClient.invalidateQueries({
+            queryKey: orpc.resources.listResources.key(),
+        });
+    }
+
+    async function rename() {
         saving = true;
         error = "";
 
         try {
-            await client.resources.updateDetails({
-                projectId,
-                resourceId: resource.id,
-                name: changes.name ?? resource.name,
-                description: resource.description ?? undefined,
-                icon: changes.icon ?? resource.icon ?? undefined,
-            });
-            await queryClient.invalidateQueries({
-                queryKey: orpc.resources.listResources.key(),
-            });
+            await update({ name: name.trim() });
             onclose();
         } catch (cause) {
             error =
@@ -86,7 +90,7 @@
             class="contents"
             onsubmit={(event) => {
                 event.preventDefault();
-                void save({ name: name.trim() });
+                void rename();
             }}
         >
             <DialogHeader>
@@ -136,7 +140,7 @@
             if (!open) onclose();
         }
     }
-    onselect={(icon) => void save({ icon })}
+    onselect={(icon) => update({ icon })}
 />
 
 <ResourceIconLinkDialog
@@ -147,5 +151,5 @@
         }
     }
     currentIcon={resource?.icon ?? ""}
-    onselect={(icon) => void save({ icon })}
+    onselect={(icon) => update({ icon })}
 />

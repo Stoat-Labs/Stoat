@@ -14,6 +14,7 @@ import * as v from "valibot";
 
 import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
+import { unpinVolumeNames } from "../../compose-move";
 import { composeResourceTypes } from "../../databases";
 
 type Executor = Pick<Database, "select">;
@@ -187,6 +188,8 @@ export const resourceTransferRouter = {
 
                 if (issue) throw new ORPCError("BAD_REQUEST", { message: issue });
 
+                const spec = resource.draftSpec ?? resource.spec;
+
                 const [copy] = await tx
                     .insert(resources)
                     .values({
@@ -195,7 +198,7 @@ export const resourceTransferRouter = {
                         description: resource.description,
                         icon: resource.icon,
                         type: resource.type,
-                        draftSpec: resource.draftSpec ?? resource.spec,
+                        draftSpec: spec === null ? null : unpinVolumeNames(spec),
                         settings: resource.settings,
                         gitConnectionId: resource.gitConnectionId,
                         gitSource: resource.gitSource,

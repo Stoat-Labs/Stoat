@@ -1,7 +1,8 @@
 import YAML from "yaml";
 
-// `[registry/]path[:tag][@digest]`, loose enough for every registry Railway lists.
-const IMAGE_REFERENCE = /^[a-z0-9][\w.\-/]*(?::[\w.-]+)?(?:@sha256:[a-f0-9]{64})?$/u;
+// `[registry[:port]/]path[:tag][@digest]`, loose enough for every registry Railway lists.
+const IMAGE_REFERENCE =
+    /^(?:[a-z0-9][\w.-]*:\d+\/)?[a-z0-9][\w.\-/]*(?::[\w.-]+)?(?:@sha256:[a-f0-9]{64})?$/u;
 
 export function isImageReference(image: string) {
     return IMAGE_REFERENCE.test(image);

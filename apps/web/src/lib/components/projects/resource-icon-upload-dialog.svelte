@@ -28,8 +28,11 @@
         onselect,
     }: {
         open?: boolean;
-        onselect: (icon: string) => void;
+        /** Rejecting keeps the dialog open with the error. */
+        onselect: (icon: string) => void | Promise<void>;
     } = $props();
+
+    let saving = $state(false);
 
     const SVG_MAX_BYTES = 256 * 1024;
 
@@ -157,10 +160,23 @@
         }
     }
 
-    function confirmUpload() {
-        if (!uploadPreview || uploadProcessing) return;
-        onselect(uploadPreview);
-        open = false;
+    async function confirmUpload() {
+        if (!uploadPreview || uploadProcessing || saving) return;
+
+        saving = true;
+        uploadError = "";
+
+        try {
+            await onselect(uploadPreview);
+            open = false;
+        } catch (cause) {
+            uploadError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not save the icon.";
+        } finally {
+            saving = false;
+        }
     }
 </script>
 
@@ -234,8 +250,11 @@
                 Cancel
             </Button>
             <Button
-                disabled={!uploadPreview || uploadProcessing}
-                onclick={confirmUpload}
+                loading={saving}
+                disabled={!uploadPreview ||
+                    uploadProcessing ||
+                    saving}
+                onclick={() => void confirmUpload()}
             >
                 Use icon
             </Button>

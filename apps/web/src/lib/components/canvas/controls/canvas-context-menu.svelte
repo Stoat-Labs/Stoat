@@ -56,6 +56,7 @@
         projectId,
         target,
         groups,
+        canAdd,
         children,
         onaddpage,
         onopen,
@@ -65,6 +66,8 @@
         target: MenuTarget | undefined;
         /** Resources drawn as frames, Railway's groups: their right-click gets the group actions. */
         groups: { id: string; name: string }[];
+        /** False on internal projects, which take no new resources. */
+        canAdd: boolean;
         children: Snippet;
         onaddpage: (page: AddPage) => void;
         onopen: (nodeId: string, tab: PanelTab) => void;
@@ -244,6 +247,12 @@
                     Delete resource
                 </ContextMenuItem>
             {/if}
+        {:else if !canAdd}
+            <ContextMenuGroup>
+                <ContextMenuGroupLabel>
+                    Stoat manages this project's services
+                </ContextMenuGroupLabel>
+            </ContextMenuGroup>
         {:else}
             <!-- Railway's canvas menu: the same choices as + Add. -->
             <ContextMenuGroup>

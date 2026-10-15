@@ -42,13 +42,20 @@
 
     let error = $state("");
 
-    async function finished(deploymentId: string) {
+    // Only a ready cleanup lets the rest start: a failed or cancelled one may leave a moved
+    // service running on the volume its new resource is about to use.
+    async function finished(deploymentId: string, name: string) {
         for (;;) {
             const deployment = await client.cluster.getDeployment({
                 deploymentId,
             });
 
-            if (isTerminalDeploymentStatus(deployment.status)) return;
+            if (deployment.status === "ready") return;
+
+            if (isTerminalDeploymentStatus(deployment.status))
+                throw new Error(
+                    `${name} was ${deployment.status === "cancelled" ? "cancelled" : "not deployed"}, so the other changes were not deployed.`,
+                );
 
             await new Promise((resolve) => setTimeout(resolve, 1500));
         }
@@ -82,7 +89,7 @@
                     force,
                 });
 
-                if (rest.length) await finished(id);
+                if (rest.length) await finished(id, resource.name);
             }
 
             // Git-backed drafts are committed to their branch by the deploy itself.

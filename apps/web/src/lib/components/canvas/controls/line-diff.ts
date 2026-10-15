@@ -7,10 +7,22 @@ function lines(text: string) {
     return text === "" ? [] : text.replace(/\n$/u, "").split("\n");
 }
 
-/** Line diff by longest common subsequence; Compose and `.env` files are small enough for it. */
-function fullDiff(before: string[], after: string[]) {
+type Change = { kind: "same" | "add" | "remove"; text: string };
+
+// Past this many LCS cells (~4M, a 2,000 × 2,000 line change), the browser would stall.
+const MAX_CELLS = 4_000_000;
+
+/** Line diff by longest common subsequence, for the lines between an unchanged head and tail. */
+function changedLines(before: string[], after: string[]): Change[] {
     const rows = before.length;
     const columns = after.length;
+
+    // Too large to compare line by line: show the whole block as replaced.
+    if (rows * columns > MAX_CELLS)
+        return [
+            ...before.map((text) => ({ kind: "remove" as const, text })),
+            ...after.map((text) => ({ kind: "add" as const, text })),
+        ];
 
     // common[i][j]: the longest common run of before[i..] and after[j..].
     const common = Array.from({ length: rows + 1 }, () =>
@@ -24,7 +36,7 @@ function fullDiff(before: string[], after: string[]) {
                     ? common[i + 1]![j + 1]! + 1
                     : Math.max(common[i + 1]![j]!, common[i]![j + 1]!);
 
-    const diff: { kind: "same" | "add" | "remove"; text: string }[] = [];
+    const diff: Change[] = [];
     let i = 0;
     let j = 0;
 
@@ -44,6 +56,33 @@ function fullDiff(before: string[], after: string[]) {
     }
 
     return diff;
+}
+
+/** Unchanged leading and trailing lines are matched directly, so identical files cost nothing. */
+function fullDiff(before: string[], after: string[]): Change[] {
+    let start = 0;
+
+    while (start < before.length && start < after.length && before[start] === after[start]) start++;
+
+    let end = 0;
+
+    while (
+        end < before.length - start &&
+        end < after.length - start &&
+        before[before.length - 1 - end] === after[after.length - 1 - end]
+    )
+        end++;
+
+    const same = (text: string) => ({ kind: "same" as const, text });
+
+    return [
+        ...before.slice(0, start).map(same),
+        ...changedLines(
+            before.slice(start, before.length - end),
+            after.slice(start, after.length - end),
+        ),
+        ...before.slice(before.length - end).map(same),
+    ];
 }
 
 /** The changed lines of `before` → `after`, each with `context` unchanged lines around it. */

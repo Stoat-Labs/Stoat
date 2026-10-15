@@ -42,7 +42,10 @@
     const state = $derived.by(() => {
         if (resource.bucketStatus) return "bucket";
 
-        if (!status || status === "cancelled") return "offline";
+        if (!status) return "offline";
+
+        // A cancelled deploy may never have started, so it says nothing about the running service.
+        if (status === "cancelled") return "cancelled";
 
         if (isActiveDeploymentStatus(status)) return "deploying";
 
@@ -64,6 +67,12 @@
 {:else if state === "offline"}
     <p class="truncate text-sm text-muted-foreground">
         {draftOnly ? "Draft, not deployed" : "Service is offline"}
+    </p>
+{:else if state === "cancelled"}
+    <p class="truncate text-sm text-muted-foreground">
+        Deploy cancelled {finishedAt
+            ? ago(finishedAt, clock.now)
+            : ""}
     </p>
 {:else}
     <!-- Railway's status row: icon in a 24px column, 12px gap, 14px text. -->

@@ -79,6 +79,7 @@
     let {
         projectId,
         clusterId,
+        isInternal,
         resources,
         graph,
         logos,
@@ -86,6 +87,8 @@
     }: {
         projectId: string;
         clusterId: string;
+        /** Internal projects are managed by Stoat and take no new resources. */
+        isInternal: boolean;
         resources: CanvasResource[];
         graph: CanvasGraph;
         logos: CanvasLogos;
@@ -1054,6 +1057,7 @@
                 ? [{ id: node.id, name: node.data.resource.name }]
                 : [],
         )}
+        canAdd={!isInternal}
         onaddpage={(addPage) => void add.set(addPage)}
         onopen={openPanel}
     >
@@ -1172,7 +1176,7 @@
         class:hidden={narrow && selectedResource}
         style:right="{selectedResource ? panelWidth : 0}px"
     >
-        {#if !empty}
+        {#if !empty && !isInternal}
             <div class="pointer-events-auto absolute top-4 right-4">
                 <Button
                     size="sm"
@@ -1221,7 +1225,7 @@
         {/if}
     </div>
 
-    {#if empty}
+    {#if empty && !isInternal}
         <div
             class="pointer-events-none absolute inset-0 flex items-center justify-center p-4"
         >
@@ -1248,7 +1252,7 @@
     {/if}
 </div>
 
-{#if !empty}
+{#if !empty && !isInternal}
     <AddPalette {projectId} oncreated={select} />
 {/if}
 

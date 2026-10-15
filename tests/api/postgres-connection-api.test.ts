@@ -181,6 +181,26 @@ describe("external connection API", () => {
         expect(again.draftSpec).toBe(updated.draftSpec);
     });
 
+    it("resolves built-in identity variables in the connection URL like a deploy", async () => {
+        const input = await resource();
+        await db
+            .update(resources)
+            .set({
+                settings: {
+                    engine: "postgresql",
+                    env: "POSTGRES_PASSWORD=${STOAT_RESOURCE_ID}\nPOSTGRES_DB=${STOAT_PROJECT_NAME}\n",
+                },
+            })
+            .where(eq(resources.id, input.resourceId));
+
+        expect(await call(resourcesRouter.getConnection, input, { context })).toMatchObject({
+            internal: expect.stringContaining(`:${input.resourceId}@`),
+        });
+        expect((await call(resourcesRouter.getConnection, input, { context }))?.internal).toMatch(
+            /\/Project$/u,
+        );
+    });
+
     it("only warns about an external port that has not been deployed", async () => {
         const internalOnly = await resource();
         expect(await call(resourcesRouter.getConnection, internalOnly, { context })).toMatchObject({
