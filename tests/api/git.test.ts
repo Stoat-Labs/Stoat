@@ -620,9 +620,7 @@ describe("Git plumbing and transport isolation", () => {
         });
         expect(missing).toMatchObject({ code: "NOT_FOUND" });
         expect(script).toMatchObject({ tree: fixtureGit(["rev-parse", `${initial}:bin`]) });
-        expect(
-            network.calls.filter((call) => call.args.includes("fetch")),
-        ).toHaveLength(1);
+        expect(network.calls.filter((call) => call.args.includes("fetch"))).toHaveLength(1);
     });
 
     it("reads several files from one snapshot and rejects missing or non-regular ones", async () => {

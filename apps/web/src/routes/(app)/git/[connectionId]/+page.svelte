@@ -316,9 +316,8 @@
                         >
                             application/json
                         </span>
-                        ). Resources with auto deploy on are checked
-                        right after a push instead of on the next
-                        minute.
+                        ). Resources with auto deploy on are checked right
+                        after a push instead of on the next minute.
                     </p>
                     {#if webhookQuery.isError}
                         <Alert variant="error">

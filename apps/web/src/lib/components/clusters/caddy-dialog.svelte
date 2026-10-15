@@ -186,7 +186,7 @@
                         error shows on the cluster page. With monitoring,
                         Stoat adds a
                         <code>metrics</code>
-                         global option for HTTP metrics unless you set one
+                        global option for HTTP metrics unless you set one
                         yourself.
                     </FieldDescription>
                 </Field>

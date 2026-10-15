@@ -2,12 +2,15 @@ import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
+    CaddyConfigs,
+    CaddySettings,
     ClusterDiagnostics,
     DeployComposeEvent,
     DomainResponse,
     ErrorResponse,
     LogEvent,
     Machine,
+    MachineExecResponse,
     Service,
     StatusResponse,
 } from "@stoat/uncloud";
@@ -88,9 +91,12 @@ function sendEvent(response: ServerResponse, event: DeployComposeEvent | LogEven
 /** Everything the fake answers with as JSON. */
 type Reply =
     | string[]
+    | CaddyConfigs
+    | CaddySettings
     | ClusterDiagnostics
     | DomainResponse
     | ErrorResponse
+    | MachineExecResponse
     | StatusResponse
     | Service
     | { items: Machine[] | Service[] }

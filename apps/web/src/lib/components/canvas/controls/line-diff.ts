@@ -11,6 +11,7 @@ function lines(text: string) {
 function fullDiff(before: string[], after: string[]) {
     const rows = before.length;
     const columns = after.length;
+
     // common[i][j]: the longest common run of before[i..] and after[j..].
     const common = Array.from({ length: rows + 1 }, () =>
         Array.from({ length: columns + 1 }, () => 0),
