@@ -757,6 +757,35 @@ function mergedEntries(doc: YAML.Document, map: YAMLMap) {
     return entries;
 }
 
+/** A plain copy of `node`: no anchors, nested aliases resolved. */
+function anchorlessCopy(doc: YAML.Document, node: Node) {
+    return doc.createNode(node.toJS(doc));
+}
+
+/**
+ * Turns every alias of an anchor inside `node` into a copy of what it names, so `node` can be
+ * replaced without leaving those aliases unresolved.
+ */
+function detachAliases(doc: YAML.Document, node: Node) {
+    const anchored = new Set<Node>();
+
+    YAML.visit(node, {
+        Node(_, child) {
+            if (child.anchor) anchored.add(child);
+        },
+    });
+
+    if (anchored.size === 0) return;
+
+    YAML.visit(doc, {
+        Alias(_, alias) {
+            const target = alias.resolve(doc);
+
+            return target && anchored.has(target) ? anchorlessCopy(doc, target) : undefined;
+        },
+    });
+}
+
 function resolvedNode(doc: YAML.Document, node: Node | null | undefined) {
     return isAlias(node) ? node.resolve(doc) : (node ?? undefined);
 }
@@ -770,6 +799,10 @@ function mergeEnvironment(doc: YAML.Document, service: YAMLMap, variables: Recor
     // The document is already interpolated, so a literal `$` stays escaped as `$$`.
     const escape = (value: string) => value.replaceAll("$", "$$$$");
     const environment = resolvedNode(doc, mergedEntries(doc, service).get("environment"));
+    const own = service.get("environment", true);
+
+    // The service's own environment is replaced below, taking any anchor it defines with it.
+    if (isNode(own) && !isAlias(own)) detachAliases(doc, own);
 
     if (isSeq(environment)) {
         const lines = environment.items.flatMap((item) => {
@@ -794,7 +827,7 @@ function mergeEnvironment(doc: YAML.Document, service: YAMLMap, variables: Recor
         for (const [name, value] of mergedEntries(doc, environment)) {
             const node = resolvedNode(doc, value);
 
-            map.set(name, isScalar(node) ? node.clone() : null);
+            map.set(name, isScalar(node) ? anchorlessCopy(doc, node) : null);
         }
 
     for (const [name, value] of Object.entries(variables))

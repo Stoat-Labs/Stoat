@@ -2140,6 +2140,36 @@ describe("interpolateCompose", () => {
         expect(out.services.other.environment).toEqual({ MODE: "explicit", ONLY: "shared" });
     });
 
+    it("keeps aliases working when the env_file service defines the anchor", () => {
+        const deploy = (environment: string, alias: string) =>
+            YAML.parse(
+                interpolateCompose(
+                    [
+                        "services:",
+                        "  web:",
+                        "    image: x",
+                        "    env_file: .env",
+                        `    environment: ${environment}`,
+                        "  other:",
+                        "    image: y",
+                        `    environment: ${alias}`,
+                        "",
+                    ].join("\n"),
+                    "EXTRA=1\n",
+                ),
+            ).services;
+
+        const map = deploy("&sharedEnv { MODE: explicit }", "*sharedEnv");
+
+        expect(map.web.environment).toEqual({ MODE: "explicit", EXTRA: "1" });
+        expect(map.other.environment).toEqual({ MODE: "explicit" });
+
+        const list = deploy("&sharedEnv [MODE=explicit]", "*sharedEnv");
+
+        expect(list.web.environment).toEqual(["MODE=explicit", "EXTRA=1"]);
+        expect(list.other.environment).toEqual(["MODE=explicit"]);
+    });
+
     it("rejects env files a deploy cannot read", () => {
         expect(() =>
             interpolateCompose("services:\n  web:\n    image: x\n    env_file: app.env\n", ""),
