@@ -109,7 +109,10 @@ export async function deployResource(db: Database, deploymentId: string, signal:
 
             // Only ask the sidecar when STOAT_DOMAIN is used, including by referenced resources.
             const variableSources = [deployedSpec, input.env].concat(
-                targets.map((target) => target.spec + resourceEnv(target)),
+                // Drafts too: a reference can resolve from a service only the draft has yet.
+                targets.map(
+                    (target) => `${target.spec}\n${target.draftSpec ?? ""}\n${resourceEnv(target)}`,
+                ),
             );
 
             let domain: string | undefined;

@@ -148,6 +148,26 @@ describe("moveComposeService", () => {
     });
 });
 
+describe("variables a moved service takes along", () => {
+    it("stops at variables the target already sets, warning about ones its services share", () => {
+        const result = move("db", {
+            sourceEnv: "BASE=source\nDB_PASSWORD=${BASE}\nAPI_KEY=key\n",
+            targetEnv: "DB_PASSWORD=mine\n",
+        });
+
+        expect(result.targetEnv).toBe("DB_PASSWORD=mine\n");
+
+        const shared = move("db", {
+            target: "services:\n  worker:\n    image: alpine\n    command: ${DB_PASSWORD:-x}\n",
+            targetEnv: "",
+        });
+
+        expect(shared.warnings).toContain(
+            '"db" brings ${DB_PASSWORD}, which services already in the target read too.',
+        );
+    });
+});
+
 describe("unpinVolumeNames", () => {
     it("drops pinned volume names, keeping external ones", () => {
         const compose = `services:

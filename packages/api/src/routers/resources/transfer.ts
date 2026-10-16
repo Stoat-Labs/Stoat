@@ -162,6 +162,10 @@ export const resourceTransferRouter = {
                 if (issue) throw new ORPCError("BAD_REQUEST", { message: issue });
 
                 const spec = resource.draftSpec ?? resource.spec;
+                const draftSpec = spec === null ? null : unpinVolumeNames(spec);
+
+                // Deploying the copy would push its own volume names into the original's Git file.
+                const keepsGit = draftSpec === spec;
 
                 const [copy] = await tx
                     .insert(resources)
@@ -173,10 +177,10 @@ export const resourceTransferRouter = {
                         description: resource.description,
                         icon: resource.icon,
                         type: resource.type,
-                        draftSpec: spec === null ? null : unpinVolumeNames(spec),
+                        draftSpec,
                         settings: resource.settings,
-                        gitConnectionId: resource.gitConnectionId,
-                        gitSource: resource.gitSource,
+                        gitConnectionId: keepsGit ? resource.gitConnectionId : null,
+                        gitSource: keepsGit ? resource.gitSource : null,
                         projectId: to.id,
                     })
                     .returning();

@@ -514,6 +514,44 @@ describe("hostnames across resources", () => {
     });
 });
 
+describe("moves next to unrelated services", () => {
+    it("keeps what stays behind pointing at its own services when the target has the same names", () => {
+        const result = moveComposeService({
+            service: "cache",
+            source: "services:\n  web:\n    image: nginx\n    environment:\n      SELF: http://web\n      UP: http://cache\n  cache:\n    image: redis\n",
+            target: "services:\n  web:\n    image: other\n",
+            sourceId: STACK,
+            targetId: newId(9),
+            sourcePrefix: undefined,
+            sourceEnv: "",
+            targetEnv: "",
+        });
+
+        expect(YAML.parse(result.source).services.web.environment).toEqual({
+            SELF: "http://web",
+            UP: "http://${CACHE_SERVICE_NAME}",
+        });
+    });
+
+    it("keeps a collapsed link that other parts of the Compose still interpolate", () => {
+        const target = newId(9);
+
+        const result = moveComposeService({
+            service: "cache",
+            source: "services:\n  cache:\n    image: redis\n  extra:\n    image: x\n",
+            target: 'services:\n  app:\n    image: a\n    command: ["connect", "${HOST}"]\n',
+            sourceId: STACK,
+            targetId: target,
+            sourcePrefix: undefined,
+            sourceEnv: "",
+            targetEnv: `HOST={{ ${STACK}.CACHE_SERVICE_NAME }}\n`,
+        });
+
+        expect(result.targetEnv).toBe("HOST=cache\n");
+        expect(YAML.parse(result.target).services.app.command).toEqual(["connect", "${HOST}"]);
+    });
+});
+
 describe("retargetServiceReferences", () => {
     const from = STACK;
     const to = newId(9);

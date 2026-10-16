@@ -469,10 +469,15 @@ export const resourcesRouter = {
                             : { env: moved.targetEnv, prefixNames: false },
                     });
 
-                // Resources elsewhere on the cluster that referenced the service follow it too, before
+                // Resources elsewhere in the project that referenced the service follow it too, before
                 // an emptied source is removed, which refuses while anything still references it.
                 const readers = await tx
-                    .select({ id: resources.id, settings: resources.settings })
+                    .select({
+                        id: resources.id,
+                        name: resources.name,
+                        projectId: resources.projectId,
+                        settings: resources.settings,
+                    })
                     .from(resources)
                     .innerJoin(projects, eq(resources.projectId, projects.id))
                     .where(
@@ -495,13 +500,20 @@ export const resourcesRouter = {
                         input.service,
                     );
 
-                    if (next !== env)
-                        await tx
-                            .update(resources)
-                            .set({
-                                settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${next}::text)`,
-                            })
-                            .where(eq(resources.id, reader.id));
+                    if (next === env) continue;
+
+                    // Apply only deploys this project, so a reader elsewhere would keep the old host.
+                    if (reader.projectId !== input.projectId)
+                        throw new ORPCError("CONFLICT", {
+                            message: `"${reader.name}" in another project references "${input.service}". Remove the reference from its variables first.`,
+                        });
+
+                    await tx
+                        .update(resources)
+                        .set({
+                            settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${next}::text)`,
+                        })
+                        .where(eq(resources.id, reader.id));
                 }
 
                 if (moved.sourceEmpty) await removeResources(tx, from.clusterId, [from.resource]);

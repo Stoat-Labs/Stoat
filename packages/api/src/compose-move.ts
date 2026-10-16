@@ -193,15 +193,22 @@ function appendEnv(envText: string, lines: string[]) {
     return `${base}${base ? "\n" : ""}${lines.join("\n")}\n`;
 }
 
-/** `keys` plus every source variable their values interpolate, transitively. */
-function withDependencies(keys: Iterable<string>, values: Record<string, string | undefined>) {
+/**
+ * `keys` plus every variable their values interpolate, transitively. Keys in `supplied` are
+ * set elsewhere, so neither they nor what their values here use are followed.
+ */
+function withDependencies(
+    keys: Iterable<string>,
+    values: Record<string, string | undefined>,
+    supplied = new Set<string>(),
+) {
     const needed = new Set<string>();
     const pending = [...keys];
 
     for (let key = pending.pop(); key !== undefined; key = pending.pop()) {
         const value = values[key];
 
-        if (needed.has(key) || value === undefined) continue;
+        if (needed.has(key) || supplied.has(key) || value === undefined) continue;
 
         needed.add(key);
 
@@ -316,7 +323,8 @@ function mapServiceHosts(
 
 /**
  * Variables that link one resource's services to another's, created on first use and reused
- * when the same link already exists.
+ * when the same link already exists. Only hostnames in `linked` are rewritten; `otherNames` is
+ * every service of the other resource, for telling whose built-ins a key is.
  */
 class Links {
     readonly lines: string[] = [];
@@ -332,6 +340,7 @@ class Links {
         builtins: Set<string>,
         readonly otherId: string,
         readonly otherNames: string[],
+        readonly linked: string[],
     ) {
         this.#values = parseEnv(envText);
         this.#taken = new Set([...builtins, ...Object.keys(this.#values)]);
@@ -367,9 +376,9 @@ class Links {
         return reference(this.otherId, serviceNameKey(service));
     }
 
-    /** Points every hostname of the other resource's services in `service` at a placeholder. */
+    /** Points every linked hostname in `service` at a placeholder. */
     rewriteService(service: YAMLMap) {
-        const others = new Set(this.otherNames);
+        const others = new Set(this.linked);
 
         mapServiceHosts(
             service,
@@ -378,9 +387,9 @@ class Links {
         );
     }
 
-    /** Points hostnames of the other resource's services in `.env` values at references. */
+    /** Points linked hostnames in `.env` values at references. */
     rewriteEnv(envText: string) {
-        const others = new Set(this.otherNames);
+        const others = new Set(this.linked);
 
         return mapEnvValues(envText, (value) =>
             rewriteComposeHostname(value, others, (name) => this.reference(name)),
@@ -440,7 +449,7 @@ function collapseSelfReferences(doc: Document, envText: string, resourceId: stri
                 name.startsWith("${") ? desugar(name) : name,
             );
 
-    const env = mapEnvValues(withoutEnvKeys(envText, new Set(hosts.keys())), (value) =>
+    const env = mapEnvValues(envText, (value) =>
         desugar(value).replace(VARIABLE_REFERENCE, (match, id: string, key: string) => {
             if (referenceResourceId(id) !== resourceId) return match;
 
@@ -448,7 +457,11 @@ function collapseSelfReferences(doc: Document, envText: string, resourceId: stri
         }),
     );
 
-    return env;
+    // A key still interpolated somewhere else, like a `command`, stays with the plain name.
+    const serviceMaps = services.items.flatMap((pair) => (isMap(pair.value) ? [pair.value] : []));
+    const used = withDependencies(serviceMaps.flatMap(interpolated), parseEnv(env));
+
+    return withoutEnvKeys(env, new Set([...hosts.keys()].filter((key) => !used.has(key))));
 }
 
 /** Link variables no service of the resource interpolates any more. */
@@ -554,6 +567,10 @@ export function moveComposeService(options: {
         warnings.push(`"${name}" no longer waits for "${dependency}", which stays behind.`);
     }
 
+    const targetInterpolated = new Set(
+        targetServices.items.flatMap((pair) => (isMap(pair.value) ? interpolated(pair.value) : [])),
+    );
+
     targetServices.set(name, moved);
     sourceServices.delete(name);
 
@@ -580,15 +597,20 @@ export function moveComposeService(options: {
     // Variables the service interpolates follow it, with the ones their values use, unless the
     // target already sets them. They are read before the source's values are rewritten.
     const targetKeys = new Set(Object.keys(parseEnv(targetEnv)));
-    const needed = withDependencies(interpolated(service), parseEnv(sourceEnv));
+    const needed = withDependencies(interpolated(service), parseEnv(sourceEnv), targetKeys);
+    const copiedLines = envLines(sourceEnv, needed);
 
-    const copiedLines = envLines(
-        sourceEnv,
-        new Set([...needed].filter((key) => !targetKeys.has(key))),
-    );
+    for (const key of needed)
+        if (targetInterpolated.has(key))
+            warnings.push(
+                `"${name}" brings \${${key}}, which services already in the target read too.`,
+            );
 
-    // What stays behind reaches the moved service through the target.
-    const toTarget = new Links(sourceEnv, builtinKeys(remainingNames), targetId, targetNames);
+    // What stays behind reaches the moved service through the target, and only that service:
+    // a target service sharing a name with one left behind is a different service.
+    const toTarget = new Links(sourceEnv, builtinKeys(remainingNames), targetId, targetNames, [
+        name,
+    ]);
 
     for (const other of remaining) toTarget.rewriteService(other);
 
@@ -603,6 +625,7 @@ export function moveComposeService(options: {
         appendEnv(targetEnv, copiedLines),
         builtinKeys(targetNames),
         sourceId,
+        remainingNames,
         remainingNames,
     );
 

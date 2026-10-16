@@ -66,9 +66,6 @@ export const resourceDiscardRouter = {
 
                 const live = rows.filter((row) => row.spec?.trim());
 
-                // Never deployed, so nothing runs for it: discarding the change removes it.
-                await removeResources(tx, project.clusterId, drafts);
-
                 for (const row of live) {
                     const [last] = await tx
                         .select({
@@ -103,6 +100,10 @@ export const resourceDiscardRouter = {
                         .set({ draftSpec: row.spec, settings })
                         .where(eq(resources.id, row.id));
                 }
+
+                // Never deployed, so nothing runs for it: discarding the change removes it. Live
+                // resources are restored first, so their staged references to a draft don't block it.
+                await removeResources(tx, project.clusterId, drafts);
 
                 return { restored: live.length, removed: drafts.length };
             }),

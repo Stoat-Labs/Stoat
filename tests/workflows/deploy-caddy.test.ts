@@ -104,6 +104,14 @@ describe("caddy metrics", () => {
         );
         expect(missingMetricsSubdirectives(completeMetricsOption(caddyfile))).toEqual([]);
     });
+
+    it("ignores braces in comments and quotes when finding the metrics block", () => {
+        const caddyfile = '{\n\tmetrics {\n\t\tper_host # {\n\t}\n\tlog "}"\n}\n';
+
+        expect(completeMetricsOption(caddyfile)).toBe(
+            '{\n\tmetrics {\n\t\tper_host # {\n\t\totlp\n\t}\n\tlog "}"\n}\n',
+        );
+    });
 });
 
 describe("caddy deployment rows (PostgreSQL)", () => {

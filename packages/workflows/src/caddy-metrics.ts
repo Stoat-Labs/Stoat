@@ -10,8 +10,18 @@ const METRICS_OPTION = ["\tmetrics {", "\t\tper_host", "\t\totlp", "\t}"];
 
 type MetricsOption = { start: number; end: number; indent: string; subdirectives: string[] };
 
+/** A line without its quoted text and trailing comment, so neither counts as braces. */
+function code(line: string) {
+    return line
+        .replace(/"(?:[^"\\]|\\.)*"|`[^`]*`/g, '""')
+        .replace(/(^|\s)#.*$/, "")
+        .trim();
+}
+
 function braceDelta(line: string) {
-    return (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+    const text = code(line);
+
+    return (text.match(/\{/g)?.length ?? 0) - (text.match(/\}/g)?.length ?? 0);
 }
 
 function indentation(line: string) {
@@ -27,7 +37,7 @@ function globalBlockStart(lines: string[]) {
 
 /** Reads `metrics`, `metrics { per_host }` or a multi-line `metrics { … }` starting at `start`. */
 function readMetricsOption(lines: string[], start: number): MetricsOption | null {
-    const line = lines[start]!.trim();
+    const line = code(lines[start]!);
     const indent = indentation(lines[start]!);
 
     if (!line.includes("{")) return { start, end: start, indent, subdirectives: [] };
@@ -42,9 +52,9 @@ function readMetricsOption(lines: string[], start: number): MetricsOption | null
     let depth = 1;
 
     for (let index = start + 1; index < lines.length; index++) {
-        const inner = lines[index]!.trim();
+        const inner = code(lines[index]!);
 
-        if (inner === "" || inner.startsWith("#")) continue;
+        if (inner === "") continue;
 
         if (depth === 1 && inner !== "}") subdirectives.push(inner.split(/\s+/)[0]!);
 
@@ -129,6 +139,7 @@ export function completeMetricsOption(caddyfile: string): string {
     const multiline = option.end > option.start;
     const body = multiline ? lines.slice(option.start + 1, option.end) : [];
     const firstChild = body.find((line) => line.trim() !== "");
+
     const childIndent = firstChild
         ? indentation(firstChild)
         : option.indent + (option.indent || "\t");
