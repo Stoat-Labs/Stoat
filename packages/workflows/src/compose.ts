@@ -1,8 +1,8 @@
 // Ported from stoat-old's src/lib/server/deployments/deployment-compose.ts:
 // only the formatting/prefixing core, shared by previews and deployment workers.
 
-import YAML, { isAlias, isMap, isNode, isScalar, isSeq } from "yaml";
-import type { Node, YAMLMap } from "yaml";
+import YAML, { isAlias, isMap, isNode, isScalar, isSeq, YAMLMap } from "yaml";
+import type { Node } from "yaml";
 import { Predicate } from "effect";
 import { posix } from "node:path";
 import { parseEnv } from "node:util";
@@ -646,7 +646,16 @@ export function interpolateCompose(
     identity?: ResourceIdentity,
 ): string {
     const doc = YAML.parseDocument(compose);
-    const { expand } = composeEnvironment(doc, envText, prefix, domain, references, identity);
+
+    const { env, expand, names } = composeEnvironment(
+        doc,
+        envText,
+        prefix,
+        domain,
+        references,
+        identity,
+    );
+
     assertNoComposeReference(compose);
 
     YAML.visit(doc, {
@@ -655,7 +664,82 @@ export function interpolateCompose(
         },
     });
 
+    // The resolved Variables, without the built-ins: what a real `.env` file would hold.
+    const variables: Record<string, string> = {};
+
+    for (const name of names) {
+        const value = env[name];
+
+        if (value !== undefined) variables[name] = value;
+    }
+
+    inlineEnvFiles(doc, variables);
+
     return doc.toString();
+}
+
+const RESOURCE_ENV_FILE = /^(?:\.\/)?\.env$/u;
+
+/**
+ * Uncloud loads Compose from a temporary directory with no `.env` beside it, so
+ * `env_file: .env` (the resource's Variables) becomes plain `environment` entries.
+ * Keys already in `environment` win, as in Compose. No other env file exists there.
+ */
+function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
+    const services = doc.get("services", true);
+
+    if (!isMap(services)) return;
+
+    for (const { key, value: service } of services.items) {
+        if (!isMap(service) || !service.has("env_file")) continue;
+
+        const envFiles = service.get("env_file", true);
+        let usesResourceEnv = false;
+
+        for (const entry of isSeq(envFiles) ? envFiles.items : [envFiles]) {
+            // Short form `- .env`, or long form `- path: .env` with an optional `required: false`.
+            const path = isMap(entry) ? entry.get("path") : isScalar(entry) ? entry.value : entry;
+            const required = !isMap(entry) || entry.get("required") !== false;
+
+            if (Predicate.isString(path) && RESOURCE_ENV_FILE.test(path)) {
+                usesResourceEnv = true;
+            } else if (required) {
+                throw new ComposeVariableError(
+                    `Service ${String(key)} loads env_file ${String(path)}, which a deploy cannot read. Put those variables in the resource's Variables and use env_file: .env.`,
+                );
+            }
+        }
+
+        service.delete("env_file");
+
+        if (usesResourceEnv) mergeEnvironment(service, variables);
+    }
+}
+
+function mergeEnvironment(service: YAMLMap, variables: Record<string, string>) {
+    // The document is already interpolated, so a literal `$` stays escaped as `$$`.
+    const escape = (value: string) => value.replaceAll("$", "$$$$");
+    const environment = service.get("environment", true);
+
+    if (isSeq(environment)) {
+        const defined = new Set(
+            environment.items.map((item) =>
+                isScalar(item) ? String(item.value).split("=", 1)[0] : undefined,
+            ),
+        );
+
+        for (const [name, value] of Object.entries(variables))
+            if (!defined.has(name)) environment.add(`${name}=${escape(value)}`);
+
+        return;
+    }
+
+    const map = isMap(environment) ? environment : new YAMLMap();
+
+    for (const [name, value] of Object.entries(variables))
+        if (!map.has(name)) map.set(name, escape(value));
+
+    service.set("environment", map);
 }
 
 /**
@@ -972,7 +1056,7 @@ function composeEnvironment(
     system = systemVariables(doc, prefix, domain, identity, hostnames);
     resolve(true);
 
-    return { env, expand, system };
+    return { env, expand, names, system };
 }
 
 /** Undo only the transformations made by formatComposeFile; keep user YAML intact. */

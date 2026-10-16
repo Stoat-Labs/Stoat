@@ -2073,6 +2073,36 @@ describe("interpolateCompose", () => {
         expect(out).not.toContain("${");
     });
 
+    it("inlines env_file: .env as environment, keeping explicit keys", () => {
+        const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
+
+        const short = interpolateCompose(
+            "services:\n  web:\n    image: x\n    env_file: .env\n    environment:\n      HOST: kept\n",
+            env,
+        );
+
+        expect(short).not.toContain("env_file");
+        expect(short).toContain("HOST: kept");
+        expect(short).toContain("SECRET: p$$w");
+        expect(short).not.toContain("STOAT_PREFIX");
+
+        const long = interpolateCompose(
+            "services:\n  web:\n    image: x\n    env_file:\n      - path: ./.env\n      - path: other.env\n        required: false\n    environment:\n      - HOST=kept\n",
+            env,
+        );
+
+        expect(long).not.toContain("env_file");
+        expect(long).toContain("- HOST=kept");
+        expect(long).not.toContain("HOST=a.b");
+        expect(long).toContain("- SECRET=p$$w");
+    });
+
+    it("rejects env files a deploy cannot read", () => {
+        expect(() =>
+            interpolateCompose("services:\n  web:\n    image: x\n    env_file: app.env\n", ""),
+        ).toThrow(ComposeVariableError);
+    });
+
     it("expands .env values that reference earlier variables", () => {
         const out = interpolateCompose(
             "services:\n  a:\n    image: x\n    volumes:\n      - ${VOL:-/opt}:/data\n    environment:\n      - USER=${USER2}\n",

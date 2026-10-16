@@ -274,7 +274,16 @@
                 {new Date(deployment.createdAt).toLocaleString()}
             </time>
         {/if}
-        {#if deployment?.spec || stream.canDelete || stream.canCancel}
+        {#if deployment?.spec}
+            <Button
+                variant="outline"
+                size="sm"
+                onclick={() => (view.dialog.current = "spec")}
+            >
+                View spec
+            </Button>
+        {/if}
+        {#if stream.canDelete || stream.canCancel}
             <Menu>
                 <MenuTrigger
                     class="flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent"
@@ -286,14 +295,6 @@
                     />
                 </MenuTrigger>
                 <MenuPopup align="end" class="min-w-48">
-                    {#if deployment?.spec}
-                        <MenuItem
-                            onclick={() =>
-                                (view.dialog.current = "spec")}
-                        >
-                            View spec
-                        </MenuItem>
-                    {/if}
                     {#if stream.canCancel}
                         <MenuItem
                             disabled={cancelMutation.isPending}
