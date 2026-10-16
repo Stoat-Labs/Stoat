@@ -680,6 +680,27 @@ export function interpolateCompose(
 
 const RESOURCE_ENV_FILE = /^(?:\.\/)?\.env$/u;
 
+/** A service's `env_file` entries: short form `- .env`, or long form `- path: .env` with an optional `required: false`. */
+function envFiles(service: YAMLMap) {
+    const entries = service.get("env_file", true);
+
+    if (entries === undefined) return [];
+
+    return (isSeq(entries) ? entries.items : [entries]).map((entry) => {
+        const path = isMap(entry) ? entry.get("path") : isScalar(entry) ? entry.value : entry;
+
+        return {
+            path: Predicate.isString(path) ? path : String(path),
+            required: !isMap(entry) || entry.get("required") !== false,
+        };
+    });
+}
+
+/** Whether a service reads the resource's Variables through `env_file: .env`, so it sees all of them. */
+export function loadsResourceEnv(service: YAMLMap) {
+    return envFiles(service).some(({ path }) => RESOURCE_ENV_FILE.test(path));
+}
+
 /**
  * Uncloud loads Compose from a temporary directory with no `.env` beside it, so
  * `env_file: .env` (the resource's Variables) becomes plain `environment` entries.
@@ -693,48 +714,88 @@ function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
     for (const { key, value: service } of services.items) {
         if (!isMap(service) || !service.has("env_file")) continue;
 
-        const envFiles = service.get("env_file", true);
-        let usesResourceEnv = false;
+        const unreadable = envFiles(service).find(
+            ({ path, required }) => required && !RESOURCE_ENV_FILE.test(path),
+        );
 
-        for (const entry of isSeq(envFiles) ? envFiles.items : [envFiles]) {
-            // Short form `- .env`, or long form `- path: .env` with an optional `required: false`.
-            const path = isMap(entry) ? entry.get("path") : isScalar(entry) ? entry.value : entry;
-            const required = !isMap(entry) || entry.get("required") !== false;
+        if (unreadable)
+            throw new ComposeVariableError(
+                `Service ${String(key)} loads env_file ${unreadable.path}, which a deploy cannot read. Put those variables in the resource's Variables and use env_file: .env.`,
+            );
 
-            if (Predicate.isString(path) && RESOURCE_ENV_FILE.test(path)) {
-                usesResourceEnv = true;
-            } else if (required) {
-                throw new ComposeVariableError(
-                    `Service ${String(key)} loads env_file ${String(path)}, which a deploy cannot read. Put those variables in the resource's Variables and use env_file: .env.`,
-                );
-            }
-        }
+        const usesResourceEnv = loadsResourceEnv(service);
 
         service.delete("env_file");
 
-        if (usesResourceEnv) mergeEnvironment(service, variables);
+        if (usesResourceEnv) mergeEnvironment(doc, service, variables);
     }
 }
 
-function mergeEnvironment(service: YAMLMap, variables: Record<string, string>) {
+/** A map's entries as Compose reads them: `<<` merges resolved, under the map's own keys. */
+function mergedEntries(doc: YAML.Document, map: YAMLMap) {
+    const entries = new Map<string, Node | null>();
+    const merges: Node[] = [];
+
+    for (const pair of map.items) {
+        const key = String(isScalar(pair.key) ? pair.key.value : pair.key);
+
+        if (key !== "<<") entries.set(key, isNode(pair.value) ? pair.value : null);
+        else if (isNode(pair.value)) merges.push(pair.value);
+    }
+
+    // Within one `<<: [*a, *b]`, earlier sources win.
+    for (const merge of merges)
+        for (const item of isSeq(merge) ? merge.items : [merge]) {
+            const source = isNode(item) ? resolvedNode(doc, item) : undefined;
+
+            if (!isMap(source)) continue;
+
+            for (const [key, value] of mergedEntries(doc, source))
+                if (!entries.has(key)) entries.set(key, value);
+        }
+
+    return entries;
+}
+
+function resolvedNode(doc: YAML.Document, node: Node | null | undefined) {
+    return isAlias(node) ? node.resolve(doc) : (node ?? undefined);
+}
+
+/**
+ * Adds the Variables `environment` doesn't set. The service gets its own copy, since an
+ * anchored or merged environment is shared with other services, and keys it gets that way
+ * stay ahead of the Variables.
+ */
+function mergeEnvironment(doc: YAML.Document, service: YAMLMap, variables: Record<string, string>) {
     // The document is already interpolated, so a literal `$` stays escaped as `$$`.
     const escape = (value: string) => value.replaceAll("$", "$$$$");
-    const environment = service.get("environment", true);
+    const environment = resolvedNode(doc, mergedEntries(doc, service).get("environment"));
 
     if (isSeq(environment)) {
-        const defined = new Set(
-            environment.items.map((item) =>
-                isScalar(item) ? String(item.value).split("=", 1)[0] : undefined,
-            ),
-        );
+        const lines = environment.items.flatMap((item) => {
+            const node = isNode(item) ? resolvedNode(doc, item) : undefined;
+
+            return isScalar(node) ? [String(node.value)] : [];
+        });
+
+        const defined = new Set(lines.map((line) => line.split("=", 1)[0]));
 
         for (const [name, value] of Object.entries(variables))
-            if (!defined.has(name)) environment.add(`${name}=${escape(value)}`);
+            if (!defined.has(name)) lines.push(`${name}=${escape(value)}`);
+
+        service.set("environment", doc.createNode(lines));
 
         return;
     }
 
-    const map = isMap(environment) ? environment : new YAMLMap();
+    const map = new YAMLMap();
+
+    if (isMap(environment))
+        for (const [name, value] of mergedEntries(doc, environment)) {
+            const node = resolvedNode(doc, value);
+
+            map.set(name, isScalar(node) ? node.clone() : null);
+        }
 
     for (const [name, value] of Object.entries(variables))
         if (!map.has(name)) map.set(name, escape(value));

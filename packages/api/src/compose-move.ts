@@ -1,6 +1,7 @@
 import { parseEnv } from "node:util";
 import {
     CADDY_UPSTREAMS_SERVICE,
+    loadsResourceEnv,
     rewriteComposeHostname,
     serviceVariable,
 } from "@stoat/workflows/compose";
@@ -221,6 +222,13 @@ function withDependencies(
 /** Variables a service interpolates in its Compose. */
 function interpolated(service: YAMLMap) {
     return [...JSON.stringify(service.toJSON()).matchAll(VARIABLE)].map((match) => match[1] ?? "");
+}
+
+/** Variables a service reads from `values`: the ones it interpolates, or all with `env_file: .env`. */
+function variablesRead(service: YAMLMap, values: Record<string, string | undefined>) {
+    const keys = interpolated(service);
+
+    return loadsResourceEnv(service) ? [...keys, ...Object.keys(values)] : keys;
 }
 
 // --- Hostnames across resources ---
@@ -457,17 +465,26 @@ function collapseSelfReferences(doc: Document, envText: string, resourceId: stri
         }),
     );
 
-    // A key still interpolated somewhere else, like a `command`, stays with the plain name.
+    // A key still read somewhere else, like a `command`, stays with the plain name.
     const serviceMaps = services.items.flatMap((pair) => (isMap(pair.value) ? [pair.value] : []));
-    const used = withDependencies(serviceMaps.flatMap(interpolated), parseEnv(env));
+    const envValues = parseEnv(env);
+
+    const used = withDependencies(
+        serviceMaps.flatMap((service) => variablesRead(service, envValues)),
+        envValues,
+    );
 
     return withoutEnvKeys(env, new Set([...hosts.keys()].filter((key) => !used.has(key))));
 }
 
-/** Link variables no service of the resource interpolates any more. */
+/** Link variables no service of the resource reads any more. */
 function unusedLinks(services: YAMLMap[], envText: string) {
     const values = parseEnv(envText);
-    const used = withDependencies(services.flatMap(interpolated), values);
+
+    const used = withDependencies(
+        services.flatMap((service) => variablesRead(service, values)),
+        values,
+    );
 
     return new Set(
         Object.keys(values).filter((key) => !used.has(key) && linkedService(values[key])),
@@ -567,8 +584,8 @@ export function moveComposeService(options: {
         warnings.push(`"${name}" no longer waits for "${dependency}", which stays behind.`);
     }
 
-    const targetInterpolated = new Set(
-        targetServices.items.flatMap((pair) => (isMap(pair.value) ? interpolated(pair.value) : [])),
+    const existingTargetServices = targetServices.items.flatMap((pair) =>
+        isMap(pair.value) ? [pair.value] : [],
     );
 
     targetServices.set(name, moved);
@@ -594,17 +611,26 @@ export function moveComposeService(options: {
     const sourceEnv = retargetServiceReferences(options.sourceEnv, sourceId, targetId, name);
     const targetEnv = retargetServiceReferences(options.targetEnv, sourceId, targetId, name);
 
-    // Variables the service interpolates follow it, with the ones their values use, unless the
+    // Variables the service reads follow it, with the ones their values use, unless the
     // target already sets them. They are read before the source's values are rewritten.
+    const sourceValues = parseEnv(sourceEnv);
     const targetKeys = new Set(Object.keys(parseEnv(targetEnv)));
-    const needed = withDependencies(interpolated(service), parseEnv(sourceEnv), targetKeys);
+
+    const needed = withDependencies(variablesRead(service, sourceValues), sourceValues, targetKeys);
+
     const copiedLines = envLines(sourceEnv, needed);
 
-    for (const key of needed)
-        if (targetInterpolated.has(key))
-            warnings.push(
-                `"${name}" brings \${${key}}, which services already in the target read too.`,
-            );
+    // Services already in the target that read a copied key would change with it.
+    const shared = [...needed].filter((key) =>
+        existingTargetServices.some(
+            (other) => loadsResourceEnv(other) || interpolated(other).includes(key),
+        ),
+    );
+
+    if (shared.length)
+        warnings.push(
+            `"${name}" brings ${shared.map((key) => `\${${key}}`).join(", ")}, which services already in the target read too.`,
+        );
 
     // What stays behind reaches the moved service through the target, and only that service:
     // a target service sharing a name with one left behind is a different service.
@@ -614,7 +640,10 @@ export function moveComposeService(options: {
 
     for (const other of remaining) toTarget.rewriteService(other);
 
-    const sourceUsed = withDependencies(remaining.flatMap(interpolated), parseEnv(sourceEnv));
+    const sourceUsed = withDependencies(
+        remaining.flatMap((other) => variablesRead(other, sourceValues)),
+        sourceValues,
+    );
 
     const rewrittenSource = rewriteUsedEnv(sourceEnv, sourceUsed, (line) =>
         toTarget.rewriteEnv(line),

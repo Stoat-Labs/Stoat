@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import YAML from "yaml";
+
 import {
     formatComposeFile,
     resourceComposePrefix,
@@ -2095,6 +2097,47 @@ describe("interpolateCompose", () => {
         expect(long).toContain("- HOST=kept");
         expect(long).not.toContain("HOST=a.b");
         expect(long).toContain("- SECRET=p$$w");
+    });
+
+    it("keeps anchored and merged environment keys ahead of env_file: .env", () => {
+        const compose = [
+            "x-env: &sharedEnv",
+            "  MODE: explicit",
+            "  ONLY: shared",
+            "services:",
+            "  web:",
+            "    image: x",
+            "    env_file: .env",
+            "    environment: *sharedEnv",
+            "  api:",
+            "    image: x",
+            "    env_file: .env",
+            "    environment:",
+            "      <<: *sharedEnv",
+            "      OWN: me",
+            "  other:",
+            "    image: y",
+            "    environment: *sharedEnv",
+            "",
+        ].join("\n");
+
+        const out = YAML.parse(interpolateCompose(compose, "MODE=from-resource\nEXTRA=1\n"), {
+            merge: true,
+        });
+
+        expect(out.services.web.environment).toEqual({
+            MODE: "explicit",
+            ONLY: "shared",
+            EXTRA: "1",
+        });
+        expect(out.services.api.environment).toEqual({
+            OWN: "me",
+            MODE: "explicit",
+            ONLY: "shared",
+            EXTRA: "1",
+        });
+        // The anchor itself is shared, so other services never see the Variables.
+        expect(out.services.other.environment).toEqual({ MODE: "explicit", ONLY: "shared" });
     });
 
     it("rejects env files a deploy cannot read", () => {

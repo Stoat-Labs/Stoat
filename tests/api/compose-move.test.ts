@@ -168,6 +168,53 @@ describe("variables a moved service takes along", () => {
     });
 });
 
+describe("services reading env_file: .env", () => {
+    const envFileSource = `services:
+  web:
+    image: nginx
+    environment:
+      API_KEY: \${API_KEY}
+  app:
+    image: app
+    env_file: .env
+`;
+
+    it("take every Variable along, since they read all of them", () => {
+        const result = moveComposeService({
+            service: "app",
+            source: envFileSource,
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: undefined,
+            sourceEnv: "API_KEY=key\nDB_USER=admin\nDB_PASSWORD='p@ss'\n",
+            targetEnv: "",
+        });
+
+        expect(parseEnv(result.targetEnv)).toEqual({
+            API_KEY: "key",
+            DB_USER: "admin",
+            DB_PASSWORD: "p@ss",
+        });
+    });
+
+    it("keep their links when another service moves out", () => {
+        const result = moveComposeService({
+            service: "web",
+            source: envFileSource,
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: undefined,
+            sourceEnv:
+                "API_KEY=key\nPEER={{ cccccccc-0000-4000-8000-000000000003.WORKER_SERVICE_NAME }}\n",
+            targetEnv: "",
+        });
+
+        expect(parseEnv(result.sourceEnv)).toHaveProperty("PEER");
+    });
+});
+
 describe("unpinVolumeNames", () => {
     it("drops pinned volume names, keeping external ones", () => {
         const compose = `services:
