@@ -682,8 +682,14 @@
                 <AlertDescription>
                     <span class="font-medium">{cluster.name}:</span>
                     No HTTP traffic recorded yet. Request metrics appear
-                    after the first proxied request; clusters initialized
-                    before Caddy metrics were added need monitoring re-initialized.
+                    after the first proxied request. If traffic is flowing,
+                    check the Caddy settings on the cluster page.
+                    <a
+                        class="underline underline-offset-2"
+                        href={`/clusters/${cluster.id}`}
+                    >
+                        Open cluster
+                    </a>
                 </AlertDescription>
             </Alert>
         {/if}

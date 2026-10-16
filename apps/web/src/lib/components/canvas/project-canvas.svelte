@@ -100,10 +100,17 @@
     // Railway opens an empty project on its Add palette instead of an empty canvas.
     const empty = $derived(resources.length === 0);
 
+    // Selection, tab and stacked logs push history, so Back walks through the panels opened.
+    const pageOptions = {
+        history: "push",
+        shallow: true,
+        scroll: false,
+    } as const;
+
     // `<resourceId>` or `<resourceId>:<service>`; a shared link reopens the same panel.
     const selected = useQueryState(
         "node",
-        parseAsString.withOptions({ shallow: true, scroll: false }),
+        parseAsString.withOptions(pageOptions),
     );
 
     // A link that opens a card lets CanvasFocus place the camera; fitting first would override it.
@@ -112,7 +119,7 @@
     // Stacked deployment logs belong to the selected node; a new selection drops them.
     const deployment = useQueryState(
         "deployment",
-        parseAsString.withOptions({ shallow: true, scroll: false }),
+        parseAsString.withOptions(pageOptions),
     );
 
     // Shared with the palette and the panel through the URL.
@@ -134,7 +141,7 @@
 
     const tab = useQueryState(
         "tab",
-        parseAsString.withOptions({ shallow: true, scroll: false }),
+        parseAsString.withOptions(pageOptions),
     );
 
     // Transient, so plain state: only which menu the next right-click shows.

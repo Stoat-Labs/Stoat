@@ -123,6 +123,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
                 id: postgresId,
                 projectId,
                 name: "postgres",
+                slug: "postgres-k3f9x2",
                 draftSpec: postgresSpec,
                 settings: { env: postgresEnv },
             },
@@ -130,6 +131,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
                 id: workerId,
                 projectId: siblingProjectId,
                 name: "worker",
+                slug: "worker-p8q7r6",
                 draftSpec: "services:\n  jobs:\n    image: worker\n",
                 settings: { env: "QUEUE=jobs\n" },
             },
@@ -225,7 +227,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         expect(failure).toBeUndefined();
         expect(saved?.error).toBeNull();
         expect(compose.services["p-api"].environment).toEqual({
-            DATABASE_URL: `postgres://shop@${projectId.slice(0, 8)}-${postgresId.slice(0, 8)}-db.internal:5432/shop`,
+            DATABASE_URL: "postgres://shop@postgres-k3f9x2-db.internal:5432/shop",
             // `$$` keeps the literal `$` away from Uncloud's own interpolation.
             PASSWORD: "s3cr$$t",
         });
@@ -238,7 +240,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
 
         expect(compose.services["p-api"].environment).toEqual({
             DATABASE_URL: "jobs",
-            PASSWORD: `${siblingProjectId.slice(0, 8)}-${workerId.slice(0, 8)}-jobs.internal`,
+            PASSWORD: "worker-p8q7r6-jobs.internal",
         });
     });
 
@@ -268,9 +270,17 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         const { compose } = await deploy(`DATABASE_URL=${ref(postgresId, "DB_INTERNAL_HOST")}\n`);
 
         expect(compose.services["p-api"].environment.DATABASE_URL).toMatch(/-db\.internal$/u);
-        await rejected(
+
+        // A service only the draft runs resolves from the draft, so a resource it was moved out
+        // of can deploy before the target does.
+        const { compose: early } = await deploy(
             `DATABASE_URL=${ref(postgresId, "DATABASE_INTERNAL_HOST")}\n`,
-            'Resource "postgres" has no variable DATABASE_INTERNAL_HOST.',
+        );
+
+        expect(early.services["p-api"].environment.DATABASE_URL).toMatch(/-database\.internal$/u);
+        await rejected(
+            `DATABASE_URL=${ref(postgresId, "GHOST_INTERNAL_HOST")}\n`,
+            'Resource "postgres" has no variable GHOST_INTERNAL_HOST.',
         );
     });
 

@@ -9,6 +9,10 @@ import {
     unpinVolumeNames,
 } from "../../packages/api/src/compose-move";
 
+const SOURCE_ID = "aaaaaaaa-0000-4000-8000-000000000001";
+
+const TARGET_ID = "bbbbbbbb-0000-4000-8000-000000000002";
+
 const source = `# app stack
 services:
   web:
@@ -40,6 +44,8 @@ function move(
         service,
         source,
         target: overrides.target ?? target,
+        sourceId: SOURCE_ID,
+        targetId: TARGET_ID,
         sourcePrefix: "aaaaaaaa-bbbbbbbb",
         sourceEnv: overrides.sourceEnv ?? "API_KEY=key\nDB_PASSWORD='p@ss'\n",
         targetEnv: overrides.targetEnv ?? "OTHER=1\n",
@@ -108,6 +114,8 @@ describe("moveComposeService", () => {
             service: "only",
             source: "services:\n  only:\n    image: nginx\n",
             target,
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
             sourcePrefix: undefined,
             sourceEnv: "",
             targetEnv: "",

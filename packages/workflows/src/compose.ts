@@ -16,23 +16,25 @@ export interface FormattedCompose {
 }
 
 /**
- * Deployment prefix for a resource compose spec:
- * `<first 8 of project id>-<first 8 of resource id>`, e.g. `a1b2c3d4-e5f6a7b8-web`.
- * Short enough to stay readable, unique enough that Uncloud treats each
- * resource's services and volumes as distinct. Returns undefined when the
- * resource opted out via `settings.prefixNames === false`.
+ * Deployment prefix for a resource compose spec: its stored slug, e.g. `seafile-k3f9x2-web`.
+ * Unique, so Uncloud treats each resource's services and volumes as distinct, and fixed, so
+ * renames and moves keep them. Returns undefined when the resource opted out via
+ * `settings.prefixNames === false`.
  */
 export function resourceComposePrefix(resource: {
-    projectId: string;
-    id: string;
+    slug: string;
     settings: unknown;
 }): string | undefined {
     if (Predicate.isObject(resource.settings) && resource.settings.prefixNames === false) {
         return undefined;
     }
 
-    return `${resource.projectId.slice(0, 8)}-${resource.id.slice(0, 8)}`;
+    return resource.slug;
 }
+
+/** The `<SERVICE>` part of a service's built-in variables, like `WEB_APP` for `web-app`. */
+export const serviceVariable = (name: string): string =>
+    name.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
 
 const prefixName = (name: string, prefix?: string): string => {
     if (!prefix) {
@@ -321,9 +323,14 @@ const prefixDependsOn = (service: YAMLMap, rename: Rename): void => {
     }
 };
 
-const CADDY_UPSTREAMS_SERVICE = /(?<open>\{\{\s*upstreams\s+")(?<name>[^"]+)(?<close>")/gu;
+export const CADDY_UPSTREAMS_SERVICE = /(?<open>\{\{\s*upstreams\s+")(?<name>[^"]+)(?<close>")/gu;
 
-const prefixCaddyUpstreams = (service: YAMLMap, rename: Rename): void => {
+// Only this file's services: another resource's service is named through a variable.
+const prefixCaddyUpstreams = (
+    service: YAMLMap,
+    rename: Rename,
+    serviceNames: ReadonlySet<string>,
+): void => {
     const caddy = service.get("x-caddy", true);
 
     if (!isScalar(caddy) || !Predicate.isString(caddy.value)) {
@@ -332,7 +339,8 @@ const prefixCaddyUpstreams = (service: YAMLMap, rename: Rename): void => {
 
     caddy.value = caddy.value.replace(
         CADDY_UPSTREAMS_SERVICE,
-        (_match, open: string, name: string, close: string) => `${open}${rename(name)}${close}`,
+        (match, open: string, name: string, close: string) =>
+            serviceNames.has(name) ? `${open}${rename(name)}${close}` : match,
     );
 };
 
@@ -349,7 +357,7 @@ const prefixServiceFragment = (
     prefixServiceExtends(service, rename);
     prefixServiceVolumesFrom(service, rename);
     prefixServiceNetworkMode(service, rename);
-    prefixCaddyUpstreams(service, rename);
+    prefixCaddyUpstreams(service, rename, serviceNames);
     rewriteServiceEnvironment(service, serviceNames, rename);
 };
 
@@ -783,7 +791,7 @@ function systemVariables(
     if (isMap(services))
         for (const { key } of services.items)
             if (isScalar(key) && Predicate.isString(key.value)) {
-                const variable = key.value.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
+                const variable = serviceVariable(key.value);
                 const name = prefixName(key.value, prefix);
                 const hostname = hostnames.get(key.value);
 

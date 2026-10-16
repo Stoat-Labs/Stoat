@@ -4,7 +4,6 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Button } from "$lib/components/ui/button";
     import {
         Menu,
         MenuItem,
@@ -63,7 +62,7 @@
     // The deployment whose logs are stacked on top of the panel.
     const logs = useQueryState(
         "deployment",
-        parseAsString.withOptions(urlOptions),
+        parseAsString.withOptions({ ...urlOptions, history: "push" }),
     );
 
     // Railway's expanded active deployment and folded history, kept in the URL like the tab.
@@ -331,7 +330,7 @@
     >
         <div
             class={[
-                "grid grid-cols-[84px_24px_minmax(0,1fr)_auto] items-center gap-x-4 rounded-md px-3 py-4",
+                "relative grid grid-cols-[84px_24px_minmax(0,1fr)_auto] items-center gap-x-4 rounded-md px-3 py-4",
                 surface.row,
             ]}
         >
@@ -357,9 +356,10 @@
                     aria-hidden="true"
                 />
             {/if}
+            <!-- Its hit area stretches over the whole row, so clicking anywhere opens the logs. -->
             <button
                 type="button"
-                class="min-w-0 text-left"
+                class="min-w-0 text-left outline-none after:absolute after:inset-0 after:rounded-md after:transition-colors hover:after:bg-foreground/4 focus-visible:after:ring-2 focus-visible:after:ring-ring"
                 onclick={() => void logs.set(deployment.id)}
             >
                 <p class="truncate text-sm" title={title(deployment)}>
@@ -379,17 +379,7 @@
                     {/if}
                 </p>
             </button>
-            <div class="flex items-center gap-2">
-                {#if main}
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        class="bg-transparent {style.card} {style.text}"
-                        onclick={() => void logs.set(deployment.id)}
-                    >
-                        View logs
-                    </Button>
-                {/if}
+            <div class="relative z-10">
                 <Menu>
                     <MenuTrigger
                         class="flex size-8 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent"

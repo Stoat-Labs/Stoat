@@ -225,7 +225,7 @@ overrides:
 
 patchedDependencies:
   effect-mq@0.7.0: 08f400a44993c842978ac4bfaa4f3e89a32505b160280c9edde3c12778767761
-  nuqs-svelte@1.2.2: 0693bbe449d8decfd4912c667c11bc0c8f67a27babe4aaea21dcd40dc011de43
+  nuqs-svelte@1.2.2: 8821d8dee4c7ee2a25e7751318053e2b8bd4a06c82f7da7b7bac6247f63b749f
 
 importers:
 
@@ -429,7 +429,7 @@ importers:
         version: 0.1.13(svelte@5.57.0)
       nuqs-svelte:
         specifier: ^1.2.2
-        version: 1.2.2(patch_hash=0693bbe449d8decfd4912c667c11bc0c8f67a27babe4aaea21dcd40dc011de43)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)
+        version: 1.2.2(patch_hash=8821d8dee4c7ee2a25e7751318053e2b8bd4a06c82f7da7b7bac6247f63b749f)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)
       runed:
         specifier: 0.37.1
         version: 0.37.1(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)(zod@4.6.2)
@@ -8469,7 +8469,7 @@ snapshots:
 
   normalize-path@3.0.0: {}
 
-  nuqs-svelte@1.2.2(patch_hash=0693bbe449d8decfd4912c667c11bc0c8f67a27babe4aaea21dcd40dc011de43)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0):
+  nuqs-svelte@1.2.2(patch_hash=8821d8dee4c7ee2a25e7751318053e2b8bd4a06c82f7da7b7bac6247f63b749f)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0):
     dependencies:
       mitt: 3.0.1
       svelte: 5.57.0

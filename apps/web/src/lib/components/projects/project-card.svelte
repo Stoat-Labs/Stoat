@@ -56,6 +56,11 @@
 </script>
 
 <script lang="ts">
+    import {
+        Frame,
+        FrameHeader,
+        FramePanel,
+    } from "$lib/components/ui/frame";
     import ProjectStar from "./project-star.svelte";
     import ResourceTile from "./resource-tile.svelte";
 
@@ -90,18 +95,15 @@
     const { deployed, dot } = $derived(projectStatus(resources));
 </script>
 
-<article
-    class="group relative flex h-full min-w-0 flex-col rounded-xl border bg-card p-2 transition-colors hover:border-input"
-    data-slot="project-card"
->
-    <header
-        class="flex min-h-10 items-center justify-between gap-2 ps-2"
+<Frame class="group h-full min-w-0">
+    <FrameHeader
+        class="flex-row items-center justify-between gap-2 py-2 ps-4 pe-2"
     >
         <h3 class="min-w-0 truncate text-[15px] font-semibold">
             {#if href}
                 <a
                     {href}
-                    class="before:absolute before:inset-0 before:rounded-xl focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring"
+                    class="before:absolute before:inset-0 before:z-10 before:rounded-2xl focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring"
                 >
                     {name}
                 </a>
@@ -110,11 +112,11 @@
             {/if}
         </h3>
         <ProjectStar {name} {favorite} {onfavorite} />
-    </header>
+    </FrameHeader>
 
-    <!-- The miniature canvas: the same dot grid, resource tiles, then the status line. -->
-    <div
-        class="mt-1 flex h-52 flex-col rounded-lg border bg-background/60 bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] bg-size-[12px_12px]"
+    <!-- The frame panel is the miniature canvas: the same dot grid, resource tiles, then the status line. -->
+    <FramePanel
+        class="flex h-52 flex-col bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] bg-size-[12px_12px] p-0 transition-colors group-hover:border-input"
     >
         <div
             class="flex min-h-0 flex-1 items-center justify-center p-4"
@@ -156,5 +158,5 @@
                 {/if}
             </span>
         </p>
-    </div>
-</article>
+    </FramePanel>
+</Frame>

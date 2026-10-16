@@ -347,7 +347,9 @@ function block(resource: CanvasResource, entry: CanvasGraph[number] | undefined)
                     x: GROUP_PADDING + column * (CARD_WIDTH + GROUP_PADDING),
                     y,
                     width: CARD_WIDTH,
-                    height: rowHeight,
+                    // Its own height, not the row's: edges attach to the node's sides, so a card
+                    // without volumes beside one with them would get handles below its border.
+                    height: cardHeight(service),
                 },
             }),
         );

@@ -21,6 +21,10 @@
     import { Label } from "$lib/components/ui/label";
     import { Textarea } from "$lib/components/ui/textarea";
     import { orpc, queryClient } from "$lib/api/orpc";
+    import {
+        completeMetricsOption,
+        missingMetricsSubdirectives,
+    } from "@stoat/workflows/caddy-metrics";
     import Info from "@lucide/svelte/icons/info";
     import {
         createMutation,
@@ -82,6 +86,12 @@
             caddyfile = caddy.caddyfile ?? "";
             deployMutation.reset();
         },
+    );
+
+    const missingMetrics = $derived(
+        caddyQuery.data?.monitoring
+            ? missingMetricsSubdirectives(caddyfile)
+            : [],
     );
 
     const unchanged = $derived(
@@ -187,9 +197,45 @@
                         Stoat adds a
                         <code>metrics</code>
                         global option for HTTP metrics unless you set one
-                        yourself.
+                        yourself; yours needs
+                        <code>per_host</code>
+                        and
+                        <code>otlp</code>
+                        .
                     </FieldDescription>
                 </Field>
+
+                {#if missingMetrics.length > 0}
+                    <Alert variant="warning">
+                        <Info aria-hidden="true" />
+                        <AlertDescription>
+                            <p>
+                                Your <code>metrics</code>
+                                option is missing
+                                {#each missingMetrics as name, index (name)}{index >
+                                    0
+                                        ? " and "
+                                        : ""}
+                                    <code>{name}</code>{/each}, so
+                                HTTP traffic is not recorded.
+                            </p>
+                            <Button
+                                type="button"
+                                class="mt-2"
+                                variant="outline"
+                                size="sm"
+                                onclick={() => {
+                                    caddyfile =
+                                        completeMetricsOption(
+                                            caddyfile,
+                                        );
+                                }}
+                            >
+                                Add {missingMetrics.join(" and ")}
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+                {/if}
             </form>
         </DialogPanel>
 

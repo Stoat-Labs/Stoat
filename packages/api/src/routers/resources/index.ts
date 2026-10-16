@@ -12,6 +12,7 @@ import {
     type DeploymentMetadata,
     type DeploymentStatus,
 } from "@stoat/db/schema/index";
+import { resourceSlug } from "@stoat/db/slug";
 import { ucClient, unwrap } from "@stoat/uncloud";
 import {
     GREPTIME_SERVICE,
@@ -28,7 +29,7 @@ import {
 } from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
@@ -82,7 +83,12 @@ import {
 } from "../../resource-deployment";
 import { pushGitFile, readGitHead } from "../../git";
 import { buildProjectGraph } from "../../project-graph";
-import { ComposeMoveError, moveComposeService, type ComposeMove } from "../../compose-move";
+import {
+    ComposeMoveError,
+    moveComposeService,
+    retargetServiceReferences,
+    type ComposeMove,
+} from "../../compose-move";
 
 // A deployable resource of the organization, with the cluster its project runs on.
 function deployTarget(
@@ -418,6 +424,8 @@ export const resourcesRouter = {
                         service: input.service,
                         source: fromSpec,
                         target: toSpec,
+                        sourceId: from.resource.id,
+                        targetId: to.id,
                         sourcePrefix: resourceComposePrefix(from.resource),
                         sourceEnv: resourceEnv(from.resource),
                         targetEnv: existing ? resourceEnv(to) : "",
@@ -451,17 +459,59 @@ export const resourcesRouter = {
                     await tx.insert(resources).values({
                         id: to.id,
                         name: to.name,
+                        slug: resourceSlug(to.name),
                         type: "compose",
                         projectId: input.projectId,
                         draftSpec: moved.target,
-                        settings: { env: moved.targetEnv },
+                        // A split keeps the stack's naming, so an unprefixed stack stays unprefixed.
+                        settings: resourceComposePrefix(from.resource)
+                            ? { env: moved.targetEnv }
+                            : { env: moved.targetEnv, prefixNames: false },
                     });
+
+                // Resources elsewhere on the cluster that referenced the service follow it too, before
+                // an emptied source is removed, which refuses while anything still references it.
+                const readers = await tx
+                    .select({ id: resources.id, settings: resources.settings })
+                    .from(resources)
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .where(
+                        and(
+                            eq(projects.clusterId, from.clusterId),
+                            notInArray(resources.id, [from.resource.id, to.id]),
+                            sql`${resources.settings}->>'env' ilike ${`%${from.resource.id}%`}`,
+                        ),
+                    )
+                    .orderBy(asc(resources.id))
+                    .for("update", { of: resources });
+
+                for (const reader of readers) {
+                    const env = resourceEnv(reader);
+
+                    const next = retargetServiceReferences(
+                        env,
+                        from.resource.id,
+                        to.id,
+                        input.service,
+                    );
+
+                    if (next !== env)
+                        await tx
+                            .update(resources)
+                            .set({
+                                settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${next}::text)`,
+                            })
+                            .where(eq(resources.id, reader.id));
+                }
 
                 if (moved.sourceEmpty) await removeResources(tx, from.clusterId, [from.resource]);
                 else
                     await tx
                         .update(resources)
-                        .set({ draftSpec: moved.source })
+                        .set({
+                            draftSpec: moved.source,
+                            settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${moved.sourceEnv}::text)`,
+                        })
                         .where(eq(resources.id, from.resource.id));
 
                 return {
@@ -676,16 +726,10 @@ export const resourcesRouter = {
                     deploymentCreatedAt: latest.createdAt,
                     deploymentFinishedAt: latest.finishedAt,
                     deploymentSource: latest.source,
-                    // Empty when the latest deploy ran with Prefix names off.
-                    deploymentPrefix: resourceDeploymentInputs.prefix,
                     bucketStatus: s3Buckets.status,
                 })
                 .from(resources)
                 .leftJoin(latest, eq(latest.resourceId, resources.id))
-                .leftJoin(
-                    resourceDeploymentInputs,
-                    eq(resourceDeploymentInputs.deploymentId, latest.id),
-                )
                 .leftJoin(s3Buckets, eq(s3Buckets.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
@@ -721,6 +765,7 @@ export const resourcesRouter = {
             const rows = await db
                 .select({
                     id: resources.id,
+                    slug: resources.slug,
                     projectId: resources.projectId,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
@@ -1017,6 +1062,7 @@ export const resourcesRouter = {
                     ...(input.compose && { draftSpec: input.compose }),
                     id: randomUUID(),
                     name: input.name.trim(),
+                    slug: resourceSlug(input.name),
                     description,
                     type: template?.type ?? input.type,
                     projectId: project.id,

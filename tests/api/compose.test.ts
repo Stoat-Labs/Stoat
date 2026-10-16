@@ -12,6 +12,7 @@ import {
     inlineComposeConfigs,
     interpolateCompose,
 } from "../../packages/workflows/src/compose";
+import { resourceSlug } from "../../packages/db/src/slug";
 
 describe("formatComposeFile", () => {
     it("prefixes compose service names with the given prefix", () => {
@@ -276,44 +277,23 @@ services:
 });
 
 describe("resourceComposePrefix", () => {
-    const projectId = "a1b2c3d4-1111-4222-8333-444455556666";
-    const resourceId = "e5f6a7b8-7777-4888-8999-000011112222";
+    const slug = "seafile-k3f9x2";
 
-    it("builds the prefix from the first 8 of the project and resource uuids", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: null })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
+    it("uses the resource's stored slug", () => {
+        expect(resourceComposePrefix({ slug, settings: null })).toBe(slug);
     });
 
     it("prefixes on by default when settings are missing or unrelated", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: {} })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(
-            resourceComposePrefix({
-                projectId,
-                id: resourceId,
-                settings: { prefixNames: true },
-            }),
-        ).toBe("a1b2c3d4-e5f6a7b8");
+        expect(resourceComposePrefix({ slug, settings: {} })).toBe(slug);
+        expect(resourceComposePrefix({ slug, settings: { prefixNames: true } })).toBe(slug);
     });
 
     it("returns undefined when the resource opted out of prefixing", () => {
-        expect(
-            resourceComposePrefix({
-                projectId,
-                id: resourceId,
-                settings: { prefixNames: false },
-            }),
-        ).toBeUndefined();
+        expect(resourceComposePrefix({ slug, settings: { prefixNames: false } })).toBeUndefined();
     });
 
     it("round-trips through format and unformat", () => {
-        const prefix = resourceComposePrefix({
-            projectId,
-            id: resourceId,
-            settings: null,
-        });
+        const prefix = resourceComposePrefix({ slug, settings: null });
 
         const spec = `services:
   web:
@@ -325,9 +305,35 @@ describe("resourceComposePrefix", () => {
 `;
 
         const formatted = formatComposeFile(spec, prefix);
-        expect(formatted.serviceNames).toEqual(["a1b2c3d4-e5f6a7b8-web", "a1b2c3d4-e5f6a7b8-db"]);
+        expect(formatted.serviceNames).toEqual(["seafile-k3f9x2-web", "seafile-k3f9x2-db"]);
         const raw = unformatComposeFile(formatted.yaml, prefix);
         expect(formatComposeFile(raw).serviceNames).toEqual(["web", "db"]);
+    });
+});
+
+describe("resourceSlug", () => {
+    it("starts with the resource name, made DNS-safe", () => {
+        expect(resourceSlug("Seafile")).toMatch(/^seafile-[a-z0-9]{6}$/u);
+        expect(resourceSlug("  My Café / API v2! ")).toMatch(/^my-cafe-api-v2-[a-z0-9]{6}$/u);
+    });
+
+    it("keeps the name short enough for a service name to fit a DNS label", () => {
+        const slug = resourceSlug("a very long resource name that goes on and on");
+
+        expect(slug).toMatch(/^a-very-long-resource-[a-z0-9]{6}$/u);
+        expect(`${slug}-a-service-name-of-thirty-chars`.length).toBeLessThanOrEqual(63);
+    });
+
+    it("falls back to app for names with nothing usable", () => {
+        expect(resourceSlug("")).toMatch(/^app-[a-z0-9]{6}$/u);
+        expect(resourceSlug("日本語")).toMatch(/^app-[a-z0-9]{6}$/u);
+        expect(resourceSlug("---")).toMatch(/^app-[a-z0-9]{6}$/u);
+    });
+
+    it("differs between resources with the same name", () => {
+        const slugs = new Set(Array.from({ length: 1000 }, () => resourceSlug("web")));
+
+        expect(slugs.size).toBe(1000);
     });
 });
 
@@ -549,46 +555,16 @@ describe("rewriteComposeHostname", () => {
 });
 
 describe("resourceComposePrefix edge cases", () => {
-    const projectId = "a1b2c3d4-1111-4222-8333-444455556666";
-    const resourceId = "e5f6a7b8-7777-4888-8999-000011112222";
+    const slug = "web-abc123";
 
     it("treats undefined settings and non-object settings as prefix-on", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: undefined })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: "nope" })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: 42 })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(
-            resourceComposePrefix({ projectId, id: resourceId, settings: ["prefixNames"] }),
-        ).toBe("a1b2c3d4-e5f6a7b8");
+        for (const settings of [undefined, "nope", 42, ["prefixNames"]])
+            expect(resourceComposePrefix({ slug, settings })).toBe(slug);
     });
 
     it("only an explicit false opts out; other falsy values stay prefixed", () => {
-        for (const prefixNames of [true, 0, "", null, "false"]) {
-            expect(
-                resourceComposePrefix({ projectId, id: resourceId, settings: { prefixNames } }),
-            ).toBe("a1b2c3d4-e5f6a7b8");
-        }
-    });
-
-    it("slices ids shorter than 8 characters without padding", () => {
-        expect(resourceComposePrefix({ projectId: "abc", id: "def", settings: null })).toBe(
-            "abc-def",
-        );
-    });
-
-    it("preserves the original casing of id segments", () => {
-        expect(
-            resourceComposePrefix({
-                projectId: "A1B2C3D4-1111-4222-8333-444455556666",
-                id: "E5F6A7B8-7777-4888-8999-000011112222",
-                settings: null,
-            }),
-        ).toBe("A1B2C3D4-E5F6A7B8");
+        for (const prefixNames of [true, 0, "", null, "false"])
+            expect(resourceComposePrefix({ slug, settings: { prefixNames } })).toBe(slug);
     });
 });
 
@@ -1523,7 +1499,8 @@ describe("formatComposeFile x-caddy", () => {
         expect(formatted.yaml).not.toContain("upstream: a1b2c3d4-e5f6a7b8-web");
     });
 
-    it("renames an upstream naming a service not defined in the file", () => {
+    // Another resource's service is named through a variable, already resolved to its own prefix.
+    it("leaves an upstream naming a service not defined in the file as written", () => {
         const formatted = formatComposeFile(
             `services:
   gateway:
@@ -1535,7 +1512,7 @@ describe("formatComposeFile x-caddy", () => {
         );
 
         expect(formatted.serviceNames).toEqual(["a1b2c3d4-e5f6a7b8-gateway"]);
-        expect(formatted.yaml).toContain('{{upstreams "a1b2c3d4-e5f6a7b8-ghost" 80}}');
+        expect(formatted.yaml).toContain('{{upstreams "ghost" 80}}');
     });
 });
 

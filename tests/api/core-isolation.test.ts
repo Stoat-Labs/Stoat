@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, createRouterClient } from "@orpc/server";
 import { createDb } from "@stoat/db";
-import { referenceTargets } from "@stoat/workflows/references";
+import { resourceEnv } from "@stoat/workflows/compose";
+import { checkVariableReferences, referenceTargets } from "@stoat/workflows/references";
 import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
 import {
     clusterMonitoring,
@@ -473,13 +474,210 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
+    describe("splitting and regrouping services", () => {
+        const stack = `services:
+  web:
+    image: nginx
+    depends_on: [cache]
+    environment:
+      REDIS_HOST: cache
+      CACHE_URL: \${CACHE_URL}
+  cache:
+    image: redis
+`;
+
+        const env = "CACHE_URL=redis://cache:6379\n";
+
+        async function asAdmin<T>(run: () => Promise<T>) {
+            await db.$client.query(
+                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
+            );
+
+            try {
+                return await run();
+            } finally {
+                await db.$client.query(
+                    `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+                );
+            }
+        }
+
+        it("links what stays behind to the split-out service, and undoes it on regroup", async () => {
+            const source = await resource({
+                spec: null,
+                draftSpec: stack,
+                settings: { ...settings, env },
+            });
+
+            // Another project on the cluster reads the cache's host from the stack.
+            const reader = await resource({
+                projectId: legacyProjectId,
+                spec: null,
+                settings: { env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n` },
+            });
+
+            const ids = [source.id, reader.id];
+
+            try {
+                const split = await client.moveService({
+                    projectId,
+                    fromResourceId: source.id,
+                    service: "cache",
+                });
+
+                ids.push(split.resourceId);
+
+                const left = await storedResource(source.id);
+                const created = await storedResource(split.resourceId);
+                const link = `{{ ${split.resourceId}.CACHE_SERVICE_NAME }}`;
+
+                expect(left.draftSpec).toContain("REDIS_HOST: ${CACHE_SERVICE_NAME}");
+                expect(left.draftSpec).not.toContain("depends_on");
+                // Variables are saved beside the other settings, never over them.
+                expect(left.settings).toEqual({
+                    ...settings,
+                    env: `CACHE_URL=redis://${link}:6379\nCACHE_SERVICE_NAME=${link}\n`,
+                });
+                expect(created).toMatchObject({
+                    name: "cache",
+                    draftSpec: "services:\n  cache:\n    image: redis\n",
+                    settings: { env: "" },
+                });
+                expect((await storedResource(reader.id)).settings).toEqual({
+                    env: `HOST={{ ${split.resourceId}.CACHE_INTERNAL_HOST }}\n`,
+                });
+
+                const graph = await client.getProjectGraph({ projectId });
+
+                expect(graph.resources.find((entry) => entry.id === source.id)?.references).toEqual(
+                    [split.resourceId],
+                );
+
+                const merged = await asAdmin(() =>
+                    client.moveService({
+                        projectId,
+                        fromResourceId: split.resourceId,
+                        toResourceId: source.id,
+                        service: "cache",
+                        removeEmptySource: true,
+                    }),
+                );
+
+                expect(merged.removedResourceId).toBe(split.resourceId);
+
+                const regrouped = await storedResource(source.id);
+
+                expect(regrouped.draftSpec).toContain("REDIS_HOST: cache");
+                expect(regrouped.settings).toEqual({ ...settings, env });
+                expect((await storedResource(reader.id)).settings).toEqual({
+                    env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n`,
+                });
+                expect(
+                    await db.select().from(resources).where(eq(resources.id, split.resourceId)),
+                ).toEqual([]);
+            } finally {
+                await db.delete(resources).where(inArray(resources.id, ids));
+            }
+        });
+
+        it("lets the stack deploy before a running target has deployed the service it gained", async () => {
+            const running = "services:\n  web:\n    image: nginx\n";
+            const source = await resource({ spec: null, draftSpec: stack, settings: { env } });
+
+            const target = await resource({
+                spec: running,
+                draftSpec: running,
+                settings: { env: "" },
+            });
+
+            try {
+                await client.moveService({
+                    projectId,
+                    fromResourceId: source.id,
+                    toResourceId: target.id,
+                    service: "cache",
+                });
+
+                const left = await storedResource(source.id);
+
+                expect(resourceEnv(left)).toContain(`{{ ${target.id}.CACHE_SERVICE_NAME }}`);
+                await expect(
+                    checkVariableReferences(
+                        db,
+                        clusterId,
+                        source.id,
+                        left.draftSpec!,
+                        resourceEnv(left),
+                    ),
+                ).resolves.toBeUndefined();
+            } finally {
+                await db.delete(resources).where(inArray(resources.id, [source.id, target.id]));
+            }
+        });
+
+        it("keeps an unprefixed stack's split-out services unprefixed", async () => {
+            const source = await resource({
+                spec: null,
+                draftSpec: stack,
+                settings: { env, prefixNames: false },
+            });
+
+            const ids = [source.id];
+
+            try {
+                const split = await client.moveService({
+                    projectId,
+                    fromResourceId: source.id,
+                    service: "cache",
+                });
+
+                ids.push(split.resourceId);
+
+                expect((await storedResource(split.resourceId)).settings).toEqual({
+                    env: "",
+                    prefixNames: false,
+                });
+            } finally {
+                await db.delete(resources).where(inArray(resources.id, ids));
+            }
+        });
+
+        it("leaves resources on other clusters alone", async () => {
+            const source = await resource({ spec: null, draftSpec: stack, settings: { env } });
+
+            const foreign = await resource({
+                projectId: otherProjectId,
+                spec: null,
+                settings: { env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n` },
+            });
+
+            const ids = [source.id, foreign.id];
+
+            try {
+                const split = await client.moveService({
+                    projectId,
+                    fromResourceId: source.id,
+                    service: "cache",
+                });
+
+                ids.push(split.resourceId);
+
+                expect((await storedResource(foreign.id)).settings).toEqual({
+                    env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n`,
+                });
+            } finally {
+                await db.delete(resources).where(inArray(resources.id, ids));
+            }
+        });
+    });
+
     describe("moving and copying resources between projects", () => {
-        it("moves a draft and refuses one deployed with prefixed names", async () => {
+        it("moves drafts and deployed resources within the cluster, keeping their names", async () => {
             const draft = await resource({ spec: null });
             const live = await resource();
             const deploymentId = randomUUID();
 
-            // Its services were named after this project, so moving would orphan them.
+            // Named after its slug rather than its project, so it keeps running as it is.
             await db.insert(deployments).values({
                 id: deploymentId,
                 jobId: deploymentId,
@@ -490,24 +688,21 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             });
             await db
                 .insert(resourceDeploymentInputs)
-                .values({ deploymentId, prefix: "owned-prefix" });
+                .values({ deploymentId, prefix: live.slug });
 
             try {
-                const moved = await client.moveResource({
-                    projectId,
-                    resourceId: draft.id,
-                    toProjectId: legacyProjectId,
-                });
-
-                expect(moved).toMatchObject({ id: draft.id, projectId: legacyProjectId });
-                await expect(
-                    client.moveResource({
-                        projectId,
-                        resourceId: live.id,
-                        toProjectId: legacyProjectId,
-                    }),
-                ).rejects.toMatchObject({ code: "CONFLICT" });
-                expect((await storedResource(live.id)).projectId).toBe(projectId);
+                for (const movable of [draft, live])
+                    expect(
+                        await client.moveResource({
+                            projectId,
+                            resourceId: movable.id,
+                            toProjectId: legacyProjectId,
+                        }),
+                    ).toMatchObject({
+                        id: movable.id,
+                        projectId: legacyProjectId,
+                        slug: movable.slug,
+                    });
             } finally {
                 await db.delete(deployments).where(eq(deployments.id, deploymentId));
                 await db.delete(resources).where(inArray(resources.id, [draft.id, live.id]));
@@ -1181,7 +1376,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(
                 await client.getContainers({ clusterId, projectId, resourceId: row.id }),
             ).toEqual([...webContainers, ...workerContainers]);
-            const prefix = prefixNames ? `${projectId.slice(0, 8)}-${row.id.slice(0, 8)}-` : "";
+            const prefix = prefixNames ? `${row.slug}-` : "";
             expect(fetch.mock.calls.map(([request]) => request.url).sort()).toEqual([
                 `http://owned.test/api/v1/services/${prefix}web`,
                 `http://owned.test/api/v1/services/${prefix}worker`,

@@ -1528,6 +1528,7 @@ describe("resource logs backend", () => {
         async (result) => {
             await deployment();
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
             const stream = await call(resourcesRouter.streamLogs, selection, { context });
 
             try {
@@ -1755,6 +1756,14 @@ describe("resource logs backend", () => {
                     })
                     .where(eq(resources.id, resourceId));
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+            const [stored] = await db
+                .select({ slug: resources.slug })
+                .from(resources)
+                .where(eq(resources.id, resourceId));
+
+            const slug = stored!.slug;
+
             const stream = await call(resourcesRouter.streamLogs, selection, { context });
 
             try {
@@ -1776,10 +1785,7 @@ describe("resource logs backend", () => {
                         .update(resources)
                         .set({ settings: { prefixNames: true } })
                         .where(eq(resources.id, resourceId));
-                    current.set(
-                        `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`,
-                        "prefixed-id",
-                    );
+                    current.set(`${slug}-web`, "prefixed-id");
                 }
 
                 inspected.length = 0;
@@ -1795,9 +1801,7 @@ describe("resource logs backend", () => {
                 expect((await stream.next()).done).toBe(true);
                 expect(inspected).toEqual([
                     "web",
-                    scope === "imported settings"
-                        ? `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`
-                        : "worker",
+                    scope === "imported settings" ? `${slug}-web` : "worker",
                 ]);
                 expect(openedStreams).toEqual(["web-id"]);
                 expect(cancelled).toEqual(new Set(["web-id"]));

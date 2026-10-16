@@ -1,13 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
-import {
-    clusters,
-    deployments,
-    projects,
-    resourceDeploymentInputs,
-    resources,
-} from "@stoat/db/schema/index";
+import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
+import { resourceSlug } from "@stoat/db/slug";
 import { referencedResourceIds } from "@stoat/workflows/references";
 import { and, eq, ne, sql } from "drizzle-orm";
 import * as v from "valibot";
@@ -102,7 +97,7 @@ async function crossClusterIssue(
 }
 
 export const resourceTransferRouter = {
-    // A resource deployed with Prefix names on stays: its service and volume names carry its project's id.
+    // Its names come from its slug, never its project, so it keeps running as it is.
     moveResource: organizationProcedure
         .input(v.object(transferInput))
         .handler(async ({ context: { db, organizationId }, input }) =>
@@ -115,28 +110,6 @@ export const resourceTransferRouter = {
                 const from = await editableProject(tx, organizationId, input.projectId);
                 const to = await editableProject(tx, organizationId, input.toProjectId);
                 const resource = await lockedResource(tx, input.projectId, input.resourceId);
-
-                // Any deployment, even a failed one, may have left prefixed services behind.
-                const [prefixed] = await tx
-                    .select({ id: deployments.id })
-                    .from(deployments)
-                    .innerJoin(
-                        resourceDeploymentInputs,
-                        eq(resourceDeploymentInputs.deploymentId, deployments.id),
-                    )
-                    .where(
-                        and(
-                            eq(deployments.resourceId, resource.id),
-                            ne(resourceDeploymentInputs.prefix, ""),
-                        ),
-                    )
-                    .limit(1);
-
-                if (prefixed)
-                    throw new ORPCError("CONFLICT", {
-                        message:
-                            "It was deployed with Prefix names on, so its names carry this project. Copy it to the other project instead.",
-                    });
 
                 if (from.clusterId !== to.clusterId) {
                     // Its services stay on the old cluster, and removal would only look on the new one.
@@ -195,6 +168,8 @@ export const resourceTransferRouter = {
                     .values({
                         id: randomUUID(),
                         name: input.name,
+                        // Its own names on the cluster, so the copy never takes over the original.
+                        slug: resourceSlug(input.name),
                         description: resource.description,
                         icon: resource.icon,
                         type: resource.type,

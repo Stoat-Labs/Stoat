@@ -17,6 +17,7 @@ const resource = {
     id: input.resourceId,
     projectId: input.projectId,
     name: "Resource",
+    slug: "resource-abc123",
     description: null,
     icon: null,
     type: "compose",

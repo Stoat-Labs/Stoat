@@ -111,6 +111,37 @@
                     {caddy.hasCaddyfile ? "Set" : "Not set"}
                 </dd>
             </dl>
+            {#if caddy.monitoring && caddy.missingMetrics.length > 0}
+                <Alert variant="warning">
+                    <CircleAlert aria-hidden="true" />
+                    <AlertTitle>
+                        HTTP traffic is not recorded
+                    </AlertTitle>
+                    <AlertDescription>
+                        <p>
+                            The global <code>metrics</code>
+                            option is missing
+                            {#each caddy.missingMetrics as name, index (name)}{index >
+                                0
+                                    ? " and "
+                                    : ""}
+                                <code>{name}</code>{/each}, which
+                            Stoat needs to record HTTP traffic.
+                        </p>
+                        {#if caddy.canManage}
+                            <Button
+                                class="mt-2"
+                                variant="outline"
+                                size="sm"
+                                disabled={!!caddy.activeDeploymentId}
+                                onclick={onconfigure}
+                            >
+                                Fix in Caddy settings
+                            </Button>
+                        {/if}
+                    </AlertDescription>
+                </Alert>
+            {/if}
             {#if caddy.reconciliationErrors.length > 0}
                 <Alert variant="warning">
                     <CircleAlert aria-hidden="true" />

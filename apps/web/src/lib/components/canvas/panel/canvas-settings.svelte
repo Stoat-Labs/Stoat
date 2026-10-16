@@ -963,7 +963,7 @@
         <div>
             {@render title(
                 "Project",
-                "Move it to another project, or copy its configuration into one. Resources deployed with Prefix names on can't move.",
+                "Move it to another project, or copy its configuration into one. A deployed resource can't move to another cluster.",
             )}
             <div class="mt-3 flex flex-wrap gap-2">
                 <Button

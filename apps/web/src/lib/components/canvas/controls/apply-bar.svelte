@@ -190,6 +190,17 @@
             {error}
         </span>
     {/if}
+    {#if isAdmin}
+        <Button
+            size="sm"
+            variant="ghost"
+            class="text-muted-foreground"
+            disabled={deploying || discarding}
+            onclick={startDiscard}
+        >
+            Discard
+        </Button>
+    {/if}
     <Button
         size="sm"
         variant="outline"

@@ -26,8 +26,11 @@ const MISSING_ID = "99999999-2222-4333-8444-555555555555";
 
 const PROJECT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
+// Slugs in the shape migrated resources got, so prefixes read like `aaaaaaaa-11111111-db`.
 function target(id: string, name: string, env: string, spec: string): ReferenceTarget {
-    return { id, name, projectId: PROJECT_ID, projectName: "Shop", settings: { env }, spec };
+    const slug = `${PROJECT_ID.slice(0, 8)}-${id.slice(0, 8)}`;
+
+    return { id, name, slug, projectId: PROJECT_ID, projectName: "Shop", settings: { env }, spec };
 }
 
 const postgres = target(
@@ -158,6 +161,40 @@ describe("referenceVariables", () => {
         });
         expect(referenceVariables({ ...postgres, settings: { env: 42 } })).not.toHaveProperty(
             "POSTGRES_USER",
+        );
+    });
+});
+
+describe("resolveReferences before the target deploys a moved-in service", () => {
+    // Deployed with only `db`; the saved draft also runs `cache`, moved in from another resource.
+    const moving = {
+        ...postgres,
+        settings: { env: "" },
+        draftSpec: "services:\n  db:\n    image: postgres\n  cache:\n    image: redis\n",
+    };
+
+    it("falls back to the draft for keys the deployed spec doesn't have", () => {
+        expect(
+            resolveReferences(`HOST=${ref(POSTGRES_ID, "CACHE_SERVICE_NAME")}`, [moving]),
+        ).toEqual({ [`${POSTGRES_ID}.CACHE_SERVICE_NAME`]: "aaaaaaaa-11111111-cache" });
+    });
+
+    it("keeps answering from the deployed spec while it has the key", () => {
+        const dropping = { ...moving, draftSpec: "services:\n  cache:\n    image: redis\n" };
+
+        expect(
+            resolveReferences(`HOST=${ref(POSTGRES_ID, "DB_SERVICE_NAME")}`, [dropping]),
+        ).toEqual({ [`${POSTGRES_ID}.DB_SERVICE_NAME`]: "aaaaaaaa-11111111-db" });
+    });
+
+    it("still fails for keys neither has, and for a broken draft", () => {
+        const env = `HOST=${ref(POSTGRES_ID, "GHOST_SERVICE_NAME")}`;
+
+        expect(() => resolveReferences(env, [moving])).toThrow(
+            'Resource "postgres" has no variable GHOST_SERVICE_NAME.',
+        );
+        expect(() => resolveReferences(env, [{ ...moving, draftSpec: "services: [" }])).toThrow(
+            'Resource "postgres" has no variable GHOST_SERVICE_NAME.',
         );
     });
 });

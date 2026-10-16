@@ -47,8 +47,11 @@ async function resource(page: Page, image = "nginx:alpine") {
         `services:\n  web:\n    image: ${image}\n`,
     ]);
 
+    const [row] = await sql<{ slug: string }>("SELECT slug FROM resources WHERE id = $1", [id]);
+
     return {
         id,
+        slug: row!.slug,
         name,
         projectName: `Deploy project ${suffix}`,
         projectId: project.id,
@@ -163,8 +166,8 @@ test.describe("deleting", () => {
     const confirmDialog = (page: Page) => page.getByRole("alertdialog");
 
     /** Whether the fake cluster still runs a service of this resource. */
-    async function runsServiceOf(resourceId: string) {
-        return (await runningServices()).some((name) => name.includes(resourceId.slice(0, 8)));
+    async function runsServiceOf(slug: string) {
+        return (await runningServices()).some((name) => name.startsWith(`${slug}-`));
     }
 
     async function deleteResource(page: Page, path: string) {
@@ -178,12 +181,12 @@ test.describe("deleting", () => {
         const target = await resource(page);
         await deploy(page, target.path);
         await expect(status(page)).toHaveText("Ready");
-        expect(await runsServiceOf(target.id)).toBe(true);
+        expect(await runsServiceOf(target.slug)).toBe(true);
 
         await deleteResource(page, target.path);
 
         await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}$`, "u"));
-        expect(await runsServiceOf(target.id)).toBe(false);
+        expect(await runsServiceOf(target.slug)).toBe(false);
         expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toEqual([]);
         expect(await sql("SELECT id FROM deployments WHERE resource_id = $1", [target.id])).toEqual(
             [],
@@ -262,7 +265,7 @@ test.describe("deleting", () => {
         await confirmDialog(page).getByRole("button", { name: "Delete project" }).click();
 
         await expect(page).toHaveURL(/\/projects$/u);
-        expect(await runsServiceOf(target.id)).toBe(false);
+        expect(await runsServiceOf(target.slug)).toBe(false);
         expect(await sql("SELECT id FROM projects WHERE id = $1", [target.projectId])).toEqual([]);
     });
 

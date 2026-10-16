@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
+import { resourceSlug } from "../slug";
 import { organization, user } from "./auth";
 
 export type MonitoringStorage = { type: "volume" | "bind"; source: string };
@@ -183,6 +184,11 @@ export const resources = t.pgTable(
     {
         id: t.uuid("id").primaryKey(),
         name: t.text("name").notNull(),
+        // Permanent prefix of its service and volume names; see `resourceSlug`.
+        slug: t
+            .text("slug")
+            .notNull()
+            .$defaultFn(() => resourceSlug()),
         description: t.text("description"),
         icon: t.text("icon"),
         type: t.text("type").default("compose"),
@@ -212,6 +218,7 @@ export const resources = t.pgTable(
     (table) => [
         t.index("resources_project_idx").on(table.projectId),
         t.index("resources_git_connection_idx").on(table.gitConnectionId),
+        t.uniqueIndex("resources_slug_idx").on(table.slug),
     ],
 );
 

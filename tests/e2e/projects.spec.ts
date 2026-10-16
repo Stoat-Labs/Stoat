@@ -232,6 +232,60 @@ test.describe("resources", () => {
             await sql("SELECT name, description FROM resources WHERE id = $1", [resourceId]),
         ).toEqual([{ name: renamed, description: "Handles payments" }]);
     });
+
+    test("Back and Forward walk through the canvas panels that were opened", async ({ page }) => {
+        const { id: projectId } = await project(page);
+
+        const create = async (name: string) => {
+            const { id } = await rpc(page, "resources/createResource", {
+                projectId,
+                name,
+                type: "compose",
+            });
+
+            return { id, name };
+        };
+
+        const first = await create(unique("first"));
+        const second = await create(unique("second"));
+
+        const panel = (name: string) =>
+            page.getByRole("complementary", { name: `${name} details` });
+
+        // The canvas keeps a deployment stream open, so wait for its panel rather than network idle.
+        await page.goto(`/projects/${projectId}/canvas?node=${first.id}`);
+        await expect(panel(first.name)).toBeVisible();
+
+        await panel(first.name).getByRole("tab", { name: "Settings" }).click();
+        await expect(page).toHaveURL(/tab=settings/u);
+
+        // The open panel covers the other card, so close it first.
+        await panel(first.name).getByRole("button", { name: "Close details" }).click();
+        await page.locator(`.svelte-flow__node[data-id="${second.id}"]`).click();
+        await expect(panel(second.name)).toBeVisible();
+
+        await page.goBack();
+        await expect(panel(second.name)).toBeHidden();
+
+        await page.goBack();
+        await expect(panel(first.name)).toBeVisible();
+        await expect(panel(first.name).getByRole("tab", { name: "Settings" })).toHaveAttribute(
+            "aria-selected",
+            "true",
+        );
+
+        await page.goBack();
+        await expect(page).not.toHaveURL(/tab=/u);
+        await expect(panel(first.name).getByRole("tab", { name: "Settings" })).toHaveAttribute(
+            "aria-selected",
+            "false",
+        );
+
+        await page.goForward();
+        await page.goForward();
+        await page.goForward();
+        await expect(panel(second.name)).toBeVisible();
+    });
 });
 
 test.describe("as a member", () => {

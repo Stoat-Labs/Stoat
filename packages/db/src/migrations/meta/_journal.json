@@ -57,6 +57,13 @@
       "when": 1792082679825,
       "tag": "0007_fk_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792089519435,
+      "tag": "0008_resource_slug",
+      "breakpoints": true
     }
   ]
 }

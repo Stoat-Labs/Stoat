@@ -55,6 +55,7 @@ describe("buildProjectGraph", () => {
             [
                 {
                     id: api,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: "services:\n  api:\n    image: api\n",
@@ -65,6 +66,7 @@ describe("buildProjectGraph", () => {
                 },
                 {
                     id: db,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: null,
@@ -86,6 +88,7 @@ describe("buildProjectGraph", () => {
             [
                 {
                     id: api,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: null,
@@ -94,6 +97,7 @@ describe("buildProjectGraph", () => {
                 },
                 {
                     id: db,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: "services: [",
@@ -128,6 +132,7 @@ describe("buildProjectGraph logos", () => {
             [
                 {
                     id: api,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: "services:\n  db:\n    image: mariadb\n  seafile:\n    image: ${IMAGE:-seafileltd/seafile-pro-mc:13.0-latest}\n",
@@ -152,6 +157,7 @@ describe("buildProjectGraph domains", () => {
             [
                 {
                     id: api,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: "services:\n  web:\n    image: nginx\n    x-ports:\n      - app.example.com:80/https\n      - 5432:5432/tcp@host\n  db:\n    image: postgres\n",
@@ -177,6 +183,7 @@ describe("buildProjectGraph staged edits", () => {
             [
                 {
                     id: api,
+                    slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
                     spec: "services:\n  web:\n    image: nginx\n",
@@ -200,11 +207,12 @@ describe("buildProjectGraph staged edits", () => {
         // Deployed with the default prefix and the given `.env`.
         const deployedRow = (env: string, overrides: Partial<GraphResourceInput> = {}) => ({
             id: api,
+            slug: "api-k3f9x2",
             projectId: project,
             spec,
             draftSpec: spec,
             settings: { env },
-            deployed: { env, prefix: "44444444-11111111" },
+            deployed: { env, prefix: "api-k3f9x2" },
             ...overrides,
         });
 

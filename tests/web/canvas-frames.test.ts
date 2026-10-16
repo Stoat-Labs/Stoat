@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+    buildCanvas,
     frameRect,
     freeSlot,
     refitFrames,
@@ -149,5 +150,45 @@ describe("settle", () => {
         const { x, y } = moved["s:b"] ?? { x: 0, y: 0 };
 
         expect(Math.abs(y - 48) >= 144 + 24 || Math.abs(x) >= 288 + 24).toBe(true);
+    });
+});
+
+describe("buildCanvas", () => {
+    it("sizes each stack card to itself, so a card beside a volume tray keeps its edges on its border", () => {
+        const service = (name: string, volumes: string[]) => ({
+            name,
+            image: null,
+            dependsOn: [],
+            volumes,
+            isNew: false,
+            domains: [],
+            internalHostname: null,
+        });
+
+        // SAFETY: the layout only reads `id` and `icon` of the resource.
+        const resource = { id: "sure", icon: null } as never;
+
+        // SAFETY: the layout only reads the fields given here.
+        const graph = [
+            {
+                id: "sure",
+                draftOnly: true,
+                parseError: false,
+                references: [],
+                services: [
+                    service("web", ["storage"]),
+                    service("worker", ["storage"]),
+                    service("db", ["data"]),
+                    service("metrics", []),
+                    service("redis", ["cache"]),
+                ],
+            },
+        ] as never;
+
+        const { nodes } = buildCanvas([resource], graph, {}, {});
+        const height = (id: string) => nodes.find((node) => node.id === id)?.height;
+
+        expect(height("sure:db")).toBe(192);
+        expect(height("sure:metrics")).toBe(144);
     });
 });

@@ -69,6 +69,7 @@ export type GraphService = {
 
 export type GraphResourceInput = {
     id: string;
+    slug: string;
     projectId: string;
     spec: string | null;
     draftSpec: string | null;

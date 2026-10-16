@@ -43,7 +43,7 @@
         onclose: () => void;
     } = $props();
 
-    // A resource deployed with prefixed names can't move, so the dialog offers to copy it instead.
+    // A deployed resource can't move to another cluster, so the dialog offers to copy it instead.
     let mode = $state(untrack(() => initialMode));
 
     let targetId = $state("");
@@ -73,11 +73,6 @@
             .prefixNames,
     );
 
-    // A prefixed deploy names its services and volumes after this project.
-    const deployedPrefixed = $derived(
-        Boolean(resource.deploymentPrefix),
-    );
-
     const projects = $derived(
         (projectsQuery.data ?? []).filter(
             (project) => mode === "copy" || project.id !== projectId,
@@ -101,7 +96,14 @@
                 : resource.name),
     );
 
-    const blocked = $derived(mode === "move" && deployedPrefixed);
+    const otherCluster = $derived(
+        Boolean(target && source && target.clusterId !== source.clusterId),
+    );
+
+    // Its services keep running on this cluster, where nothing would manage them any more.
+    const blocked = $derived(
+        mode === "move" && otherCluster && resource.deploymentId !== null,
+    );
 
     const ready = $derived(
         Boolean(target) &&
@@ -191,17 +193,6 @@
                 onsubmit={submit}
                 oninput={() => (error = "")}
             >
-                {#if blocked}
-                    <Alert variant="warning">
-                        <AlertDescription>
-                            It was deployed with Prefix names on, so
-                            its services and volumes on the cluster
-                            are named after this project. Copy it
-                            instead.
-                        </AlertDescription>
-                    </Alert>
-                {/if}
-
                 <Field>
                     <Label for="canvas-transfer-project" required>
                         Project
@@ -215,7 +206,7 @@
                                 project.name,
                             ),
                         }))}
-                        disabled={blocked || projectsQuery.isPending}
+                        disabled={projectsQuery.isPending}
                         onValueChange={(value) =>
                             (targetId = value ?? "")}
                     >
@@ -278,7 +269,15 @@
                     {/if}
                 {/if}
 
-                {#if target && source && target.clusterId !== source.clusterId}
+                {#if blocked}
+                    <Alert variant="warning">
+                        <AlertDescription>
+                            That project is on another cluster, and this
+                            resource runs on its current one. Copy it
+                            instead.
+                        </AlertDescription>
+                    </Alert>
+                {:else if otherCluster}
                     <p class="text-xs text-muted-foreground">
                         That project is on another cluster. Variable
                         references to other resources only work within

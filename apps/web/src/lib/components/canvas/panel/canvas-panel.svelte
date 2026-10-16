@@ -70,7 +70,12 @@
         isBucket ? (["variables", "settings"] as const) : tabs,
     );
 
-    const urlOptions = { shallow: true, scroll: false } as const;
+    // Matches project-canvas, so Back steps through tabs and stacked logs.
+    const urlOptions = {
+        history: "push",
+        shallow: true,
+        scroll: false,
+    } as const;
 
     const tab = useQueryState(
         "tab",

@@ -22,6 +22,18 @@ async function rpc(page: Page, path: string, headers: Record<string, string> = {
     });
 }
 
+test("Back returns to the previous settings section", async ({ page }) => {
+    await section(page, "security");
+    await expect(page.getByLabel("Current password")).toBeVisible();
+
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
+    await expect(page.getByLabel("Full name")).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(/section=security/u);
+    await expect(page.getByLabel("Current password")).toBeVisible();
+});
+
 test.describe("account", () => {
     test("changing your name shows everywhere", async ({ browser }) => {
         const { account, context, page } = await freshAccount(browser);

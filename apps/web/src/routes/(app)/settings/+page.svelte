@@ -86,6 +86,7 @@
     const section = useQueryState(
         "section",
         parseAsStringLiteral(sections).withOptions({
+            history: "push",
             shallow: true,
             scroll: false,
         }),

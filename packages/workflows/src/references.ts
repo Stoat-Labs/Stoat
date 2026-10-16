@@ -13,12 +13,15 @@ import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 export type ReferenceTarget = {
     id: string;
     name: string;
+    slug: string;
     projectId: string;
     projectName: string;
     // Raw jsonb; read through `resourceEnv` and `resourceComposePrefix`.
     settings: unknown;
     // Last deployed spec, so built-in hosts match what is running.
     spec: string;
+    // Saved draft, for keys the deployed spec doesn't have yet, like a service moved in.
+    draftSpec?: string;
 };
 
 /**
@@ -27,8 +30,9 @@ export type ReferenceTarget = {
  */
 export async function referenceTargets(db: Database, clusterId: string, ids?: string[]) {
     const { rows } = await db.$client.query<ReferenceTarget>(
-        `SELECT r.id, r.name, r.project_id AS "projectId", p.name AS "projectName", r.settings,
-                coalesce(r.spec, r.draft_spec, '') AS spec
+        `SELECT r.id, r.name, r.slug, r.project_id AS "projectId", p.name AS "projectName", r.settings,
+                coalesce(r.spec, r.draft_spec, '') AS spec,
+                coalesce(r.draft_spec, r.spec, '') AS "draftSpec"
          FROM resources r
          JOIN projects p ON p.id = r.project_id
          WHERE p.cluster_id = $1
@@ -79,6 +83,17 @@ export function referenceVariables(target: ReferenceTarget, domain?: string) {
     }
 }
 
+function draftVariable(target: ReferenceTarget, key: string, domain?: string) {
+    if (!target.draftSpec || target.draftSpec === target.spec) return undefined;
+
+    try {
+        return referenceVariables({ ...target, spec: target.draftSpec }, domain)[key];
+    } catch {
+        // A broken draft only loses the fallback; the deployed spec already answered.
+        return undefined;
+    }
+}
+
 /** Resolve every `{{ <resourceId>.<KEY> }}` in `envText` (owned by `resourceId`) against `targets`. */
 export function resolveReferences(
     envText: string,
@@ -113,7 +128,10 @@ export function resolveReferences(
                 );
 
             if (!variables.has(id)) variables.set(id, referenceVariables(target, domain));
-            const resolved = variables.get(id)?.[key];
+
+            // A service moved into the target resolves before the target deploys it, so the
+            // resource it left can deploy first. Keys that exist when deployed never change.
+            const resolved = variables.get(id)?.[key] ?? draftVariable(target, key, domain);
 
             if (resolved === undefined)
                 throw new ComposeVariableError(`Resource "${target.name}" has no variable ${key}.`);
