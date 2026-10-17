@@ -164,6 +164,7 @@ function graphEdges(stacks: Stack[]) {
             draftSpec: stack.compose,
             settings: settingsOf(stack),
             deployed: null,
+            attempted: null,
         })),
         [],
     );

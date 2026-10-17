@@ -30,6 +30,7 @@ export const queryClient = new QueryClient({
 const streamingProcedures = new Set([
     "cluster.watchDeployments",
     "cluster.streamDeployment",
+    "cluster.getHttpSummary",
     "resources.streamLogs",
 ]);
 

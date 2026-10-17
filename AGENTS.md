@@ -49,3 +49,4 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - do your research before a medium+ sized change.
 - think like a senior engineer
 - creating things (API keys, members, etc.) happens in a dialog, never in an inline card/form. Destructive confirmations use `alert-dialog` (see `settings/confirm-dialog.svelte`), never `confirm()`/`alert()`.
+- stop fucking adding descriptions to frames.

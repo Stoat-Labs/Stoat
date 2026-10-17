@@ -336,6 +336,24 @@ export function machineList(clusters: ClusterData[]): MachineData[] {
     }));
 }
 
+// Unknown values ("") and the folded long tail ("more") are not categories of their own.
+const neutralBreakdownColors = new Map([
+    ["", "color-mix(in srgb, var(--muted-foreground) 55%, transparent)"],
+    ["more", "color-mix(in srgb, var(--muted-foreground) 25%, transparent)"],
+]);
+
+/** Breakdown rows take the theme's chart colors in rank order; neutral rows stay grey. */
+export function breakdownColors(keys: string[]) {
+    let rank = 0;
+
+    return new Map(
+        keys.map((key) => [
+            key,
+            neutralBreakdownColors.get(key) ?? `var(--chart-${(rank++ % 5) + 1})`,
+        ]),
+    );
+}
+
 /** Distinct colors for a set of names: hues are spread by sorted position (golden angle), so input order doesn't matter. */
 export function nameColors(names: string[]) {
     return new Map(

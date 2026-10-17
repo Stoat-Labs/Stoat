@@ -13,7 +13,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
-    import { ORPCError } from "@orpc/client";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import {
         Alert,
@@ -30,8 +30,6 @@
         CommandItem,
         CommandList,
     } from "$lib/components/ui/command";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Box from "@lucide/svelte/icons/box";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
@@ -43,15 +41,23 @@
     import Layers from "@lucide/svelte/icons/layers";
     import Settings from "@lucide/svelte/icons/settings";
     import SquareTerminal from "@lucide/svelte/icons/square-terminal";
+    import { ORPCError } from "@orpc/client";
+    import {
+        dockerHubLogoUrl,
+        dockerHubRepository,
+    } from "@stoat/api/docker-hub";
+    import type { AppRouterClient } from "@stoat/api/routers/index";
     import {
         createQueries,
         createQuery,
+        keepPreviousData,
     } from "@tanstack/svelte-query";
     import {
         parseAsString,
         parseAsStringLiteral,
         useQueryState,
     } from "nuqs-svelte";
+    import { Debounced } from "runed";
     import type { Component } from "svelte";
     import {
         imageCompose,
@@ -294,26 +300,79 @@
 
     const image = $derived(query.trim());
 
+    // Docker Hub's `library/postgres` is searched as `postgres`; other registries aren't searched.
+    const hubRepository = $derived(
+        isImageReference(image) ? dockerHubRepository(image) : null,
+    );
+
+    const hubSearch = new Debounced(
+        () => hubRepository?.replace(/^library\//u, "") ?? "",
+        300,
+    );
+
+    const hubQuery = createQuery(() =>
+        orpc.resources.searchDockerImages.queryOptions({
+            input: { query: hubSearch.current },
+            enabled: current === "docker" && hubSearch.current !== "",
+            placeholderData: keepPreviousData,
+            staleTime: 5 * 60_000,
+        }),
+    );
+
+    function imageEntry(
+        reference: string,
+        description: string | undefined,
+        logo: string | null,
+    ): Entry {
+        return {
+            id: `image:${reference}`,
+            label: reference,
+            description,
+            logo,
+            icon: Container,
+            provider: undefined,
+            target: {
+                create: {
+                    name: imageServiceName(reference),
+                    compose: imageCompose(reference),
+                    logoImage: reference,
+                },
+            },
+        };
+    }
+
+    // What was typed comes first, then Docker Hub's other matches.
     const dockerEntries = $derived<Entry[]>(
         isImageReference(image)
             ? [
-                  {
-                      id: "image",
-                      label: image,
-                      description: undefined,
-                      logo: null,
-                      icon: Container,
-                      provider: undefined,
-                      target: {
-                          create: {
-                              name: imageServiceName(image),
-                              compose: imageCompose(image),
-                          },
-                      },
-                  },
+                  imageEntry(
+                      image,
+                      undefined,
+                      hubRepository
+                          ? dockerHubLogoUrl(hubRepository)
+                          : null,
+                  ),
+                  ...(hubRepository
+                      ? (hubQuery.data ?? [])
+                      : []
+                  ).flatMap((result) =>
+                      dockerHubRepository(result.image) ===
+                      hubRepository
+                          ? []
+                          : [
+                                imageEntry(
+                                    result.image,
+                                    result.description ?? undefined,
+                                    result.logo,
+                                ),
+                            ],
+                  ),
               ]
             : [],
     );
+
+    // Docker Hub logos 404 for repositories without one; those rows show `icon` instead.
+    let brokenLogos = $state(new Set<string>());
 
     const items = $derived(
         current === "git"
@@ -471,9 +530,11 @@
             </span>
         </div>
     {/if}
+    <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. -->
     <Command
         {items}
         bind:value={query}
+        {...current === "docker" && { filter: null }}
         itemToStringValue={(entry: Entry) =>
             `${entry.label} ${entry.description ?? ""}`}
     >
@@ -508,7 +569,8 @@
                 class="mx-2.5 mb-1.5 flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-sm text-info-foreground dark:bg-info/16"
             >
                 <Info class="size-4 shrink-0" aria-hidden="true" />
-                Enter an image from any registry the cluster can pull from.
+                Search Docker Hub, or enter an image from any registry the
+                cluster can pull.
             </p>
         {/if}
         <CommandEmpty>
@@ -545,12 +607,17 @@
                     >
                         {#if entry.provider}
                             <ProviderIcon provider={entry.provider} />
-                        {:else if entry.logo}
+                        {:else if entry.logo && !brokenLogos.has(entry.logo)}
+                            {@const logo = entry.logo}
                             <img
-                                src={entry.logo}
+                                src={logo}
                                 alt=""
                                 aria-hidden="true"
                                 class="size-4 shrink-0 object-contain"
+                                onerror={() =>
+                                    (brokenLogos = new Set(
+                                        brokenLogos,
+                                    ).add(logo))}
                             />
                         {:else}
                             <entry.icon

@@ -29,7 +29,7 @@ import {
 } from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
-import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
@@ -83,6 +83,7 @@ import {
 } from "../../resource-deployment";
 import { pushGitFile, readGitHead } from "../../git";
 import { buildProjectGraph } from "../../project-graph";
+import { fetchDockerHubLogo, searchDockerHub } from "../../docker-hub";
 import {
     ComposeMoveError,
     moveComposeService,
@@ -774,6 +775,29 @@ export const resourcesRouter = {
                 )
                 .as("last_deploy");
 
+            // What each resource last shipped, live or not; a cancelled deploy shipped nothing.
+            // Queued and running deploys have no finishedAt, so this orders by creation.
+            const lastAttempt = db
+                .selectDistinctOn([deployments.resourceId], {
+                    resourceId: deployments.resourceId,
+                    spec: deployments.spec,
+                    env: resourceDeploymentInputs.env,
+                    prefix: resourceDeploymentInputs.prefix,
+                })
+                .from(deployments)
+                .innerJoin(
+                    resourceDeploymentInputs,
+                    eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                )
+                .where(
+                    and(
+                        eq(deployments.name, "DeployResource"),
+                        ne(deployments.status, "cancelled"),
+                    ),
+                )
+                .orderBy(deployments.resourceId, desc(deployments.createdAt))
+                .as("last_attempt");
+
             const rows = await db
                 .select({
                     id: resources.id,
@@ -784,20 +808,43 @@ export const resourcesRouter = {
                     settings: resources.settings,
                     deployedEnv: lastDeploy.env,
                     deployedPrefix: lastDeploy.prefix,
+                    attemptedSpec: lastAttempt.spec,
+                    attemptedEnv: lastAttempt.env,
+                    attemptedPrefix: lastAttempt.prefix,
                 })
                 .from(resources)
                 .leftJoin(lastDeploy, eq(lastDeploy.resourceId, resources.id))
+                .leftJoin(lastAttempt, eq(lastAttempt.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
 
             return buildProjectGraph(
-                rows.map(({ deployedEnv, deployedPrefix, ...row }) => ({
-                    ...row,
-                    deployed:
-                        deployedEnv === null || deployedPrefix === null
-                            ? null
-                            : { env: deployedEnv, prefix: deployedPrefix },
-                })),
+                rows.map(
+                    ({
+                        deployedEnv,
+                        deployedPrefix,
+                        attemptedSpec,
+                        attemptedEnv,
+                        attemptedPrefix,
+                        ...row
+                    }) => ({
+                        ...row,
+                        deployed:
+                            deployedEnv === null || deployedPrefix === null
+                                ? null
+                                : { env: deployedEnv, prefix: deployedPrefix },
+                        attempted:
+                            attemptedSpec === null ||
+                            attemptedEnv === null ||
+                            attemptedPrefix === null
+                                ? null
+                                : {
+                                      spec: attemptedSpec,
+                                      env: attemptedEnv,
+                                      prefix: attemptedPrefix,
+                                  },
+                    }),
+                ),
                 templates,
             );
         }),
@@ -976,6 +1023,8 @@ export const resourcesRouter = {
                 git: v.optional(gitSourceInput),
                 /** A starting Compose draft, e.g. one service running a Docker image. */
                 compose: v.optional(gitText),
+                /** A Docker image whose Docker Hub logo, if any, becomes the icon. */
+                logoImage: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(512))),
                 template: v.optional(
                     v.object({
                         appId: v.string(),
@@ -1067,6 +1116,9 @@ export const resourcesRouter = {
             const description = input.description?.trim() ? input.description.trim() : null;
             const source = input.git ? await loadGitCompose(db, organizationId, input.git) : {};
 
+            const icon =
+                !template && input.logoImage ? await fetchDockerHubLogo(input.logoImage) : null;
+
             const [resource] = await db
                 .insert(resources)
                 .values({
@@ -1076,6 +1128,7 @@ export const resourcesRouter = {
                     name: input.name.trim(),
                     slug: resourceSlug(input.name),
                     description,
+                    icon,
                     type: template?.type ?? input.type,
                     projectId: project.id,
                     ...(template &&
@@ -1096,6 +1149,11 @@ export const resourcesRouter = {
 
             return resource;
         }),
+
+    // The browser can't reach Docker Hub's search (no CORS), so the server asks for it.
+    searchDockerImages: organizationProcedure
+        .input(v.object({ query: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)) }))
+        .handler(({ input }) => searchDockerHub(input.query, 8)),
 
     listTemplates: organizationProcedure.handler(() =>
         templates.map(({ versions, ...template }) => ({

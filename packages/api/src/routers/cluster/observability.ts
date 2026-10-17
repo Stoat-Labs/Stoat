@@ -19,13 +19,21 @@ import {
     dnsMetricNames,
     dnsMetricQueries,
     httpMetricNames,
+    hostGroups,
     httpQueries,
     httpSummaryQueries,
     httpTrafficMetricNames,
     caddyMetricTables,
+    parseServiceSeries,
     parseTotals,
+    breakdown,
+    bucketQuantile,
+    summarizeServices,
+    type Total,
     visitorRequests,
+    httpSummaryParts,
     type HttpSummary,
+    type HttpSummaryPart,
     metricNames,
     metricQueries,
     metricWindow,
@@ -277,6 +285,17 @@ async function serviceHostMap(cluster: MonitoringCluster, uc: UcClient, serviceI
     return hosts;
 }
 
+/**
+ * The selected services' hostnames, and whether Caddy's tables exist yet (null when GreptimeDB
+ * could not be asked). Both are cached; on a miss they are two sidecar round-trips, run together.
+ */
+function recordedHosts(cluster: MonitoringCluster, uc: UcClient, serviceIds: string[]) {
+    return Promise.all([
+        serviceHostMap(cluster, uc, serviceIds),
+        collecting(cluster, uc, "http", caddyMetricTables).catch(() => null),
+    ]);
+}
+
 async function httpMetric(
     cluster: MonitoringCluster,
     uc: UcClient,
@@ -286,26 +305,37 @@ async function httpMetric(
     serviceIds: string[],
 ): Promise<MetricResponse> {
     const { start, end, step } = metricWindow(range, points);
-    const hosts = await serviceHostMap(cluster, uc, serviceIds);
+    const [hosts, recorded] = await recordedHosts(cluster, uc, serviceIds);
     const queries = httpQueries(cluster.id, step, hosts);
 
     if (!queries) return { start, end, step, series: [], status: "no-routes" };
+
+    if (recorded === null) throw unreachable();
+
+    if (!recorded) return { start, end, step, series: [], status: "not-collecting" };
 
     return swr(
         `http:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${JSON.stringify([...hosts].sort())}`,
         end,
         async () => {
             try {
-                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
-                    return { start, end, step, series: [], status: "not-collecting" as const };
+                // Latency charts return every host's buckets, so they go a few hosts at a time.
+                const groups = queries[name].quantile === undefined ? [hosts] : hostGroups(hosts);
 
-                return {
-                    start,
-                    end,
-                    step,
-                    series: await queryRange(cluster, uc, queries[name], start, end, step),
-                    status: "ok" as const,
-                };
+                const series = await Promise.all(
+                    groups.map(async (group) => {
+                        const query = httpQueries(cluster.id, step, group)?.[name];
+
+                        if (!query) return [];
+                        const text = await queryText(cluster, uc, query.query, start, end, step);
+
+                        return query.perHost
+                            ? parseServiceSeries(text, start, end, step, group, query.quantile)
+                            : parseMetricSeries(text, start, end, step);
+                    }),
+                );
+
+                return { start, end, step, series: series.flat(), status: "ok" as const };
             } catch {
                 throw unreachable();
             }
@@ -315,86 +345,108 @@ async function httpMetric(
 
 const noTraffic = (status: HttpSummary["status"]): HttpSummary => ({
     status,
+    pending: [],
     services: [],
     latency: null,
     visitors: null,
 });
 
-/** Range totals for the HTTP traffic page: per-service figures and who sent the requests. */
-async function httpSummary(
+type HttpSummaryPatch = Partial<Pick<HttpSummary, HttpSummaryPart>>;
+
+/**
+ * Range totals for the HTTP traffic page: per-service figures and who sent the requests. Each part
+ * is cached and streamed on its own, so a slow visitor breakdown never holds back the totals.
+ */
+async function* httpSummary(
     cluster: MonitoringCluster,
     uc: UcClient,
     range: ObservabilityRange,
     serviceIds: string[],
-): Promise<HttpSummary> {
+): AsyncGenerator<HttpSummary> {
     const { end, duration } = metricWindow(range);
-    const hosts = await serviceHostMap(cluster, uc, serviceIds);
+    const [hosts, recorded] = await recordedHosts(cluster, uc, serviceIds);
     const queries = httpSummaryQueries(cluster.id, duration, hosts);
 
-    if (!queries) return noTraffic("no-routes");
+    if (!queries) {
+        yield noTraffic("no-routes");
 
-    return swr(
-        `http-summary:${cluster.id}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`,
-        end,
-        async () => {
+        return;
+    }
+
+    if (recorded === null) throw unreachable();
+
+    if (!recorded) {
+        yield noTraffic("not-collecting");
+
+        return;
+    }
+
+    const key = `http-summary:${cluster.id}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`;
+
+    const total = async (query: string) =>
+        parseTotals(await queryText(cluster, uc, query, end, end, 15));
+
+    // The services and the overall P95 both read the buckets, which is the heaviest scan.
+    let bucketScan: Promise<Total[]> | undefined;
+    const buckets = () => (bucketScan ??= total(queries.latency));
+
+    const services = async () => {
+        const [requests, bytes, latency] = await Promise.all([
+            total(queries.requests),
+            total(queries.bytes),
+            buckets(),
+        ]);
+
+        return summarizeServices(hosts, requests, bytes, latency);
+    };
+
+    const latency = async () => bucketQuantile(0.95, await buckets());
+
+    const visitors = async () => {
+        if (!(await collecting(cluster, uc, "visitors", [visitorRequests]))) return null;
+
+        const series = await total(queries.visitors);
+
+        return {
+            countries: breakdown(series, "country"),
+            clients: breakdown(series, "client"),
+            protocols: breakdown(series, "proto"),
+        };
+    };
+
+    function load<T>(part: HttpSummaryPart, query: () => Promise<T>) {
+        return swr(`${key}:${part}`, end, async () => {
             try {
-                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
-                    return noTraffic("not-collecting");
-
-                const total = async (query: string, label: string) =>
-                    parseTotals(await queryText(cluster, uc, query, end, end, 15), label);
-
-                const perService = async (query: string) =>
-                    new Map(
-                        (await total(query, "container_label_uncloud_service_id")).map(
-                            ({ key, requests }) => [key, requests],
-                        ),
-                    );
-
-                const [requests, errors, bytes, latency, [overall], visitors] = await Promise.all([
-                    perService(queries.requests),
-                    perService(queries.errors),
-                    perService(queries.bytes),
-                    perService(queries.latency),
-                    total(queries.totalLatency, ""),
-                    collecting(cluster, uc, "visitors", [visitorRequests]).then(async (recorded) =>
-                        recorded
-                            ? {
-                                  countries: await total(queries.countries, "country"),
-                                  clients: await total(queries.clients, "client"),
-                                  protocols: await total(queries.protocols, "proto"),
-                              }
-                            : null,
-                    ),
-                ]);
-
-                // Every service with a hostname gets a row, including those without traffic.
-                const services = [...hosts].flatMap(([serviceId, names]) =>
-                    names.length
-                        ? [
-                              {
-                                  serviceId,
-                                  hosts: names,
-                                  requests: Math.round(requests.get(serviceId) ?? 0),
-                                  errors: Math.round(errors.get(serviceId) ?? 0),
-                                  bytes: Math.round(bytes.get(serviceId) ?? 0),
-                                  latency: latency.get(serviceId) ?? null,
-                              },
-                          ]
-                        : [],
-                );
-
-                return {
-                    status: "ok" as const,
-                    services,
-                    latency: overall?.requests ?? null,
-                    visitors,
-                };
+                return await query();
             } catch {
                 throw unreachable();
             }
-        },
-    );
+        });
+    }
+
+    const loading = new Map<HttpSummaryPart, Promise<[HttpSummaryPart, HttpSummaryPatch]>>([
+        ["services", load("services", services).then((value) => ["services", { services: value }])],
+        ["latency", load("latency", latency).then((value) => ["latency", { latency: value }])],
+        ["visitors", load("visitors", visitors).then((value) => ["visitors", { visitors: value }])],
+    ]);
+
+    const summary: HttpSummary = {
+        status: "ok",
+        pending: [...httpSummaryParts],
+        services: [],
+        latency: null,
+        visitors: null,
+    };
+
+    // Yields in completion order; race also handles the rejections of the parts still running.
+    while (loading.size) {
+        const [part, patch] = await Promise.race(loading.values());
+        loading.delete(part);
+        Object.assign(summary, patch, { pending: [...loading.keys()] });
+
+        // A copy, so every chunk the client caches is its own object.
+        yield { ...summary };
+    }
 }
 
 const monitoringMiddleware = organizationProcedure.middleware(

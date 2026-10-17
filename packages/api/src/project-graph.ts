@@ -76,6 +76,11 @@ export type GraphResourceInput = {
     settings: unknown;
     /** The `.env` and name prefix of the latest successful deploy; null if it never deployed. */
     deployed: { env: string; prefix: string } | null;
+    /**
+     * The Compose, `.env` and prefix of the latest deploy that was not cancelled, even if it is
+     * still running or failed: those changes were already shipped. Null if there is none.
+     */
+    attempted: { spec: string; env: string; prefix: string } | null;
 };
 
 type GraphTemplate = Pick<Template, "appId" | "logo" | "versions">;
@@ -248,16 +253,23 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
 
         const kept = new Set(services.map((service) => service.name));
 
+        // Like Railway, deploying commits staged changes: a queued, running or failed deploy
+        // reports on its card, and only edits made after it count as staged again.
+        const changed = row.attempted
+            ? row.draftSpec !== row.attempted.spec ||
+              safeEnv(row) !== row.attempted.env ||
+              (resourceComposePrefix(row) ?? "") !== row.attempted.prefix
+            : draftOnly ||
+              Boolean(row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec) ||
+              (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
+              prefixChanged;
+
         return {
             id: row.id,
             draftOnly,
-            // Anything the next deploy would change, like Railway's staged changes: a first deploy,
-            // Compose edits, variables, or the prefix setting.
-            changed:
-                draftOnly ||
-                Boolean(row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec) ||
-                (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
-                prefixChanged,
+            // Anything the next deploy would change: a first deploy, Compose edits, variables,
+            // or the prefix setting.
+            changed,
             // Running services the next deploy stops and removes (their volumes stay).
             removed: [...(deployed ?? [])].filter((name) => prefixChanged || !kept.has(name)),
             parseError,

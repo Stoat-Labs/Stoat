@@ -58,6 +58,7 @@ describe("buildProjectGraph", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: "services:\n  api:\n    image: api\n",
                     draftSpec: null,
                     settings: {
@@ -69,6 +70,7 @@ describe("buildProjectGraph", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: null,
                     draftSpec: null,
                     settings: null,
@@ -91,6 +93,7 @@ describe("buildProjectGraph", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: null,
                     draftSpec: "services:\n  api: {}\n",
                     settings: null,
@@ -100,6 +103,7 @@ describe("buildProjectGraph", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: "services: [",
                     draftSpec: null,
                     settings: null,
@@ -135,6 +139,7 @@ describe("buildProjectGraph logos", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: "services:\n  db:\n    image: mariadb\n  seafile:\n    image: ${IMAGE:-seafileltd/seafile-pro-mc:13.0-latest}\n",
                     draftSpec: null,
                     settings: null,
@@ -160,6 +165,7 @@ describe("buildProjectGraph domains", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: "services:\n  web:\n    image: nginx\n    x-ports:\n      - app.example.com:80/https\n      - 5432:5432/tcp@host\n  db:\n    image: postgres\n",
                     draftSpec: null,
                     settings: null,
@@ -186,6 +192,7 @@ describe("buildProjectGraph staged edits", () => {
                     slug: "graph-k3f9x2",
                     projectId: project,
                     deployed: null,
+                    attempted: null,
                     spec: "services:\n  web:\n    image: nginx\n",
                     draftSpec: "services:\n  web:\n    image: nginx\n  db:\n    image: postgres\n",
                     settings: null,
@@ -213,6 +220,7 @@ describe("buildProjectGraph staged edits", () => {
             draftSpec: spec,
             settings: { env },
             deployed: { env, prefix: "api-k3f9x2" },
+            attempted: null,
             ...overrides,
         });
 
@@ -239,6 +247,30 @@ describe("buildProjectGraph staged edits", () => {
             });
 
             expect(graphOf(row)).toMatchObject({ changed: true, removed: ["web"] });
+        });
+
+        it("has nothing to apply once a deploy shipped the draft, even if it failed", () => {
+            const draftSpec = "services:\n  app:\n    image: nginx\n";
+
+            const row = deployedRow("A=2", {
+                draftSpec,
+                deployed: { env: "A=1", prefix: "api-k3f9x2" },
+                attempted: { spec: draftSpec, env: "A=2", prefix: "api-k3f9x2" },
+            });
+
+            // What runs is still the last ready deploy, so its services are still the ones removed.
+            expect(graphOf(row)).toMatchObject({ changed: false, removed: ["web", "worker"] });
+            expect(graphOf({ ...row, settings: { env: "A=3" } })?.changed).toBe(true);
+        });
+
+        it("has nothing to apply once a never-deployed resource's first deploy is shipped", () => {
+            const row = deployedRow("", {
+                spec: null,
+                deployed: null,
+                attempted: { spec, env: "", prefix: "api-k3f9x2" },
+            });
+
+            expect(graphOf(row)?.changed).toBe(false);
         });
 
         it("replaces every service when the prefix setting changes", () => {
