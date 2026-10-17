@@ -1,5 +1,5 @@
 diff --git a/dist/adapters/svelte-kit/adapter.svelte b/dist/adapters/svelte-kit/adapter.svelte
-index 10ce141e9be7678fd0dd23e6f1e08bcdafc0290b..6b08ffbc182bd8ac5b2bbbc621bba51951a3bdfa 100644
+index 10ce141e9be7678fd0dd23e6f1e08bcdafc0290b..72a0dae87d4786769e1ea03daab131d01db870de 100644
 --- a/dist/adapters/svelte-kit/adapter.svelte
 +++ b/dist/adapters/svelte-kit/adapter.svelte
 @@ -1,12 +1,14 @@
@@ -18,15 +18,23 @@ index 10ce141e9be7678fd0dd23e6f1e08bcdafc0290b..6b08ffbc182bd8ac5b2bbbc621bba519
  
    type Props = {
      children?: Snippet;
-@@ -21,6 +23,24 @@
-   // Using page.url directly will update the URL without invalidating the loaders dependent on it.
-   let url = $derived(new SvelteURL(page.url));
+@@ -19,7 +21,30 @@
+   let { children, options }: Props = $props();
  
+   // Using page.url directly will update the URL without invalidating the loaders dependent on it.
+-  let url = $derived(new SvelteURL(page.url));
++  // SvelteKit restores page.url from the last full navigation when Back or Forward lands on a
++  // pushState entry, so read the address bar whenever page.url changes.
++  let url = $derived.by(() => {
++    const href = page.url.href;
++    return new SvelteURL(browser ? location.href : href);
++  });
++
 +  afterNavigate(({ from, to }) => {
 +    if (from && to && from.url.href !== to.url.href) {
-+      cancelPendingUpdates(new URLSearchParams(to.url.search));
++      cancelPendingUpdates(new URLSearchParams(location.search));
 +      // Hooks may have read queued values before afterNavigate ran.
-+      url = new SvelteURL(page.url);
++      url = new SvelteURL(location.href);
 +    }
 +  });
 +
@@ -39,10 +47,9 @@ index 10ce141e9be7678fd0dd23e6f1e08bcdafc0290b..6b08ffbc182bd8ac5b2bbbc621bba519
 +      cancel();
 +    };
 +  });
-+
+ 
    const adapter: AdapterInterface = {
      get options() {
-       return options;
 diff --git a/dist/update-queue.d.ts b/dist/update-queue.d.ts
 index 5b235d60ae619f3c9ed7ac17f2ae46abe58d296b..077b3d34d6273f2d2086c8028ab919a171fe2e86 100644
 --- a/dist/update-queue.d.ts

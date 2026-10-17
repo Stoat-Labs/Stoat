@@ -373,6 +373,7 @@ describe("variable references API (PostgreSQL)", () => {
                 id: databaseId,
                 projectId,
                 name: "db",
+                slug: "db-k3f9x2",
                 type: "database",
                 settings: {
                     engine: "postgresql",
@@ -388,7 +389,7 @@ describe("variable references API (PostgreSQL)", () => {
             );
 
             expect(connection?.internal).toBe(
-                `postgresql://shop:${canary}@${projectId.slice(0, 8)}-${databaseId.slice(0, 8)}-postgres.internal:5432/shop`,
+                `postgresql://shop:${canary}@db-k3f9x2-postgres.internal:5432/shop`,
             );
         });
     });

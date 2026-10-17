@@ -18,26 +18,22 @@
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import LogViewer from "$lib/components/shared/log-viewer.svelte";
-    import { subscribeToStream } from "$lib/deployments/stream";
     import {
         logDateTime,
         parseDateInput,
         toLocalDateInput,
     } from "$lib/format";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { client, orpc } from "$lib/api/orpc";
     import { logBucketParser } from "$lib/params/query-params";
     import {
-        classifyLog,
-        liveStreamStatus,
-        logByteCost,
-        logEntryKey,
+        decorateLogs,
+        LogStream,
+        type ViewLog,
+    } from "$lib/resources/log-stream.svelte";
+    import {
         rangeDurationMs,
         selectedLogServices,
-        trimLogLines,
-        type DisplayLog,
-        type LogServiceState,
     } from "$lib/resources/logs";
-    import type { ResourceLog } from "@stoat/api/routers/resources/logs";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsArrayOf,
@@ -65,8 +61,6 @@
         resourceId: string;
         active?: boolean;
     } = $props();
-
-    type ViewLog = DisplayLog & { key: string };
 
     // Compose prefixes names with `<projectId8>-<resourceId8>-`; it adds noise in the row label.
     const COMPOSE_PREFIX = /^[0-9a-f]{8}-[0-9a-f]{8}-/u;
@@ -182,27 +176,18 @@
         `${projectId}/${resourceId}/${selectionKey}`,
     );
 
-    const streamScopeKey = $derived(
-        `${projectId}/${resourceId}/${selection === null ? "all" : selection.join(",")}`,
+    const stream = new LogStream(
+        () => projectId,
+        () => resourceId,
+        () => selection,
+        () => selectedIds,
+        () => view.logPaused.current,
+        () => ready,
     );
-
-    let attempt = $state(0);
 
     let viewport = $state<HTMLDivElement>();
 
-    let liveLogs = $state.raw<ViewLog[]>([]);
-
     let historyLogs = $state.raw<ViewLog[]>([]);
-
-    let discarded = $state(0);
-
-    let streamError = $state("");
-
-    let reconnecting = $state(false);
-
-    let serviceStates = $state<LogServiceState[]>([]);
-
-    let nextId = 0;
 
     const start = $derived(parseDateInput(view.logStart.current));
 
@@ -220,8 +205,6 @@
 
     let searchController: AbortController | undefined;
 
-    let flushLive = () => {};
-
     let submitted = $state<{
         start: string;
         end: string;
@@ -236,7 +219,7 @@
     let previousSearchScope: string | null = null;
 
     const logs = $derived(
-        view.logMode.current === "live" ? liveLogs : historyLogs,
+        view.logMode.current === "live" ? stream.logs : historyLogs,
     );
 
     const liveFilter = $derived(
@@ -251,24 +234,6 @@
                   log.message.toLowerCase().includes(liveFilter),
               )
             : logs,
-    );
-
-    const failures = $derived(
-        serviceStates.filter(
-            (service) =>
-                service.state === "error" ||
-                service.state === "reconnecting",
-        ),
-    );
-
-    const status = $derived(
-        liveStreamStatus(
-            view.logPaused.current,
-            reconnecting,
-            streamError,
-            serviceStates,
-            selectedIds.length,
-        ),
     );
 
     const searchSummary = $derived(
@@ -319,16 +284,6 @@
                       .map((service) => service.name);
     }
 
-    function decorate(entries: ResourceLog[]) {
-        return entries.map((entry) => ({
-            ...entry,
-            id: nextId++,
-            key: logEntryKey(entry),
-            time: Date.parse(entry.timestamp),
-            level: classifyLog(entry.message),
-        }));
-    }
-
     function resetSearch(clearBucket = true) {
         searchController?.abort();
         searchController = undefined;
@@ -349,7 +304,7 @@
     });
 
     $effect.pre(() => {
-        const scope = streamScopeKey;
+        const scope = stream.scopeKey;
 
         if (
             previousStreamScope !== null &&
@@ -357,11 +312,6 @@
         )
             view.logEntry.current = null;
         previousStreamScope = scope;
-        liveLogs = [];
-        discarded = 0;
-        streamError = "";
-        reconnecting = false;
-        serviceStates = [];
     });
 
     $effect.pre(() => {
@@ -410,219 +360,14 @@
         void search(false, undefined, true);
     });
 
-    $effect(() => {
-        // Track selection intent, not IDs that can change during a deployment.
-        // Key on the string: nuqs re-derives every key (e.g. logScroll), which would otherwise reopen the stream.
-        void streamScopeKey;
-
-        const names = untrack(() =>
-            selection === null ? null : [...selection],
-        );
-
-        const scope = { projectId, resourceId };
-
-        const servicesKey = orpc.resources.listLogServices.queryKey({
-            input: scope,
-        });
-
-        void attempt;
-
-        if (!ready || paused || names?.length === 0) return;
-
-        reconnecting = false;
-        let incoming: ResourceLog[] = [];
-        let overflow = false;
-        let incomingBytes = 0;
-        let replaceTail = true;
-        let stop = () => {};
-
-        const flush = () => {
-            if (!incoming.length) return;
-
-            const combined = [
-                ...(replaceTail ? [] : liveLogs),
-                ...decorate(incoming),
-            ].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-            if (replaceTail) discarded = 0;
-            replaceTail = false;
-            incoming = [];
-            incomingBytes = 0;
-
-            const { kept, removed } = trimLogLines(
-                combined,
-                1000000,
-                100 * 1024 * 1024,
-            );
-
-            discarded += removed;
-            liveLogs = kept;
-        };
-
-        const timer = setInterval(flush, 100);
-        flushLive = flush;
-        stop = untrack(() =>
-            subscribeToStream(
-                (signal) => {
-                    // Uncloud reconnects replay the recent tail, not an exactly-once cursor.
-                    // Keep the previous buffer visible until the first replay batch arrives.
-                    replaceTail = true;
-                    incoming = [];
-                    incomingBytes = 0;
-                    streamError = "";
-                    serviceStates = selectedIds.map((id) => ({
-                        id,
-                        state: "connecting",
-                    }));
-
-                    // Resolve names and open current IDs together on the server, avoiding a refetch/open race.
-                    return client.resources.streamLogs(
-                        {
-                            ...scope,
-                            serviceNames: names ?? undefined,
-                        },
-                        { signal },
-                    );
-                },
-                (event) => {
-                    reconnecting = false;
-
-                    if (event.type === "services") {
-                        if (event.services.length === 0) {
-                            liveLogs = [];
-                            discarded = 0;
-                        }
-
-                        queryClient.setQueryData(servicesKey, {
-                            services: event.services,
-                            historyAvailable: event.historyAvailable,
-                            retentionDays: event.retentionDays,
-                        });
-                        serviceStates = selectedLogServices(
-                            event.services,
-                            names,
-                        ).map((service) => ({
-                            id: service.id,
-                            state: "connecting",
-                        }));
-                    } else if (event.type === "reset") {
-                        liveLogs = liveLogs.filter(
-                            (log) =>
-                                log.serviceId !== event.serviceId,
-                        );
-                        incoming = incoming.filter(
-                            (log) =>
-                                log.serviceId !== event.serviceId,
-                        );
-                        incomingBytes = incoming.reduce(
-                            (sum, log) =>
-                                sum + logByteCost(log.message),
-                            0,
-                        );
-
-                        const replacement = event.replacement;
-
-                        if (replacement) {
-                            queryClient.setQueryData(
-                                servicesKey,
-                                (current) =>
-                                    current
-                                        ? {
-                                              ...current,
-                                              services:
-                                                  current.services.map(
-                                                      (service) =>
-                                                          service.id ===
-                                                          event.serviceId
-                                                              ? replacement
-                                                              : service,
-                                                  ),
-                                          }
-                                        : current,
-                            );
-                            serviceStates = serviceStates.map(
-                                (service) =>
-                                    service.id === event.serviceId
-                                        ? {
-                                              id: replacement.id,
-                                              state: "connecting",
-                                          }
-                                        : service,
-                            );
-                        }
-                    } else if (event.type === "status") {
-                        serviceStates = serviceStates.map(
-                            (service) =>
-                                service.id === event.serviceId
-                                    ? {
-                                          id: service.id,
-                                          state: event.state,
-                                          message: event.message,
-                                      }
-                                    : service,
-                        );
-                    } else {
-                        for (const log of event.logs) {
-                            incoming.push(log);
-                            incomingBytes += logByteCost(log.message);
-                        }
-
-                        if (
-                            incoming.length > 2000 ||
-                            incomingBytes > 4 * 1024 * 1024
-                        ) {
-                            flush();
-                            overflow = true;
-                            streamError =
-                                "Log volume exceeded the live buffer. Reconnect or search a time range.";
-                            clearInterval(timer);
-                            stop();
-                        }
-                    }
-                },
-                (error, retrying) => {
-                    flush();
-                    streamError = error.message;
-                    reconnecting = retrying;
-
-                    if (!retrying) clearInterval(timer);
-                },
-                () => {
-                    const ended =
-                        overflow ||
-                        (serviceStates.length > 0 &&
-                            serviceStates.every(
-                                (service) =>
-                                    service.state === "error",
-                            ));
-
-                    if (ended) {
-                        flush();
-                        clearInterval(timer);
-                    }
-
-                    return ended;
-                },
-                ["BAD_GATEWAY"],
-            ),
-        );
-
-        return () => {
-            clearInterval(timer);
-            stop();
-            flushLive = () => {};
-        };
-    });
-
     function togglePause() {
-        if (!view.logPaused.current) flushLive();
+        if (!view.logPaused.current) stream.flush();
         view.logPaused.current = !view.logPaused.current;
     }
 
     function reconnect() {
         view.logPaused.current = false;
-        attempt++;
-        reconnecting = false;
+        stream.reconnect();
     }
 
     function changeMode(value: "live" | "search") {
@@ -730,7 +475,10 @@
             );
 
             if (!isCurrent()) return;
-            historyLogs = [...historyLogs, ...decorate(result.logs)];
+            historyLogs = [
+                ...historyLogs,
+                ...decorateLogs(result.logs),
+            ];
             nextCursor = result.nextCursor;
             searched = true;
 
@@ -793,10 +541,10 @@
             >
                 Try again
             </Button>
-        {:else if servicesQuery.isError || (streamError && !servicesQuery.data)}
+        {:else if servicesQuery.isError || (stream.error && !servicesQuery.data)}
             <Alert variant="error">
                 <AlertDescription>
-                    {servicesQuery.error?.message ?? streamError}
+                    {servicesQuery.error?.message ?? stream.error}
                 </AlertDescription>
             </Alert>
             <Button
@@ -897,9 +645,9 @@
                             ></span>
                             {#if view.logMode.current === "live" && (loading || selectedIds.length)}
                                 <LogLiveControls
-                                    {status}
-                                    warn={failures.length > 0 ||
-                                        !!streamError}
+                                    status={stream.status}
+                                    warn={stream.failures.length >
+                                        0 || !!stream.error}
                                     paused={view.logPaused.current}
                                     reconnecting={servicesQuery.isFetching}
                                     ontogglepause={togglePause}
@@ -1051,9 +799,9 @@
                                 <LogNotices
                                     live={view.logMode.current ===
                                         "live"}
-                                    {streamError}
-                                    {reconnecting}
-                                    failures={failures.map(
+                                    streamError={stream.error}
+                                    reconnecting={stream.reconnecting}
+                                    failures={stream.failures.map(
                                         (failure) => ({
                                             ...failure,
                                             name: services.find(

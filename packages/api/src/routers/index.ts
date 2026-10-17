@@ -9,6 +9,7 @@ import { resourcesRouter } from "./resources";
 import { connectionsRouter } from "./connections";
 import { bucketsRouter } from "./buckets";
 import { s3Router } from "./s3";
+import { userSettingsRouter } from "./user-settings";
 
 const healthCheck = publicProcedure.handler(() => {
     return "OK";
@@ -29,6 +30,7 @@ export type AppRouter = {
     connections: typeof connectionsRouter;
     s3: typeof s3Router;
     buckets: typeof bucketsRouter;
+    userSettings: typeof userSettingsRouter;
     healthCheck: typeof healthCheck;
     privateData: typeof privateData;
 };
@@ -40,6 +42,7 @@ export const appRouter: AppRouter = {
     connections: connectionsRouter,
     s3: s3Router,
     buckets: bucketsRouter,
+    userSettings: userSettingsRouter,
     healthCheck,
     privateData,
 };

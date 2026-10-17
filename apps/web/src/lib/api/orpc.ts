@@ -26,6 +26,14 @@ export const queryClient = new QueryClient({
     }),
 });
 
+// Every procedure that returns an event stream.
+const streamingProcedures = new Set([
+    "cluster.watchDeployments",
+    "cluster.streamDeployment",
+    "cluster.getHttpSummary",
+    "resources.streamLogs",
+]);
+
 export const link = new RPCLink({
     origin: () => {
         if (typeof window === "undefined") {
@@ -41,7 +49,9 @@ export const link = new RPCLink({
     plugins: [
         new BatchLinkPlugin({
             groups: [{ condition: () => true, context: {} }],
-            filter: ({ path }) => path[0] !== "resources" || path[1] !== "streamLogs",
+            // Streams get their own request: inside a batch, a closed tab never cancels the
+            // server-side stream, leaking its Postgres LISTEN connection until the pool runs out.
+            filter: ({ path }) => !streamingProcedures.has(path.join(".")),
         }),
     ],
     fetch(url, options) {

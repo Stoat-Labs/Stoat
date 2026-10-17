@@ -297,8 +297,9 @@
                                 >
                                     Pull and deploy when a push to
                                     {boundSource.branch} changes the watched
-                                    directory. Checked every minute, and
-                                    paused while the draft has changes that
+                                    directory. Right away with the Git connection's
+                                    push webhook, otherwise within a minute.
+                                    Paused while the draft has changes that
                                     are not in Git.
                                 </p>
                             </div>

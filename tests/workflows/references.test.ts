@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
     assertNoComposeReference,
     ComposeVariableError,
+    composeSystemVariables,
     composeVariables,
     interpolateCompose,
 } from "../../packages/workflows/src/compose";
@@ -25,8 +26,11 @@ const MISSING_ID = "99999999-2222-4333-8444-555555555555";
 
 const PROJECT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
+// Slugs in the shape migrated resources got, so prefixes read like `aaaaaaaa-11111111-db`.
 function target(id: string, name: string, env: string, spec: string): ReferenceTarget {
-    return { id, name, projectId: PROJECT_ID, projectName: "Shop", settings: { env }, spec };
+    const slug = `${PROJECT_ID.slice(0, 8)}-${id.slice(0, 8)}`;
+
+    return { id, name, slug, projectId: PROJECT_ID, projectName: "Shop", settings: { env }, spec };
 }
 
 const postgres = target(
@@ -157,6 +161,40 @@ describe("referenceVariables", () => {
         });
         expect(referenceVariables({ ...postgres, settings: { env: 42 } })).not.toHaveProperty(
             "POSTGRES_USER",
+        );
+    });
+});
+
+describe("resolveReferences before the target deploys a moved-in service", () => {
+    // Deployed with only `db`; the saved draft also runs `cache`, moved in from another resource.
+    const moving = {
+        ...postgres,
+        settings: { env: "" },
+        draftSpec: "services:\n  db:\n    image: postgres\n  cache:\n    image: redis\n",
+    };
+
+    it("falls back to the draft for keys the deployed spec doesn't have", () => {
+        expect(
+            resolveReferences(`HOST=${ref(POSTGRES_ID, "CACHE_SERVICE_NAME")}`, [moving]),
+        ).toEqual({ [`${POSTGRES_ID}.CACHE_SERVICE_NAME`]: "aaaaaaaa-11111111-cache" });
+    });
+
+    it("keeps answering from the deployed spec while it has the key", () => {
+        const dropping = { ...moving, draftSpec: "services:\n  cache:\n    image: redis\n" };
+
+        expect(
+            resolveReferences(`HOST=${ref(POSTGRES_ID, "DB_SERVICE_NAME")}`, [dropping]),
+        ).toEqual({ [`${POSTGRES_ID}.DB_SERVICE_NAME`]: "aaaaaaaa-11111111-db" });
+    });
+
+    it("still fails for keys neither has, and for a broken draft", () => {
+        const env = `HOST=${ref(POSTGRES_ID, "GHOST_SERVICE_NAME")}`;
+
+        expect(() => resolveReferences(env, [moving])).toThrow(
+            'Resource "postgres" has no variable GHOST_SERVICE_NAME.',
+        );
+        expect(() => resolveReferences(env, [{ ...moving, draftSpec: "services: [" }])).toThrow(
+            'Resource "postgres" has no variable GHOST_SERVICE_NAME.',
         );
     });
 });
@@ -358,5 +396,100 @@ describe("Compose files that must keep deploying", () => {
         expect(() =>
             assertNoComposeReference(`services:\n  a:\n    labels:\n      ${line}\n`),
         ).not.toThrow();
+    });
+});
+
+describe("system variables", () => {
+    const identity = {
+        projectId: PROJECT_ID,
+        projectName: "Shop",
+        resourceId: POSTGRES_ID,
+        resourceName: "postgres",
+    };
+
+    const web = [
+        "services:",
+        "  web:",
+        "    image: nginx",
+        "    environment:",
+        "      SELF: https://${WEB_PUBLIC_DOMAIN}",
+        "    x-ports:",
+        "      - shop.${STOAT_DOMAIN}:80/https",
+        "  worker:",
+        "    image: busybox",
+        "",
+    ].join("\n");
+
+    it("adds Railway's project and resource variables when the identity is known", () => {
+        expect(composeVariables(web, "", undefined, undefined, undefined, identity)).toMatchObject({
+            STOAT_PROJECT_ID: PROJECT_ID,
+            STOAT_PROJECT_NAME: "Shop",
+            STOAT_RESOURCE_ID: POSTGRES_ID,
+            STOAT_RESOURCE_NAME: "postgres",
+        });
+    });
+
+    it("resolves public domains built from STOAT_DOMAIN, in Compose and in Variables", () => {
+        const env = "LINK=${WEB_PUBLIC_DOMAIN}/login\n";
+
+        expect(composeVariables(web, env, undefined, "example.com")).toMatchObject({
+            WEB_PUBLIC_DOMAIN: "shop.example.com",
+            LINK: "shop.example.com/login",
+        });
+        expect(composeVariables(web, env, undefined, "example.com")).not.toHaveProperty(
+            "WORKER_PUBLIC_DOMAIN",
+        );
+        expect(interpolateCompose(web, env, undefined, "example.com")).toContain(
+            "SELF: https://shop.example.com",
+        );
+    });
+
+    it("only requires a public domain once it could have been resolved", () => {
+        expect(
+            composeVariables(web, "LINK=${WEB_PUBLIC_DOMAIN:?}\n", undefined, "example.com"),
+        ).toMatchObject({ LINK: "shop.example.com" });
+        expect(() =>
+            composeVariables(web, "LINK=${WORKER_PUBLIC_DOMAIN:?}\n", undefined, "example.com"),
+        ).toThrow(ComposeVariableError);
+        expect(() => composeVariables("services: {}\n", "A=${MISSING:?}\n")).toThrow(
+            ComposeVariableError,
+        );
+    });
+
+    it("lets a same-named user variable override a built-in", () => {
+        expect(
+            composeVariables(
+                web,
+                "STOAT_RESOURCE_NAME=custom\n",
+                undefined,
+                undefined,
+                undefined,
+                identity,
+            ),
+        ).toMatchObject({ STOAT_RESOURCE_NAME: "custom" });
+    });
+
+    it("lists the same keys that references can read", () => {
+        const shop = target(POSTGRES_ID, "postgres", "", web);
+
+        const keys = composeSystemVariables(
+            web,
+            "",
+            "aaaaaaaa-11111111",
+            "example.com",
+            identity,
+        ).map((variable) => variable.key);
+
+        expect(Object.keys(referenceVariables(shop, "example.com")).toSorted()).toEqual(
+            keys.toSorted(),
+        );
+        expect(keys).toEqual(
+            expect.arrayContaining([
+                "STOAT_PROJECT_NAME",
+                "STOAT_RESOURCE_ID",
+                "WEB_INTERNAL_HOST",
+                "WEB_PUBLIC_DOMAIN",
+            ]),
+        );
     });
 });

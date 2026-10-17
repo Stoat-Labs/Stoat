@@ -1,10 +1,12 @@
 <script lang="ts">
     import { browser } from "$app/environment";
+    import { orpc } from "$lib/api/orpc";
     import { syncMetricCharts } from "$lib/components/observability/chart-sync";
-    import HttpBreakdown from "$lib/components/observability/http-breakdown.svelte";
+    import HttpBreakdownBar from "$lib/components/observability/http-breakdown-bar.svelte";
+    import HttpBreakdownPie from "$lib/components/observability/http-breakdown-pie.svelte";
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
-    import RangeControls from "$lib/components/observability/range-controls.svelte";
     import { useObservabilityRange } from "$lib/components/observability/range";
+    import RangeControls from "$lib/components/observability/range-controls.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -50,16 +52,17 @@
         unpackMetric,
         type ChartSeries,
     } from "$lib/observability";
-    import { orpc } from "$lib/api/orpc";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import {
         httpTrafficMetricNames,
         type HttpBreakdown as Breakdown,
         type HttpMetricName,
+        type HttpSummaryPart,
     } from "@stoat/api/observability";
     import {
         createQueries,
         createQuery,
+        keepPreviousData,
     } from "@tanstack/svelte-query";
     import {
         parseAsArrayOf,
@@ -115,6 +118,8 @@
 
     const options = $derived({
         enabled: browser,
+        // A new range keeps the old figures on screen until its own arrive.
+        placeholderData: keepPreviousData,
         refetchInterval:
             filters.paused.current || range.custom
                 ? (false as const)
@@ -201,7 +206,8 @@
 
     const summaries = createQueries(() => ({
         queries: scopes.map(({ cluster, serviceIds }) =>
-            orpc.cluster.getHttpSummary.queryOptions({
+            // Streams each part as it finishes; every chunk replaces the cached summary.
+            orpc.cluster.getHttpSummary.liveOptions({
                 input: {
                     clusterId: cluster.id,
                     range: range.value,
@@ -287,7 +293,10 @@
     const statuses = $derived(
         scopes.map(({ cluster }, index) => ({
             cluster,
-            status: summaries[index]?.data?.status,
+            // Charts answer on their own, so the page can open before the summary finishes.
+            status:
+                summaries[index]?.data?.status ??
+                chartQuery(index, "httpRequests")?.data?.status,
             error:
                 summaries[index]?.error ??
                 chartQuery(index, "httpRequests")?.error,
@@ -298,6 +307,10 @@
         statuses.some((item) => item.status === "ok"),
     );
 
+    const chartsLoading = $derived(
+        charts.some((item) => item.isPending),
+    );
+
     const fetching = $derived(
         [...charts, ...summaries].some((item) => item.isFetching),
     );
@@ -306,9 +319,19 @@
     const pending = $derived(
         list.isPending ||
             inventories.some((item) => item.isPending) ||
-            (!summaries.some((item) => item.data) &&
-                summaries.some((item) => item.isPending)),
+            (!statuses.some((item) => item.status) &&
+                [...summaries, ...charts].some(
+                    (item) => item.isPending,
+                )),
     );
+
+    /** Whether a part of the summary is still on its way for any selected cluster. */
+    function loading(part: HttpSummaryPart) {
+        return summaries.some(
+            (item) =>
+                item.isPending || item.data?.pending.includes(part),
+        );
+    }
 
     const rows = $derived(
         scopes
@@ -374,13 +397,13 @@
         ["desktop", "Desktop browsers"],
         ["mobile", "Mobile browsers"],
         ["bot", "Bots and scripts"],
+        ["other", "Other clients"],
     ]);
 
-    /** Sums every cluster's breakdown and folds the long tail into one row. */
+    /** Sums every cluster's breakdown, largest first. */
     function merge(
         pick: (item: (typeof visitors)[number]) => Breakdown[],
         label: (key: string) => string,
-        limit = Infinity,
     ) {
         const sums = new Map<string, number>();
 
@@ -388,39 +411,23 @@
             for (const { key, requests } of pick(item))
                 sums.set(key, (sums.get(key) ?? 0) + requests);
 
-        const sorted = [...sums]
+        return [...sums]
             .toSorted((a, b) => b[1] - a[1])
             .map(([key, requests]) => ({
                 key,
                 label: label(key),
                 requests: Math.round(requests),
             }));
-
-        const rest = sorted.slice(limit);
-
-        return rest.length
-            ? [
-                  ...sorted.slice(0, limit),
-                  {
-                      key: "other",
-                      label: `${rest.length} more`,
-                      requests: rest.reduce(
-                          (sum, row) => sum + row.requests,
-                          0,
-                      ),
-                  },
-              ]
-            : sorted;
     }
 
     const countries = $derived(
-        merge((item) => item.countries, countryName, 8),
+        merge((item) => item.countries, countryName),
     );
 
     const clients = $derived(
         merge(
             (item) => item.clients,
-            (key) => clientNames.get(key) ?? "Other clients",
+            (key) => clientNames.get(key) ?? "Unknown",
         ),
     );
 
@@ -611,13 +618,25 @@
     </div>
 {/snippet}
 
-{#snippet stat(label: string, value: string, detail: string)}
+{#snippet stat(
+    label: string,
+    value: string,
+    detail: string,
+    waiting: boolean,
+)}
     <div class="min-w-0 space-y-1 px-5 py-4">
         <p class="text-xs text-muted-foreground">{label}</p>
-        <p class="truncate text-2xl font-semibold tabular-nums">
-            {value}
-        </p>
-        <p class="truncate text-xs text-muted-foreground">{detail}</p>
+        <Skeleton
+            loading={waiting}
+            loading-label={`Loading ${label}`}
+        >
+            <p class="truncate text-2xl font-semibold tabular-nums">
+                {value}
+            </p>
+            <p class="truncate text-xs text-muted-foreground">
+                {detail}
+            </p>
+        </Skeleton>
     </div>
 {/snippet}
 
@@ -682,8 +701,14 @@
                 <AlertDescription>
                     <span class="font-medium">{cluster.name}:</span>
                     No HTTP traffic recorded yet. Request metrics appear
-                    after the first proxied request; clusters initialized
-                    before Caddy metrics were added need monitoring re-initialized.
+                    after the first proxied request. If traffic is flowing,
+                    check the Caddy settings on the cluster page.
+                    <a
+                        class="underline underline-offset-2"
+                        href={`/clusters/${cluster.id}`}
+                    >
+                        Open cluster
+                    </a>
                 </AlertDescription>
             </Alert>
         {/if}
@@ -692,6 +717,14 @@
         <Skeleton loading loading-label="Loading HTTP traffic">
             <div class="space-y-4 sm:space-y-6">
                 <div class="h-28 rounded-2xl">Loading summary</div>
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <div class="h-64 rounded-2xl">
+                        Loading countries
+                    </div>
+                    <div class="h-64 rounded-2xl">
+                        Loading clients
+                    </div>
+                </div>
                 <div class="grid gap-4 lg:grid-cols-2">
                     {#each chartGrid as item (item.title)}<div
                             class="h-64 rounded-2xl"
@@ -740,6 +773,7 @@
                     "Requests",
                     count(totals.requests),
                     `${rows.filter((row) => row.requests > 0).length} of ${rows.length} services with traffic`,
+                    loading("services"),
                 )}
                 {@render stat(
                     "Server errors",
@@ -749,6 +783,7 @@
                           )
                         : "—",
                     `${count(totals.errors)} 5xx responses`,
+                    loading("services"),
                 )}
                 {@render stat(
                     "P95 latency",
@@ -756,14 +791,100 @@
                     multiCluster
                         ? "Slowest selected cluster"
                         : "Across all requests",
+                    loading("latency"),
                 )}
                 {@render stat(
                     "Data served",
                     bytes(totals.bytes),
                     "Response bodies",
+                    loading("services"),
                 )}
             </FramePanel>
         </Frame>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+            <Frame class="min-w-0">
+                <FrameHeader>
+                    <FrameTitle>Countries</FrameTitle>
+                </FrameHeader>
+                <FramePanel class="min-w-0 flex-1">
+                    {#if loading("visitors") && !recordingVisitors}
+                        <Skeleton
+                            loading
+                            loading-label="Loading visitors"
+                        >
+                            <div class="h-40">Loading visitors</div>
+                        </Skeleton>
+                    {:else if !recordingVisitors}
+                        {@render visitorsUnavailable()}
+                    {:else if countries.length}
+                        <HttpBreakdownPie
+                            label="Requests by country"
+                            rows={countries}
+                        />
+                    {:else}
+                        <p class="text-sm text-muted-foreground">
+                            No requests in this range.
+                        </p>
+                    {/if}
+                </FramePanel>
+                <p class="px-5 py-3 text-xs text-muted-foreground">
+                    IP geolocation by <a
+                        class="underline underline-offset-2"
+                        href="https://db-ip.com"
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        DB-IP
+                    </a>
+                    .
+                </p>
+            </Frame>
+            <Frame class="min-w-0">
+                <FrameHeader>
+                    <FrameTitle>Clients</FrameTitle>
+                </FrameHeader>
+                <FramePanel class="min-w-0 space-y-6">
+                    {#if loading("visitors") && !recordingVisitors}
+                        <Skeleton
+                            loading
+                            loading-label="Loading visitors"
+                        >
+                            <div class="h-40">Loading visitors</div>
+                        </Skeleton>
+                    {:else if !recordingVisitors}
+                        {@render visitorsUnavailable()}
+                    {:else if clients.length}
+                        <div class="space-y-3">
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                Client type
+                            </p>
+                            <HttpBreakdownBar
+                                label="Requests by client type"
+                                rows={clients}
+                            />
+                        </div>
+                        <div class="space-y-3">
+                            <p
+                                class="text-xs font-medium text-muted-foreground"
+                            >
+                                HTTP version
+                            </p>
+                            <HttpBreakdownBar
+                                label="Requests by HTTP version"
+                                rows={protocols}
+                            />
+                        </div>
+                    {:else}
+                        <p class="text-sm text-muted-foreground">
+                            No requests in this range.
+                        </p>
+                    {/if}
+                </FramePanel>
+            </Frame>
+        </div>
 
         <div class="grid gap-4 lg:grid-cols-2">
             {#each chartGrid as item (item.title)}<Frame
@@ -779,6 +900,7 @@
                                 {start}
                                 {end}
                                 unit={item.unit}
+                                loading={chartsLoading}
                             />
                         {:else}
                             <MetricChart
@@ -786,6 +908,7 @@
                                 {start}
                                 {end}
                                 unit={item.unit}
+                                loading={chartsLoading}
                                 bind:hoveredMachine={hovered}
                             />
                         {/if}
@@ -820,175 +943,117 @@
                 </FrameDescription>
             </FrameHeader>
             <FramePanel class="min-w-0 overflow-x-auto p-0">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Service</TableHead>
-                            <TableHead class="text-right">
-                                Requests
-                            </TableHead>
-                            <TableHead class="text-right">
-                                5xx
-                            </TableHead>
-                            <TableHead class="text-right">
-                                P95
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Data served
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {#each rows as row (row.key)}
-                            {@const active =
-                                filters.services.current.includes(
-                                    row.serviceId,
-                                )}
-                            <TableRow
-                                data-state={active
-                                    ? "selected"
-                                    : undefined}
-                                style={`opacity: ${hovered && hovered !== row.key ? 0.5 : 1}`}
-                                onpointerenter={() =>
-                                    (hovered = row.key)}
-                                onpointerleave={() => (hovered = "")}
-                            >
-                                <TableCell class="max-w-80">
-                                    <button
-                                        type="button"
-                                        class="flex min-w-0 items-center gap-2 text-left"
-                                        aria-pressed={active}
-                                        title={active
-                                            ? "Remove from the filter"
-                                            : "Filter the page to this service"}
-                                        onclick={() =>
-                                            toggleService(
-                                                row.serviceId,
-                                            )}
-                                    >
-                                        <span
-                                            class="size-2 shrink-0 rounded-full"
-                                            style:background={row.color}
-                                            aria-hidden="true"
-                                        ></span>
-                                        <span class="min-w-0">
-                                            <span
-                                                class="block truncate font-medium"
-                                            >
-                                                {multiCluster
-                                                    ? `${row.cluster.name} / ${row.name}`
-                                                    : row.name}
-                                            </span>
-                                            <span
-                                                class="block truncate text-xs text-muted-foreground"
-                                            >
-                                                {row.hosts.join(", ")}
-                                            </span>
-                                        </span>
-                                    </button>
-                                </TableCell>
-                                <TableCell
-                                    class="text-right tabular-nums"
-                                >
-                                    {count(row.requests)}
-                                </TableCell>
-                                <TableCell
-                                    class="text-right tabular-nums {row.errors
-                                        ? 'text-destructive-foreground'
-                                        : 'text-muted-foreground'}"
-                                >
-                                    {row.requests
-                                        ? percent(
-                                              (100 * row.errors) /
-                                                  row.requests,
-                                          )
-                                        : "—"}
-                                </TableCell>
-                                <TableCell
-                                    class="text-right tabular-nums"
-                                >
-                                    {duration(row.latency)}
-                                </TableCell>
-                                <TableCell
-                                    class="text-right tabular-nums"
-                                >
-                                    {bytes(row.bytes)}
-                                </TableCell>
+                {#if loading("services") && !rows.length}
+                    <Skeleton
+                        loading
+                        loading-label="Loading services"
+                    >
+                        <div class="h-48">Loading services</div>
+                    </Skeleton>
+                {:else}
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Service</TableHead>
+                                <TableHead class="text-right">
+                                    Requests
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    5xx
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    P95
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Data served
+                                </TableHead>
                             </TableRow>
-                        {/each}
-                    </TableBody>
-                </Table>
+                        </TableHeader>
+                        <TableBody>
+                            {#each rows as row (row.key)}
+                                {@const active =
+                                    filters.services.current.includes(
+                                        row.serviceId,
+                                    )}
+                                <TableRow
+                                    data-state={active
+                                        ? "selected"
+                                        : undefined}
+                                    style={`opacity: ${hovered && hovered !== row.key ? 0.5 : 1}`}
+                                    onpointerenter={() =>
+                                        (hovered = row.key)}
+                                    onpointerleave={() =>
+                                        (hovered = "")}
+                                >
+                                    <TableCell class="max-w-80">
+                                        <button
+                                            type="button"
+                                            class="flex min-w-0 items-center gap-2 text-left"
+                                            aria-pressed={active}
+                                            title={active
+                                                ? "Remove from the filter"
+                                                : "Filter the page to this service"}
+                                            onclick={() =>
+                                                toggleService(
+                                                    row.serviceId,
+                                                )}
+                                        >
+                                            <span
+                                                class="size-2 shrink-0 rounded-full"
+                                                style:background={row.color}
+                                                aria-hidden="true"
+                                            ></span>
+                                            <span class="min-w-0">
+                                                <span
+                                                    class="block truncate font-medium"
+                                                >
+                                                    {multiCluster
+                                                        ? `${row.cluster.name} / ${row.name}`
+                                                        : row.name}
+                                                </span>
+                                                <span
+                                                    class="block truncate text-xs text-muted-foreground"
+                                                >
+                                                    {row.hosts.join(
+                                                        ", ",
+                                                    )}
+                                                </span>
+                                            </span>
+                                        </button>
+                                    </TableCell>
+                                    <TableCell
+                                        class="text-right tabular-nums"
+                                    >
+                                        {count(row.requests)}
+                                    </TableCell>
+                                    <TableCell
+                                        class="text-right tabular-nums {row.errors
+                                            ? 'text-destructive-foreground'
+                                            : 'text-muted-foreground'}"
+                                    >
+                                        {row.requests
+                                            ? percent(
+                                                  (100 * row.errors) /
+                                                      row.requests,
+                                              )
+                                            : "—"}
+                                    </TableCell>
+                                    <TableCell
+                                        class="text-right tabular-nums"
+                                    >
+                                        {duration(row.latency)}
+                                    </TableCell>
+                                    <TableCell
+                                        class="text-right tabular-nums"
+                                    >
+                                        {bytes(row.bytes)}
+                                    </TableCell>
+                                </TableRow>
+                            {/each}
+                        </TableBody>
+                    </Table>
+                {/if}
             </FramePanel>
         </Frame>
-
-        <div class="grid gap-4 lg:grid-cols-2">
-            <Frame class="min-w-0">
-                <FrameHeader>
-                    <FrameTitle>Countries</FrameTitle>
-                    <FrameDescription>
-                        Where requests came from, by client IP.
-                    </FrameDescription>
-                </FrameHeader>
-                <FramePanel class="min-w-0">
-                    {#if !recordingVisitors}
-                        {@render visitorsUnavailable()}
-                    {:else if countries.length}
-                        <HttpBreakdown
-                            label="Requests by country"
-                            rows={countries}
-                        />
-                    {:else}
-                        <p class="text-sm text-muted-foreground">
-                            No requests in this range.
-                        </p>
-                    {/if}
-                </FramePanel>
-                <p class="px-5 py-3 text-xs text-muted-foreground">
-                    IP geolocation by <a
-                        class="underline underline-offset-2"
-                        href="https://db-ip.com"
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        DB-IP
-                    </a>
-                    .
-                </p>
-            </Frame>
-            <Frame class="min-w-0">
-                <FrameHeader>
-                    <FrameTitle>Clients</FrameTitle>
-                    <FrameDescription>
-                        What sent the requests, from the User-Agent
-                        header.
-                    </FrameDescription>
-                </FrameHeader>
-                <FramePanel class="min-w-0 space-y-6">
-                    {#if !recordingVisitors}
-                        {@render visitorsUnavailable()}
-                    {:else if clients.length}
-                        <HttpBreakdown
-                            label="Requests by client type"
-                            rows={clients}
-                        />
-                        <div class="space-y-3">
-                            <p
-                                class="text-xs font-medium text-muted-foreground"
-                            >
-                                HTTP version
-                            </p>
-                            <HttpBreakdown
-                                label="Requests by HTTP version"
-                                rows={protocols}
-                            />
-                        </div>
-                    {:else}
-                        <p class="text-sm text-muted-foreground">
-                            No requests in this range.
-                        </p>
-                    {/if}
-                </FramePanel>
-            </Frame>
-        </div>
     {/if}
 </div>

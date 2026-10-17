@@ -226,19 +226,19 @@ export const HealthCheckLive = HealthCheck.toLayer(
     { concurrency: 1 },
 );
 
-type GitWatcher = (db: Database, signal: AbortSignal) => Promise<void>;
+type GitWatcher = (db: Database, signal: AbortSignal, connectionId?: string) => Promise<void>;
 
 // The watcher lives in @stoat/api (it needs Git and deploy logic), which depends on this package,
 // so the worker bootstrap passes it in.
 function watchGitSourcesLive(watch: GitWatcher) {
     return WatchGitSources.toLayer(
-        () =>
+        ({ connectionId }) =>
             Effect.callback<void>((resume, signal) => {
                 const attempt = (async () => {
                     const db = createHandlerDb();
 
                     try {
-                        await watch(db, signal);
+                        await watch(db, signal, connectionId);
                     } finally {
                         await db.$client.end();
                     }
@@ -422,6 +422,13 @@ export function enqueueInitialization(clusterId: string, requestId: string) {
 export async function queueResourceDeployment(deploymentId: string): Promise<void> {
     await Effect.runPromise(
         DeployResource.enqueue({ deploymentId }).pipe(Effect.provide(JobStoreLive)),
+    );
+}
+
+// A push webhook fired: check that connection's resources now instead of on the next tick.
+export async function queueGitWatch(connectionId: string): Promise<void> {
+    await Effect.runPromise(
+        WatchGitSources.enqueue({ connectionId }).pipe(Effect.provide(JobStoreLive)),
     );
 }
 

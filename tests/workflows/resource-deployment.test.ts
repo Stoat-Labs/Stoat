@@ -67,6 +67,10 @@ describe("resource deployment worker", () => {
         | "pause" = "success";
 
     let requestCount = 0;
+    // Services the fake cluster runs, and the ones a deploy removed, in order.
+    let running: string[] = [];
+    const removed: string[] = [];
+    let removalFails = false;
     let requestBody = "";
     let authorization: string | undefined;
     let received = Promise.withResolvers<void>();
@@ -77,6 +81,29 @@ describe("resource deployment worker", () => {
         const chunks: Buffer[] = [];
 
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
+
+        // Listing and removing services happen around a deploy; only Compose deploys are counted.
+        if (request.method === "GET" && request.url === "/api/v1/services") {
+            response.writeHead(200, { "Content-Type": "application/json" });
+            response.end(JSON.stringify({ items: running.map((name) => ({ id: name, name })) }));
+
+            return;
+        }
+
+        if (request.method === "DELETE" && request.url?.startsWith("/api/v1/services/")) {
+            removed.push(decodeURIComponent(request.url.slice("/api/v1/services/".length)));
+
+            if (removalFails) {
+                response.writeHead(500, { "Content-Type": "application/json" });
+                response.end(JSON.stringify({ error: "machine unreachable" }));
+            } else {
+                response.writeHead(204);
+                response.end();
+            }
+
+            return;
+        }
+
         requestBody = Buffer.concat(chunks).toString();
         authorization = request.headers.authorization;
         requestCount++;
@@ -179,6 +206,9 @@ describe("resource deployment worker", () => {
 
     afterEach(() => {
         mode = "success";
+        running = [];
+        removed.length = 0;
+        removalFails = false;
         received = Promise.withResolvers<void>();
         closed = Promise.withResolvers<void>();
         finish.resolve();
@@ -201,12 +231,17 @@ describe("resource deployment worker", () => {
         vi.unstubAllEnvs();
     });
 
-    async function snapshot() {
+    async function snapshot(compose = spec) {
         const id = randomUUID();
         await db.transaction(async (tx) => {
-            await tx
-                .insert(deployments)
-                .values({ id, jobId: id, clusterId, resourceId, name: "DeployResource", spec });
+            await tx.insert(deployments).values({
+                id,
+                jobId: id,
+                clusterId,
+                resourceId,
+                name: "DeployResource",
+                spec: compose,
+            });
             await tx
                 .insert(resourceDeploymentInputs)
                 .values({ deploymentId: id, prefix: "project-resource" });
@@ -229,6 +264,44 @@ describe("resource deployment worker", () => {
 
         return { status: events.at(-1)?.deployment.status, error: saved?.error, logs };
     }
+
+    it("removes services the new Compose no longer has before deploying it, keeping the rest", async () => {
+        const first = await snapshot();
+        await queueResourceDeployment(first);
+        expect((await terminal(first)).status).toBe("ready");
+
+        // `web` is renamed to `app`; a failed deploy once left `ghost` behind under this prefix.
+        running = [
+            "project-resource-web",
+            "project-resource-db",
+            "project-resource-ghost",
+            "unrelated",
+        ];
+        removed.length = 0;
+        const renamed = spec.replace("  web:", "  app:");
+        const id = await snapshot(renamed);
+        await queueResourceDeployment(id);
+        const result = await terminal(id);
+
+        expect(result.status).toBe("ready");
+        expect(removed.toSorted()).toEqual(["project-resource-ghost", "project-resource-web"]);
+        expect(result.logs.some((log) => log.text.includes("Removing project-resource-web"))).toBe(
+            true,
+        );
+    });
+
+    it("stops before deploying when a stale service can't be removed", async () => {
+        running = ["project-resource-ghost"];
+        removalFails = true;
+        const id = await snapshot();
+        const count = requestCount;
+        await queueResourceDeployment(id);
+        const result = await terminal(id);
+
+        expect(result.status).toBe("failed");
+        expect(result.error).toContain("Could not remove project-resource-ghost");
+        expect(requestCount).toBe(count);
+    });
 
     it("enqueues immediately, formats the private snapshot on pickup, and streams all sanitized progress", async () => {
         const id = await snapshot();

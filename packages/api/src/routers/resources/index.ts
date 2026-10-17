@@ -4,12 +4,15 @@ import {
     clusterMonitoring,
     clusters,
     deployments,
+    gitConnections,
     projects,
     resources,
     resourceDeploymentInputs,
     s3Buckets,
+    type DeploymentMetadata,
     type DeploymentStatus,
 } from "@stoat/db/schema/index";
+import { resourceSlug } from "@stoat/db/slug";
 import { ucClient, unwrap } from "@stoat/uncloud";
 import {
     GREPTIME_SERVICE,
@@ -17,7 +20,7 @@ import {
     GREPTIME_USERNAME,
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
-import { composeVariables } from "@stoat/workflows/compose";
+import { composeSystemVariables, composeVariables } from "@stoat/workflows/compose";
 import {
     referencedResourceIds,
     referenceTargets,
@@ -26,7 +29,7 @@ import {
 } from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
@@ -44,6 +47,7 @@ import {
     composePublishedPorts,
     enablePostgresPort,
     formatComposeFile,
+    internalHostname,
     postgresService,
     publishedPortNumbers,
     resourceComposePrefix,
@@ -64,13 +68,28 @@ import {
     resourceEditInput,
     resourceGitRouter,
     unpushedGitSource,
+    validateCompose,
 } from "./git";
+import { resourceDiscardRouter } from "./discard";
+import { resourceTransferRouter } from "./transfer";
 import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
-import { insertResourceDeployment, readComposeConfigFiles } from "../../resource-deployment";
+import {
+    deploymentSource,
+    insertResourceDeployment,
+    readComposeConfigFiles,
+} from "../../resource-deployment";
 import { pushGitFile, readGitHead } from "../../git";
+import { buildProjectGraph } from "../../project-graph";
+import { fetchDockerHubLogo, searchDockerHub } from "../../docker-hub";
+import {
+    ComposeMoveError,
+    moveComposeService,
+    retargetServiceReferences,
+    type ComposeMove,
+} from "../../compose-move";
 
 // A deployable resource of the organization, with the cluster its project runs on.
 function deployTarget(
@@ -93,8 +112,37 @@ function deployTarget(
         );
 }
 
+// Internal projects are only visible to organization admins.
+async function assertProjectVisible(
+    db: Pick<Database, "select">,
+    organizationId: string,
+    organizationRole: string,
+    projectId: string,
+) {
+    const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+        .where(
+            and(
+                eq(projects.id, projectId),
+                isOrganizationAdmin(organizationRole)
+                    ? undefined
+                    : sql`${projects.isInternal} is not true`,
+                eq(clusters.organizationId, organizationId),
+            ),
+        )
+        .limit(1);
+
+    if (!project) {
+        throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+    }
+}
+
 export const resourcesRouter = {
     ...resourceGitRouter,
+    ...resourceTransferRouter,
+    ...resourceDiscardRouter,
     ...resourceLogsRouter,
     deploy: organizationAdminProcedure
         .input(
@@ -160,12 +208,32 @@ export const resourcesRouter = {
                     throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
                 const { resource, clusterId } = row;
 
+                const [connection] = resource.gitConnectionId
+                    ? await tx
+                          .select({ provider: gitConnections.provider })
+                          .from(gitConnections)
+                          .where(eq(gitConnections.id, resource.gitConnectionId))
+                    : [];
+
                 const deploymentId = await insertResourceDeployment(
                     tx,
                     db,
                     resource,
                     clusterId,
                     input.recreate,
+                    connection && resource.gitSource
+                        ? {
+                              source: deploymentSource(connection.provider),
+                              trigger: "manual",
+                              // Sources synced before messages were recorded have none yet.
+                              commit: resource.gitSource.message
+                                  ? {
+                                        sha: resource.gitSource.revision,
+                                        message: resource.gitSource.message,
+                                    }
+                                  : undefined,
+                          }
+                        : { source: "docker", trigger: "manual" },
                     configFiles,
                 );
 
@@ -202,6 +270,42 @@ export const resourcesRouter = {
                     .update(resources)
                     .set({ gitSource: { ...source, ...pushed } })
                     .where(eq(resources.id, resource.id));
+
+                // The deployment ships the commit just pushed, not the one the draft started from.
+                await tx
+                    .update(deployments)
+                    .set({
+                        metadata: sql`${deployments.metadata} || ${JSON.stringify({
+                            commit: { sha: pushed.revision, message: pushed.message },
+                        })}::jsonb`,
+                    })
+                    .where(eq(deployments.id, deploymentId));
+
+                // Other Compose files in the same watched directory were at the old head too; their
+                // own files are untouched, so they follow the branch instead of looking conflicted.
+                // A forced push may sit on remote commits that changed them, so the watcher syncs
+                // those siblings instead.
+                if ((forcedRevision ?? source.revision) === source.revision)
+                    await tx
+                        .update(resources)
+                        .set({
+                            gitSource: sql`${resources.gitSource} || ${JSON.stringify({
+                                revision: pushed.revision,
+                                message: pushed.message,
+                                tree: pushed.tree,
+                            })}::jsonb`,
+                        })
+                        .where(
+                            and(
+                                eq(resources.gitConnectionId, unpushed.connectionId),
+                                sql`${resources.id} <> ${resource.id}`,
+                                sql`${resources.gitSource}->>'repositoryUrl' = ${source.repositoryUrl}`,
+                                sql`${resources.gitSource}->>'branch' = ${source.branch}`,
+                                sql`${resources.gitSource}->>'watchPath' is not distinct from ${source.watchPath ?? null}::text`,
+                                sql`${resources.gitSource}->>'revision' = ${source.revision}`,
+                                sql`${resources.gitSource}->>'path' <> ${source.path}`,
+                            ),
+                        );
 
                 return deploymentId;
             });
@@ -243,6 +347,194 @@ export const resourcesRouter = {
                 return { id: row.resource.id };
             }),
         ),
+    // Drag a service onto another resource on the canvas: both drafts change, nothing deploys.
+    moveService: organizationProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                fromResourceId: v.pipe(v.string(), v.uuid()),
+                // Without a target the service moves into a new resource of its own: Railway's "ungroup".
+                toResourceId: v.optional(v.pipe(v.string(), v.uuid())),
+                service: v.pipe(v.string(), v.minLength(1)),
+                // Moving a resource's last service removes that resource; the UI confirms it first.
+                removeEmptySource: v.optional(v.boolean(), false),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+            if (input.fromResourceId === input.toResourceId)
+                throw new ORPCError("BAD_REQUEST", { message: "The service is already there." });
+
+            return db.transaction(async (tx) => {
+                const rows = await tx
+                    .select({ resource: resources, clusterId: projects.clusterId })
+                    .from(resources)
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                    .where(
+                        and(
+                            inArray(
+                                resources.id,
+                                input.toResourceId
+                                    ? [input.fromResourceId, input.toResourceId]
+                                    : [input.fromResourceId],
+                            ),
+                            eq(projects.id, input.projectId),
+                            sql`${projects.isInternal} is not true`,
+                            eq(clusters.organizationId, organizationId),
+                        ),
+                    )
+                    // A fixed lock order keeps two opposite moves from deadlocking.
+                    .orderBy(asc(resources.id))
+                    .for("update", { of: resources });
+
+                const from = rows.find((row) => row.resource.id === input.fromResourceId);
+
+                const existing = rows.find((row) => row.resource.id === input.toResourceId);
+
+                if (!from || (input.toResourceId && !existing))
+                    throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+                // A new resource starts empty and takes the service's name; it is only saved once the move works.
+                const to = existing?.resource ?? {
+                    id: randomUUID(),
+                    name: input.service,
+                    type: "compose",
+                    projectId: input.projectId,
+                    spec: null,
+                    draftSpec: "",
+                    settings: null,
+                };
+
+                const fromSpec = from.resource.draftSpec ?? from.resource.spec;
+                const toSpec = existing ? (to.draftSpec ?? to.spec) : "";
+
+                if (
+                    from.resource.type === "bucket" ||
+                    to.type === "bucket" ||
+                    !fromSpec ||
+                    toSpec === null
+                )
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Services can only move between Compose resources.",
+                    });
+
+                let moved: ComposeMove;
+
+                try {
+                    moved = moveComposeService({
+                        service: input.service,
+                        source: fromSpec,
+                        target: toSpec,
+                        sourceId: from.resource.id,
+                        targetId: to.id,
+                        sourcePrefix: resourceComposePrefix(from.resource),
+                        sourceEnv: resourceEnv(from.resource),
+                        targetEnv: existing ? resourceEnv(to) : "",
+                    });
+                } catch (error) {
+                    if (error instanceof ComposeMoveError)
+                        throw new ORPCError("BAD_REQUEST", { message: error.message });
+
+                    throw error;
+                }
+
+                if (moved.sourceEmpty && !input.removeEmptySource)
+                    throw new ORPCError("PRECONDITION_FAILED", {
+                        message: `Moving "${input.service}" leaves "${from.resource.name}" empty, so it would be removed.`,
+                    });
+
+                if (moved.sourceEmpty && !isOrganizationAdmin(organizationRole))
+                    throw new ORPCError("FORBIDDEN", {
+                        message: "Only owners and admins can remove resources.",
+                    });
+
+                if (existing)
+                    await tx
+                        .update(resources)
+                        .set({
+                            draftSpec: moved.target,
+                            settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${moved.targetEnv}::text)`,
+                        })
+                        .where(eq(resources.id, to.id));
+                else
+                    await tx.insert(resources).values({
+                        id: to.id,
+                        name: to.name,
+                        slug: resourceSlug(to.name),
+                        type: "compose",
+                        projectId: input.projectId,
+                        draftSpec: moved.target,
+                        // A split keeps the stack's naming, so an unprefixed stack stays unprefixed.
+                        settings: resourceComposePrefix(from.resource)
+                            ? { env: moved.targetEnv }
+                            : { env: moved.targetEnv, prefixNames: false },
+                    });
+
+                // Resources elsewhere in the project that referenced the service follow it too, before
+                // an emptied source is removed, which refuses while anything still references it.
+                const readers = await tx
+                    .select({
+                        id: resources.id,
+                        name: resources.name,
+                        projectId: resources.projectId,
+                        settings: resources.settings,
+                    })
+                    .from(resources)
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .where(
+                        and(
+                            eq(projects.clusterId, from.clusterId),
+                            notInArray(resources.id, [from.resource.id, to.id]),
+                            sql`${resources.settings}->>'env' ilike ${`%${from.resource.id}%`}`,
+                        ),
+                    )
+                    .orderBy(asc(resources.id))
+                    .for("update", { of: resources });
+
+                for (const reader of readers) {
+                    const env = resourceEnv(reader);
+
+                    const next = retargetServiceReferences(
+                        env,
+                        from.resource.id,
+                        to.id,
+                        input.service,
+                    );
+
+                    if (next === env) continue;
+
+                    // Apply only deploys this project, so a reader elsewhere would keep the old host.
+                    if (reader.projectId !== input.projectId)
+                        throw new ORPCError("CONFLICT", {
+                            message: `"${reader.name}" in another project references "${input.service}". Remove the reference from its variables first.`,
+                        });
+
+                    await tx
+                        .update(resources)
+                        .set({
+                            settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${next}::text)`,
+                        })
+                        .where(eq(resources.id, reader.id));
+                }
+
+                if (moved.sourceEmpty) await removeResources(tx, from.clusterId, [from.resource]);
+                else
+                    await tx
+                        .update(resources)
+                        .set({
+                            draftSpec: moved.source,
+                            settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${moved.sourceEnv}::text)`,
+                        })
+                        .where(eq(resources.id, from.resource.id));
+
+                return {
+                    warnings: moved.warnings,
+                    removedResourceId: moved.sourceEmpty ? from.resource.id : null,
+                    resourceId: to.id,
+                };
+            });
+        }),
+
     updateComposeSpec: organizationProcedure
         .input(
             v.object({
@@ -404,24 +696,7 @@ export const resourcesRouter = {
     listResources: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
-            const [project] = await db
-                .select({ id: projects.id })
-                .from(projects)
-                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                .where(
-                    and(
-                        eq(projects.id, input.projectId),
-                        isOrganizationAdmin(organizationRole)
-                            ? undefined
-                            : sql`${projects.isInternal} is not true`,
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                )
-                .limit(1);
-
-            if (!project) {
-                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
-            }
+            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
 
             const latest = db
                 .selectDistinctOn([deployments.resourceId], {
@@ -431,6 +706,9 @@ export const resourcesRouter = {
                     progress: deployments.progress,
                     createdAt: deployments.createdAt,
                     finishedAt: deployments.finishedAt,
+                    source: sql<
+                        DeploymentMetadata["source"] | null
+                    >`${deployments.metadata}->>'source'`.as("source"),
                 })
                 .from(deployments)
                 .innerJoin(resources, eq(deployments.resourceId, resources.id))
@@ -460,6 +738,7 @@ export const resourcesRouter = {
                     deploymentProgress: latest.progress,
                     deploymentCreatedAt: latest.createdAt,
                     deploymentFinishedAt: latest.finishedAt,
+                    deploymentSource: latest.source,
                     bucketStatus: s3Buckets.status,
                 })
                 .from(resources)
@@ -467,6 +746,223 @@ export const resourcesRouter = {
                 .leftJoin(s3Buckets, eq(s3Buckets.resourceId, resources.id))
                 .where(eq(resources.projectId, input.projectId))
                 .orderBy(asc(resources.createdAt));
+        }),
+
+    // Services and same-project references for the project canvas; status comes from
+    // `listResources`. Only resource ids leave the server, never `.env` values.
+    getProjectGraph: organizationProcedure
+        .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
+        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
+
+            // What each resource last deployed with, to tell which saved edits are not live yet.
+            const lastDeploy = db
+                .selectDistinctOn([deployments.resourceId], {
+                    resourceId: deployments.resourceId,
+                    env: resourceDeploymentInputs.env,
+                    prefix: resourceDeploymentInputs.prefix,
+                })
+                .from(deployments)
+                .innerJoin(
+                    resourceDeploymentInputs,
+                    eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                )
+                .where(and(eq(deployments.name, "DeployResource"), eq(deployments.status, "ready")))
+                .orderBy(
+                    deployments.resourceId,
+                    sql`${deployments.finishedAt} desc nulls last`,
+                    desc(deployments.createdAt),
+                )
+                .as("last_deploy");
+
+            // What each resource last shipped, live or not; a cancelled deploy shipped nothing.
+            // Queued and running deploys have no finishedAt, so this orders by creation.
+            const lastAttempt = db
+                .selectDistinctOn([deployments.resourceId], {
+                    resourceId: deployments.resourceId,
+                    spec: deployments.spec,
+                    env: resourceDeploymentInputs.env,
+                    prefix: resourceDeploymentInputs.prefix,
+                })
+                .from(deployments)
+                .innerJoin(
+                    resourceDeploymentInputs,
+                    eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                )
+                .where(
+                    and(
+                        eq(deployments.name, "DeployResource"),
+                        ne(deployments.status, "cancelled"),
+                    ),
+                )
+                .orderBy(deployments.resourceId, desc(deployments.createdAt))
+                .as("last_attempt");
+
+            const rows = await db
+                .select({
+                    id: resources.id,
+                    slug: resources.slug,
+                    projectId: resources.projectId,
+                    spec: resources.spec,
+                    draftSpec: resources.draftSpec,
+                    settings: resources.settings,
+                    deployedEnv: lastDeploy.env,
+                    deployedPrefix: lastDeploy.prefix,
+                    attemptedSpec: lastAttempt.spec,
+                    attemptedEnv: lastAttempt.env,
+                    attemptedPrefix: lastAttempt.prefix,
+                })
+                .from(resources)
+                .leftJoin(lastDeploy, eq(lastDeploy.resourceId, resources.id))
+                .leftJoin(lastAttempt, eq(lastAttempt.resourceId, resources.id))
+                .where(eq(resources.projectId, input.projectId))
+                .orderBy(asc(resources.createdAt));
+
+            return buildProjectGraph(
+                rows.map(
+                    ({
+                        deployedEnv,
+                        deployedPrefix,
+                        attemptedSpec,
+                        attemptedEnv,
+                        attemptedPrefix,
+                        ...row
+                    }) => ({
+                        ...row,
+                        deployed:
+                            deployedEnv === null || deployedPrefix === null
+                                ? null
+                                : { env: deployedEnv, prefix: deployedPrefix },
+                        attempted:
+                            attemptedSpec === null ||
+                            attemptedEnv === null ||
+                            attemptedPrefix === null
+                                ? null
+                                : {
+                                      spec: attemptedSpec,
+                                      env: attemptedEnv,
+                                      prefix: attemptedPrefix,
+                                  },
+                    }),
+                ),
+                templates,
+            );
+        }),
+
+    // Railway's "Details" on staged changes: what is live next to what the next deploy ships.
+    // Variables are included because getResource already shows them to the same readers.
+    getPendingChanges: organizationProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .use(resourceReadMiddleware)
+        .handler(async ({ context: { db, resource } }) => {
+            const [live] = await db
+                .select({
+                    env: resourceDeploymentInputs.env,
+                    prefix: resourceDeploymentInputs.prefix,
+                })
+                .from(deployments)
+                .innerJoin(
+                    resourceDeploymentInputs,
+                    eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                )
+                .where(
+                    and(
+                        eq(deployments.resourceId, resource.id),
+                        eq(deployments.name, "DeployResource"),
+                        eq(deployments.status, "ready"),
+                    ),
+                )
+                .orderBy(
+                    sql`${deployments.finishedAt} desc nulls last`,
+                    desc(deployments.createdAt),
+                )
+                .limit(1);
+
+            let env = "";
+
+            try {
+                env = resourceEnv(resource);
+            } catch {
+                // An unreadable `.env` shows as empty; the Variables page reports it.
+            }
+
+            return {
+                firstDeploy: !resource.spec?.trim(),
+                compose: {
+                    live: resource.spec ?? "",
+                    next: resource.draftSpec ?? resource.spec ?? "",
+                },
+                env: { live: live?.env ?? "", next: env },
+                prefix: {
+                    live: live?.prefix ?? null,
+                    next: resourceComposePrefix(resource) ?? "",
+                },
+            };
+        }),
+
+    // Railway's "variables added by Railway": the built-ins this resource's Compose sees.
+    listSystemVariables: organizationProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .use(resourceReadMiddleware)
+        .handler(async ({ context: { db, resource } }) => {
+            const compose = resource.draftSpec?.trim() ? resource.draftSpec : resource.spec;
+
+            if (!compose?.trim()) return [];
+
+            const [project] = await db
+                .select({
+                    name: projects.name,
+                    sidecarUrl: clusters.sidecarUrl,
+                    sidecarToken: clusters.sidecarToken,
+                })
+                .from(projects)
+                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                .where(eq(projects.id, resource.projectId))
+                .limit(1);
+
+            if (!project) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+
+            // STOAT_DOMAIN is simply left out while the sidecar is unreachable.
+            const { data } = await ucClient(project.sidecarUrl, { token: project.sidecarToken })
+                .GET("/api/v1/cluster/domain", { signal: AbortSignal.timeout(5_000) })
+                .catch(() => ({ data: undefined }));
+
+            const identity = {
+                projectId: resource.projectId,
+                projectName: project.name,
+                resourceId: resource.id,
+                resourceName: resource.name,
+            };
+
+            const list = (envText: string) =>
+                composeSystemVariables(
+                    compose,
+                    envText,
+                    resourceComposePrefix(resource),
+                    data?.domain,
+                    identity,
+                );
+
+            try {
+                return list(resourceEnv(resource));
+            } catch {
+                // Broken Variables only cost the public domains built from them.
+                try {
+                    return list("");
+                } catch {
+                    return [];
+                }
+            }
         }),
 
     // Keys only: values never leave the server for autocomplete.
@@ -525,6 +1021,10 @@ export const resourcesRouter = {
                 description: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
                 type: v.optional(v.picklist(["compose"]), "compose"),
                 git: v.optional(gitSourceInput),
+                /** A starting Compose draft, e.g. one service running a Docker image. */
+                compose: v.optional(gitText),
+                /** A Docker image whose Docker Hub logo, if any, becomes the icon. */
+                logoImage: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(512))),
                 template: v.optional(
                     v.object({
                         appId: v.string(),
@@ -567,11 +1067,13 @@ export const resourcesRouter = {
                 });
             }
 
-            if (input.template && input.git) {
+            if ([input.template, input.git, input.compose].filter(Boolean).length > 1) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: "Choose either a template or a Git source.",
+                    message: "Choose one of a template, a Git source or a Compose file.",
                 });
             }
+
+            if (input.compose) validateCompose(input.compose);
 
             const [project] = await db
                 .select({
@@ -614,13 +1116,19 @@ export const resourcesRouter = {
             const description = input.description?.trim() ? input.description.trim() : null;
             const source = input.git ? await loadGitCompose(db, organizationId, input.git) : {};
 
+            const icon =
+                !template && input.logoImage ? await fetchDockerHubLogo(input.logoImage) : null;
+
             const [resource] = await db
                 .insert(resources)
                 .values({
                     ...source,
+                    ...(input.compose && { draftSpec: input.compose }),
                     id: randomUUID(),
                     name: input.name.trim(),
+                    slug: resourceSlug(input.name),
                     description,
+                    icon,
                     type: template?.type ?? input.type,
                     projectId: project.id,
                     ...(template &&
@@ -641,6 +1149,11 @@ export const resourcesRouter = {
 
             return resource;
         }),
+
+    // The browser can't reach Docker Hub's search (no CORS), so the server asks for it.
+    searchDockerImages: organizationProcedure
+        .input(v.object({ query: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)) }))
+        .handler(({ input }) => searchDockerHub(input.query, 8)),
 
     listTemplates: organizationProcedure.handler(() =>
         templates.map(({ versions, ...template }) => ({
@@ -791,7 +1304,18 @@ export const resourcesRouter = {
 
                 const references = resolveReferences(envText, targets, undefined, resource.id);
 
-                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references);
+                const [project] = await db
+                    .select({ name: projects.name })
+                    .from(projects)
+                    .where(eq(projects.id, resource.projectId));
+
+                // `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` resolve like the deploy does.
+                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references, {
+                    projectId: resource.projectId,
+                    projectName: project?.name ?? "",
+                    resourceId: resource.id,
+                    resourceName: resource.name,
+                });
             } catch {
                 env = parseEnv(envText);
             }
@@ -799,7 +1323,7 @@ export const resourcesRouter = {
             const url = (host: string, port: number) =>
                 `postgresql://${encodeURIComponent(env.POSTGRES_USER ?? "postgres")}:${encodeURIComponent(env.POSTGRES_PASSWORD ?? "")}@${host}:${port}/${encodeURIComponent(env.POSTGRES_DB ?? env.POSTGRES_USER ?? "postgres")}`;
 
-            const internal = url(`${prefix ? `${prefix}-` : ""}${service.name}.internal`, 5432);
+            const internal = url(internalHostname(service.name, prefix), 5432);
 
             if (!service.published)
                 return { internal, external: null, externalPort: null, pendingDeployment: false };

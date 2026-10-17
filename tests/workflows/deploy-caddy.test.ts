@@ -11,8 +11,12 @@ import {
     createCaddyDeployment,
     caddyComposeSpec,
     parseCaddyComposeSpec,
-    withCaddyMetrics,
 } from "../../packages/workflows/src/deploy-caddy";
+import {
+    completeMetricsOption,
+    missingMetricsSubdirectives,
+    withCaddyMetrics,
+} from "../../packages/workflows/src/caddy-metrics";
 
 describe("caddy deployment spec", () => {
     it("round-trips the image and a multi-line global Caddyfile", () => {
@@ -70,6 +74,42 @@ describe("caddy metrics", () => {
         expect(withCaddyMetrics(custom)).toBe(custom);
         expect(withCaddyMetrics(withCaddyMetrics("{\n\temail a@b.c\n}"))).toBe(
             withCaddyMetrics("{\n\temail a@b.c\n}"),
+        );
+    });
+
+    it("reports what a user-written metrics option lacks", () => {
+        expect(missingMetricsSubdirectives("")).toEqual([]);
+        expect(missingMetricsSubdirectives("{\n\temail a@b.c\n}")).toEqual([]);
+        expect(missingMetricsSubdirectives("{\n\tmetrics\n}")).toEqual(["per_host", "otlp"]);
+        expect(missingMetricsSubdirectives("{\n    metrics {\n        per_host\n    }\n}")).toEqual(
+            ["otlp"],
+        );
+        expect(missingMetricsSubdirectives("{\n\tmetrics { otlp per_host }\n}")).toEqual([]);
+        // Site-level metrics directives are not the global option.
+        expect(missingMetricsSubdirectives("example.com {\n\tmetrics\n}")).toEqual([]);
+    });
+
+    it("completes a user-written metrics option in its own style", () => {
+        const caddyfile =
+            "{\n    storage uncloud\n    metrics {\n        per_host\n    }\n}\n\nhttp://:9180 {\n    metrics\n}\n";
+
+        expect(completeMetricsOption(caddyfile)).toBe(
+            "{\n    storage uncloud\n    metrics {\n        per_host\n        otlp\n    }\n}\n\nhttp://:9180 {\n    metrics\n}\n",
+        );
+        expect(completeMetricsOption("{\n\tmetrics\n}")).toBe(
+            "{\n\tmetrics {\n\t\tper_host\n\t\totlp\n\t}\n}",
+        );
+        expect(completeMetricsOption("{\n\tmetrics { per_host }\n}")).toBe(
+            "{\n\tmetrics {\n\t\tper_host\n\t\totlp\n\t}\n}",
+        );
+        expect(missingMetricsSubdirectives(completeMetricsOption(caddyfile))).toEqual([]);
+    });
+
+    it("ignores braces in comments and quotes when finding the metrics block", () => {
+        const caddyfile = '{\n\tmetrics {\n\t\tper_host # {\n\t}\n\tlog "}"\n}\n';
+
+        expect(completeMetricsOption(caddyfile)).toBe(
+            '{\n\tmetrics {\n\t\tper_host # {\n\t\totlp\n\t}\n\tlog "}"\n}\n',
         );
     });
 });

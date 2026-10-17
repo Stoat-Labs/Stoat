@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
 import { clusters, projects, resources, s3Buckets, s3Connections } from "@stoat/db/schema/index";
+import { resourceSlug } from "@stoat/db/slug";
 import {
     listS3Objects,
     s3BucketName,
@@ -160,6 +161,7 @@ export const bucketsRouter = {
                 await tx.insert(resources).values({
                     id: resourceId,
                     name: input.name,
+                    slug: resourceSlug(input.name),
                     description: input.description || null,
                     type: "bucket",
                     projectId: project.id,

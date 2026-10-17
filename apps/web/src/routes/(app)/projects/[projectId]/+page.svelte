@@ -48,6 +48,7 @@
     import FolderOpen from "@lucide/svelte/icons/folder-open";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import Plus from "@lucide/svelte/icons/plus";
+    import Workflow from "@lucide/svelte/icons/workflow";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
 
@@ -127,6 +128,16 @@
 </svelte:head>
 
 {#snippet newResourceAction()}
+    {#if project}
+        <Button
+            size="sm"
+            variant="ghost"
+            href="/projects/{projectId}/canvas"
+        >
+            <Workflow class="size-4" aria-hidden="true" />
+            Canvas
+        </Button>
+    {/if}
     {#if project && !isInternal}
         <Button size="sm" href={createHref}>
             <Plus class="size-4" aria-hidden="true" />

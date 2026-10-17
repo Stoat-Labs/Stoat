@@ -1,74 +1,81 @@
 import { render } from "svelte/server";
 import { expect, it } from "vite-plus/test";
-import ProjectOverviewCard, {
-    type ProjectOverview,
-} from "../../apps/web/src/lib/components/home/project-overview-card.svelte";
-import ProjectCard from "../../apps/web/src/lib/components/projects/project-card.svelte";
+import ProjectCard, {
+    type ProjectCardResource,
+} from "../../apps/web/src/lib/components/projects/project-card.svelte";
 
-const project: ProjectOverview = {
-    id: "project-1",
-    name: "Storefront",
-    description: "Customer-facing services",
-    clusterId: "cluster-1",
-    clusterName: "Production",
-    lastActivityAt: "2026-09-30T12:00:00Z",
-    resources: [
-        { id: "api", name: "Backend service", status: "failed" },
-        { id: "web", name: "Frontend service", status: "ready" },
-    ],
-};
+const resources: ProjectCardResource[] = [
+    {
+        id: "api",
+        name: "Backend service",
+        icon: "https://icons.example.test/api.svg",
+        type: "compose",
+        image: null,
+        status: "failed",
+    },
+    {
+        id: "web",
+        name: "Frontend service",
+        icon: null,
+        type: "compose",
+        image: null,
+        status: "ready",
+    },
+];
 
-it("reuses the projects card with cluster context instead of deployment details", () => {
-    const { body } = render(ProjectOverviewCard, { props: { project } });
-
-    const shared = render(ProjectCard, {
+function card(props: Partial<Parameters<typeof render<typeof ProjectCard>>[1]["props"]> = {}) {
+    return render(ProjectCard, {
         props: {
-            name: project.name,
-            description: project.description,
-            resourceCount: project.resources.length,
-            clusterName: project.clusterName,
-            href: `/projects/${project.id}`,
+            name: "Storefront",
+            resources,
+            clusterName: "Production",
+            href: "/projects/project-1",
+            onfavorite: () => {},
+            ...props,
         },
     }).body;
+}
 
-    expect(body).toBe(shared);
+it("draws Railway's miniature canvas: a tile per resource and the deploy count", () => {
+    const body = card();
+
     expect(body).toContain('href="/projects/project-1"');
     expect(body).toContain("Storefront");
-    expect(body).toContain("Customer-facing services");
-    expect(body).toMatch(/2\s+resources/);
-    expect(body).toContain("Production");
-    expect(body).not.toContain("Backend service");
-    expect(body).not.toContain("Frontend service");
-    expect(body).not.toContain("Deploy failed");
-    expect(body).not.toContain("Updated");
-    expect(body).not.toContain("<button");
+    expect(body).toContain('src="https://icons.example.test/api.svg"');
+    expect(body).toContain("Backend service");
+    expect(body).toContain("Frontend service");
+    expect(body).toMatch(/Production[\s\S]*1\/2\s+deployed/);
+    // A failed deploy wins the status dot.
+    expect(body).toContain("bg-destructive");
+    expect(body).toContain('aria-label="Add Storefront to favorites"');
+    expect(body).toContain('aria-pressed="false"');
 });
 
-it("hides redundant cluster context in a filtered view", () => {
-    const { body } = render(ProjectOverviewCard, {
-        props: { project, showCluster: false },
-    });
+it("leaves the cluster out when it isn't given", () => {
+    const body = card({ clusterName: undefined });
 
     expect(body).not.toContain("Production");
-    expect(body).toContain("Storefront");
-    expect(body).toMatch(/2\s+resources/);
+    expect(body).toMatch(/1\/2\s+deployed/);
 });
 
-it("supports empty projects and optional descriptions", () => {
-    const { body } = render(ProjectOverviewCard, {
-        props: { project: { ...project, description: "  ", resources: [] } },
-    });
+it("marks starred projects and counts tiles past the first eight", () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({
+        ...resources[1]!,
+        id: `r${index}`,
+        name: `Resource ${index}`,
+    }));
 
-    expect(body).toMatch(/0\s+resources/);
-    expect(body).not.toContain('data-slot="card-description"');
+    const body = card({ favorite: true, resources: many });
+
+    expect(body).toContain('aria-pressed="true"');
+    expect(body).toContain("+3");
+    expect(body).toContain("Resource 6");
+    expect(body).not.toContain("Resource 7");
 });
 
-it("keeps the projects listing free of cluster metadata by default", () => {
-    const { body } = render(ProjectCard, {
-        props: { name: "Storefront", resourceCount: 1, href: "/projects/project-1" },
-    });
+it("shows an empty project as having no resources", () => {
+    const body = card({ resources: [] });
 
-    expect(body).toMatch(/1\s+resource\b/);
-    expect(body).not.toContain("resources");
-    expect(body).not.toContain("Production");
+    expect(body).toContain("No resources");
+    expect(body).not.toContain("deployed");
 });

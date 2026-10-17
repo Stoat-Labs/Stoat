@@ -3,6 +3,7 @@ import type { Database } from "@stoat/db";
 import {
     deploymentLogs,
     deployments,
+    type DeploymentMetadata,
     resourceDeploymentInputs,
     resources,
 } from "@stoat/db/schema/index";
@@ -63,12 +64,20 @@ export async function readComposeConfigFiles(
  * that locked the resource row, then enqueue the returned id after it commits.
  * `configFiles` comes from `readComposeConfigFiles` for Git-backed resources.
  */
+// The deployment source for a Git connection's provider; a plain Git server is just "git".
+export function deploymentSource(
+    provider: "github" | "forgejo" | "generic",
+): DeploymentMetadata["source"] {
+    return provider === "generic" ? "git" : provider;
+}
+
 export async function insertResourceDeployment(
     tx: Transaction,
     db: Database,
     resource: typeof resources.$inferSelect,
     clusterId: string,
     recreate: boolean,
+    metadata: DeploymentMetadata,
     configFiles: Record<string, string> = {},
 ): Promise<string> {
     const spec = resource.draftSpec;
@@ -132,6 +141,7 @@ export async function insertResourceDeployment(
         name: "DeployResource",
         status: "queued",
         spec,
+        metadata,
     });
     await tx
         .insert(resourceDeploymentInputs)

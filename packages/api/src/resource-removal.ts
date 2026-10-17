@@ -10,8 +10,8 @@ import {
 import { ucClient } from "@stoat/uncloud";
 import { resourceComposePrefix, resourceEnv } from "@stoat/workflows/compose";
 import { referencedResourceIds } from "@stoat/workflows/references";
+import { snapshotServices } from "@stoat/workflows/stale-services";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
-import { formatComposeFile } from "./compose";
 
 type Resource = typeof resources.$inferSelect;
 
@@ -36,12 +36,11 @@ async function deployedServices(tx: Transaction, resource: Resource) {
         .orderBy(desc(deployments.finishedAt), desc(deployments.createdAt))
         .limit(1);
 
-    const spec = snapshot?.spec ?? (resource.spec?.trim() ? resource.spec : null);
-
-    if (!spec) return [];
-
-    return formatComposeFile(spec, snapshot?.prefix ?? resourceComposePrefix(resource))
-        .serviceNames;
+    // Resources deployed before snapshots were kept still know their last published spec.
+    return snapshotServices({
+        spec: snapshot?.spec ?? resource.spec,
+        prefix: snapshot?.prefix ?? resourceComposePrefix(resource) ?? "",
+    });
 }
 
 /**

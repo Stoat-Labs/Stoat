@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import YAML from "yaml";
+
 import {
     formatComposeFile,
     resourceComposePrefix,
@@ -12,6 +14,7 @@ import {
     inlineComposeConfigs,
     interpolateCompose,
 } from "../../packages/workflows/src/compose";
+import { resourceSlug } from "../../packages/db/src/slug";
 
 describe("formatComposeFile", () => {
     it("prefixes compose service names with the given prefix", () => {
@@ -276,44 +279,23 @@ services:
 });
 
 describe("resourceComposePrefix", () => {
-    const projectId = "a1b2c3d4-1111-4222-8333-444455556666";
-    const resourceId = "e5f6a7b8-7777-4888-8999-000011112222";
+    const slug = "seafile-k3f9x2";
 
-    it("builds the prefix from the first 8 of the project and resource uuids", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: null })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
+    it("uses the resource's stored slug", () => {
+        expect(resourceComposePrefix({ slug, settings: null })).toBe(slug);
     });
 
     it("prefixes on by default when settings are missing or unrelated", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: {} })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(
-            resourceComposePrefix({
-                projectId,
-                id: resourceId,
-                settings: { prefixNames: true },
-            }),
-        ).toBe("a1b2c3d4-e5f6a7b8");
+        expect(resourceComposePrefix({ slug, settings: {} })).toBe(slug);
+        expect(resourceComposePrefix({ slug, settings: { prefixNames: true } })).toBe(slug);
     });
 
     it("returns undefined when the resource opted out of prefixing", () => {
-        expect(
-            resourceComposePrefix({
-                projectId,
-                id: resourceId,
-                settings: { prefixNames: false },
-            }),
-        ).toBeUndefined();
+        expect(resourceComposePrefix({ slug, settings: { prefixNames: false } })).toBeUndefined();
     });
 
     it("round-trips through format and unformat", () => {
-        const prefix = resourceComposePrefix({
-            projectId,
-            id: resourceId,
-            settings: null,
-        });
+        const prefix = resourceComposePrefix({ slug, settings: null });
 
         const spec = `services:
   web:
@@ -325,9 +307,35 @@ describe("resourceComposePrefix", () => {
 `;
 
         const formatted = formatComposeFile(spec, prefix);
-        expect(formatted.serviceNames).toEqual(["a1b2c3d4-e5f6a7b8-web", "a1b2c3d4-e5f6a7b8-db"]);
+        expect(formatted.serviceNames).toEqual(["seafile-k3f9x2-web", "seafile-k3f9x2-db"]);
         const raw = unformatComposeFile(formatted.yaml, prefix);
         expect(formatComposeFile(raw).serviceNames).toEqual(["web", "db"]);
+    });
+});
+
+describe("resourceSlug", () => {
+    it("starts with the resource name, made DNS-safe", () => {
+        expect(resourceSlug("Seafile")).toMatch(/^seafile-[a-z0-9]{6}$/u);
+        expect(resourceSlug("  My Café / API v2! ")).toMatch(/^my-cafe-api-v2-[a-z0-9]{6}$/u);
+    });
+
+    it("keeps the name short enough for a service name to fit a DNS label", () => {
+        const slug = resourceSlug("a very long resource name that goes on and on");
+
+        expect(slug).toMatch(/^a-very-long-resource-[a-z0-9]{6}$/u);
+        expect(`${slug}-a-service-name-of-thirty-chars`.length).toBeLessThanOrEqual(63);
+    });
+
+    it("falls back to app for names with nothing usable", () => {
+        expect(resourceSlug("")).toMatch(/^app-[a-z0-9]{6}$/u);
+        expect(resourceSlug("日本語")).toMatch(/^app-[a-z0-9]{6}$/u);
+        expect(resourceSlug("---")).toMatch(/^app-[a-z0-9]{6}$/u);
+    });
+
+    it("differs between resources with the same name", () => {
+        const slugs = new Set(Array.from({ length: 1000 }, () => resourceSlug("web")));
+
+        expect(slugs.size).toBe(1000);
     });
 });
 
@@ -549,46 +557,16 @@ describe("rewriteComposeHostname", () => {
 });
 
 describe("resourceComposePrefix edge cases", () => {
-    const projectId = "a1b2c3d4-1111-4222-8333-444455556666";
-    const resourceId = "e5f6a7b8-7777-4888-8999-000011112222";
+    const slug = "web-abc123";
 
     it("treats undefined settings and non-object settings as prefix-on", () => {
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: undefined })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: "nope" })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(resourceComposePrefix({ projectId, id: resourceId, settings: 42 })).toBe(
-            "a1b2c3d4-e5f6a7b8",
-        );
-        expect(
-            resourceComposePrefix({ projectId, id: resourceId, settings: ["prefixNames"] }),
-        ).toBe("a1b2c3d4-e5f6a7b8");
+        for (const settings of [undefined, "nope", 42, ["prefixNames"]])
+            expect(resourceComposePrefix({ slug, settings })).toBe(slug);
     });
 
     it("only an explicit false opts out; other falsy values stay prefixed", () => {
-        for (const prefixNames of [true, 0, "", null, "false"]) {
-            expect(
-                resourceComposePrefix({ projectId, id: resourceId, settings: { prefixNames } }),
-            ).toBe("a1b2c3d4-e5f6a7b8");
-        }
-    });
-
-    it("slices ids shorter than 8 characters without padding", () => {
-        expect(resourceComposePrefix({ projectId: "abc", id: "def", settings: null })).toBe(
-            "abc-def",
-        );
-    });
-
-    it("preserves the original casing of id segments", () => {
-        expect(
-            resourceComposePrefix({
-                projectId: "A1B2C3D4-1111-4222-8333-444455556666",
-                id: "E5F6A7B8-7777-4888-8999-000011112222",
-                settings: null,
-            }),
-        ).toBe("A1B2C3D4-E5F6A7B8");
+        for (const prefixNames of [true, 0, "", null, "false"])
+            expect(resourceComposePrefix({ slug, settings: { prefixNames } })).toBe(slug);
     });
 });
 
@@ -1523,7 +1501,8 @@ describe("formatComposeFile x-caddy", () => {
         expect(formatted.yaml).not.toContain("upstream: a1b2c3d4-e5f6a7b8-web");
     });
 
-    it("renames an upstream naming a service not defined in the file", () => {
+    // Another resource's service is named through a variable, already resolved to its own prefix.
+    it("leaves an upstream naming a service not defined in the file as written", () => {
         const formatted = formatComposeFile(
             `services:
   gateway:
@@ -1535,7 +1514,7 @@ describe("formatComposeFile x-caddy", () => {
         );
 
         expect(formatted.serviceNames).toEqual(["a1b2c3d4-e5f6a7b8-gateway"]);
-        expect(formatted.yaml).toContain('{{upstreams "a1b2c3d4-e5f6a7b8-ghost" 80}}');
+        expect(formatted.yaml).toContain('{{upstreams "ghost" 80}}');
     });
 });
 
@@ -2094,6 +2073,107 @@ describe("interpolateCompose", () => {
         expect(out).toContain("EMPTY=\n");
         expect(out).toContain("example.com {");
         expect(out).not.toContain("${");
+    });
+
+    it("inlines env_file: .env as environment, keeping explicit keys", () => {
+        const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
+
+        const short = interpolateCompose(
+            "services:\n  web:\n    image: x\n    env_file: .env\n    environment:\n      HOST: kept\n",
+            env,
+        );
+
+        expect(short).not.toContain("env_file");
+        expect(short).toContain("HOST: kept");
+        expect(short).toContain("SECRET: p$$w");
+        expect(short).not.toContain("STOAT_PREFIX");
+
+        const long = interpolateCompose(
+            "services:\n  web:\n    image: x\n    env_file:\n      - path: ./.env\n      - path: other.env\n        required: false\n    environment:\n      - HOST=kept\n",
+            env,
+        );
+
+        expect(long).not.toContain("env_file");
+        expect(long).toContain("- HOST=kept");
+        expect(long).not.toContain("HOST=a.b");
+        expect(long).toContain("- SECRET=p$$w");
+    });
+
+    it("keeps anchored and merged environment keys ahead of env_file: .env", () => {
+        const compose = [
+            "x-env: &sharedEnv",
+            "  MODE: explicit",
+            "  ONLY: shared",
+            "services:",
+            "  web:",
+            "    image: x",
+            "    env_file: .env",
+            "    environment: *sharedEnv",
+            "  api:",
+            "    image: x",
+            "    env_file: .env",
+            "    environment:",
+            "      <<: *sharedEnv",
+            "      OWN: me",
+            "  other:",
+            "    image: y",
+            "    environment: *sharedEnv",
+            "",
+        ].join("\n");
+
+        const out = YAML.parse(interpolateCompose(compose, "MODE=from-resource\nEXTRA=1\n"), {
+            merge: true,
+        });
+
+        expect(out.services.web.environment).toEqual({
+            MODE: "explicit",
+            ONLY: "shared",
+            EXTRA: "1",
+        });
+        expect(out.services.api.environment).toEqual({
+            OWN: "me",
+            MODE: "explicit",
+            ONLY: "shared",
+            EXTRA: "1",
+        });
+        // The anchor itself is shared, so other services never see the Variables.
+        expect(out.services.other.environment).toEqual({ MODE: "explicit", ONLY: "shared" });
+    });
+
+    it("keeps aliases working when the env_file service defines the anchor", () => {
+        const deploy = (environment: string, alias: string) =>
+            YAML.parse(
+                interpolateCompose(
+                    [
+                        "services:",
+                        "  web:",
+                        "    image: x",
+                        "    env_file: .env",
+                        `    environment: ${environment}`,
+                        "  other:",
+                        "    image: y",
+                        `    environment: ${alias}`,
+                        "",
+                    ].join("\n"),
+                    "EXTRA=1\n",
+                ),
+            ).services;
+
+        const map = deploy("&sharedEnv { MODE: explicit }", "*sharedEnv");
+
+        expect(map.web.environment).toEqual({ MODE: "explicit", EXTRA: "1" });
+        expect(map.other.environment).toEqual({ MODE: "explicit" });
+
+        const list = deploy("&sharedEnv [MODE=explicit]", "*sharedEnv");
+
+        expect(list.web.environment).toEqual(["MODE=explicit", "EXTRA=1"]);
+        expect(list.other.environment).toEqual(["MODE=explicit"]);
+    });
+
+    it("rejects env files a deploy cannot read", () => {
+        expect(() =>
+            interpolateCompose("services:\n  web:\n    image: x\n    env_file: app.env\n", ""),
+        ).toThrow(ComposeVariableError);
     });
 
     it("expands .env values that reference earlier variables", () => {

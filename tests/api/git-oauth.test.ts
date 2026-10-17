@@ -71,6 +71,7 @@ function start() {
         { ...identity, providerId: "github", name: "Work" },
         providers,
     );
+
     const url = new URL(result.authorizationUrl);
 
     return { ...result, state: url.searchParams.get("state")!, url };

@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { clusters, deployments } from "@stoat/db/schema/index";
 import { unwrap } from "@stoat/uncloud";
+import { missingMetricsSubdirectives } from "@stoat/workflows/caddy-metrics";
 import {
     CaddyDeploymentInProgressError,
     createCaddyDeployment,
@@ -24,9 +25,14 @@ export const caddyRouter = {
         .input(clusterInput)
         .use(uncloudMiddleware)
         .handler(async ({ context: { db, uc, organizationRole }, input, signal }) => {
-            const [settings, configs, [active]] = await Promise.all([
+            const [settings, configs, [cluster], [active]] = await Promise.all([
                 unwrap(uc.GET("/api/v1/caddy", { signal })),
                 unwrap(uc.GET("/api/v1/caddy/configs", { signal })),
+                db
+                    .select({ initializedAt: clusters.initializedAt })
+                    .from(clusters)
+                    .where(eq(clusters.id, input.clusterId))
+                    .limit(1),
                 db
                     .select({ id: deployments.id })
                     .from(deployments)
@@ -48,6 +54,10 @@ export const caddyRouter = {
                 // Global configs are where inline DNS provider tokens end up.
                 caddyfile: canManage ? settings.caddyfile : null,
                 hasCaddyfile: settings.caddyfile !== "",
+                // Deploys add HTTP metrics only while monitoring runs.
+                monitoring: !!cluster?.initializedAt,
+                // A `metrics` option the user wrote is kept as is, so HTTP traffic needs these added.
+                missingMetrics: missingMetricsSubdirectives(settings.caddyfile),
                 // Caddy keeps serving its previous config on these machines.
                 reconciliationErrors: configs.items.flatMap((item) =>
                     item.lastReconciliationError
