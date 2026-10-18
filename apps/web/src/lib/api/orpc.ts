@@ -4,26 +4,32 @@ import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/svelte-query";
 
-export const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            // Layout (AppShell), sidebars, and detail pages all subscribe to
-            // the same listProjects/listResources keys. Without a staleTime
-            // every mount refetches, so navigating between resources
-            // re-fires identical requests. 15s keeps nav snappy without
-            // serving stale data for long; mutations still invalidate.
-            staleTime: 15_000,
-            gcTime: 5 * 60_000,
-            refetchOnWindowFocus: false,
-            retry: 1,
+export function createQueryClient() {
+    return new QueryClient({
+        defaultOptions: {
+            queries: {
+                // Layout (AppShell), sidebars, and detail pages all subscribe to
+                // the same listProjects/listResources keys. Without a staleTime
+                // every mount refetches, so navigating between resources
+                // re-fires identical requests. 15s keeps nav snappy without
+                // serving stale data for long; mutations still invalidate.
+                staleTime: 15_000,
+                gcTime: 5 * 60_000,
+                refetchOnWindowFocus: false,
+                retry: 1,
+            },
         },
-    },
-    queryCache: new QueryCache({
-        onError: (error) => {
-            console.error(`Error: ${error.message}`);
-        },
-    }),
-});
+        queryCache: new QueryCache({
+            onError: (error) => {
+                console.error(`Error: ${error.message}`);
+            },
+        }),
+    });
+}
+
+// The browser's client. The server builds one per render in the root layout, so one user's
+// cached data (seeded from their page data) never reaches another user's page.
+export const queryClient = createQueryClient();
 
 // Every browser call, streams included, shares one WebSocket. It reconnects on its own, and
 // sign-in/sign-out do a full page load, so the socket's session cookie is never stale.
