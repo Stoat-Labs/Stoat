@@ -65,6 +65,7 @@ If you already have an [Uncloud](https://uncloud.run/) cluster and the Uncloud C
     POSTGRES_PASSWORD=changeme            # openssl rand -hex 32
     SIDECAR_TOKEN=changeme                # openssl rand -hex 32 # please remember this one you'll need to use it when adding your cluster
     REDIS_URL=redis://stoat-cache.internal:6379
+    APP_USE_INTERNAL_CACHE=false          # true adds a per-replica memory cache in front of Redis (single replica only)
     ```
 
 2. **Start Stoat**
