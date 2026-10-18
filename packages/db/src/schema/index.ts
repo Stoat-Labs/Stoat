@@ -106,7 +106,10 @@ export const projectFavorites = t.pgTable(
             .notNull()
             .references(() => projects.id, { onDelete: "cascade" }),
     },
-    (table) => [t.primaryKey({ columns: [table.userId, table.projectId] })],
+    (table) => [
+        t.primaryKey({ columns: [table.userId, table.projectId] }),
+        t.index("project_favorites_project_idx").on(table.projectId),
+    ],
 );
 
 export type GitAccount = { id: string; login: string; name: string | null };
@@ -222,38 +225,6 @@ export const resources = t.pgTable(
     ],
 );
 
-export const resourceEnvVars = t.pgTable(
-    "resource_env_vars",
-    {
-        id: t.uuid("id").primaryKey(),
-        resourceId: t
-            .uuid("resource_id")
-            .notNull()
-            .references(() => resources.id, { onDelete: "cascade" }),
-        service: t.text("service"), // null = shared/global, else compose service name
-        key: t.text("key").notNull(),
-        value: t.text("value").notNull(), // plaintext (Dokploy-style)
-        secret: t.boolean("secret").notNull().default(false), // mask in UI when true
-        createdAt: t
-            .timestamp("created_at", { withTimezone: true })
-            .notNull()
-            .$defaultFn(() => new Date()),
-        updatedAt: t
-            .timestamp("updated_at", { withTimezone: true })
-            .notNull()
-            .$defaultFn(() => new Date())
-            .$onUpdate(() => new Date()),
-    },
-    (table) => [
-        // nullsNotDistinct: NULL service (global) still conflicts on (resourceId, key)
-        t
-            .unique("resource_env_service_key_uidx")
-            .on(table.resourceId, table.service, table.key)
-            .nullsNotDistinct(),
-        t.index("resource_env_resource_idx").on(table.resourceId),
-    ],
-);
-
 // Private provisioning state. Never return this table through resource/project APIs.
 export const clusterMonitoring = t.pgTable("cluster_monitoring", {
     clusterId: t
@@ -318,6 +289,8 @@ export const deployments = t.pgTable(
         t.index("deployments_cluster_idx").on(table.clusterId, table.createdAt.desc()),
         // Latest deployment per resource (status badges, history, removal checks).
         t.index("deployments_resource_idx").on(table.resourceId, table.createdAt.desc()),
+        // The outbox sweep reads queued rows every few seconds.
+        t.index("deployments_queued_idx").on(table.name).where(sql`${table.status} = 'queued'`),
     ],
 );
 
