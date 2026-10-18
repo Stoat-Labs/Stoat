@@ -15,6 +15,7 @@ import {
     metricNames,
     parseMetricSeries,
     unpackSeries,
+    volumeMetricQueries,
     type MetricName,
     type ObservabilityRange,
 } from "../../packages/api/src/observability";
@@ -574,4 +575,21 @@ it("preserves missing, NaN and stale samples as gaps rather than inventing zeros
         0, 15000, 30000, 45000, 60000,
     ]);
     expect(() => parseMetricSeries('{"status":"error"}', 0, 60, 15)).toThrow();
+});
+
+it("scopes volume metrics to the resource's deployed names", () => {
+    const queries = volumeMetricQueries("cluster-1", 60, "app-k3f9", "data", ["web", "db.x"]);
+
+    expect(queries.volumeRead).toContain("rate(container_fs_reads_bytes_total{");
+    expect(queries.volumeWrite).toContain("rate(container_fs_writes_bytes_total{");
+    expect(queries.volumeRead).toContain(
+        'container_label_uncloud_service_name=~"app-k3f9-web|app-k3f9-db\\\\.x"',
+    );
+    expect(queries.volumeRead).toContain('customer_id="cluster-1"');
+    expect(queries.volumeSize).toContain(
+        'stoat_volume_size_bytes{customer_id="cluster-1",volume="app-k3f9-data"}',
+    );
+    expect(volumeMetricQueries("cluster-1", 60, undefined, "data", ["web"]).volumeSize).toContain(
+        'volume="data"',
+    );
 });

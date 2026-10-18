@@ -146,6 +146,105 @@ export async function getDeploymentWithLogs(db: Database, id: string) {
     return { ...row, logs };
 }
 
+type ChangeSubscriber = {
+    deploymentId?: string;
+    pending: Map<string, string>;
+    failure?: Error;
+    wake?: () => void;
+};
+
+type ChannelListener = {
+    client: Client;
+    ready: Promise<void>;
+    subscribers: Set<ChangeSubscriber>;
+};
+
+// One LISTEN connection per database and channel, shared by every subscriber in this process.
+const channelListeners = new WeakMap<Database, Map<string, ChannelListener>>();
+
+function openChannel(db: Database, channel: string, channels: Map<string, ChannelListener>) {
+    // LISTEN requires a session, not a transaction-pooled connection. Keep the long-lived
+    // listener outside the query pool so subscribers cannot starve their own reads.
+    const client = new Client(db.$client.options);
+    const subscribers = new Set<ChangeSubscriber>();
+
+    // A broken connection fails its current subscribers; the next one opens a fresh listener.
+    const fail = (error: Error) => {
+        if (channels.get(channel) === listener) channels.delete(channel);
+
+        for (const subscriber of subscribers) {
+            subscriber.failure ??= error;
+            subscriber.wake?.();
+        }
+    };
+
+    client.on("notification", (notification: Notification) => {
+        if (notification.channel !== channel || !notification.payload) return;
+
+        // The trigger sends two UUIDs separated by ':', never log text or Compose input.
+        const [id, clusterId] = notification.payload.split(":");
+
+        if (!id || !clusterId) return;
+
+        for (const subscriber of subscribers) {
+            if (subscriber.deploymentId && subscriber.deploymentId !== id) continue;
+
+            subscriber.pending.set(id, clusterId);
+            subscriber.wake?.();
+        }
+    });
+    client.on("error", fail);
+    client.on("end", () => fail(new Error("Deployment notification connection closed.")));
+
+    const ready = client.connect().then(async () => {
+        await client.query(`LISTEN ${channel}`);
+    });
+
+    ready.catch(fail);
+
+    const listener: ChannelListener = { client, ready, subscribers };
+
+    return listener;
+}
+
+function joinChannel(db: Database, channel: string, subscriber: ChangeSubscriber) {
+    let channels = channelListeners.get(db);
+
+    if (!channels) {
+        channels = new Map();
+        channelListeners.set(db, channels);
+    }
+
+    let listener = channels.get(channel);
+
+    if (!listener) {
+        listener = openChannel(db, channel, channels);
+        channels.set(channel, listener);
+    }
+
+    listener.subscribers.add(subscriber);
+
+    return listener;
+}
+
+async function leaveChannel(
+    db: Database,
+    channel: string,
+    listener: ChannelListener,
+    subscriber: ChangeSubscriber,
+) {
+    listener.subscribers.delete(subscriber);
+
+    if (listener.subscribers.size > 0) return;
+
+    // Unregister before closing, so a subscriber joining meanwhile opens a fresh listener.
+    const channels = channelListeners.get(db);
+
+    if (channels?.get(channel) === listener) channels.delete(channel);
+
+    await listener.client.end().catch(() => undefined);
+}
+
 /** The null IDs are a subscription-ready event: invalidate once to close the list/read race. */
 export async function* watchDeploymentChanges(
     db: Database,
@@ -156,77 +255,41 @@ export async function* watchDeploymentChanges(
 
     if (signal?.aborted) return;
 
-    // LISTEN requires a session, not a transaction-pooled connection. Keep long-lived
-    // listeners outside the query pool so subscribers cannot starve their own reads.
-    const client = new Client(db.$client.options);
-    const pending = new Map<string, string>();
-    let wake: (() => void) | undefined;
-    let failure: Error | undefined;
-    let closing: Promise<void> | undefined;
-    const close = () => (closing ??= client.end());
+    const subscriber: ChangeSubscriber = { deploymentId, pending: new Map() };
+    const listener = joinChannel(db, channel, subscriber);
+    const abort = () => subscriber.wake?.();
 
-    const abort = () => {
-        void close();
-        wake?.();
-    };
-
-    const fail = (error: Error) => {
-        failure = error;
-        wake?.();
-    };
-
-    const ended = () => fail(new Error("Deployment notification connection closed."));
-
-    const notify = (notification: Notification) => {
-        if (notification.channel !== channel || !notification.payload) return;
-
-        // The trigger sends two UUIDs separated by ':', never log text or Compose input.
-        const [id, clusterId] = notification.payload.split(":");
-
-        if (!id || !clusterId || (deploymentId && id !== deploymentId)) return;
-
-        pending.set(id, clusterId);
-        wake?.();
-    };
-
-    client.on("notification", notify);
-    client.on("error", fail);
-    client.on("end", ended);
     signal?.addEventListener("abort", abort, { once: true });
 
     try {
         // pg can leave connect() pending when end() interrupts the handshake.
         const interrupted = new Promise<void>((resolve) => {
-            wake = resolve;
+            subscriber.wake = resolve;
         });
 
-        await Promise.race([client.connect(), interrupted]);
-        wake = undefined;
+        await Promise.race([listener.ready, interrupted]);
+        subscriber.wake = undefined;
 
         if (signal?.aborted) return;
 
-        if (failure) throw failure;
-
-        await client.query(`LISTEN ${channel}`);
-
-        if (signal?.aborted) return;
+        if (subscriber.failure) throw subscriber.failure;
 
         // Notifications are already buffered before the caller performs its first read.
         yield { deploymentId: null, clusterId: null };
 
         while (!signal?.aborted) {
-            if (failure) throw failure;
+            if (subscriber.failure) throw subscriber.failure;
 
-            if (pending.size === 0) {
+            if (subscriber.pending.size === 0) {
                 await new Promise<void>((resolve) => {
-                    wake = resolve;
+                    subscriber.wake = resolve;
                 });
-                wake = undefined;
+                subscriber.wake = undefined;
                 continue;
             }
 
-            for (const [id, clusterId] of pending) {
-                pending.delete(id);
+            for (const [id, clusterId] of subscriber.pending) {
+                subscriber.pending.delete(id);
 
                 if (signal?.aborted) return;
 
@@ -237,10 +300,7 @@ export async function* watchDeploymentChanges(
         if (!signal?.aborted) throw error;
     } finally {
         signal?.removeEventListener("abort", abort);
-        await close();
-        client.removeListener("notification", notify);
-        client.removeListener("error", fail);
-        client.removeListener("end", ended);
+        await leaveChannel(db, channel, listener, subscriber);
     }
 }
 

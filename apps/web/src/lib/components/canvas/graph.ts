@@ -15,6 +15,8 @@ export type CanvasLogos = Record<string, string>;
 
 export type CanvasService = CanvasGraph[number]["services"][number];
 
+export type CanvasVolume = CanvasGraph[number]["volumes"][number];
+
 export type CardData = {
     resource: CanvasResource;
     /** Absent for buckets and resources without a readable Compose spec. */
@@ -24,6 +26,8 @@ export type CardData = {
     parseError: boolean;
     /** Cards inside a group are named after their service; the group carries the resource name. */
     grouped: boolean;
+    /** Set on a volume no service mounts: it stands alone on the canvas instead of in a tray. */
+    volume: CanvasVolume | undefined;
 };
 
 export type GroupData = {
@@ -54,7 +58,10 @@ export const CARD_HEIGHT = 144;
 // Railway's volume tray: 72px tall, starting 24px under the card, so 48px shows below it.
 export const VOLUME_OVERLAP = 24;
 
-const VOLUME_TRAY = 72;
+export const VOLUME_TRAY = 72;
+
+// A volume without a service is a card of its own: just a header and the mounts line.
+const VOLUME_CARD_HEIGHT = 96;
 
 // Measured from Railway's groups: a frame wraps its cards' bounding box with 24px on the sides and
 // bottom and 48px on top for the header.
@@ -78,8 +85,24 @@ export function serviceNodeId(resourceId: string, service: string) {
     return `${resourceId}:${service}`;
 }
 
+/** `<resourceId>/<volume>`: resource ids and volume names never contain a slash. */
+export function volumeNodeId(resourceId: string, volume: string) {
+    return `${resourceId}/${volume}`;
+}
+
+/** Takes a node id apart, whichever kind of node it names. */
+export function parseNodeId(nodeId: string) {
+    const [resourceId = "", volume] = nodeId.split("/");
+
+    if (volume !== undefined) return { resourceId, service: undefined, volume };
+
+    const [id = "", ...service] = nodeId.split(":");
+
+    return { resourceId: id, service: service.length ? service.join(":") : undefined, volume };
+}
+
 function cardHeight(service: CanvasService | undefined) {
-    return CARD_HEIGHT + (service?.volumes.length ? VOLUME_TRAY - VOLUME_OVERLAP : 0);
+    return CARD_HEIGHT + (service?.volumes.length ?? 0) * (VOLUME_TRAY - VOLUME_OVERLAP);
 }
 
 /**
@@ -317,6 +340,9 @@ export function refitFrames(nodes: CanvasNode[]) {
 }
 
 type Block = {
+    /** The resource id, or the volume's node id for a volume that stands alone. */
+    id: string;
+    volume?: CanvasVolume;
     resource: CanvasResource;
     entry: CanvasGraph[number] | undefined;
     width: number;
@@ -329,7 +355,14 @@ function block(resource: CanvasResource, entry: CanvasGraph[number] | undefined)
     const services = entry?.services ?? [];
 
     if (services.length < 2)
-        return { resource, entry, width: CARD_WIDTH, height: cardHeight(services[0]), cards: [] };
+        return {
+            id: resource.id,
+            resource,
+            entry,
+            width: CARD_WIDTH,
+            height: cardHeight(services[0]),
+            cards: [],
+        };
 
     // Big stacks wrap into two columns instead of growing into a tower.
     const columnCount = services.length > MAX_STACK ? 2 : 1;
@@ -357,6 +390,7 @@ function block(resource: CanvasResource, entry: CanvasGraph[number] | undefined)
     }
 
     return {
+        id: resource.id,
         resource,
         entry,
         width: columnCount * CARD_WIDTH + (columnCount + 1) * GROUP_PADDING,
@@ -400,7 +434,7 @@ function autoLayout(blocks: Block[], depth: Map<string, number>) {
                 columnWidth = 0;
             }
 
-            positions.set(item.resource.id, { x, y });
+            positions.set(item.id, { x, y });
             y += item.height + ROW_GAP;
             columnWidth = Math.max(columnWidth, item.width);
         }
@@ -438,7 +472,26 @@ export function buildCanvas(
         (service?.template ? logos[service.template] : undefined) ?? imageIcon(service?.image);
 
     const byId = new Map(graph.map((node) => [node.id, node]));
-    const blocks = resources.map((resource) => block(resource, byId.get(resource.id)));
+
+    const blocks = resources.flatMap((resource) => [
+        block(resource, byId.get(resource.id)),
+        ...(byId.get(resource.id)?.volumes ?? []).flatMap((volume): Block[] =>
+            volume.services.length
+                ? []
+                : [
+                      {
+                          id: volumeNodeId(resource.id, volume.name),
+                          volume,
+                          resource,
+                          entry: byId.get(resource.id),
+                          width: CARD_WIDTH,
+                          height: VOLUME_CARD_HEIGHT,
+                          cards: [],
+                      },
+                  ],
+        ),
+    ]);
+
     const auto = autoLayout(blocks, columns(graph));
     const frames: CanvasNode[] = [];
     const cards: CanvasNode[] = [];
@@ -446,7 +499,28 @@ export function buildCanvas(
     for (const item of blocks) {
         const { resource, entry } = item;
         const draftOnly = entry?.draftOnly ?? false;
-        const origin = auto.get(resource.id) ?? { x: 0, y: 0 };
+        const origin = auto.get(item.id) ?? { x: 0, y: 0 };
+
+        if (item.volume) {
+            cards.push({
+                id: item.id,
+                type: "card",
+                position: saved[item.id] ?? origin,
+                width: item.width,
+                height: item.height,
+                zIndex: 1,
+                data: {
+                    resource,
+                    service: undefined,
+                    icon: null,
+                    draftOnly,
+                    parseError: false,
+                    grouped: false,
+                    volume: item.volume,
+                },
+            });
+            continue;
+        }
 
         if (item.cards.length === 0) {
             const service = entry?.services[0];
@@ -469,6 +543,7 @@ export function buildCanvas(
                     draftOnly,
                     parseError: entry?.parseError ?? false,
                     grouped: false,
+                    volume: undefined,
                 },
             });
             continue;
@@ -491,6 +566,7 @@ export function buildCanvas(
                     draftOnly,
                     parseError: false,
                     grouped: true,
+                    volume: undefined,
                 },
             };
         });
@@ -650,4 +726,43 @@ export function saveCollapsed(projectId: string, collapsed: ReadonlySet<string>)
     } catch {
         // Unsaved state only resets on the next visit.
     }
+}
+
+/** A service a volume can be mounted into, labelled the way the canvas names its card. */
+export type VolumeTarget = {
+    resourceId: string;
+    service: string;
+    label: string;
+    /** The icon the service's card shows, if it has one. */
+    icon: string | null;
+};
+
+/** Every service of the Compose resources whose spec can be read; buckets and broken specs have none. */
+export function volumeTargets(
+    resources: CanvasResource[],
+    graph: CanvasGraph,
+    logos: CanvasLogos,
+): VolumeTarget[] {
+    return resources.flatMap((resource) => {
+        const entry = graph.find((item) => item.id === resource.id);
+
+        if (!entry || entry.parseError) return [];
+
+        return entry.services.map((service) => {
+            const own =
+                (service.template ? logos[service.template] : undefined) ??
+                imageIcon(service.image);
+
+            return {
+                resourceId: resource.id,
+                service: service.name,
+                icon: (entry.services.length === 1 ? resource.icon : null) ?? own ?? null,
+                // A lone service is the resource, so it carries the resource's name.
+                label:
+                    entry.services.length === 1
+                        ? resource.name
+                        : `${resource.name} / ${service.name}`,
+            };
+        });
+    });
 }

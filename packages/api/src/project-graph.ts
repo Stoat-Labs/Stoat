@@ -4,10 +4,8 @@ import * as v from "valibot";
 import YAML from "yaml";
 
 import { internalHostname, resourceComposePrefix, resourceEnv } from "./compose";
+import { NAMED_VOLUME, volumeMounts } from "./compose-volumes";
 import type { Template } from "./templates";
-
-// Named volumes only; bind mounts (`./data`, `/srv`) and anonymous volumes are not shown.
-const NAMED_VOLUME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/u;
 
 const volumeSchema = v.union([
     v.pipe(
@@ -50,7 +48,16 @@ const serviceSchema = v.nullish(
 
 const composeSchema = v.object({
     services: v.record(v.string(), serviceSchema),
+    volumes: v.nullish(v.record(v.string(), v.unknown())),
 });
+
+export type GraphVolume = {
+    name: string;
+    /** Services that mount it; none once they are removed or disconnected, but it stays declared. */
+    services: string[];
+    /** Where each of them mounts it. */
+    mounts: { service: string; target: string }[];
+};
 
 export type GraphService = {
     name: string;
@@ -110,6 +117,24 @@ export function composeServices(compose: string) {
         // Dependencies on undeclared services are a Compose error, not an edge.
         dependsOn: (service?.depends_on ?? []).filter((dependency) => names.has(dependency)),
         volumes: (service?.volumes ?? []).flat(),
+    }));
+}
+
+/** Declared volumes of a Compose file, plus any a service mounts without declaring. */
+export function composeVolumes(compose: string): GraphVolume[] {
+    const { volumes } = v.parse(composeSchema, YAML.parse(compose));
+
+    const mounted = new Map<string, GraphVolume["mounts"]>(
+        Object.keys(volumes ?? {}).map((name) => [name, []]),
+    );
+
+    for (const { volume, service, target } of volumeMounts(compose))
+        mounted.set(volume, [...(mounted.get(volume) ?? []), { service, target }]);
+
+    return [...mounted].map(([name, mounts]) => ({
+        name,
+        services: mounts.map((mount) => mount.service),
+        mounts,
     }));
 }
 
@@ -211,6 +236,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
         const compose = row.draftSpec?.trim() ? row.draftSpec : row.spec?.trim() ? row.spec : null;
         const deployed = deployedServiceNames(row.spec);
         let services: GraphService[] = [];
+        let volumes: GraphVolume[] = [];
         let parseError = false;
 
         if (compose) {
@@ -228,6 +254,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
                             ? internalHostname(service.name, row.deployed.prefix || undefined)
                             : null,
                 }));
+                volumes = composeVolumes(compose);
             } catch {
                 parseError = true;
             }
@@ -282,6 +309,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             removed,
             parseError,
             services,
+            volumes,
             references,
         };
     });

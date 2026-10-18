@@ -6,6 +6,7 @@
         "template",
         "docker",
         "bucket",
+        "volume",
     ] as const;
 
     export type AddPage = (typeof addPages)[number];
@@ -69,13 +70,17 @@
     } from "./docker-image";
     import BucketDialog from "./bucket-dialog.svelte";
     import TemplateDialog from "./template-dialog.svelte";
+    import { volumeNodeId, type VolumeTarget } from "../graph";
 
     let {
         projectId,
+        volumeTargets,
         inline = false,
         oncreated,
     }: {
         projectId: string;
+        /** Services a new volume can be attached to. */
+        volumeTargets: VolumeTarget[];
         /** Railway's empty project: the palette sits open on the canvas instead of in a dialog. */
         inline?: boolean;
         /** Runs with the new resource's id once it is on the canvas. */
@@ -105,7 +110,8 @@
             | { href: string }
             | { create: CreateInput }
             | { template: Template }
-            | { bucket: { connectionId: string } };
+            | { bucket: { connectionId: string } }
+            | { volumeService: VolumeTarget };
     };
 
     // Which palette page is open; `null` closes it. Kept in the URL like the canvas selection.
@@ -127,6 +133,22 @@
     const configuringBucket = useQueryState(
         "addBucket",
         parseAsString.withOptions({ shallow: true, scroll: false }),
+    );
+
+    // The service a new volume is being attached to, `<resourceId>:<service>`: Railway then asks for
+    // the mount path in the same palette.
+    const volumeKey = useQueryState(
+        "addVolumeTo",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
+    );
+
+    const keyOf = (target: VolumeTarget) =>
+        `${target.resourceId}:${target.service}`;
+
+    const volumeTarget = $derived(
+        volumeTargets.find(
+            (target) => keyOf(target) === volumeKey.current,
+        ),
     );
 
     // Inline, the palette is always open, so no page means the first one.
@@ -221,6 +243,19 @@
             provider: undefined,
             target: { page: "docker" },
         },
+        ...(volumeTargets.length
+            ? [
+                  {
+                      id: "volume",
+                      label: "Volume",
+                      description: undefined,
+                      logo: null,
+                      icon: HardDrive,
+                      provider: undefined,
+                      target: { page: "volume" },
+                  } satisfies Entry,
+              ]
+            : []),
         ...(page.data.isOrganizationAdmin
             ? [
                   {
@@ -361,6 +396,18 @@
             : [],
     );
 
+    const volumeEntries = $derived<Entry[]>(
+        volumeTargets.map((target) => ({
+            id: keyOf(target),
+            label: target.label,
+            description: undefined,
+            logo: target.icon,
+            icon: Box,
+            provider: undefined,
+            target: { volumeService: target },
+        })),
+    );
+
     const image = $derived(query.trim());
 
     // Docker Hub's `library/postgres` is searched as `postgres`; other registries aren't searched.
@@ -444,9 +491,13 @@
               ? dockerEntries
               : current === "bucket"
                 ? bucketEntries
-                : current === "template" || current === "database"
-                  ? templateEntries
-                  : rootEntries,
+                : current === "volume"
+                  ? volumeTarget
+                      ? []
+                      : volumeEntries
+                  : current === "template" || current === "database"
+                    ? templateEntries
+                    : rootEntries,
     );
 
     const titles: Record<AddPage, string> = {
@@ -456,6 +507,7 @@
         template: "Template",
         docker: "Docker Image",
         bucket: "Bucket",
+        volume: "Attach volume to service",
     };
 
     const placeholders: Record<AddPage, string> = {
@@ -465,9 +517,14 @@
         template: "Search templates...",
         docker: "traefik/whoami",
         bucket: "Choose an S3 connection...",
+        volume: "Service to attach volume to",
     };
 
-    const placeholder = $derived(placeholders[current ?? "root"]);
+    const placeholder = $derived(
+        current === "volume" && volumeTarget
+            ? "Mount path of the volume"
+            : placeholders[current ?? "root"],
+    );
 
     const repositoriesPending = $derived(
         connectionsQuery.isPending ||
@@ -487,6 +544,7 @@
     function open(next: AddPage | null) {
         query = "";
         createError = "";
+        void volumeKey.set(null);
         void add.set(next);
     }
 
@@ -579,6 +637,33 @@
         }
     }
 
+    async function createVolume(target: VolumeTarget, path: string) {
+        if (creating) return;
+
+        creating = true;
+        createError = "";
+
+        try {
+            const created = await client.resources.addVolume({
+                projectId,
+                resourceId: target.resourceId,
+                service: target.service,
+                target: path,
+            });
+
+            await showCreated(
+                volumeNodeId(created.id, created.volume),
+            );
+        } catch (cause) {
+            createError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Unable to create the volume.";
+        } finally {
+            creating = false;
+        }
+    }
+
     function templateInput(
         template: Template,
         variables: Record<string, string>,
@@ -602,7 +687,10 @@
         else if ("href" in target) void goto(target.href);
         else if ("create" in target)
             void createResource(target.create);
-        else if ("bucket" in target) {
+        else if ("volumeService" in target) {
+            query = "";
+            void volumeKey.set(keyOf(target.volumeService));
+        } else if ("bucket" in target) {
             open(null);
             void configuringBucket.set(target.bucket.connectionId);
         } else if (target.template.versions[0]?.required.length) {
@@ -622,7 +710,12 @@
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Back"
-                onclick={() => open("root")}
+                onclick={() => {
+                    if (volumeTarget) {
+                        query = "";
+                        void volumeKey.set(null);
+                    } else open("root");
+                }}
             >
                 <ArrowLeft class="size-4" aria-hidden="true" />
             </Button>
@@ -631,6 +724,13 @@
             >
                 {titles[current]}
             </span>
+            {#if current === "volume" && volumeTarget}
+                <span
+                    class="rounded-md border bg-muted/60 px-2 py-0.5 text-xs font-medium"
+                >
+                    Volume mount path
+                </span>
+            {/if}
         </div>
     {/if}
     <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. -->
@@ -648,6 +748,32 @@
                 disabled={creating}
                 onkeydown={(event) => {
                     if (current === "root") return;
+
+                    if (current === "volume" && volumeTarget) {
+                        // The mount path step: Enter creates, and the way back is the service list.
+                        if (event.key === "Enter") {
+                            event.preventDefault();
+
+                            if (query.trim().startsWith("/"))
+                                void createVolume(
+                                    volumeTarget,
+                                    query.trim(),
+                                );
+                            else
+                                createError =
+                                    "The mount path must start with /.";
+                        } else if (
+                            event.key === "Escape" ||
+                            (event.key === "Backspace" &&
+                                query === "")
+                        ) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void volumeKey.set(null);
+                        }
+
+                        return;
+                    }
 
                     // Escape steps back a page before it closes the palette; Backspace on an empty
                     // search does too, as in Railway.
@@ -712,7 +838,17 @@
                     Nothing matches "{query}".
                 {/if}
             </CommandEmpty>
-            <CommandList>
+            <!-- Browsers fire a mousemove when rows appear under a resting pointer, which would
+                 highlight (and scroll to) whatever row landed there instead of the first. -->
+            <CommandList
+                onmousemovecapture={(event) => {
+                    if (
+                        event.movementX === 0 &&
+                        event.movementY === 0
+                    )
+                        event.stopPropagation();
+                }}
+            >
                 <CommandCollection>
                     {#snippet children(entry: Entry)}
                         <CommandItem

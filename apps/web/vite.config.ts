@@ -5,6 +5,7 @@ import evlog from "evlog/vite";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { defineConfig } from "vite-plus";
+import { rpcSocket } from "./rpc-socket-plugin";
 import { monitoringWorker } from "./worker-plugin";
 
 const require = createRequire(import.meta.url);
@@ -25,6 +26,7 @@ export default defineConfig({
     ssr: { noExternal: ["drizzle-orm"] },
     plugins: [
         monitoringWorker(),
+        rpcSocket(),
         varlockVitePlugin({ ssrInjectMode: "auto-load" }),
         tailwindcss(),
         sveltekit(),

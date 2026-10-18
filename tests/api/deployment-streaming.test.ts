@@ -307,6 +307,46 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
         }
     });
 
+    it("shares one LISTEN connection between subscribers and keeps it while one remains", async () => {
+        const listeners = async () =>
+            (
+                await db.$client.query(
+                    `SELECT pid FROM pg_stat_activity WHERE datname = current_database()
+                     AND query = 'LISTEN deployment_list_changes'`,
+                )
+            ).rows.length;
+
+        const first = new AbortController();
+        const second = new AbortController();
+        const a = watchDeploymentChanges(db, { signal: first.signal, includeLogs: false });
+        const b = watchDeploymentChanges(db, { signal: second.signal, includeLogs: false });
+
+        try {
+            await Promise.all([a.next(), b.next()]);
+            expect(await listeners()).toBe(1);
+
+            first.abort();
+            expect((await a.next()).done).toBe(true);
+
+            const next = b.next();
+
+            const deployment = await createDeployment(writer, {
+                clusterId,
+                name: "Shared listener",
+                jobId: randomUUID(),
+            });
+
+            expect((await next).value).toEqual({ deploymentId: deployment.id, clusterId });
+            expect(await listeners()).toBe(1);
+        } finally {
+            second.abort();
+            await a.return(undefined);
+            await b.return(undefined);
+        }
+
+        expect(await listeners()).toBe(0);
+    });
+
     it("finishes cleanly when aborted during connection setup", async () => {
         const controller = new AbortController();
 

@@ -101,7 +101,7 @@ it("aborts an open stream, ignores late events, and cancels scheduled reconnects
     expect(failing).toHaveBeenCalledTimes(1);
 });
 
-it("does not retry API errors but does retry a proxy transport failure", async () => {
+it("does not retry API errors", async () => {
     vi.useFakeTimers();
 
     for (const code of [
@@ -124,15 +124,6 @@ it("does not retry API errors but does retry a proxy transport failure", async (
         expect(onError).toHaveBeenCalledWith(error, false);
         stop();
     }
-
-    const connect = vi.fn(async (): Promise<AsyncIterable<never>> => {
-        throw new ORPCError("MALFORMED_ORPC_RESPONSE", { data: { status: 502 } });
-    });
-
-    const stop = subscribeToStream(connect, vi.fn(), vi.fn());
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(connect).toHaveBeenCalledTimes(2);
-    stop();
 });
 
 it("does not reconnect when the event consumer fails or closes from the error callback", async () => {

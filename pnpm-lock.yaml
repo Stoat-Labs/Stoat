@@ -170,9 +170,6 @@ catalogs:
     '@orpc/client':
       specifier: 2.0.0-beta.35
       version: 2.0.0-beta.35
-    '@orpc/node':
-      specifier: 2.0.0-beta.35
-      version: 2.0.0-beta.35
     '@orpc/openapi':
       specifier: 2.0.0-beta.35
       version: 2.0.0-beta.35
@@ -349,9 +346,6 @@ importers:
       '@orpc/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.35
-      '@orpc/node':
-        specifier: 'catalog:'
-        version: 2.0.0-beta.35(crossws@0.3.5)
       '@orpc/openapi':
         specifier: 'catalog:'
         version: 2.0.0-beta.35(crossws@0.3.5)
@@ -409,6 +403,9 @@ importers:
       codemirror:
         specifier: ^6.0.2
         version: 6.0.2
+      crossws:
+        specifier: 0.3.5
+        version: 0.3.5
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
@@ -1430,9 +1427,6 @@ packages:
 
   '@orpc/json-schema@2.0.0-beta.35':
     resolution: {integrity: sha512-1d1Jlr3aIQ5NPJOj+6j3Zd7XoZRkFp03SnVU7xs5g3x9bxJyppwjdjdXmkNY5g9UTsinrDJLgkH6FjBdEVwYcw==}
-
-  '@orpc/node@2.0.0-beta.35':
-    resolution: {integrity: sha512-wLAaoFNqDTGd2mncGoD8+KJq/kWAZ/Csk92UsSgv0s5pJR2FlmAmPL7yzFdcxogypIAx/IUIQnZhQLwozB+p4g==}
 
   '@orpc/openapi@2.0.0-beta.35':
     resolution: {integrity: sha512-+EMm40VTa+pxuLD0k6v7Xlp94CcfPR6SBq3rGngl9YiIGCnGuwg2Gb6gFIqI2Inz+zY+hztV2Zux8H7BNXpb2g==}
@@ -4395,11 +4389,6 @@ packages:
     resolution: {integrity: sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A==}
     engines: {node: '>=18'}
 
-  mime@4.1.0:
-    resolution: {integrity: sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw==}
-    engines: {node: '>=16'}
-    hasBin: true
-
   minimatch@5.1.9:
     resolution: {integrity: sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==}
     engines: {node: '>=10'}
@@ -6076,18 +6065,6 @@ snapshots:
       '@orpc/server': 2.0.0-beta.35(crossws@0.3.5)
       '@orpc/shared': 2.0.0-beta.35
       '@standard-schema/spec': 1.1.0
-    transitivePeerDependencies:
-      - crossws
-      - fastify
-
-  '@orpc/node@2.0.0-beta.35(crossws@0.3.5)':
-    dependencies:
-      '@orpc/server': 2.0.0-beta.35(crossws@0.3.5)
-      '@orpc/shared': 2.0.0-beta.35
-      '@standard-server/core': 0.9.0
-      '@standard-server/fetch': 0.9.0
-      '@standard-server/node': 0.9.0
-      mime: 4.1.0
     transitivePeerDependencies:
       - crossws
       - fastify
@@ -8403,8 +8380,6 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
     optional: true
-
-  mime@4.1.0: {}
 
   minimatch@5.1.9:
     dependencies:

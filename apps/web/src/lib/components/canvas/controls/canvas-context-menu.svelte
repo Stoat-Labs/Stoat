@@ -57,6 +57,7 @@
         target,
         groups,
         canAdd,
+        canAddVolume,
         children,
         onaddpage,
         onopen,
@@ -68,6 +69,8 @@
         groups: { id: string; name: string }[];
         /** False on internal projects, which take no new resources. */
         canAdd: boolean;
+        /** Whether any service can take a volume. */
+        canAddVolume: boolean;
         children: Snippet;
         onaddpage: (page: AddPage) => void;
         onopen: (nodeId: string, tab: PanelTab) => void;
@@ -82,6 +85,13 @@
     );
 
     const actions = getCanvasActions();
+
+    // A volume no service mounts is a card of its own; it has no deployments, logs or settings.
+    const volumeNodeId = $derived(
+        target?.kind === "node" && target.nodeId.includes("/")
+            ? target.nodeId
+            : undefined,
+    );
 
     // A frame or a lone card stands for the whole resource; a card in a frame is one service.
     const wholeResource = $derived(
@@ -118,7 +128,39 @@
         {@render children()}
     </ContextMenuTrigger>
     <ContextMenuPopup class="min-w-56">
-        {#if target?.kind === "node"}
+        {#if volumeNodeId}
+            {@const nodeId = volumeNodeId}
+            <!-- Railway's volume menu: disconnect, its two tabs, then delete. -->
+            {#if actions.isVolumeMounted(nodeId)}
+                <ContextMenuItem
+                    onclick={() => actions.disconnectVolume(nodeId)}
+                >
+                    <HardDrive aria-hidden="true" />
+                    Disconnect volume
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+            {/if}
+            <ContextMenuItem
+                onclick={() => onopen(nodeId, "metrics")}
+            >
+                <ChartColumn aria-hidden="true" />
+                View Metrics
+            </ContextMenuItem>
+            <ContextMenuItem
+                onclick={() => onopen(nodeId, "settings")}
+            >
+                <Settings aria-hidden="true" />
+                View Settings
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+                variant="destructive"
+                onclick={() => actions.removeVolume(nodeId)}
+            >
+                <Trash2 aria-hidden="true" />
+                Delete volume
+            </ContextMenuItem>
+        {:else if target?.kind === "node"}
             {#if isCard && target.kind === "node"}
                 {@const nodeId = target.nodeId}
                 <!-- Railway's service menu starts with its group: start a new one, or tick another. -->
@@ -279,6 +321,14 @@
                     <Container aria-hidden="true" />
                     Docker Image
                 </ContextMenuItem>
+                {#if canAddVolume}
+                    <ContextMenuItem
+                        onclick={() => onaddpage("volume")}
+                    >
+                        <HardDrive aria-hidden="true" />
+                        Volume
+                    </ContextMenuItem>
+                {/if}
                 {#if page.data.isOrganizationAdmin}
                     <ContextMenuItem
                         onclick={() => onaddpage("bucket")}

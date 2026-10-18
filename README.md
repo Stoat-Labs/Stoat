@@ -17,7 +17,7 @@
 
 ## Features
 
-Stoat sits between the simplicity of Docker and the complexity of Kubernetes: deploy Compose apps across your own machines from a single dashboard.
+Stoat allows you to manage multiple [Uncloud](https://uncloud.run) clusters from a single dashboard.
 
 - **Clusters** - Connect Uncloud clusters and manage every machine from one place.
 - **Projects & Resources** - Group your services into projects and deploy them from Compose files.
@@ -34,7 +34,7 @@ Stoat sits between the simplicity of Docker and the complexity of Kubernetes: de
 
 ## How it works
 
-Stoat does not talk to your servers directly. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
+Stoat does not talk to your servers with ssh keys like similar apps. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
 
 ## Getting Started
 

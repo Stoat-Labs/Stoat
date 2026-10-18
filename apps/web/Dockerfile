@@ -44,6 +44,7 @@ ENV NODE_ENV=production \
 
 COPY --from=build --chown=node:node /app/runtime ./
 COPY --from=build --chown=node:node /app/apps/web/build ./build
+COPY --from=build --chown=node:node /app/apps/web/server.js ./server.js
 COPY --from=build --chown=node:node /app/apps/web/src/generated-env.ts ./src/generated-env.ts
 COPY --from=build --chown=node:node /app/apps/web/drizzle.config.ts ./drizzle.config.ts
 
@@ -57,4 +58,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["node", "-e", "fetch('http://127.0.0.1:3001/').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
 # adapter-node assumes https unless ORIGIN is set, which breaks Better Auth on a plain
 # http APP_URL. APP_URL is the public URL, so it is the right default origin.
-CMD ["sh", "-c", "export ORIGIN=\"${ORIGIN:-$APP_URL}\" && exec node build/index.js"]
+CMD ["sh", "-c", "export ORIGIN=\"${ORIGIN:-$APP_URL}\" && exec node server.js"]

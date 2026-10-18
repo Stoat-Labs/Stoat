@@ -1,5 +1,4 @@
 import { ORPCError } from "@orpc/client";
-import { z } from "zod";
 
 /** Reconnect transport failures and explicitly retryable API errors; completed streams stay stopped. */
 export function subscribeToStream<T>(
@@ -31,16 +30,9 @@ export function subscribeToStream<T>(
         } catch (error) {
             if (controller.signal.aborted) return;
 
-            const gatewayStatus =
-                error instanceof ORPCError && error.code === "MALFORMED_ORPC_RESPONSE"
-                    ? z.object({ status: z.number() }).safeParse(error.data).data?.status
-                    : undefined;
-
+            // A dropped socket rejects with a plain AbortError, so it reconnects too.
             const reconnecting =
-                !delivering &&
-                (!(error instanceof ORPCError) ||
-                    retryCodes.includes(error.code) ||
-                    [502, 503, 504].includes(gatewayStatus ?? 0));
+                !delivering && (!(error instanceof ORPCError) || retryCodes.includes(error.code));
 
             onError(
                 error instanceof Error ? error : new Error("Stream connection failed."),

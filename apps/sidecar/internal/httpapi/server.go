@@ -165,6 +165,9 @@ type Config struct {
 	// MetricsHTTPClient allows the local metrics transport to be replaced in
 	// tests. A client with a five-second timeout is used when it is nil.
 	MetricsHTTPClient *http.Client
+	// HostRoot is where the host filesystem is mounted, to measure volumes.
+	// defaultHostRoot is used when it is empty.
+	HostRoot string
 	// ServiceHTTPClient allows the cluster-network service transport to be
 	// replaced in tests. newServiceHTTPClient is used when it is nil.
 	ServiceHTTPClient *http.Client
@@ -179,6 +182,7 @@ type Server struct {
 	requestTimeout time.Duration
 	execTimeout    time.Duration
 	metricsClient  *http.Client
+	volumeSizes    *volumeSizes
 	serviceClient  *http.Client
 	openapiJSON    []byte
 	openapiYAML    []byte
@@ -211,7 +215,13 @@ func New(backend Backend, cfg Config) (*Server, error) {
 		execTimeout = DefaultExecTimeout
 	}
 
+	hostRoot := cfg.HostRoot
+	if hostRoot == "" {
+		hostRoot = defaultHostRoot
+	}
+
 	s := &Server{
+		volumeSizes:    &volumeSizes{hostRoot: hostRoot},
 		backend:        backend,
 		tokenDigest:    sha256.Sum256([]byte(cfg.AuthToken)),
 		machineID:      strings.TrimSpace(cfg.MachineID),
@@ -693,12 +703,20 @@ func (s *Server) ucInternalMetrics(ctx context.Context, _ *struct{}) (*metricsOu
 	if contentType == "" {
 		contentType = fiber.MIMETextPlain + "; charset=utf-8"
 	}
+	if response.StatusCode == http.StatusOK {
+		body = append(body, s.volumeSizes.exposition(s.localVolumes)...)
+	}
 	return &metricsOutput{
 		Status:       response.StatusCode,
 		ContentType:  contentType,
 		CacheControl: "no-store",
 		Body:         body,
 	}, nil
+}
+
+// localVolumes lists the Docker volumes on this machine.
+func (s *Server) localVolumes(ctx context.Context) ([]api.MachineVolume, error) {
+	return s.backend.ListVolumes(ctx, &api.VolumeFilter{Machines: []string{s.machineID}})
 }
 
 func machineMetricsIP(machine api.MachineMember) (netip.Addr, error) {

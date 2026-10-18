@@ -111,6 +111,43 @@ export type HttpMetricName =
     | (typeof httpMetricNames)[number]
     | (typeof httpTrafficMetricNames)[number];
 
+/**
+ * A volume's disk size, from the sidecar's `stoat_volume_size_bytes`, and the disk throughput of
+ * the services that mount it, from cAdvisor's per-container counters. Docker volumes aren't
+ * separate mounts, so no throughput is measured per volume itself.
+ */
+export const volumeMetricNames = ["volumeSize", "volumeRead", "volumeWrite"] as const;
+
+export type VolumeMetricName = (typeof volumeMetricNames)[number];
+
+const promRegex = (name: string) => name.replaceAll(/[^A-Za-z0-9_-]/gu, "\\$&");
+
+/**
+ * Series are labelled with the deployed names (`<slug>-<name>`), so no service lookup is needed.
+ * The name goes in `container_label_uncloud_service_id`, the label every chart already groups by.
+ */
+export function volumeMetricQueries(
+    clusterId: string,
+    step: number,
+    prefix: string | undefined,
+    volume: string,
+    services: string[],
+): Record<VolumeMetricName, string> {
+    const scope = `customer_id=${JSON.stringify(clusterId)}`;
+    const deployed = (name: string) => (prefix ? `${prefix}-${name}` : name);
+    const names = services.map((name) => promRegex(deployed(name))).join("|");
+    const window = `${Math.max(60, step * 2)}s`;
+
+    const rate = (metric: string) =>
+        `label_replace(sum by (machine_id, container_label_uncloud_service_name, name) (rate(${metric}{${scope},container_label_uncloud_service_name=~${JSON.stringify(names)}}[${window}])), "container_label_uncloud_service_id", "$1", "container_label_uncloud_service_name", "(.*)")`;
+
+    return {
+        volumeSize: `label_replace(max by (machine_id, volume) (stoat_volume_size_bytes{${scope},volume=${JSON.stringify(deployed(volume))}}), "container_label_uncloud_service_id", "$1", "volume", "(.*)")`,
+        volumeRead: rate("container_fs_reads_bytes_total"),
+        volumeWrite: rate("container_fs_writes_bytes_total"),
+    };
+}
+
 export const dnsMetricNames = ["dnsQueries", "dnsErrors", "dnsAvailability"] as const;
 
 export type DnsMetricName = (typeof dnsMetricNames)[number];

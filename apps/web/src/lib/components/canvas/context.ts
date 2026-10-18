@@ -18,6 +18,13 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     canRedeploy: (resourceId: string) => boolean;
     /** Railway's "Group ›": moves a service card into another group, or out into its own (null). */
     regroup: (nodeId: string, toResourceId: string | null) => void;
+    /** Opens a volume's pane, from the tray under the service that mounts it. */
+    selectVolume: (resourceId: string, volume: string) => void;
+    /** Asks to delete a volume; the canvas confirms it first. */
+    removeVolume: (nodeId: string) => void;
+    /** Railway's "Disconnect volume": unmounts it from its service, and it stays on the canvas. */
+    disconnectVolume: (nodeId: string) => void;
+    isVolumeMounted: (nodeId: string) => boolean;
     /** Railway's "Remove Group": every service but the first moves out into a resource of its own. */
     ungroup: (resourceId: string) => void;
 }>();

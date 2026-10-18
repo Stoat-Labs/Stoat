@@ -85,11 +85,74 @@ import { pushGitFile, readGitHead } from "../../git";
 import { buildProjectGraph } from "../../project-graph";
 import { fetchDockerHubLogo, searchDockerHub } from "../../docker-hub";
 import {
+    addVolume,
+    attachVolume,
+    ComposeVolumeError,
+    detachVolume,
+    nextVolumeName,
+    remountVolume,
+    removeVolume,
+} from "../../compose-volumes";
+import {
     ComposeMoveError,
     moveComposeService,
     retargetServiceReferences,
     type ComposeMove,
 } from "../../compose-move";
+
+const volumeInput = {
+    projectId: v.pipe(v.string(), v.uuid()),
+    resourceId: v.pipe(v.string(), v.uuid()),
+    volume: v.pipe(v.string(), v.minLength(1), v.maxLength(63)),
+};
+
+const newVolumeInput = {
+    projectId: v.pipe(v.string(), v.uuid()),
+    resourceId: v.pipe(v.string(), v.uuid()),
+    // Left out, the volume is named after its service, like Railway's `redis-volume`.
+    volume: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(63))),
+};
+
+const volumeMountInput = {
+    service: v.pipe(v.string(), v.minLength(1)),
+    target: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+};
+
+/** Rewrites a resource's Compose draft under a row lock, the way the other canvas edits do. */
+function editComposeDraft(
+    db: Pick<Database, "transaction">,
+    resourceId: string,
+    edit: (compose: string) => string,
+) {
+    return db.transaction(async (tx) => {
+        const [resource] = await tx
+            .select()
+            .from(resources)
+            .where(eq(resources.id, resourceId))
+            .for("update");
+
+        const compose = resource?.draftSpec?.trim() ? resource.draftSpec : resource?.spec;
+
+        if (!resource || !compose?.trim())
+            throw new ORPCError("BAD_REQUEST", {
+                message: "Only Compose resources have volumes.",
+            });
+
+        try {
+            await tx
+                .update(resources)
+                .set({ draftSpec: edit(compose) })
+                .where(eq(resources.id, resourceId));
+        } catch (error) {
+            if (error instanceof ComposeVolumeError)
+                throw new ORPCError("BAD_REQUEST", { message: error.message });
+
+            throw error;
+        }
+
+        return { id: resourceId };
+    });
+}
 
 // A deployable resource of the organization, with the cluster its project runs on.
 function deployTarget(
@@ -555,6 +618,58 @@ export const resourcesRouter = {
 
                 return resource!;
             }),
+        ),
+
+    // Volumes are Compose edits: they stage in the draft like any other change and ship on deploy.
+    addVolume: organizationProcedure
+        .input(v.object({ ...newVolumeInput, ...volumeMountInput }))
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db }, input }) => {
+            let volume = input.volume ?? "";
+
+            await editComposeDraft(db, input.resourceId, (compose) => {
+                volume ||= nextVolumeName(compose, input.service);
+
+                return addVolume(compose, volume, input.service, input.target);
+            });
+
+            return { id: input.resourceId, volume };
+        }),
+
+    updateVolumeMount: organizationProcedure
+        .input(v.object({ ...volumeInput, ...volumeMountInput }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                remountVolume(compose, input.volume, input.service, input.target),
+            ),
+        ),
+
+    attachVolume: organizationProcedure
+        .input(v.object({ ...volumeInput, ...volumeMountInput }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                attachVolume(compose, input.volume, input.service, input.target),
+            ),
+        ),
+
+    detachVolume: organizationProcedure
+        .input(v.object({ ...volumeInput, service: v.pipe(v.string(), v.minLength(1)) }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                detachVolume(compose, input.volume, input.service),
+            ),
+        ),
+
+    deleteVolume: organizationProcedure
+        .input(v.object(volumeInput))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                removeVolume(compose, input.volume),
+            ),
         ),
 
     updateVariables: organizationProcedure

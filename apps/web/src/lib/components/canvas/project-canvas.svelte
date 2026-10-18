@@ -59,12 +59,15 @@
         loadPositions,
         nearestFree,
         nodeRect,
+        parseNodeId,
         refitFrames,
         repairOverlaps,
         saveCollapsed,
         savePositions,
         settle,
         slotBelow,
+        volumeNodeId,
+        volumeTargets,
         type CanvasGraph,
         type CanvasLogos,
         type CanvasNode,
@@ -75,6 +78,7 @@
     import CardNode from "./nodes/card-node.svelte";
     import StackNode from "./nodes/stack-node.svelte";
     import CanvasPanel from "./panel/canvas-panel.svelte";
+    import CanvasVolumePanel from "./panel/canvas-volume-panel.svelte";
 
     let {
         projectId,
@@ -240,6 +244,23 @@
             !graph.find((item) => item.id === resourceId)?.changed,
         regroup: (nodeId, toResourceId) =>
             void regroup(nodeId, toResourceId),
+        selectVolume: (resourceId, volume) =>
+            select(volumeNodeId(resourceId, volume)),
+        removeVolume: (nodeId) => askRemoveVolume(nodeId),
+        disconnectVolume: (nodeId) => void disconnectVolume(nodeId),
+        isVolumeMounted: (nodeId) => {
+            const { resourceId, volume } = parseNodeId(nodeId);
+
+            return (
+                graph
+                    .find((entry) => entry.id === resourceId)
+                    ?.volumes.some(
+                        (item) =>
+                            item.name === volume &&
+                            item.services.length > 0,
+                    ) ?? false
+            );
+        },
         ungroup: (resourceId) => void ungroup(resourceId),
     });
 
@@ -267,7 +288,11 @@
                 await client.buckets.remove(target);
             else await client.resources.deleteResource(target);
 
-            if (selected.current?.split(":")[0] === pendingDelete.id)
+            if (
+                selected.current &&
+                parseNodeId(selected.current).resourceId ===
+                    pendingDelete.id
+            )
                 select(null);
 
             pendingDelete = undefined;
@@ -286,6 +311,105 @@
                     : "The resource could not be deleted.";
         } finally {
             deleting = false;
+        }
+    }
+
+    // A volume nobody mounts leaves the Compose draft; confirmed in an alert dialog first.
+    let pendingVolumeDelete = $state<{
+        resource: CanvasResource;
+        volume: string;
+    }>();
+
+    let deletingVolume = $state(false);
+
+    let volumeDeleteError = $state("");
+
+    function askRemoveVolume(nodeId: string) {
+        const { resourceId, volume } = parseNodeId(nodeId);
+
+        const resource = resources.find(
+            (item) => item.id === resourceId,
+        );
+
+        if (!resource || !volume) return;
+
+        pendingVolumeDelete = { resource, volume };
+        volumeDeleteError = "";
+    }
+
+    async function disconnectVolume(nodeId: string) {
+        const { resourceId, volume } = parseNodeId(nodeId);
+
+        const services =
+            graph
+                .find((entry) => entry.id === resourceId)
+                ?.volumes.find((item) => item.name === volume)
+                ?.services ?? [];
+
+        try {
+            for (const service of services)
+                await client.resources.detachVolume({
+                    projectId,
+                    resourceId,
+                    volume: volume ?? "",
+                    service,
+                });
+        } catch (error) {
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The volume could not be disconnected.",
+                warnings: [],
+            };
+        }
+
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listResources.key(),
+            }),
+        ]);
+    }
+
+    async function deleteVolume() {
+        if (!pendingVolumeDelete) return;
+
+        const { resource, volume } = pendingVolumeDelete;
+
+        deletingVolume = true;
+        volumeDeleteError = "";
+
+        try {
+            await client.resources.deleteVolume({
+                projectId,
+                resourceId: resource.id,
+                volume,
+            });
+
+            if (
+                selected.current === volumeNodeId(resource.id, volume)
+            )
+                select(null);
+
+            pendingVolumeDelete = undefined;
+            await Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: orpc.resources.getProjectGraph.key(),
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: orpc.resources.listResources.key(),
+                }),
+            ]);
+        } catch (error) {
+            volumeDeleteError =
+                error instanceof Error
+                    ? error.message
+                    : "The volume could not be deleted.";
+        } finally {
+            deletingVolume = false;
         }
     }
 
@@ -496,17 +620,13 @@
         });
     }
 
-    const selectedResourceId = $derived(
-        selected.current?.split(":")[0],
+    const selectedNode = $derived(
+        selected.current ? parseNodeId(selected.current) : undefined,
     );
 
-    const selectedService = $derived(
-        selected.current?.includes(":")
-            ? selected.current.slice(
-                  selected.current.indexOf(":") + 1,
-              )
-            : undefined,
-    );
+    const selectedResourceId = $derived(selectedNode?.resourceId);
+
+    const selectedService = $derived(selectedNode?.service);
 
     const selectedResource = $derived(
         resources.find(
@@ -516,6 +636,18 @@
 
     const selectedGraph = $derived(
         graph.find((entry) => entry.id === selectedResourceId),
+    );
+
+    const volumeTargetList = $derived(
+        volumeTargets(resources, graph, logos),
+    );
+
+    const selectedVolume = $derived(
+        selectedNode?.volume === undefined
+            ? undefined
+            : selectedGraph?.volumes.find(
+                  (volume) => volume.name === selectedNode.volume,
+              ),
     );
 
     const selectedIcon = $derived(
@@ -1071,6 +1203,7 @@
                 : [],
         )}
         canAdd={!isInternal}
+        canAddVolume={volumeTargetList.length > 0}
         onaddpage={(addPage) => void add.set(addPage)}
         onopen={openPanel}
     >
@@ -1095,8 +1228,26 @@
             }}
             onnodeclick={({ node }) => select(node.id)}
             onpaneclick={() => select(null)}
-            onnodecontextmenu={({ node }) =>
-                (menuTarget = { kind: "node", nodeId: node.id })}
+            onnodecontextmenu={({ node, event }) => {
+                // A volume in a service's tray has its own menu, like Railway's.
+                const volume =
+                    event.target instanceof Element
+                        ? event.target.closest<HTMLElement>(
+                              "[data-volume]",
+                          )?.dataset.volume
+                        : undefined;
+
+                menuTarget = {
+                    kind: "node",
+                    nodeId:
+                        volume && node.type === "card"
+                            ? volumeNodeId(
+                                  node.data.resource.id,
+                                  volume,
+                              )
+                            : node.id,
+                };
+            }}
             onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
             onnodedragstart={({ targetNode }) => {
                 if (!targetNode) return;
@@ -1243,12 +1394,30 @@
             class="pointer-events-none absolute inset-0 flex items-center justify-center p-4"
         >
             <div class="pointer-events-auto">
-                <AddPalette {projectId} inline oncreated={select} />
+                <AddPalette
+                    {projectId}
+                    inline
+                    volumeTargets={volumeTargetList}
+                    oncreated={select}
+                />
             </div>
         </div>
     {/if}
 
-    {#if selectedResource}
+    {#if selectedResource && selectedVolume}
+        {#key selected.current}
+            <CanvasVolumePanel
+                resource={selectedResource}
+                volume={selectedVolume}
+                services={selectedGraph?.services ?? []}
+                width={panelWidth}
+                inset={narrow}
+                onclose={() => select(null)}
+                onremove={() =>
+                    askRemoveVolume(selected.current ?? "")}
+            />
+        {/key}
+    {:else if selectedResource}
         {#key selectedResource.id}
             <CanvasPanel
                 {clusterId}
@@ -1266,7 +1435,29 @@
 </div>
 
 {#if !empty && !isInternal}
-    <AddPalette {projectId} oncreated={select} />
+    <AddPalette
+        {projectId}
+        volumeTargets={volumeTargetList}
+        oncreated={select}
+    />
+{/if}
+
+{#if pendingVolumeDelete}
+    <ConfirmDialog
+        bind:open={
+            () => pendingVolumeDelete !== undefined,
+            (open) => {
+                if (!open && !deletingVolume)
+                    pendingVolumeDelete = undefined;
+            }
+        }
+        title={`Delete ${pendingVolumeDelete.volume}?`}
+        description="It is unmounted from its services and leaves the Compose file on the next deploy. The data stays on the machines."
+        confirmLabel="Delete volume"
+        pending={deletingVolume}
+        error={volumeDeleteError}
+        onconfirm={() => void deleteVolume()}
+    />
 {/if}
 
 {#if pendingDelete}

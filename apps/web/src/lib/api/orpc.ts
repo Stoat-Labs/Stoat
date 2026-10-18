@@ -1,6 +1,5 @@
 import { createORPCClient } from "@orpc/client";
-import { RPCLink } from "@orpc/client/fetch";
-import { BatchLinkPlugin } from "@orpc/client/plugins";
+import { RPCLink } from "@orpc/client/websocket";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/svelte-query";
@@ -26,40 +25,19 @@ export const queryClient = new QueryClient({
     }),
 });
 
-// Every procedure that returns an event stream.
-const streamingProcedures = new Set([
-    "cluster.watchDeployments",
-    "cluster.streamDeployment",
-    "cluster.getHttpSummary",
-    "resources.streamLogs",
-]);
-
+// Every browser call, streams included, shares one WebSocket. It reconnects on its own, and
+// sign-in/sign-out do a full page load, so the socket's session cookie is never stale.
 export const link = new RPCLink({
-    origin: () => {
+    connect() {
         if (typeof window === "undefined") {
             throw new Error("This link is not allowed on the server side.");
         }
 
-        return window.location.origin;
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+        return new WebSocket(`${protocol}//${window.location.host}/rpc`);
     },
-    url: "/rpc",
-    // One HTTP request per page load instead of 10-20 parallel ones. Caddy treats every request the
-    // browser aborts mid-flight (navigating away) as an upstream failure and drops the only
-    // upstream for 30s, so fewer requests also means fewer aborts. Log streaming polls on its own.
-    plugins: [
-        new BatchLinkPlugin({
-            groups: [{ condition: () => true, context: {} }],
-            // Streams get their own request: inside a batch, a closed tab never cancels the
-            // server-side stream, leaking its Postgres LISTEN connection until the pool runs out.
-            filter: ({ path }) => !streamingProcedures.has(path.join(".")),
-        }),
-    ],
-    fetch(url, options) {
-        return fetch(url, {
-            ...options,
-            credentials: "include",
-        });
-    },
+    reconnect: { enabled: true },
 });
 
 declare global {
@@ -131,3 +109,6 @@ export const orpc: OrpcUtils = new Proxy(createTanstackQueryUtils(browserClient)
         return Reflect.has(getUtils(), prop);
     },
 });
+
+// The template catalog ships with the server build, so it only changes on a deploy.
+queryClient.setQueryDefaults(orpc.resources.listTemplates.key(), { staleTime: Infinity });

@@ -51,6 +51,9 @@ import {
     type ObservabilityRange,
     type PackedMetricSeries,
     type PostgresMetricName,
+    type VolumeMetricName,
+    volumeMetricNames,
+    volumeMetricQueries,
     type ObservabilityContainer,
     type ObservabilityService,
 } from "../../observability";
@@ -219,10 +222,59 @@ type MetricResponse = {
     status: "ok" | "no-routes" | "not-collecting";
 };
 
-type ObservabilityMetricName = MetricName | HttpMetricName | DnsMetricName | PostgresMetricName;
+type ObservabilityMetricName =
+    | MetricName
+    | HttpMetricName
+    | DnsMetricName
+    | PostgresMetricName
+    | VolumeMetricName;
 
 function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
     return [...httpMetricNames, ...httpTrafficMetricNames].some((item) => item === name);
+}
+
+function isVolumeMetric(name: ObservabilityMetricName): name is VolumeMetricName {
+    return volumeMetricNames.some((item) => item === name);
+}
+
+async function volumeMetric(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    name: VolumeMetricName,
+    range: ObservabilityRange,
+    points: ChartPoints,
+    prefix: string | undefined,
+    volume: string,
+    services: string[],
+): Promise<MetricResponse> {
+    const { start, end, step } = metricWindow(range, points);
+
+    return swr(
+        `volume:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${prefix}:${volume}:${services.toSorted().join(",")}`,
+        end,
+        async () => {
+            try {
+                // The size table appears once a sidecar that reports volume sizes has been scraped.
+                if (
+                    name === "volumeSize" &&
+                    !(await collecting(cluster, uc, "volume", ["stoat_volume_size_bytes"]))
+                )
+                    return { start, end, step, series: [], status: "not-collecting" as const };
+
+                const query = volumeMetricQueries(cluster.id, step, prefix, volume, services)[name];
+
+                return {
+                    start,
+                    end,
+                    step,
+                    series: await queryRange(cluster, uc, query, start, end, step),
+                    status: "ok" as const,
+                };
+            } catch {
+                throw unreachable();
+            }
+        },
+    );
 }
 
 function isPostgresMetric(name: ObservabilityMetricName): name is PostgresMetricName {
@@ -610,9 +662,18 @@ export const observabilityRouter = {
                     ...httpTrafficMetricNames,
                     ...dnsMetricNames,
                     ...postgresMetricNames,
+                    ...volumeMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
                 serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
+                // Volume metrics: the resource and volume (Compose names) and the services mounting it.
+                volume: z
+                    .object({
+                        resourceId: z.uuid(),
+                        name: z.string().min(1).max(128),
+                        services: z.array(z.string().min(1).max(128)).max(100),
+                    })
+                    .optional(),
                 range: rangeInput,
                 // Sparklines ask for fewer points than full-size charts.
                 points: z.literal(chartPoints).default(120),
@@ -621,11 +682,43 @@ export const observabilityRouter = {
         .use(monitoringMiddleware)
         .handler(
             async ({
-                context: { cluster, uc },
-                input: { name, range, points, serviceIds },
+                context: { db, cluster, uc },
+                input: { name, range, points, serviceIds, volume },
             }): Promise<MetricResponse> => {
                 if (isHttpMetric(name))
                     return httpMetric(cluster, uc, name, range, points, serviceIds ?? []);
+
+                if (isVolumeMetric(name)) {
+                    if (!volume)
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: "Volume metrics need the volume and its resource.",
+                        });
+
+                    const [resource] = await db
+                        .select({ slug: resources.slug, settings: resources.settings })
+                        .from(resources)
+                        .innerJoin(projects, eq(projects.id, resources.projectId))
+                        .where(
+                            and(
+                                eq(resources.id, volume.resourceId),
+                                eq(projects.clusterId, cluster.id),
+                            ),
+                        );
+
+                    if (!resource)
+                        throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+                    return volumeMetric(
+                        cluster,
+                        uc,
+                        name,
+                        range,
+                        points,
+                        resourceComposePrefix(resource),
+                        volume.name,
+                        volume.services,
+                    );
+                }
 
                 // Exporter series are only meaningful per resource, so they require a service scope.
                 if (isPostgresMetric(name)) {
