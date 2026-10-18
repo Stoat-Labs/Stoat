@@ -67,23 +67,30 @@ export const deploymentsRouter = {
 
     watchDeployments: organizationProcedure.handler(({ context: { db, organizationId }, signal }) =>
         cancellableStream(async function* (signal) {
+            // A cluster never changes organization, so each one is checked once per stream.
+            const owned = new Map<string, boolean>();
+
             for await (const change of watchDeploymentChanges(db, { signal, includeLogs: false })) {
                 if (change.clusterId === null) {
                     yield { deploymentId: null };
                     continue;
                 }
 
-                const [cluster] = await db
-                    .select({ id: clusters.id })
-                    .from(clusters)
-                    .where(
-                        and(
-                            eq(clusters.id, change.clusterId),
-                            eq(clusters.organizationId, organizationId),
-                        ),
-                    );
+                if (!owned.has(change.clusterId)) {
+                    const [cluster] = await db
+                        .select({ id: clusters.id })
+                        .from(clusters)
+                        .where(
+                            and(
+                                eq(clusters.id, change.clusterId),
+                                eq(clusters.organizationId, organizationId),
+                            ),
+                        );
 
-                if (cluster) yield { deploymentId: change.deploymentId };
+                    owned.set(change.clusterId, cluster !== undefined);
+                }
+
+                if (owned.get(change.clusterId)) yield { deploymentId: change.deploymentId };
             }
         }, signal),
     ),
