@@ -3,6 +3,7 @@ import { watchGitSources } from "@stoat/api/git-watch";
 import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
 import { JobStoreLive } from "@stoat/workflows/store";
 import { Effect, Layer } from "effect";
+import { getDb } from "../../services";
 
 function requireEnv(name: string) {
     const value = process.env[name];
@@ -33,6 +34,6 @@ export function startMonitoringWorker() {
 
     startWorker(
         Layer.launch(monitoringWorkerLive(watchGitSources)),
-        pollInitializationOutbox().pipe(Effect.provide(JobStoreLive)),
+        pollInitializationOutbox(getDb()).pipe(Effect.provide(JobStoreLive)),
     );
 }

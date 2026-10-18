@@ -32,9 +32,11 @@ function requireEnv(name: string) {
     return value;
 }
 
-function createHandlerDb(): Database {
-    return createDb({ DATABASE_URL: requireEnv("DATABASE_URL") });
-}
+// One pool for the whole worker; it ends when the worker layer is released.
+const WorkerDb = Effect.acquireRelease(
+    Effect.sync(() => createDb({ DATABASE_URL: requireEnv("DATABASE_URL") })),
+    (db) => Effect.promise(() => db.$client.end()).pipe(Effect.ignore),
+);
 
 function encryptionSecret() {
     return requireEnv("APP_SECRET");
@@ -43,63 +45,62 @@ function encryptionSecret() {
 const TERMINAL_FAILURE_MESSAGE =
     "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.";
 
-// Plain async attempt: manages its own Pool lifecycle with try/finally.
-// The AbortSignal comes from Effect.callback and aborts on interruption,
-// timeout, or cancel so deployMonitoring stops promptly.
-async function runAttemptAsync(clusterId: string, requestId: string, signal: AbortSignal) {
-    const db = createHandlerDb();
+// Plain async attempt. The AbortSignal comes from Effect.callback and aborts on
+// interruption, timeout, or cancel so deployMonitoring stops promptly.
+async function runAttemptAsync(
+    db: Database,
+    clusterId: string,
+    requestId: string,
+    signal: AbortSignal,
+) {
     const jobId = `${clusterId}:${requestId}`;
 
-    try {
-        await setInitializationStatus(db, clusterId, "running", null).catch(() => {});
-        const deployment = await getDeploymentByJobId(db, jobId).catch(() => null);
+    await setInitializationStatus(db, clusterId, "running", null).catch(() => {});
+    const deployment = await getDeploymentByJobId(db, jobId).catch(() => null);
 
-        if (deployment?.status === "cancelled") return;
+    if (deployment?.status === "cancelled") return;
 
-        if (deployment && deployment.status !== "running") {
-            await setDeploymentStatus(db, deployment.id, "running").catch(() => {});
-        }
-
-        signal.throwIfAborted();
-
-        const handler = createInitializeClusterHandler(
-            db,
-            encryptionSecret(),
-            deployment ? { deploymentId: deployment.id } : undefined,
-        );
-
-        try {
-            await handler(clusterId, signal);
-        } catch (error) {
-            // Handler errors are fixed redacted strings, safe for the log.
-            // Skipped on abort: interruption releases the job without an attempt.
-            if (!signal.aborted && deployment) {
-                const message =
-                    error instanceof Error
-                        ? error.message
-                        : "Cluster monitoring initialization failed.";
-
-                await appendDeploymentLog(db, deployment.id, `Step failed: ${message}`, {
-                    level: "error",
-                }).catch(() => {});
-            }
-
-            throw error;
-        }
-
-        if (deployment) {
-            await setDeploymentStatus(db, deployment.id, "ready").catch(() => {});
-        }
-
-        await setInitializationStatus(db, clusterId, "ready", null).catch(() => {});
-    } finally {
-        await db.$client.end().catch(() => {});
+    if (deployment && deployment.status !== "running") {
+        await setDeploymentStatus(db, deployment.id, "running").catch(() => {});
     }
+
+    signal.throwIfAborted();
+
+    const handler = createInitializeClusterHandler(
+        db,
+        encryptionSecret(),
+        deployment ? { deploymentId: deployment.id } : undefined,
+    );
+
+    try {
+        await handler(clusterId, signal);
+    } catch (error) {
+        // Handler errors are fixed redacted strings, safe for the log.
+        // Skipped on abort: interruption releases the job without an attempt.
+        if (!signal.aborted && deployment) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "Cluster monitoring initialization failed.";
+
+            await appendDeploymentLog(db, deployment.id, `Step failed: ${message}`, {
+                level: "error",
+            }).catch(() => {});
+        }
+
+        throw error;
+    }
+
+    if (deployment) {
+        await setDeploymentStatus(db, deployment.id, "ready").catch(() => {});
+    }
+
+    await setInitializationStatus(db, clusterId, "ready", null).catch(() => {});
 }
 
-function runAttempt(clusterId: string, requestId: string) {
+function runAttempt(db: Database, clusterId: string, requestId: string) {
     return Effect.callback<void>((resume, signal) => {
-        const attempt = runAttemptAsync(clusterId, requestId, signal).then(
+        const attempt = runAttemptAsync(db, clusterId, requestId, signal).then(
             () => resume(Effect.void),
             () => resume(Effect.die(new Error(TERMINAL_FAILURE_MESSAGE))),
         );
@@ -109,152 +110,80 @@ function runAttempt(clusterId: string, requestId: string) {
     });
 }
 
-export const InitializeClusterLive = InitializeCluster.toLayer(
-    (payload) => runAttempt(payload.clusterId, payload.requestId),
-    { concurrency: 1 },
-);
+// Runs one attempt on the worker's pool. Interruption aborts the signal, then the returned effect
+// drains pending writes and releases the lock before effect-mq invokes its terminal failure hook.
+function attempt(run: (signal: AbortSignal) => Promise<void>, failure: (error: Error) => Error) {
+    return Effect.callback<void>((resume, signal) => {
+        const done = run(signal).then(
+            () => resume(Effect.void),
+            (error) =>
+                resume(
+                    Effect.die(failure(error instanceof Error ? error : new Error(String(error)))),
+                ),
+        );
 
-export const DeployResourceLive = DeployResource.toLayer(
-    ({ deploymentId }) =>
-        Effect.callback<void>((resume, signal) => {
-            const attempt = (async () => {
-                const db = createHandlerDb();
-
-                try {
-                    await deployResource(db, deploymentId, signal);
-                } finally {
-                    await db.$client.end();
-                }
-            })().then(
-                () => resume(Effect.void),
-                // Keep the redacted failure (and its unrecoverable mark), never a raw cause.
-                (error) =>
-                    resume(
-                        Effect.die(
-                            error instanceof Error && error.message === RESOURCE_FAILURE_MESSAGE
-                                ? error
-                                : new Error(RESOURCE_FAILURE_MESSAGE),
-                        ),
-                    ),
-            );
-
-            // Interruption aborts the signal, then drains writes and releases the lock
-            // before effect-mq invokes its terminal failure hook.
-            return Effect.promise(() => attempt);
-        }),
-    { concurrency: 4 },
-);
-
-export const DeployCaddyLive = DeployCaddy.toLayer(
-    ({ deploymentId }) =>
-        Effect.callback<void>((resume, signal) => {
-            const attempt = (async () => {
-                const db = createHandlerDb();
-
-                try {
-                    await deployCaddy(db, deploymentId, signal);
-                } finally {
-                    await db.$client.end();
-                }
-            })().then(
-                () => resume(Effect.void),
-                // deployCaddy only throws CADDY_FAILURE_MESSAGE; never pass a raw cause.
-                () => resume(Effect.die(new Error(CADDY_FAILURE_MESSAGE))),
-            );
-
-            return Effect.promise(() => attempt);
-        }),
-    // One rollout per cluster is enforced when queueing; across clusters they are independent.
-    { concurrency: 4 },
-);
-
-export const ReconcileBucketLive = ReconcileBucket.toLayer(
-    ({ resourceId, requestId }) =>
-        Effect.callback<void>((resume, signal) => {
-            const attempt = (async () => {
-                const db = createHandlerDb();
-
-                try {
-                    await reconcileBucket(db, resourceId, requestId, signal);
-                } finally {
-                    await db.$client.end();
-                }
-            })().then(
-                () => resume(Effect.void),
-                (error) =>
-                    resume(
-                        Effect.die(
-                            new Error(
-                                s3FailureMessage(
-                                    error instanceof Error
-                                        ? error
-                                        : new Error("Bucket job failed."),
-                                ),
-                            ),
-                        ),
-                    ),
-            );
-
-            return Effect.promise(() => attempt);
-        }),
-    { concurrency: 2 },
-);
-
-export const HealthCheckLive = HealthCheck.toLayer(
-    ({ clusterId }) =>
-        Effect.callback<void>((resume, signal) => {
-            const attempt = (async () => {
-                const db = createHandlerDb();
-
-                try {
-                    await runHealthCheck(db, signal, clusterId);
-                } finally {
-                    await db.$client.end();
-                }
-            })().then(
-                () => resume(Effect.void),
-                (error) =>
-                    resume(
-                        Effect.die(
-                            error instanceof Error ? error : new Error("Health check failed."),
-                        ),
-                    ),
-            );
-
-            return Effect.promise(() => attempt);
-        }),
-    { concurrency: 1 },
-);
+        return Effect.promise(() => done);
+    });
+}
 
 type GitWatcher = (db: Database, signal: AbortSignal, connectionId?: string) => Promise<void>;
 
-// The watcher lives in @stoat/api (it needs Git and deploy logic), which depends on this package,
-// so the worker bootstrap passes it in.
-function watchGitSourcesLive(watch: GitWatcher) {
-    return WatchGitSources.toLayer(
-        ({ connectionId }) =>
-            Effect.callback<void>((resume, signal) => {
-                const attempt = (async () => {
-                    const db = createHandlerDb();
-
-                    try {
-                        await watch(db, signal, connectionId);
-                    } finally {
-                        await db.$client.end();
-                    }
-                })().then(
-                    () => resume(Effect.void),
+// The Git watcher lives in @stoat/api (it needs Git and deploy logic), which depends on this
+// package, so the worker bootstrap passes it in.
+function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
+    return Layer.mergeAll(
+        InitializeCluster.toLayer(
+            (payload) => runAttempt(db, payload.clusterId, payload.requestId),
+            {
+                concurrency: 1,
+            },
+        ),
+        DeployResource.toLayer(
+            ({ deploymentId }) =>
+                attempt(
+                    (signal) => deployResource(db, deploymentId, signal),
+                    // Keep the redacted failure (and its unrecoverable mark), never a raw cause.
                     (error) =>
-                        resume(
-                            Effect.die(
-                                error instanceof Error ? error : new Error("Git watch failed."),
-                            ),
-                        ),
-                );
-
-                return Effect.promise(() => attempt);
-            }),
-        { concurrency: 1 },
+                        error.message === RESOURCE_FAILURE_MESSAGE
+                            ? error
+                            : new Error(RESOURCE_FAILURE_MESSAGE),
+                ),
+            { concurrency: 4 },
+        ),
+        DeployCaddy.toLayer(
+            ({ deploymentId }) =>
+                attempt(
+                    (signal) => deployCaddy(db, deploymentId, signal),
+                    // deployCaddy only throws CADDY_FAILURE_MESSAGE; never pass a raw cause.
+                    () => new Error(CADDY_FAILURE_MESSAGE),
+                ),
+            // One rollout per cluster is enforced when queueing; across clusters they are independent.
+            { concurrency: 4 },
+        ),
+        ReconcileBucket.toLayer(
+            ({ resourceId, requestId }) =>
+                attempt(
+                    (signal) => reconcileBucket(db, resourceId, requestId, signal),
+                    (error) => new Error(s3FailureMessage(error)),
+                ),
+            { concurrency: 2 },
+        ),
+        HealthCheck.toLayer(
+            ({ clusterId }) =>
+                attempt(
+                    (signal) => runHealthCheck(db, signal, clusterId),
+                    (error) => error,
+                ),
+            { concurrency: 1 },
+        ),
+        WatchGitSources.toLayer(
+            ({ connectionId }) =>
+                attempt(
+                    (signal) => watchGitSources(db, signal, connectionId),
+                    (error) => error,
+                ),
+            { concurrency: 1 },
+        ),
     );
 }
 
@@ -275,142 +204,132 @@ export const SchedulesLive = JobSchedules.layer({
     removeAfter: "10 minutes",
 });
 
-async function recordBucketFailureAsync(failure: Worker.JobFailure) {
+async function recordBucketFailureAsync(db: Database, failure: Worker.JobFailure) {
     if (failure.willRetry) return;
 
     // effect-mq ids are `ReconcileBucket/<resourceId>:<requestId>`.
     const key = failure.jobId.slice(failure.jobId.indexOf("/") + 1);
     const separator = key.indexOf(":");
     const cause = Cause.squash(failure.cause);
-    const db = createHandlerDb();
 
-    try {
-        // The handler only dies with messages built by s3FailureMessage; timeouts carry their own.
-        await markBucketFailed(
-            db,
-            key.slice(0, separator),
-            new Date(key.slice(separator + 1)),
-            cause instanceof Error ? cause.message : "Bucket job failed.",
-        );
-    } finally {
-        await db.$client.end().catch(() => {});
-    }
+    // The handler only dies with messages built by s3FailureMessage; timeouts carry their own.
+    await markBucketFailed(
+        db,
+        key.slice(0, separator),
+        new Date(key.slice(separator + 1)),
+        cause instanceof Error ? cause.message : "Bucket job failed.",
+    );
 }
 
-async function recordFailureAsync(failure: Worker.JobFailure) {
+async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
     // effect-mq namespaces deterministic ids as `<JobName>/<idempotencyKey>`,
     // so strip the prefix before matching our `${clusterId}:${requestId}` shape.
     const rawId = failure.jobId;
     const key = rawId.includes("/") ? rawId.slice(rawId.indexOf("/") + 1) : rawId;
     const sep = key.indexOf(":");
     const clusterId = sep === -1 ? key : key.slice(0, sep);
-    const db = createHandlerDb();
+    const deployment = key ? await getDeploymentByJobId(db, key).catch(() => null) : null;
 
-    try {
-        const deployment = key ? await getDeploymentByJobId(db, key).catch(() => null) : null;
+    // A user-cancelled deployment already carries its final state.
+    if (deployment?.status === "cancelled") return;
 
-        // A user-cancelled deployment already carries its final state.
-        if (deployment?.status === "cancelled") return;
+    if (failure.name === "InitializeCluster" && failure.willRetry) {
+        if (!deployment || !["queued", "running"].includes(deployment.status)) return;
 
-        if (failure.name === "InitializeCluster" && failure.willRetry) {
-            if (!deployment || !["queued", "running"].includes(deployment.status)) return;
+        await appendDeploymentLog(
+            db,
+            deployment.id,
+            `Attempt ${failure.attempt} of ${failure.attemptsMax} failed; retrying.`,
+            { level: "error", event: "retry" },
+        );
+        await setDeploymentStatus(db, deployment.id, "queued", TERMINAL_FAILURE_MESSAGE).catch(
+            () => {},
+        );
+        await setInitializationStatus(db, clusterId, "retrying", null).catch(() => {});
 
-            await appendDeploymentLog(
-                db,
-                deployment.id,
-                `Attempt ${failure.attempt} of ${failure.attemptsMax} failed; retrying.`,
-                { level: "error", event: "retry" },
-            );
-            await setDeploymentStatus(db, deployment.id, "queued", TERMINAL_FAILURE_MESSAGE).catch(
-                () => {},
-            );
-            await setInitializationStatus(db, clusterId, "retrying", null).catch(() => {});
+        return;
+    }
 
-            return;
-        }
+    if (failure.name === "DeployResource" || failure.name === "DeployCaddy") {
+        if (!deployment || !["queued", "running"].includes(deployment.status)) return;
+        const cause = Cause.squash(failure.cause);
+        const timedOut = Cause.isTimeoutError(cause);
 
-        if (failure.name === "DeployResource" || failure.name === "DeployCaddy") {
-            if (!deployment || !["queued", "running"].includes(deployment.status)) return;
-            const cause = Cause.squash(failure.cause);
-            const timedOut = Cause.isTimeoutError(cause);
+        const reason = timedOut
+            ? cause.message
+            : (deployment.error ??
+              (failure.name === "DeployCaddy" ? CADDY_FAILURE_MESSAGE : RESOURCE_FAILURE_MESSAGE));
 
-            const reason = timedOut
-                ? cause.message
-                : (deployment.error ??
-                  (failure.name === "DeployCaddy"
-                      ? CADDY_FAILURE_MESSAGE
-                      : RESOURCE_FAILURE_MESSAGE));
+        // The attempt already logged its own reason; only timeouts are new here.
+        const text = timedOut ? reason : "Deployment failed.";
 
-            // The attempt already logged its own reason; only timeouts are new here.
-            const text = timedOut ? reason : "Deployment failed.";
+        await appendDeploymentLog(db, deployment.id, text, {
+            level: "error",
+            event: "failed",
+        });
+        await setDeploymentStatus(db, deployment.id, "failed", reason);
 
-            await appendDeploymentLog(db, deployment.id, text, {
-                level: "error",
-                event: "failed",
-            });
-            await setDeploymentStatus(db, deployment.id, "failed", reason);
+        return;
+    }
 
-            return;
-        }
+    if (deployment) {
+        await appendDeploymentLog(db, deployment.id, TERMINAL_FAILURE_MESSAGE, {
+            level: "error",
+            event: "failed",
+        });
+        await setDeploymentStatus(db, deployment.id, "failed", TERMINAL_FAILURE_MESSAGE).catch(
+            () => {},
+        );
+    }
 
-        if (deployment) {
-            await appendDeploymentLog(db, deployment.id, TERMINAL_FAILURE_MESSAGE, {
-                level: "error",
-                event: "failed",
-            });
-            await setDeploymentStatus(db, deployment.id, "failed", TERMINAL_FAILURE_MESSAGE).catch(
-                () => {},
-            );
-        }
-
-        if (clusterId) {
-            await setInitializationStatus(db, clusterId, "failed", TERMINAL_FAILURE_MESSAGE).catch(
-                () => {},
-            );
-        }
-    } finally {
-        await db.$client.end().catch(() => {});
+    if (clusterId) {
+        await setInitializationStatus(db, clusterId, "failed", TERMINAL_FAILURE_MESSAGE).catch(
+            () => {},
+        );
     }
 }
 
-export const WorkerLive = Worker.layer({
-    queues: {
-        initialize: { concurrency: 1 },
-        deploy: { concurrency: 4 },
-        buckets: { concurrency: 2 },
-        health: { concurrency: 1 },
-        git: { concurrency: 1 },
-    },
-    lockDuration: "10 minutes",
-    // effect-mq also delivers cross-process cancellation on this heartbeat.
-    lockRenewInterval: "2 seconds",
-    stalledInterval: "1 minute",
-    maxStalledCount: 2,
-    onJobFailure: (failure) => {
-        if (failure.name === "ReconcileBucket")
-            return Effect.promise(() => recordBucketFailureAsync(failure)).pipe(Effect.ignore);
+function workerLive(db: Database) {
+    return Worker.layer({
+        queues: {
+            initialize: { concurrency: 1 },
+            deploy: { concurrency: 4 },
+            buckets: { concurrency: 2 },
+            health: { concurrency: 1 },
+            git: { concurrency: 1 },
+        },
+        lockDuration: "10 minutes",
+        // effect-mq also delivers cross-process cancellation on this heartbeat.
+        lockRenewInterval: "2 seconds",
+        stalledInterval: "1 minute",
+        maxStalledCount: 2,
+        onJobFailure: (failure) => {
+            if (failure.name === "ReconcileBucket")
+                return Effect.promise(() => recordBucketFailureAsync(db, failure)).pipe(
+                    Effect.ignore,
+                );
 
-        if (
-            failure.name !== "DeployResource" &&
-            failure.name !== "DeployCaddy" &&
-            failure.name !== "InitializeCluster"
-        )
-            return Effect.void;
+            if (
+                failure.name !== "DeployResource" &&
+                failure.name !== "DeployCaddy" &&
+                failure.name !== "InitializeCluster"
+            )
+                return Effect.void;
 
-        return Effect.promise(() => recordFailureAsync(failure)).pipe(Effect.ignore);
-    },
-});
+            return Effect.promise(() => recordFailureAsync(db, failure)).pipe(Effect.ignore);
+        },
+    });
+}
 
 export function monitoringWorkerLive(watchGitSources: GitWatcher) {
-    return Layer.mergeAll(
-        InitializeClusterLive,
-        DeployResourceLive,
-        DeployCaddyLive,
-        ReconcileBucketLive,
-        HealthCheckLive,
-        watchGitSourcesLive(watchGitSources),
-        SchedulesLive,
-    ).pipe(Layer.provideMerge(WorkerLive), Layer.provideMerge(JobStoreLive));
+    return Layer.unwrap(
+        Effect.map(WorkerDb, (db) =>
+            Layer.mergeAll(jobHandlersLive(db, watchGitSources), SchedulesLive).pipe(
+                Layer.provideMerge(workerLive(db)),
+                Layer.provideMerge(JobStoreLive),
+            ),
+        ),
+    );
 }
 
 // Enqueue (or re-enqueue) initialization for a cluster. Idempotent per
@@ -478,48 +397,41 @@ export async function cancelDeploymentJob(
     }
 }
 
-async function pollOutboxAsync() {
-    const db = createHandlerDb();
+async function pollOutboxAsync(db: Database) {
+    const initialization = await db.$client.query<{ clusterId: string; requestedAt: Date }>(
+        `SELECT id AS "clusterId", initialization_requested_at AS "requestedAt" FROM clusters
+         WHERE initialization_status = 'queued' AND initialization_requested_at IS NOT NULL
+         AND initialised_at IS NULL`,
+    );
 
-    try {
-        const initialization = await db.$client.query<{ clusterId: string; requestedAt: Date }>(
-            `SELECT id AS "clusterId", initialization_requested_at AS "requestedAt" FROM clusters
-             WHERE initialization_status = 'queued' AND initialization_requested_at IS NOT NULL
-             AND initialised_at IS NULL`,
-        );
+    const queued = await db.$client.query<{ deploymentId: string; name: string }>(
+        `SELECT id AS "deploymentId", name FROM deployments
+         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy')`,
+    );
 
-        const resources = await db.$client.query<{ deploymentId: string }>(
-            `SELECT id AS "deploymentId" FROM deployments WHERE name = 'DeployResource' AND status = 'queued'`,
-        );
+    const buckets = await pendingBucketRequests(db);
 
-        const caddy = await db.$client.query<{ deploymentId: string }>(
-            `SELECT id AS "deploymentId" FROM deployments WHERE name = 'DeployCaddy' AND status = 'queued'`,
-        );
-
-        const buckets = await pendingBucketRequests(db);
-
-        return {
-            initialization: initialization.rows,
-            resources: resources.rows,
-            caddy: caddy.rows,
-            buckets,
-        };
-    } finally {
-        await db.$client.end().catch(() => {});
-    }
+    return {
+        initialization: initialization.rows,
+        resources: queued.rows.filter((row) => row.name === "DeployResource"),
+        caddy: queued.rows.filter((row) => row.name === "DeployCaddy"),
+        buckets,
+    };
 }
 
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
-export function pollInitializationOutbox() {
-    return Effect.promise(() => pollOutboxAsync()).pipe(
+export function pollInitializationOutbox(db: Database) {
+    return Effect.promise(() => pollOutboxAsync(db)).pipe(
         Effect.flatMap(({ initialization, resources, caddy, buckets }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
                         enqueueInitialization(row.clusterId, row.requestedAt.toISOString()),
                     ),
-                    ...resources.map((row) => DeployResource.enqueue(row)),
-                    ...caddy.map((row) => DeployCaddy.enqueue(row)),
+                    ...resources.map(({ deploymentId }) =>
+                        DeployResource.enqueue({ deploymentId }),
+                    ),
+                    ...caddy.map(({ deploymentId }) => DeployCaddy.enqueue({ deploymentId })),
                     ...buckets.map((row) =>
                         ReconcileBucket.enqueue({
                             resourceId: row.resourceId,

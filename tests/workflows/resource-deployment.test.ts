@@ -386,8 +386,8 @@ describe("resource deployment worker", () => {
 
     it("recovers a queued snapshot through the existing idempotent outbox sweep", async () => {
         const id = await snapshot();
-        await Effect.runPromise(pollInitializationOutbox().pipe(Effect.provide(JobStoreLive)));
-        await Effect.runPromise(pollInitializationOutbox().pipe(Effect.provide(JobStoreLive)));
+        await Effect.runPromise(pollInitializationOutbox(db).pipe(Effect.provide(JobStoreLive)));
+        await Effect.runPromise(pollInitializationOutbox(db).pipe(Effect.provide(JobStoreLive)));
         expect((await terminal(id)).status).toBe("ready");
 
         const jobs = await db.$client.query(`SELECT id FROM effect_mq_jobs WHERE id = $1`, [
