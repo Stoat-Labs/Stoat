@@ -66,7 +66,7 @@
 
     let error = $state("");
 
-    // Edited paths by service; a field shows what is saved until it is typed in.
+    // Edited paths by service and path; a field shows what is saved until it is typed in.
     let typed = $state<Record<string, string>>({});
 
     const targets = $derived<VolumeTarget[]>(
@@ -136,7 +136,9 @@
     }
 
     async function remount(service: string, current: string) {
-        const path = (typed[service] ?? current).trim();
+        const path = (
+            typed[`${service}:${current}`] ?? current
+        ).trim();
 
         if (path === current) return;
 
@@ -146,11 +148,12 @@
                     ...edit,
                     service,
                     target: path,
+                    from: current,
                 }),
             "The mount path could not be changed.",
         );
 
-        if (done) delete typed[service];
+        if (done) delete typed[`${service}:${current}`];
     }
 
     function disconnect(service: string) {
@@ -255,7 +258,7 @@
                     <h3 class="text-xl text-muted-foreground">
                         Connection
                     </h3>
-                    {#each volume.mounts as mount (mount.service)}
+                    {#each volume.mounts as mount (`${mount.service}:${mount.target}`)}
                         <div class="space-y-2">
                             <p class="text-sm font-semibold">
                                 Mount Path
@@ -275,11 +278,13 @@
                                     disabled={pending}
                                     bind:value={
                                         () =>
-                                            typed[mount.service] ??
-                                            mount.target,
+                                            typed[
+                                                `${mount.service}:${mount.target}`
+                                            ] ?? mount.target,
                                         (value) =>
-                                            (typed[mount.service] =
-                                                value)
+                                            (typed[
+                                                `${mount.service}:${mount.target}`
+                                            ] = value)
                                     }
                                     onblur={() =>
                                         void remount(

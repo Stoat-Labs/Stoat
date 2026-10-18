@@ -116,7 +116,8 @@ export function composeServices(compose: string) {
         image: service?.image,
         // Dependencies on undeclared services are a Compose error, not an edge.
         dependsOn: (service?.depends_on ?? []).filter((dependency) => names.has(dependency)),
-        volumes: (service?.volumes ?? []).flat(),
+        // One entry per volume, even when a service mounts it at several paths.
+        volumes: [...new Set((service?.volumes ?? []).flat())],
     }));
 }
 

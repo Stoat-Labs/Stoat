@@ -13,6 +13,7 @@ import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
 import { z } from "zod";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
+import { pinnedVolumeName } from "../../compose-volumes";
 import {
     chartPoints,
     counterTotalQuery,
@@ -237,6 +238,17 @@ function isVolumeMetric(name: ObservabilityMetricName): name is VolumeMetricName
     return volumeMetricNames.some((item) => item === name);
 }
 
+/** The Docker name a volume is pinned to (moved services keep theirs), from the running spec first. */
+function pinnedName(resource: { spec: string | null; draftSpec: string | null }, volume: string) {
+    try {
+        const compose = resource.spec?.trim() ? resource.spec : resource.draftSpec;
+
+        return compose ? pinnedVolumeName(compose, volume) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 async function volumeMetric(
     cluster: MonitoringCluster,
     uc: UcClient,
@@ -246,11 +258,12 @@ async function volumeMetric(
     prefix: string | undefined,
     volume: string,
     services: string[],
+    pinned: string | undefined,
 ): Promise<MetricResponse> {
     const { start, end, step } = metricWindow(range, points);
 
     return swr(
-        `volume:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${prefix}:${volume}:${services.toSorted().join(",")}`,
+        `volume:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${prefix}:${volume}:${pinned}:${services.toSorted().join(",")}`,
         end,
         async () => {
             try {
@@ -261,7 +274,14 @@ async function volumeMetric(
                 )
                     return { start, end, step, series: [], status: "not-collecting" as const };
 
-                const query = volumeMetricQueries(cluster.id, step, prefix, volume, services)[name];
+                const query = volumeMetricQueries(
+                    cluster.id,
+                    step,
+                    prefix,
+                    volume,
+                    services,
+                    pinned,
+                )[name];
 
                 return {
                     start,
@@ -695,7 +715,12 @@ export const observabilityRouter = {
                         });
 
                     const [resource] = await db
-                        .select({ slug: resources.slug, settings: resources.settings })
+                        .select({
+                            slug: resources.slug,
+                            settings: resources.settings,
+                            spec: resources.spec,
+                            draftSpec: resources.draftSpec,
+                        })
                         .from(resources)
                         .innerJoin(projects, eq(projects.id, resources.projectId))
                         .where(
@@ -717,6 +742,7 @@ export const observabilityRouter = {
                         resourceComposePrefix(resource),
                         volume.name,
                         volume.services,
+                        pinnedName(resource, volume.name),
                     );
                 }
 

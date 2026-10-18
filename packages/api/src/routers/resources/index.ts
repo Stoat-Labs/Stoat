@@ -637,11 +637,18 @@ export const resourcesRouter = {
         }),
 
     updateVolumeMount: organizationProcedure
-        .input(v.object({ ...volumeInput, ...volumeMountInput }))
+        .input(
+            v.object({
+                ...volumeInput,
+                ...volumeMountInput,
+                // The path it is mounted at now, when the service mounts it at several.
+                from: v.optional(v.pipe(v.string(), v.maxLength(512))),
+            }),
+        )
         .use(resourceMiddleware)
         .handler(({ context: { db }, input }) =>
             editComposeDraft(db, input.resourceId, (compose) =>
-                remountVolume(compose, input.volume, input.service, input.target),
+                remountVolume(compose, input.volume, input.service, input.target, input.from),
             ),
         ),
 

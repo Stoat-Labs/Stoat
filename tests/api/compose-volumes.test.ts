@@ -6,6 +6,7 @@ import {
     ComposeVolumeError,
     detachVolume,
     nextVolumeName,
+    pinnedVolumeName,
     remountVolume,
     removeVolume,
     volumeMounts,
@@ -131,5 +132,77 @@ volumes:
         ]);
         expect(remountVolume(readonly, "data", "db", "/var/lib")).toContain("data:/var/lib:ro");
         expect(() => remountVolume(readonly, "data", "db", "lib")).toThrow(ComposeVolumeError);
+    });
+});
+
+describe("shared lists, repeated mounts and pinned names", () => {
+    const shared = `x-shared: &shared
+  - data:/data
+  - cache:/cache
+services:
+  web:
+    image: nginx
+    volumes: *shared
+  worker:
+    image: nginx
+    volumes: *shared
+volumes:
+  data: {}
+  cache: {}
+  extra: {}
+`;
+
+    it("keeps a service's shared mounts when another volume is attached", () => {
+        const next = attachVolume(shared, "extra", "web", "/extra");
+
+        expect(volumeMounts(next).filter((mount) => mount.service === "web")).toEqual([
+            { volume: "data", service: "web", target: "/data" },
+            { volume: "cache", service: "web", target: "/cache" },
+            { volume: "extra", service: "web", target: "/extra" },
+        ]);
+        // The other service keeps the shared list as it was.
+        expect(volumeMounts(next).filter((mount) => mount.service === "worker")).toHaveLength(2);
+    });
+
+    it("detaches from one service without touching the others sharing the list", () => {
+        const next = detachVolume(shared, "data", "web");
+
+        expect(volumeMounts(next).filter((mount) => mount.service === "web")).toEqual([
+            { volume: "cache", service: "web", target: "/cache" },
+        ]);
+        expect(volumeMounts(next).filter((mount) => mount.service === "worker")).toHaveLength(2);
+    });
+
+    it("moves one of several paths of the same volume", () => {
+        const twice = `services:
+  web:
+    image: nginx
+    volumes:
+      - data:/a
+      - data:/b
+volumes:
+  data: {}
+`;
+
+        expect(
+            volumeMounts(remountVolume(twice, "data", "web", "/c", "/b")).map(
+                (mount) => mount.target,
+            ),
+        ).toEqual(["/a", "/c"]);
+        expect(volumeMounts(detachVolume(twice, "data", "web"))).toEqual([]);
+    });
+
+    it("reads the Docker name a volume is pinned to", () => {
+        const pinned = `services:
+  web:
+    image: nginx
+volumes:
+  data:
+    name: old-slug-data
+  other: {}
+`;
+
+        expect(pinnedVolumeName(pinned, "data")).toBe("old-slug-data");
+        expect(pinnedVolumeName(pinned, "other")).toBeUndefined();
     });
 });

@@ -1,4 +1,4 @@
-import YAML, { isMap, isScalar, isSeq } from "yaml";
+import YAML, { isAlias, isMap, isScalar, isSeq } from "yaml";
 import type { Document, Node, YAMLMap, YAMLSeq } from "yaml";
 
 /** Named volumes only; bind mounts (`./data`, `/srv`) and anonymous volumes are not volumes here. */
@@ -56,8 +56,18 @@ function mountTarget(item: Node | null) {
     return isScalar(target) ? String(target.value) : "";
 }
 
-function mounts(service: YAMLMap) {
-    const volumes = service.get("volumes", true);
+function mounts(doc: Document, service: YAMLMap) {
+    let volumes: unknown = service.get("volumes", true);
+
+    // `volumes: *shared` is one list for every service using the anchor, so edit this service's copy.
+    if (isAlias(volumes)) {
+        const shared = volumes.resolve(doc);
+
+        if (!isSeq(shared)) return undefined;
+
+        volumes = doc.createNode(shared.toJSON());
+        service.set("volumes", volumes);
+    }
 
     // SAFETY: Compose mounts are scalars (short syntax) or maps (long syntax); mountSource checks which.
     return isSeq(volumes) ? (volumes as YAMLSeq<Node | null>) : undefined;
@@ -73,7 +83,7 @@ function mount(doc: Document, volume: string, service: string, target: string) {
         throw new ComposeVolumeError("The mount path must be absolute, like /data.");
 
     const node = serviceNode(doc, service);
-    const existing = mounts(node);
+    const existing = mounts(doc, node);
 
     if (existing?.items.some((item) => mountSource(item) === volume))
         throw new ComposeVolumeError(`"${service}" already mounts "${volume}".`);
@@ -116,14 +126,13 @@ export function attachVolume(compose: string, volume: string, service: string, t
 export function detachVolume(compose: string, volume: string, service: string) {
     const doc = parse(compose);
     const node = serviceNode(doc, service);
-    const existing = mounts(node);
+    const existing = mounts(doc, node);
 
-    const index = existing?.items.findIndex((item) => mountSource(item) === volume) ?? -1;
-
-    if (!existing || index === -1)
+    if (!existing?.items.some((item) => mountSource(item) === volume))
         throw new ComposeVolumeError(`"${service}" does not mount "${volume}".`);
 
-    existing.items.splice(index, 1);
+    // Every path the service mounts it at, so it no longer uses the volume.
+    existing.items = existing.items.filter((item) => mountSource(item) !== volume);
 
     if (existing.items.length === 0) node.delete("volumes");
 
@@ -139,7 +148,7 @@ export function volumeMounts(compose: string) {
 
     return services.items.flatMap(({ key, value }) =>
         isMap(value)
-            ? (mounts(value)?.items ?? []).flatMap((item) => {
+            ? (mounts(doc, value)?.items ?? []).flatMap((item) => {
                   const volume = mountSource(item);
 
                   return volume
@@ -156,6 +165,13 @@ export function volumeMounts(compose: string) {
     );
 }
 
+/** The Docker name a volume is pinned to by `name:`, if its declaration sets one. */
+export function pinnedVolumeName(compose: string, volume: string) {
+    const name = declared(parse(compose))?.getIn([volume, "name"], true);
+
+    return isScalar(name) ? String(name.value) : undefined;
+}
+
 /** `<service>-volume`, numbered when the name is taken, like Railway's `redis-volume`. */
 export function nextVolumeName(compose: string, service: string) {
     const taken = new Set(volumeMounts(compose).map((entry) => entry.volume));
@@ -169,14 +185,29 @@ export function nextVolumeName(compose: string, service: string) {
     }
 }
 
-/** Points an existing mount at another path, keeping its other options. */
-export function remountVolume(compose: string, volume: string, service: string, target: string) {
+/**
+ * Points an existing mount at another path, keeping its other options. `from` picks one of several
+ * paths the service mounts the volume at; without it the first one moves.
+ */
+export function remountVolume(
+    compose: string,
+    volume: string,
+    service: string,
+    target: string,
+    from?: string,
+) {
     if (!target.startsWith("/") || /[\s:]/u.test(target))
         throw new ComposeVolumeError("The mount path must be absolute, like /data.");
 
     const doc = parse(compose);
-    const existing = mounts(serviceNode(doc, service));
-    const index = existing?.items.findIndex((item) => mountSource(item) === volume) ?? -1;
+    const existing = mounts(doc, serviceNode(doc, service));
+
+    const index =
+        existing?.items.findIndex(
+            (item) =>
+                mountSource(item) === volume && (from === undefined || mountTarget(item) === from),
+        ) ?? -1;
+
     const item = existing?.items[index];
 
     if (!existing || !item)
@@ -203,7 +234,7 @@ export function removeVolume(compose: string, volume: string) {
     const services = doc.get("services", true);
 
     for (const { value } of isMap(services) ? services.items : []) {
-        const existing = isMap(value) ? mounts(value) : undefined;
+        const existing = isMap(value) ? mounts(doc, value) : undefined;
 
         if (!isMap(value) || !existing) continue;
 

@@ -132,6 +132,7 @@ export function volumeMetricQueries(
     prefix: string | undefined,
     volume: string,
     services: string[],
+    pinned?: string,
 ): Record<VolumeMetricName, string> {
     const scope = `customer_id=${JSON.stringify(clusterId)}`;
     const deployed = (name: string) => (prefix ? `${prefix}-${name}` : name);
@@ -142,7 +143,7 @@ export function volumeMetricQueries(
         `label_replace(sum by (machine_id, container_label_uncloud_service_name, name) (rate(${metric}{${scope},container_label_uncloud_service_name=~${JSON.stringify(names)}}[${window}])), "container_label_uncloud_service_id", "$1", "container_label_uncloud_service_name", "(.*)")`;
 
     return {
-        volumeSize: `label_replace(max by (machine_id, volume) (stoat_volume_size_bytes{${scope},volume=${JSON.stringify(deployed(volume))}}), "container_label_uncloud_service_id", "$1", "volume", "(.*)")`,
+        volumeSize: `label_replace(max by (machine_id, volume) (stoat_volume_size_bytes{${scope},volume=${JSON.stringify(pinned ?? deployed(volume))}}), "container_label_uncloud_service_id", "$1", "volume", "(.*)")`,
         volumeRead: rate("container_fs_reads_bytes_total"),
         volumeWrite: rate("container_fs_writes_bytes_total"),
     };
