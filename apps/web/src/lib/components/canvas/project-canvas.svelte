@@ -116,7 +116,7 @@
     // A link that opens a card lets CanvasFocus place the camera; fitting first would override it.
     const fitOnLoad = untrack(() => selected.current === null);
 
-    // Stacked deployment logs belong to the selected node; a new selection drops them.
+    // Stacked deployment logs and the open tab belong to the selected node; a new selection drops them.
     const deployment = useQueryState(
         "deployment",
         parseAsString.withOptions(pageOptions),
@@ -167,6 +167,7 @@
         if (nodeId === selected.current) return;
 
         void deployment.set(null);
+        void tab.set(null);
         void panelState.set(null);
         void selected.set(nodeId);
     }
@@ -256,10 +257,15 @@
         deleteError = "";
 
         try {
-            await client.resources.deleteResource({
+            const target = {
                 projectId,
                 resourceId: pendingDelete.id,
-            });
+            };
+
+            // A bucket revokes its provider keys in a background job, which then removes it.
+            if (pendingDelete.type === "bucket")
+                await client.buckets.remove(target);
+            else await client.resources.deleteResource(target);
 
             if (selected.current?.split(":")[0] === pendingDelete.id)
                 select(null);
@@ -1272,8 +1278,12 @@
             }
         }
         title={`Delete ${pendingDelete.name}?`}
-        description="Its services are removed from the cluster and its deployment history is deleted. Volumes stay on the machines. This cannot be undone."
-        confirmLabel="Delete resource"
+        description={pendingDelete.type === "bucket"
+            ? "Stoat revokes this bucket's keys and deletes the bucket if it is empty. A bucket that still holds objects is kept at the provider."
+            : "Its services are removed from the cluster and its deployment history is deleted. Volumes stay on the machines. This cannot be undone."}
+        confirmLabel={pendingDelete.type === "bucket"
+            ? "Delete bucket"
+            : "Delete resource"}
         pending={deleting}
         error={deleteError}
         onconfirm={() => void deleteResource()}

@@ -6,11 +6,13 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
+    import BucketLimitDialog from "$lib/components/s3/bucket-limit-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Switch } from "$lib/components/ui/switch";
     import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { bytes } from "$lib/observability";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import Cable from "@lucide/svelte/icons/cable";
@@ -20,6 +22,7 @@
     import FileCode2 from "@lucide/svelte/icons/file-code-2";
     import Flame from "@lucide/svelte/icons/flame";
     import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
+    import HardDrive from "@lucide/svelte/icons/hard-drive";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import Globe from "@lucide/svelte/icons/globe";
     import Network from "@lucide/svelte/icons/network";
@@ -37,7 +40,11 @@
         type IngressEntry,
     } from "@stoat/workflows/ingress";
     import { createQuery } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import {
+        parseAsBoolean,
+        parseAsString,
+        useQueryState,
+    } from "nuqs-svelte";
     import type { Component, Snippet } from "svelte";
     import { z } from "zod";
     import CanvasIngressDialog, {
@@ -77,6 +84,28 @@
     );
 
     const details = $derived(resourceQuery.data);
+
+    const isBucket = $derived(resource.type === "bucket");
+
+    const bucketQuery = createQuery(() =>
+        orpc.buckets.get.queryOptions({
+            input: {
+                projectId: resource.projectId,
+                resourceId: resource.id,
+            },
+            enabled: isBucket,
+            retry: false,
+        }),
+    );
+
+    const bucket = $derived(bucketQuery.data);
+
+    const limitDialog = useQueryState(
+        "limitDialog",
+        parseAsBoolean
+            .withDefault(false)
+            .withOptions({ shallow: true, scroll: false }),
+    );
 
     const isAdmin = $derived(page.data.isOrganizationAdmin === true);
 
@@ -306,6 +335,7 @@
             title: "Source",
             icon: Code,
             visible:
+                !isBucket &&
                 !isInternal &&
                 shows(
                     "source",
@@ -324,21 +354,25 @@
             id: "networking",
             title: "Networking",
             icon: Network,
-            visible: shows(
-                "networking",
-                "public",
-                "domain",
-                "port",
-                "private",
-                "internal",
-                "dns",
-            ),
+            visible:
+                !isBucket &&
+                shows(
+                    "networking",
+                    "public",
+                    "domain",
+                    "port",
+                    "private",
+                    "internal",
+                    "dns",
+                ),
         },
         {
             id: "deploy",
             title: "Deploy",
             icon: Rocket,
-            visible: shows("deploy", "prefix names", "compose"),
+            visible:
+                !isBucket &&
+                shows("deploy", "prefix names", "compose"),
         },
         {
             id: "general",
@@ -354,6 +388,12 @@
                 "copy",
                 "duplicate",
             ),
+        },
+        {
+            id: "storage",
+            title: "Storage",
+            icon: HardDrive,
+            visible: isBucket && shows("storage", "limit", "quota"),
         },
         {
             id: "danger",
@@ -959,7 +999,7 @@
             </Button>
         </div>
     </div>
-    {#if !isInternal && shows("project", "move", "copy", "duplicate")}
+    {#if !isBucket && !isInternal && shows("project", "move", "copy", "duplicate")}
         <div>
             {@render title(
                 "Project",
@@ -983,21 +1023,57 @@
     {/if}
 {/snippet}
 
+{#snippet storageSection()}
+    <div>
+        {@render title(
+            "Storage limit",
+            "Cap how much this bucket can hold.",
+        )}
+        <div
+            class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
+        >
+            <div class="min-w-0 flex-1">
+                <p class="truncate">
+                    {bucket?.quota ? bytes(bucket.quota) : "No limit"}
+                </p>
+                {#if bucket}
+                    <p class="truncate text-sm text-muted-foreground">
+                        {bucket.enforcedQuota
+                            ? `${bucket.connection.providerName} rejects uploads past the limit.`
+                            : `Display only: ${bucket.connection.providerName} cannot enforce a limit.`}
+                    </p>
+                {/if}
+            </div>
+            {#if isAdmin}
+                <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bucket?.status !== "ready"}
+                    onclick={() => void limitDialog.set(true)}
+                >
+                    {bucket?.quota ? "Edit limit" : "Set limit"}
+                </Button>
+            {/if}
+        </div>
+    </div>
+{/snippet}
+
 {#snippet dangerSection()}
     <div>
         <h4 class="text-sm font-medium text-destructive-foreground">
-            Delete Resource
+            {isBucket ? "Delete Bucket" : "Delete Resource"}
         </h4>
         <p class="mt-1 text-sm text-destructive-foreground">
-            Stops its services on the cluster and removes it from the
-            project. This cannot be undone.
+            {isBucket
+                ? "Revokes this bucket's keys and removes it from the project. A bucket that still holds objects is kept at the provider."
+                : "Stops its services on the cluster and removes it from the project. This cannot be undone."}
         </p>
         <Button
             variant="destructive"
             class="mt-4"
             onclick={() => actions.remove(resource.id)}
         >
-            Delete resource
+            {isBucket ? "Delete bucket" : "Delete resource"}
         </Button>
     </div>
 {/snippet}
@@ -1011,6 +1087,8 @@
         {@render deploySection()}
     {:else if id === "general"}
         {@render generalSection()}
+    {:else if id === "storage"}
+        {@render storageSection()}
     {:else}
         {@render dangerSection()}
     {/if}
@@ -1057,9 +1135,11 @@
             </AlertDescription>
         </Alert>
     {:else}
-        <div class="flex gap-12 px-7 pt-10 pb-16">
+        <div class="flex flex-1 gap-12 px-7 pt-10">
             <!-- Railway's timeline: one icon per section on a thin vertical rule. -->
-            <div class="relative min-w-0 max-w-[600px] flex-1">
+            <div
+                class="relative flex min-w-0 max-w-[600px] flex-1 flex-col"
+            >
                 <div
                     class="absolute top-5 bottom-0 left-5 w-px bg-border"
                     aria-hidden="true"
@@ -1136,6 +1216,18 @@
         </div>
     {/if}
 </div>
+
+{#if isBucket}
+    <BucketLimitDialog
+        projectId={resource.projectId}
+        resourceId={resource.id}
+        {bucket}
+        bind:open={
+            () => limitDialog.current,
+            (open) => void limitDialog.set(open)
+        }
+    />
+{/if}
 
 <CanvasSourceDialog
     bind:open={sourceDialogOpen}

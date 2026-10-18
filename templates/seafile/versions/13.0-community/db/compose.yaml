@@ -1,0 +1,26 @@
+services:
+    db:
+        image: mariadb:10.11
+        restart: unless-stopped
+        environment:
+            MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+            MYSQL_LOG_CONSOLE: "true"
+            MARIADB_AUTO_UPGRADE: "1"
+        volumes:
+            - mariadb_data:/var/lib/mysql
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "/usr/local/bin/healthcheck.sh",
+                    "--connect",
+                    "--mariadbupgrade",
+                    "--innodb_initialized",
+                ]
+            interval: 20s
+            start_period: 30s
+            timeout: 5s
+            retries: 10
+
+volumes:
+    mariadb_data:

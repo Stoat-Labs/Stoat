@@ -255,7 +255,7 @@ describe("buildProjectGraph staged edits", () => {
             const row = deployedRow("A=2", {
                 draftSpec,
                 deployed: { env: "A=1", prefix: "api-k3f9x2" },
-                attempted: { spec: draftSpec, env: "A=2", prefix: "api-k3f9x2" },
+                attempted: { spec: draftSpec, env: "A=2", prefix: "api-k3f9x2", failed: false },
             });
 
             // What runs is still the last ready deploy, so its services are still the ones removed.
@@ -263,11 +263,28 @@ describe("buildProjectGraph staged edits", () => {
             expect(graphOf({ ...row, settings: { env: "A=3" } })?.changed).toBe(true);
         });
 
+        it("keeps a failed deploy's unfinished removals staged so Apply retries the cleanup", () => {
+            const draftSpec = "services:\n  app:\n    image: nginx\n";
+
+            const row = deployedRow("A=2", {
+                draftSpec,
+                deployed: { env: "A=1", prefix: "api-k3f9x2" },
+                attempted: { spec: draftSpec, env: "A=2", prefix: "api-k3f9x2", failed: true },
+            });
+
+            expect(graphOf(row)).toMatchObject({ changed: true, removed: ["web", "worker"] });
+            // Nothing left to remove, so a failed deploy of the same draft is not staged again.
+            expect(graphOf({ ...row, spec: draftSpec })).toMatchObject({
+                changed: false,
+                removed: [],
+            });
+        });
+
         it("has nothing to apply once a never-deployed resource's first deploy is shipped", () => {
             const row = deployedRow("", {
                 spec: null,
                 deployed: null,
-                attempted: { spec, env: "", prefix: "api-k3f9x2" },
+                attempted: { spec, env: "", prefix: "api-k3f9x2", failed: false },
             });
 
             expect(graphOf(row)?.changed).toBe(false);

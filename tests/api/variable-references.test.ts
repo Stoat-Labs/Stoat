@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseEnv } from "node:util";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
@@ -13,6 +14,7 @@ import * as runtime from "@stoat/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { resourceEnv } from "../../packages/api/src/compose";
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { dropTestDatabase } from "../database";
@@ -194,6 +196,10 @@ describe("variable references API (PostgreSQL)", () => {
                     "POSTGRES_PASSWORD",
                     "POSTGRES_USER",
                     "STOAT_PREFIX",
+                    "STOAT_PROJECT_ID",
+                    "STOAT_PROJECT_NAME",
+                    "STOAT_RESOURCE_ID",
+                    "STOAT_RESOURCE_NAME",
                 ],
             });
             expect(listed.find((target) => target.id === workerId)).toMatchObject({
@@ -390,6 +396,44 @@ describe("variable references API (PostgreSQL)", () => {
 
             expect(connection?.internal).toBe(
                 `postgresql://shop:${canary}@db-k3f9x2-postgres.internal:5432/shop`,
+            );
+        });
+    });
+
+    describe("createResource from a template with companions", () => {
+        it("creates the database beside the app and links the app's Variables to it", async () => {
+            const app = await call(
+                resourcesRouter.createResource,
+                { projectId, name: "Git", template: { appId: "forgejo", version: "16" } },
+                { context },
+            );
+
+            const created = await db
+                .select()
+                .from(resources)
+                .where(eq(resources.name, "Git Database"));
+
+            const database = created[0];
+
+            expect(created).toHaveLength(1);
+            expect(database).toMatchObject({ type: "database", projectId });
+            expect(database?.settings).toMatchObject({ engine: "postgresql" });
+
+            const [row] = await db.select().from(resources).where(eq(resources.id, app!.id));
+            const env = parseEnv(resourceEnv({ settings: row?.settings }));
+
+            expect(env.DB_HOST).toBe(ref(database!.id, "POSTGRES_INTERNAL_HOST"));
+            expect(env.DB_PASSWORD).toBe(ref(database!.id, "POSTGRES_PASSWORD"));
+            expect(env).not.toHaveProperty("POSTGRES_PASSWORD");
+
+            const listed = await call(
+                resourcesRouter.listVariableReferences,
+                { projectId, resourceId: app!.id },
+                { context },
+            );
+
+            expect(listed.find((target) => target.id === database!.id)?.keys).toContain(
+                "POSTGRES_PASSWORD",
             );
         });
     });

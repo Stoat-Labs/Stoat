@@ -2,5 +2,11 @@
     "name": "Forgejo",
     "description": "Self-hosted, lightweight Git forge with issues, pull requests, packages, and CI.",
     "type": "compose",
-    "tags": ["git", "development"]
+    "tags": ["git", "development"],
+    "resources": {
+        "db": {
+            "name": "Database",
+            "engine": "postgresql"
+        }
+    }
 }

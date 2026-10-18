@@ -5,6 +5,7 @@
         "database",
         "template",
         "docker",
+        "bucket",
     ] as const;
 
     export type AddPage = (typeof addPages)[number];
@@ -15,6 +16,7 @@
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
+    import { s3ProviderIcons } from "$lib/components/s3/provider-icon.svelte";
     import {
         Alert,
         AlertDescription,
@@ -47,6 +49,7 @@
         dockerHubRepository,
     } from "@stoat/api/docker-hub";
     import type { AppRouterClient } from "@stoat/api/routers/index";
+    import { s3Providers } from "@stoat/s3/providers";
     import {
         createQueries,
         createQuery,
@@ -64,6 +67,7 @@
         imageServiceName,
         isImageReference,
     } from "./docker-image";
+    import BucketDialog from "./bucket-dialog.svelte";
     import TemplateDialog from "./template-dialog.svelte";
 
     let {
@@ -100,7 +104,8 @@
             | { page: AddPage }
             | { href: string }
             | { create: CreateInput }
-            | { template: Template };
+            | { template: Template }
+            | { bucket: { connectionId: string } };
     };
 
     // Which palette page is open; `null` closes it. Kept in the URL like the canvas selection.
@@ -115,6 +120,12 @@
     // The template whose variables are being filled in, by app id.
     const configuring = useQueryState(
         "addTemplate",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
+    );
+
+    // The S3 connection a bucket is being named for, by connection id.
+    const configuringBucket = useQueryState(
+        "addBucket",
         parseAsString.withOptions({ shallow: true, scroll: false }),
     );
 
@@ -141,6 +152,14 @@
     const connectionsQuery = createQuery(() =>
         orpc.connections.list.queryOptions({
             enabled: current === "git",
+        }),
+    );
+
+    const s3ConnectionsQuery = createQuery(() =>
+        orpc.s3.list.queryOptions({
+            enabled:
+                current === "bucket" ||
+                configuringBucket.current !== null,
         }),
     );
 
@@ -202,7 +221,6 @@
             provider: undefined,
             target: { page: "docker" },
         },
-        // Buckets need an S3 connection, so they keep their create page, as before.
         ...(page.data.isOrganizationAdmin
             ? [
                   {
@@ -212,8 +230,8 @@
                       logo: null,
                       icon: HardDrive,
                       provider: undefined,
-                      target: { href: `${create}/bucket` },
-                  },
+                      target: { page: "bucket" },
+                  } satisfies Entry,
               ]
             : []),
         {
@@ -298,6 +316,51 @@
         ),
     ]);
 
+    const s3Connections = $derived(s3ConnectionsQuery.data ?? []);
+
+    const configuredConnection = $derived(
+        s3Connections.find(
+            (connection) =>
+                connection.id === configuringBucket.current,
+        ),
+    );
+
+    // Nothing is listed until the connections load, so the highlight starts on the first one
+    // instead of sticking to "Configure S3 Connections", which would otherwise be alone at first.
+    const bucketEntries = $derived<Entry[]>(
+        s3ConnectionsQuery.isSuccess
+            ? [
+                  ...s3Connections.map((connection): Entry => ({
+                      id: connection.id,
+                      label: connection.name,
+                      description:
+                          s3Providers[connection.provider].name,
+                      logo: s3ProviderIcons[connection.provider],
+                      icon: HardDrive,
+                      provider: undefined,
+                      target: {
+                          bucket: { connectionId: connection.id },
+                      },
+                  })),
+                  {
+                      id: "configure",
+                      label: "Configure S3 Connections",
+                      description: undefined,
+                      logo: null,
+                      icon: Settings,
+                      provider: undefined,
+                      // Without a connection there is nothing to pick, so go straight to adding one.
+                      target: {
+                          href:
+                              s3Connections.length === 0
+                                  ? "/s3?dialog=create-connection"
+                                  : "/s3",
+                      },
+                  },
+              ]
+            : [],
+    );
+
     const image = $derived(query.trim());
 
     // Docker Hub's `library/postgres` is searched as `postgres`; other registries aren't searched.
@@ -379,9 +442,11 @@
             ? gitEntries
             : current === "docker"
               ? dockerEntries
-              : current === "template" || current === "database"
-                ? templateEntries
-                : rootEntries,
+              : current === "bucket"
+                ? bucketEntries
+                : current === "template" || current === "database"
+                  ? templateEntries
+                  : rootEntries,
     );
 
     const titles: Record<AddPage, string> = {
@@ -390,6 +455,7 @@
         database: "Database",
         template: "Template",
         docker: "Docker Image",
+        bucket: "Bucket",
     };
 
     const placeholders: Record<AddPage, string> = {
@@ -398,6 +464,7 @@
         database: "Choose a database...",
         template: "Search templates...",
         docker: "traefik/whoami",
+        bucket: "Choose an S3 connection...",
     };
 
     const placeholder = $derived(placeholders[current ?? "root"]);
@@ -423,6 +490,25 @@
         void add.set(next);
     }
 
+    async function showCreated(resourceId: string) {
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listResources.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.projects.key(),
+            }),
+        ]);
+
+        open(null);
+        void configuring.set(null);
+        void configuringBucket.set(null);
+        oncreated(resourceId);
+    }
+
     async function createResource(input: CreateInput) {
         if (creating) return;
 
@@ -435,22 +521,7 @@
                 ...input,
             });
 
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.projects.key(),
-                }),
-            ]);
-
-            open(null);
-            void configuring.set(null);
-
-            if (resource) oncreated(resource.id);
+            if (resource) await showCreated(resource.id);
         } catch (cause) {
             // No Compose file at the repository root: let the Git form pick the file or branch.
             if (
@@ -479,6 +550,35 @@
         }
     }
 
+    async function createBucket(
+        connectionId: string,
+        name: string,
+        bucket: string,
+    ) {
+        if (creating) return;
+
+        creating = true;
+        createError = "";
+
+        try {
+            const resource = await client.buckets.create({
+                projectId,
+                connectionId,
+                name,
+                bucket,
+            });
+
+            await showCreated(resource.id);
+        } catch (cause) {
+            createError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Unable to create the bucket.";
+        } finally {
+            creating = false;
+        }
+    }
+
     function templateInput(
         template: Template,
         variables: Record<string, string>,
@@ -502,7 +602,10 @@
         else if ("href" in target) void goto(target.href);
         else if ("create" in target)
             void createResource(target.create);
-        else if (target.template.versions[0]?.required.length) {
+        else if ("bucket" in target) {
+            open(null);
+            void configuringBucket.set(target.bucket.connectionId);
+        } else if (target.template.versions[0]?.required.length) {
             // Railway asks for nothing; Stoat templates may need values first.
             open(null);
             void configuring.set(target.template.appId);
@@ -531,125 +634,141 @@
         </div>
     {/if}
     <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. -->
-    <Command
-        {items}
-        bind:value={query}
-        {...current === "docker" && { filter: null }}
-        itemToStringValue={(entry: Entry) =>
-            `${entry.label} ${entry.description ?? ""}`}
-    >
-        <CommandInput
-            {placeholder}
-            aria-label={placeholder}
-            disabled={creating}
-            onkeydown={(event) => {
-                // Backspace on an empty search returns to the first page, as in Railway.
-                if (
-                    event.key === "Backspace" &&
-                    query === "" &&
-                    current !== "root"
-                )
-                    open("root");
-            }}
-        />
-        {#if createError}
-            <Alert variant="error" class="mx-2.5 mb-1.5 w-auto">
-                <AlertDescription>{createError}</AlertDescription>
-            </Alert>
-        {/if}
-        {#if current === "git" && repositoryErrors.length > 0}
-            <Alert variant="warning" class="mx-2.5 mb-1.5 w-auto">
-                <AlertDescription>
-                    {repositoryErrors.join(" ")}
-                </AlertDescription>
-            </Alert>
-        {/if}
-        {#if current === "docker"}
-            <p
-                class="mx-2.5 mb-1.5 flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-sm text-info-foreground dark:bg-info/16"
-            >
-                <Info class="size-4 shrink-0" aria-hidden="true" />
-                Search Docker Hub, or enter an image from any registry the
-                cluster can pull.
-            </p>
-        {/if}
-        <CommandEmpty>
-            {#if current === "docker"}
-                <div class="space-y-1.5 px-1 text-start">
-                    <p class="font-medium text-foreground">
-                        Examples
-                    </p>
-                    <ul
-                        class="list-inside list-disc space-y-0.5 font-mono text-xs"
-                    >
-                        <li>traefik/whoami</li>
-                        <li>ghcr.io/username/repo:latest</li>
-                        <li>quay.io/username/repo:tag</li>
-                        <li>registry.gitlab.com/username/repo:tag</li>
-                    </ul>
-                </div>
-            {:else if current === "git" && repositoriesPending}
-                Loading repositories...
-            {:else if (current === "template" || current === "database") && templatesQuery.isPending}
-                Loading templates...
-            {:else}
-                Nothing matches "{query}".
+    {#key current}
+        <Command
+            {items}
+            bind:value={query}
+            {...current === "docker" ? { filter: null } : {}}
+            itemToStringValue={(entry: Entry) =>
+                `${entry.label} ${entry.description ?? ""}`}
+        >
+            <CommandInput
+                {placeholder}
+                aria-label={placeholder}
+                disabled={creating}
+                onkeydown={(event) => {
+                    if (current === "root") return;
+
+                    // Escape steps back a page before it closes the palette; Backspace on an empty
+                    // search does too, as in Railway.
+                    if (
+                        event.key === "Escape" ||
+                        (event.key === "Backspace" && query === "")
+                    ) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        open("root");
+                    }
+                }}
+            />
+            {#if createError}
+                <Alert variant="error" class="mx-2.5 mb-1.5 w-auto">
+                    <AlertDescription>{createError}</AlertDescription>
+                </Alert>
             {/if}
-        </CommandEmpty>
-        <CommandList>
-            <CommandCollection>
-                {#snippet children(entry: Entry)}
-                    <CommandItem
-                        value={entry}
-                        disabled={creating}
-                        class="min-h-11 gap-3 rounded-lg px-3 py-3 text-muted-foreground data-highlighted:text-foreground sm:min-h-11"
-                        onclick={() => choose(entry)}
-                    >
-                        {#if entry.provider}
-                            <ProviderIcon provider={entry.provider} />
-                        {:else if entry.logo && !brokenLogos.has(entry.logo)}
-                            {@const logo = entry.logo}
-                            <img
-                                src={logo}
-                                alt=""
-                                aria-hidden="true"
-                                class="size-4 shrink-0 object-contain"
-                                onerror={() =>
-                                    (brokenLogos = new Set(
-                                        brokenLogos,
-                                    ).add(logo))}
-                            />
-                        {:else}
-                            <entry.icon
-                                class="size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                        {/if}
-                        <span class="min-w-0 flex-1">
-                            <span class="block truncate">
-                                {entry.label}
-                            </span>
-                            {#if entry.description}
-                                <span
-                                    class="block truncate text-xs text-muted-foreground"
-                                >
-                                    {entry.description}
-                                </span>
+            {#if current === "git" && repositoryErrors.length > 0}
+                <Alert variant="warning" class="mx-2.5 mb-1.5 w-auto">
+                    <AlertDescription>
+                        {repositoryErrors.join(" ")}
+                    </AlertDescription>
+                </Alert>
+            {/if}
+            {#if current === "docker"}
+                <p
+                    class="mx-2.5 mb-1.5 flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-sm text-info-foreground dark:bg-info/16"
+                >
+                    <Info
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    Search Docker Hub, or enter an image from any registry
+                    the cluster can pull.
+                </p>
+            {/if}
+            <CommandEmpty>
+                {#if current === "docker"}
+                    <div class="space-y-1.5 px-1 text-start">
+                        <p class="font-medium text-foreground">
+                            Examples
+                        </p>
+                        <ul
+                            class="list-inside list-disc space-y-0.5 font-mono text-xs"
+                        >
+                            <li>traefik/whoami</li>
+                            <li>ghcr.io/username/repo:latest</li>
+                            <li>quay.io/username/repo:tag</li>
+                            <li>
+                                registry.gitlab.com/username/repo:tag
+                            </li>
+                        </ul>
+                    </div>
+                {:else if current === "bucket" && s3ConnectionsQuery.isPending}
+                    Loading connections...
+                {:else if current === "git" && repositoriesPending}
+                    Loading repositories...
+                {:else if (current === "template" || current === "database") && templatesQuery.isPending}
+                    Loading templates...
+                {:else}
+                    Nothing matches "{query}".
+                {/if}
+            </CommandEmpty>
+            <CommandList>
+                <CommandCollection>
+                    {#snippet children(entry: Entry)}
+                        <CommandItem
+                            value={entry}
+                            disabled={creating}
+                            class="min-h-11 gap-3 rounded-lg px-3 py-3 text-muted-foreground data-highlighted:text-foreground sm:min-h-11"
+                            onclick={() => choose(entry)}
+                        >
+                            {#if entry.provider}
+                                <ProviderIcon
+                                    provider={entry.provider}
+                                />
+                            {:else if entry.logo && !brokenLogos.has(entry.logo)}
+                                {@const logo = entry.logo}
+                                <img
+                                    src={logo}
+                                    alt=""
+                                    aria-hidden="true"
+                                    class="size-4 shrink-0 object-contain"
+                                    onerror={() =>
+                                        (brokenLogos = new Set(
+                                            brokenLogos,
+                                        ).add(logo))}
+                                />
+                            {:else}
+                                <entry.icon
+                                    class="size-4 shrink-0"
+                                    aria-hidden="true"
+                                />
                             {/if}
-                        </span>
-                        {#if "page" in entry.target}
-                            <ChevronRight
-                                class="size-4 shrink-0"
-                                aria-hidden="true"
-                            />
-                        {:else if creating}
-                            <span class="text-xs">Adding...</span>
-                        {/if}
-                    </CommandItem>
-                {/snippet}
-            </CommandCollection>
-        </CommandList>
-    </Command>
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate">
+                                    {entry.label}
+                                </span>
+                                {#if entry.description}
+                                    <span
+                                        class="block truncate text-xs text-muted-foreground"
+                                    >
+                                        {entry.description}
+                                    </span>
+                                {/if}
+                            </span>
+                            {#if "page" in entry.target}
+                                <ChevronRight
+                                    class="size-4 shrink-0"
+                                    aria-hidden="true"
+                                />
+                            {:else if creating}
+                                <span class="text-xs">Adding...</span>
+                            {/if}
+                        </CommandItem>
+                    {/snippet}
+                </CommandCollection>
+            </CommandList>
+        </Command>
+    {/key}
 {/snippet}
 
 {#if inline}
@@ -673,6 +792,20 @@
             {@render palette()}
         </CommandDialogPopup>
     </CommandDialog>
+{/if}
+
+{#if configuredConnection}
+    <BucketDialog
+        connection={configuredConnection}
+        pending={creating}
+        error={createError}
+        onsubmit={(name, bucket) =>
+            void createBucket(configuredConnection.id, name, bucket)}
+        onclose={() => {
+            createError = "";
+            void configuringBucket.set(null);
+        }}
+    />
 {/if}
 
 {#if configuredTemplate}

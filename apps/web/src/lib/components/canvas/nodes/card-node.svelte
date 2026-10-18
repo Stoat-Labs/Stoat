@@ -91,7 +91,7 @@
     </div>
 
     {#if service?.volumes.length}
-        <!-- Railway's volume tray: tucked 24px under the card, showing the volume below it. -->
+        <!-- Volume tray: tucked 24px under the card, showing the volume below it. -->
         <div
             class="absolute inset-x-0 bottom-0 flex flex-col rounded-xl border border-foreground/14 bg-card"
             style:top="{CARD_HEIGHT - VOLUME_OVERLAP}px"

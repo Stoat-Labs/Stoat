@@ -60,8 +60,16 @@
 </script>
 
 {#if state === "bucket"}
-    <!-- Railway's bucket card: plain grey text, no icon. -->
-    <p class="truncate text-sm text-muted-foreground capitalize">
+    <!-- Railway's bucket card: plain grey text, with a braille spinner while a job runs. -->
+    <p
+        class="flex items-center gap-2 truncate text-sm text-muted-foreground capitalize"
+    >
+        {#if resource.bucketStatus === "provisioning" || resource.bucketStatus === "deleting"}
+            <span
+                class="spinner w-3 shrink-0"
+                aria-hidden="true"
+            ></span>
+        {/if}
         {resource.bucketStatus}
     </p>
 {:else if state === "offline"}
@@ -75,7 +83,7 @@
             : ""}
     </p>
 {:else}
-    <!-- Railway's status row: icon in a 24px column, 12px gap, 14px text. -->
+    <!-- Status row: icon in a 24px column, 12px gap, 14px text. -->
     <span
         class="grid min-w-0 grid-cols-[24px_1fr] items-center gap-3 text-sm"
     >
@@ -117,3 +125,46 @@
         {/if}
     </span>
 {/if}
+
+<style>
+    .spinner::before {
+        content: "⠋";
+        animation: braille 0.8s steps(1) infinite;
+    }
+
+    @keyframes braille {
+        10% {
+            content: "⠙";
+        }
+        20% {
+            content: "⠹";
+        }
+        30% {
+            content: "⠸";
+        }
+        40% {
+            content: "⠼";
+        }
+        50% {
+            content: "⠴";
+        }
+        60% {
+            content: "⠦";
+        }
+        70% {
+            content: "⠧";
+        }
+        80% {
+            content: "⠇";
+        }
+        90% {
+            content: "⠏";
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .spinner::before {
+            animation: none;
+        }
+    }
+</style>

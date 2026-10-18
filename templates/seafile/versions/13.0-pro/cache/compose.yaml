@@ -1,0 +1,22 @@
+services:
+    cache:
+        image: redis:8-alpine
+        restart: unless-stopped
+        command:
+            [
+                "/bin/sh",
+                "-c",
+                'exec redis-server --requirepass "$$REDIS_PASSWORD" --save "" --appendonly no',
+            ]
+        environment:
+            REDIS_PASSWORD: ${REDIS_PASSWORD}
+        healthcheck:
+            # redis-cli exits 0 even on auth errors, so check the reply.
+            test:
+                [
+                    "CMD-SHELL",
+                    'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG',
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 5

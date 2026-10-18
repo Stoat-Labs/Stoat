@@ -97,12 +97,16 @@
     );
 
     const otherCluster = $derived(
-        Boolean(target && source && target.clusterId !== source.clusterId),
+        Boolean(
+            target && source && target.clusterId !== source.clusterId,
+        ),
     );
 
     // Its services keep running on this cluster, where nothing would manage them any more.
     const blocked = $derived(
-        mode === "move" && otherCluster && resource.deploymentId !== null,
+        mode === "move" &&
+            otherCluster &&
+            resource.deploymentId !== null,
     );
 
     const ready = $derived(
@@ -272,9 +276,9 @@
                 {#if blocked}
                     <Alert variant="warning">
                         <AlertDescription>
-                            That project is on another cluster, and this
-                            resource runs on its current one. Copy it
-                            instead.
+                            That project is on another cluster, and
+                            this resource runs on its current one.
+                            Copy it instead.
                         </AlertDescription>
                     </Alert>
                 {:else if otherCluster}

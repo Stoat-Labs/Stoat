@@ -70,7 +70,7 @@ describe("resource deployment worker", () => {
     // Services the fake cluster runs, and the ones a deploy removed, in order.
     let running: string[] = [];
     const removed: string[] = [];
-    let removalFails = false;
+    let failingRemoval: string | null = null;
     let requestBody = "";
     let authorization: string | undefined;
     let received = Promise.withResolvers<void>();
@@ -93,7 +93,7 @@ describe("resource deployment worker", () => {
         if (request.method === "DELETE" && request.url?.startsWith("/api/v1/services/")) {
             removed.push(decodeURIComponent(request.url.slice("/api/v1/services/".length)));
 
-            if (removalFails) {
+            if (request.url.endsWith(`/${failingRemoval}`)) {
                 response.writeHead(500, { "Content-Type": "application/json" });
                 response.end(JSON.stringify({ error: "machine unreachable" }));
             } else {
@@ -208,7 +208,7 @@ describe("resource deployment worker", () => {
         mode = "success";
         running = [];
         removed.length = 0;
-        removalFails = false;
+        failingRemoval = null;
         received = Promise.withResolvers<void>();
         closed = Promise.withResolvers<void>();
         finish.resolve();
@@ -292,7 +292,7 @@ describe("resource deployment worker", () => {
 
     it("stops before deploying when a stale service can't be removed", async () => {
         running = ["project-resource-ghost"];
-        removalFails = true;
+        failingRemoval = "project-resource-ghost";
         const id = await snapshot();
         const count = requestCount;
         await queueResourceDeployment(id);

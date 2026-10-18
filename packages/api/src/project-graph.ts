@@ -79,11 +79,15 @@ export type GraphResourceInput = {
     /**
      * The Compose, `.env` and prefix of the latest deploy that was not cancelled, even if it is
      * still running or failed: those changes were already shipped. Null if there is none.
+     * `failed` means it stopped before finishing, so the services it should have removed may
+     * still be running.
      */
-    attempted: { spec: string; env: string; prefix: string } | null;
+    attempted: { spec: string; env: string; prefix: string; failed: boolean } | null;
 };
 
-type GraphTemplate = Pick<Template, "appId" | "logo" | "versions">;
+type GraphTemplate = Pick<Template, "appId" | "logo"> & {
+    versions: Record<string, { compose: string }>;
+};
 
 /** Last path segment without registry, tag or digest: `ghcr.io/org/app:1.0` is `app`. */
 function imageRepository(image: string | undefined) {
@@ -252,13 +256,17 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             row.deployed !== null && row.deployed.prefix !== (resourceComposePrefix(row) ?? "");
 
         const kept = new Set(services.map((service) => service.name));
+        const removed = [...(deployed ?? [])].filter((name) => prefixChanged || !kept.has(name));
 
         // Like Railway, deploying commits staged changes: a queued, running or failed deploy
         // reports on its card, and only edits made after it count as staged again.
+        // A failed deploy may not have removed its services yet, which would leave the old ones
+        // running (a moved service next to its new copy), so those stay staged until one succeeds.
         const changed = row.attempted
             ? row.draftSpec !== row.attempted.spec ||
               safeEnv(row) !== row.attempted.env ||
-              (resourceComposePrefix(row) ?? "") !== row.attempted.prefix
+              (resourceComposePrefix(row) ?? "") !== row.attempted.prefix ||
+              (row.attempted.failed && removed.length > 0)
             : draftOnly ||
               Boolean(row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec) ||
               (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
@@ -271,7 +279,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             // or the prefix setting.
             changed,
             // Running services the next deploy stops and removes (their volumes stay).
-            removed: [...(deployed ?? [])].filter((name) => prefixChanged || !kept.has(name)),
+            removed,
             parseError,
             services,
             references,

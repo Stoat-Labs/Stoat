@@ -2,8 +2,6 @@
     import CanvasDeploymentLogs from "./canvas-deployment-logs.svelte";
     import CanvasResourceLogs from "./canvas-resource-logs.svelte";
     import ResourceMetricsView from "$lib/components/projects/resource-metrics-view.svelte";
-    import ResourceSettingsView from "$lib/components/projects/resource-settings-view.svelte";
-    import ResourceVariablesView from "$lib/components/projects/resource-variables-view.svelte";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Button } from "$lib/components/ui/button";
     import Box from "@lucide/svelte/icons/box";
@@ -20,6 +18,7 @@
     import type { CanvasResource, CanvasService } from "../graph";
     import CanvasDeployments from "./canvas-deployments.svelte";
     import CanvasSettings from "./canvas-settings.svelte";
+    import CanvasBucketVariables from "./canvas-bucket-variables.svelte";
     import CanvasVariables from "./canvas-variables.svelte";
 
     let {
@@ -96,7 +95,7 @@
     );
 
     const fullBleed = $derived(
-        active === "logs" || (active === "settings" && !isBucket),
+        active === "logs" || active === "settings",
     );
 
     // Railway: the panel travels a fifth of its width while fading, settling slowly on open and leaving faster.
@@ -224,10 +223,7 @@
                 {changed}
             />
         {:else if active === "variables" && isBucket}
-            <ResourceVariablesView
-                projectId={resource.projectId}
-                resourceId={resource.id}
-            />
+            <CanvasBucketVariables {resource} />
         {:else if active === "variables"}
             <CanvasVariables {resource} />
         {:else if active === "metrics"}
@@ -242,13 +238,6 @@
                 serviceName={selectedService}
                 focused={!stacked}
             />
-        {:else if isBucket}
-            <div class="px-12 pt-8 pb-12">
-                <ResourceSettingsView
-                    projectId={resource.projectId}
-                    resourceId={resource.id}
-                />
-            </div>
         {:else}
             <CanvasSettings {resource} {services} />
         {/if}

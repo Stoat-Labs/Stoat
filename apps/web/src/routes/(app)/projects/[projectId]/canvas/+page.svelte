@@ -27,6 +27,15 @@
         orpc.resources.listResources.queryOptions({
             input: { projectId },
             enabled: projectId.length > 0,
+            // Poll while a bucket job runs, so a deleted bucket leaves the canvas.
+            refetchInterval: (query) =>
+                query.state.data?.some(
+                    (resource) =>
+                        resource.bucketStatus === "provisioning" ||
+                        resource.bucketStatus === "deleting",
+                )
+                    ? 2_000
+                    : false,
         }),
     );
 

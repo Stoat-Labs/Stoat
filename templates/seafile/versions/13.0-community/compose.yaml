@@ -1,57 +1,12 @@
 services:
-    db:
-        image: mariadb:10.11
-        restart: unless-stopped
-        environment:
-            MYSQL_ROOT_PASSWORD: ${INIT_SEAFILE_MYSQL_ROOT_PASSWORD}
-            MYSQL_LOG_CONSOLE: "true"
-            MARIADB_AUTO_UPGRADE: "1"
-        volumes:
-            - seafile_db:/var/lib/mysql
-        healthcheck:
-            test:
-                [
-                    "CMD",
-                    "/usr/local/bin/healthcheck.sh",
-                    "--connect",
-                    "--mariadbupgrade",
-                    "--innodb_initialized",
-                ]
-            interval: 20s
-            start_period: 30s
-            timeout: 5s
-            retries: 10
-
-    cache:
-        image: redis:8-alpine
-        restart: unless-stopped
-        command:
-            [
-                "/bin/sh",
-                "-c",
-                'exec redis-server --requirepass "$$REDIS_PASSWORD" --save "" --appendonly no',
-            ]
-        environment:
-            REDIS_PASSWORD: ${REDIS_PASSWORD}
-        healthcheck:
-            # redis-cli exits 0 even on auth errors, so check the reply.
-            test:
-                [
-                    "CMD-SHELL",
-                    'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG',
-                ]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-
     server:
         image: seafileltd/seafile-mc:13.0-latest
         restart: unless-stopped
         volumes:
             - seafile_data:/shared
         environment:
-            INIT_SEAFILE_MYSQL_ROOT_PASSWORD: ${INIT_SEAFILE_MYSQL_ROOT_PASSWORD}
-            SEAFILE_MYSQL_DB_HOST: db
+            INIT_SEAFILE_MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+            SEAFILE_MYSQL_DB_HOST: ${DB_HOST}
             SEAFILE_MYSQL_DB_PORT: "3306"
             SEAFILE_MYSQL_DB_USER: seafile
             SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
@@ -71,7 +26,7 @@ services:
             ENABLE_SEADOC: "true"
             SEADOC_SERVER_URL: ${SEAFILE_SERVER_PROTOCOL}://${SEAFILE_SERVER_HOSTNAME}/sdoc-server
             CACHE_PROVIDER: redis
-            REDIS_HOST: cache
+            REDIS_HOST: ${CACHE_HOST}
             REDIS_PORT: "6379"
             REDIS_PASSWORD: ${REDIS_PASSWORD}
             ENABLE_NOTIFICATION_SERVER: "false"
@@ -94,11 +49,6 @@ services:
             timeout: 10s
             retries: 3
             start_period: 10s
-        depends_on:
-            db:
-                condition: service_healthy
-            cache:
-                condition: service_healthy
 
     seadoc:
         image: seafileltd/sdoc-server:2.0-latest
@@ -106,7 +56,7 @@ services:
         volumes:
             - seadoc_data:/shared
         environment:
-            DB_HOST: db
+            DB_HOST: ${DB_HOST}
             DB_PORT: "3306"
             DB_USER: seafile
             DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
@@ -122,11 +72,7 @@ services:
             timeout: 5s
             retries: 3
             start_period: 30s
-        depends_on:
-            db:
-                condition: service_healthy
 
 volumes:
-    seafile_db:
     seafile_data:
     seadoc_data:

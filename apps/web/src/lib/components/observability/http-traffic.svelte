@@ -325,11 +325,16 @@
                 )),
     );
 
-    /** Whether a part of the summary is still on its way for any selected cluster. */
+    /**
+     * Whether a part of the summary is still on its way for any selected cluster. A stream that
+     * stopped (failed or timed out) keeps its last snapshot, whose pending parts never arrive.
+     */
     function loading(part: HttpSummaryPart) {
         return summaries.some(
             (item) =>
-                item.isPending || item.data?.pending.includes(part),
+                item.isPending ||
+                (item.isFetching &&
+                    item.data?.pending.includes(part)),
         );
     }
 

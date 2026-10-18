@@ -48,6 +48,34 @@ Apps with a missing or invalid manifest, or with no version folders, are skipped
 | `icon`        | no       | [SVGL](https://svgl.app) slug, without `.svg` (for example `postgresql`). Used when `logo.svg` / `logo.png` is missing               |
 | `tags`        | no       | Category pills on the template card (`database`, `cache`, `proxy`, …). `database` moves the app into the Databases group             |
 
+## Companion resources
+
+An app that needs its own database or cache should not bundle it into one stack. Declare each companion in the manifest and put its files in a folder of that name inside the version:
+
+```json
+{ "resources": { "db": { "name": "Database", "engine": "postgresql" } } }
+```
+
+```
+versions/16/
+  compose.yaml   .env        # the app
+  db/
+    compose.yaml   .env      # the database, created as its own resource
+```
+
+Creating the template creates one canvas resource per folder (`<name> Database` here). `engine` makes the companion a `database` resource; omit it for a plain `compose` one. A version only ships the companions it needs.
+
+Variables stay with the resource that owns them. The app's `.env` reads what it needs with `{{ db.NAME }}`, which becomes a reference to the created resource (`{{ <resourceId>.NAME }}`), so the canvas draws the edge and the secret lives only on the database:
+
+```
+DB_HOST={{ db.POSTGRES_INTERNAL_HOST }}
+DB_PASSWORD={{ db.POSTGRES_PASSWORD }}
+```
+
+`NAME` is a variable in the companion's `.env` or one of its built-ins (`<SERVICE>_INTERNAL_HOST`). References only work in `.env`, never in `compose.yaml`, so pass them to containers through a variable (`DB_HOST: ${DB_HOST}`). Required variables and secrets are collected across all the resources. A reference cannot point at another reference.
+
+Resources deploy independently, so `depends_on` cannot cross them: the app may start before its database is healthy and relies on `restart: unless-stopped` to retry.
+
 ## Logo
 
 Prefer a local `logo.svg` or `logo.png` under `templates/<appid>/`. Copy brand marks from [svgl.app](https://svgl.app) — search for the product, then save the SVG as `logo.svg`.

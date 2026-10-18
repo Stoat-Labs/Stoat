@@ -57,7 +57,7 @@ import { composeResourceTypes, databaseEngine } from "../../databases";
 import {
     expandSecrets,
     fillVariables,
-    requiredVariables,
+    linkCompanions,
     summarizeVersion,
     templates,
 } from "../../templates";
@@ -783,6 +783,7 @@ export const resourcesRouter = {
                     spec: deployments.spec,
                     env: resourceDeploymentInputs.env,
                     prefix: resourceDeploymentInputs.prefix,
+                    status: deployments.status,
                 })
                 .from(deployments)
                 .innerJoin(
@@ -811,6 +812,7 @@ export const resourcesRouter = {
                     attemptedSpec: lastAttempt.spec,
                     attemptedEnv: lastAttempt.env,
                     attemptedPrefix: lastAttempt.prefix,
+                    attemptedStatus: lastAttempt.status,
                 })
                 .from(resources)
                 .leftJoin(lastDeploy, eq(lastDeploy.resourceId, resources.id))
@@ -826,6 +828,7 @@ export const resourcesRouter = {
                         attemptedSpec,
                         attemptedEnv,
                         attemptedPrefix,
+                        attemptedStatus,
                         ...row
                     }) => ({
                         ...row,
@@ -842,6 +845,7 @@ export const resourcesRouter = {
                                       spec: attemptedSpec,
                                       env: attemptedEnv,
                                       prefix: attemptedPrefix,
+                                      failed: attemptedStatus === "failed",
                                   },
                     }),
                 ),
@@ -1058,7 +1062,9 @@ export const resourcesRouter = {
             }
 
             const missing = version
-                ? requiredVariables(version.env).filter((key) => !input.template?.variables[key])
+                ? summarizeVersion(version).required.filter(
+                      (key) => !input.template?.variables[key],
+                  )
                 : [];
 
             if (missing.length > 0) {
@@ -1097,7 +1103,12 @@ export const resourcesRouter = {
             }
 
             const domain =
-                version && /\{\{\s*DNS\s*\}\}/iu.test(version.compose + version.env)
+                version &&
+                /\{\{\s*DNS\s*\}\}/iu.test(
+                    [version, ...Object.values(version.companions)]
+                        .map(({ compose, env }) => compose + env)
+                        .join(),
+                )
                     ? await unwrap(
                           ucClient(project.sidecarUrl, { token: project.sidecarToken }).GET(
                               "/api/v1/cluster/domain",
@@ -1119,35 +1130,79 @@ export const resourcesRouter = {
             const icon =
                 !template && input.logoImage ? await fetchDockerHubLogo(input.logoImage) : null;
 
-            const [resource] = await db
+            // Companions get their ids first so the app's `{{ key.NAME }}` references can name them.
+            const companionIds = Object.fromEntries(
+                Object.keys(template?.resources ?? {}).map((key) => [key, randomUUID()]),
+            );
+
+            const companions = Object.entries(template?.resources ?? {}).flatMap(
+                ([key, { name, engine }]) => {
+                    const files = version?.companions[key];
+                    const id = companionIds[key];
+
+                    return files && id
+                        ? [
+                              {
+                                  id,
+                                  name: `${input.name.trim()} ${name}`.slice(0, 100),
+                                  slug: resourceSlug(`${input.name} ${name}`),
+                                  type: engine ? ("database" as const) : ("compose" as const),
+                                  projectId: project.id,
+                                  draftSpec: expandSecrets(files.compose, domain),
+                                  settings: {
+                                      ...(engine && { engine }),
+                                      prefixNames: true,
+                                      env: fillVariables(
+                                          linkCompanions(
+                                              expandSecrets(files.env, domain),
+                                              companionIds,
+                                          ),
+                                          input.template?.variables ?? {},
+                                      ),
+                                  },
+                              },
+                          ]
+                        : [];
+                },
+            );
+
+            const created = await db
                 .insert(resources)
-                .values({
-                    ...source,
-                    ...(input.compose && { draftSpec: input.compose }),
-                    id: randomUUID(),
-                    name: input.name.trim(),
-                    slug: resourceSlug(input.name),
-                    description,
-                    icon,
-                    type: template?.type ?? input.type,
-                    projectId: project.id,
-                    ...(template &&
-                        version && {
-                            icon: template.logo,
-                            draftSpec: expandSecrets(version.compose, domain),
-                            settings: {
-                                ...(template.type === "database" && { engine: template.engine }),
-                                prefixNames: true,
-                                env: fillVariables(
-                                    expandSecrets(version.env, domain),
-                                    input.template?.variables ?? {},
-                                ),
-                            },
-                        }),
-                })
+                .values([
+                    {
+                        ...source,
+                        ...(input.compose && { draftSpec: input.compose }),
+                        id: randomUUID(),
+                        name: input.name.trim(),
+                        slug: resourceSlug(input.name),
+                        description,
+                        icon,
+                        type: template?.type ?? input.type,
+                        projectId: project.id,
+                        ...(template &&
+                            version && {
+                                icon: template.logo,
+                                draftSpec: expandSecrets(version.compose, domain),
+                                settings: {
+                                    ...(template.type === "database" && {
+                                        engine: template.engine,
+                                    }),
+                                    prefixNames: true,
+                                    env: fillVariables(
+                                        linkCompanions(
+                                            expandSecrets(version.env, domain),
+                                            companionIds,
+                                        ),
+                                        input.template?.variables ?? {},
+                                    ),
+                                },
+                            }),
+                    },
+                    ...companions,
+                ])
                 .returning();
 
-            return resource;
+            return created[0];
         }),
 
     // The browser can't reach Docker Hub's search (no CORS), so the server asks for it.

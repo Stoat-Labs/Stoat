@@ -281,7 +281,7 @@
                 </ContextMenuItem>
                 {#if page.data.isOrganizationAdmin}
                     <ContextMenuItem
-                        onclick={() => void goto(`${create}/bucket`)}
+                        onclick={() => onaddpage("bucket")}
                     >
                         <HardDrive aria-hidden="true" />
                         Bucket

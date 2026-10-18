@@ -23,11 +23,9 @@ const DOMAIN = "example.test";
 
 const STACK = "aaaaaaaa-0000-4000-8000-000000000001";
 
+// A frozen single-stack Seafile: a real-world monolith to exercise moving services between resources.
 const template = (file: string) =>
-    readFileSync(
-        new URL(`../../templates/seafile/versions/13.0-pro/${file}`, import.meta.url),
-        "utf8",
-    );
+    readFileSync(new URL(`./fixtures/seafile/${file}`, import.meta.url), "utf8");
 
 const seafileCompose = template("compose.yaml");
 

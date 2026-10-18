@@ -509,9 +509,8 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 settings: { ...settings, env },
             });
 
-            // Another project on the cluster reads the cache's host from the stack.
+            // Another resource in the project reads the cache's host from the stack.
             const reader = await resource({
-                projectId: legacyProjectId,
                 spec: null,
                 settings: { env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n` },
             });
@@ -686,9 +685,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 name: "DeployResource",
                 status: "ready",
             });
-            await db
-                .insert(resourceDeploymentInputs)
-                .values({ deploymentId, prefix: live.slug });
+            await db.insert(resourceDeploymentInputs).values({ deploymentId, prefix: live.slug });
 
             try {
                 for (const movable of [draft, live])

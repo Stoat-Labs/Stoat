@@ -27,13 +27,9 @@
     import Braces from "@lucide/svelte/icons/braces";
     import Check from "@lucide/svelte/icons/check";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import Copy from "@lucide/svelte/icons/copy";
     import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
-    import Eye from "@lucide/svelte/icons/eye";
-    import EyeOff from "@lucide/svelte/icons/eye-off";
     import Link2 from "@lucide/svelte/icons/link-2";
     import Plus from "@lucide/svelte/icons/plus";
-    import Search from "@lucide/svelte/icons/search";
     import X from "@lucide/svelte/icons/x";
     import type { EditorView } from "@codemirror/view";
     import { createQuery } from "@tanstack/svelte-query";
@@ -45,6 +41,11 @@
     import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
     import { z } from "zod";
     import CanvasReferenceMenu from "./canvas-reference-menu.svelte";
+    import {
+        VariableHeader,
+        VariableRow,
+        VariableValue,
+    } from "$lib/components/ui/variable";
     import {
         parseEnvLines,
         removeEnvVariable,
@@ -373,60 +374,34 @@
             </p>
         {/if}
     {:else}
-        <!-- Railway's header: the count and search on the left, the raw editor and add on the right. -->
-        <div class="flex flex-wrap items-center gap-3">
-            <h3 class="text-lg font-medium">
-                {variables.length}
-                {variables.length === 1
-                    ? "Service Variable"
-                    : "Service Variables"}
-            </h3>
-            {#if search.current === null}
-                <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Search variables"
-                    onclick={() => void search.set("")}
-                >
-                    <Search class="size-4" aria-hidden="true" />
-                </Button>
-            {:else}
-                <Input
-                    value={search.current}
-                    oninput={(event) =>
-                        void search.set(event.currentTarget.value)}
-                    onkeydown={escapeTo(() => void search.set(null))}
-                    placeholder="Search variables"
-                    aria-label="Search variables"
-                    class="h-8 w-48"
-                    autofocus
-                />
-            {/if}
-            <div class="ml-auto flex items-center gap-2">
+        <VariableHeader
+            count={variables.length}
+            search={search.current}
+            onsearch={(value) => void search.set(value)}
+        >
+            <Button
+                size="sm"
+                variant="ghost"
+                onclick={() => {
+                    rawText = env;
+                    error = "";
+                    rawOpen = true;
+                }}
+            >
+                <Braces class="size-4" aria-hidden="true" />
+                Raw Editor
+            </Button>
+            {#if !readOnly}
                 <Button
                     size="sm"
-                    variant="ghost"
-                    onclick={() => {
-                        rawText = env;
-                        error = "";
-                        rawOpen = true;
-                    }}
+                    variant="outline"
+                    onclick={startAdding}
                 >
-                    <Braces class="size-4" aria-hidden="true" />
-                    Raw Editor
+                    <Plus class="size-4" aria-hidden="true" />
+                    New Variable
                 </Button>
-                {#if !readOnly}
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onclick={startAdding}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        New Variable
-                    </Button>
-                {/if}
-            </div>
-        </div>
+            {/if}
+        </VariableHeader>
     {/if}
 
     <div class="border-t"></div>
@@ -465,27 +440,20 @@
             {#each shown as variable (variable.key)}
                 {@const isReference = hasReference(variable.value)}
                 {@const visible = revealed.has(variable.key)}
-                <li
-                    class="group grid min-h-10 grid-cols-[16px_minmax(0,2fr)_minmax(0,3fr)_32px] items-center gap-4 rounded-md px-4 hover:bg-accent/50"
-                >
-                    {#if isReference}
-                        <Link2
-                            class="size-4 text-muted-foreground"
-                            aria-label="References another resource"
-                        />
-                    {:else}
-                        <Braces
-                            class="size-4 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                    {/if}
-                    <span
-                        class="truncate font-mono text-sm"
-                        title={variable.key}
-                    >
-                        {variable.key}
-                    </span>
-
+                <VariableRow name={variable.key}>
+                    {#snippet icon()}
+                        {#if isReference}
+                            <Link2
+                                class="size-4 text-muted-foreground"
+                                aria-label="References another resource"
+                            />
+                        {:else}
+                            <Braces
+                                class="size-4 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                        {/if}
+                    {/snippet}
                     {#if editing === variable.key}
                         <form
                             class="col-span-2 flex items-center gap-1 py-1"
@@ -528,103 +496,68 @@
                             </Button>
                         </form>
                     {:else}
-                        <!-- Railway's row: the masked value, with reveal and copy on hover. -->
-                        <div class="flex min-w-0 items-center gap-2">
-                            <span
-                                class="min-w-0 truncate font-mono text-sm"
-                                title={visible
-                                    ? display(variable.value)
-                                    : undefined}
-                            >
-                                {visible
-                                    ? display(variable.value)
-                                    : "*******"}
-                            </span>
-                            <span
-                                class="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                                <Button
-                                    size="icon-xs"
-                                    variant="ghost"
-                                    aria-label={visible
-                                        ? `Hide ${variable.key}`
-                                        : `Show ${variable.key}`}
-                                    onclick={() =>
-                                        toggle(variable.key)}
+                        <VariableValue
+                            name={variable.key}
+                            value={display(variable.value)}
+                            {visible}
+                            ontoggle={() => toggle(variable.key)}
+                            oncopy={() =>
+                                void navigator.clipboard.writeText(
+                                    variable.value,
+                                )}
+                        />
+                    {/if}
+                    {#snippet menu()}
+                        {#if editing !== variable.key}
+                            <Menu>
+                                <MenuTrigger
+                                    class="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    aria-label="{variable.key} actions"
                                 >
-                                    {#if visible}
-                                        <EyeOff
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    {:else}
-                                        <Eye
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    {/if}
-                                </Button>
-
-                                <Button
-                                    size="icon-xs"
-                                    variant="ghost"
-                                    aria-label="Copy {variable.key}"
-                                    onclick={() =>
-                                        void navigator.clipboard.writeText(
-                                            variable.value,
-                                        )}
-                                >
-                                    <Copy
+                                    <EllipsisVertical
                                         class="size-4"
                                         aria-hidden="true"
                                     />
-                                </Button>
-                            </span>
-                        </div>
-                        <Menu>
-                            <MenuTrigger
-                                class="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                                aria-label="{variable.key} actions"
-                            >
-                                <EllipsisVertical
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </MenuTrigger>
-                            <MenuPopup align="end" class="min-w-40">
-                                {#if readOnly}
-                                    <MenuItem
-                                        onclick={() =>
-                                            void navigator.clipboard.writeText(
-                                                variable.value,
-                                            )}
-                                    >
-                                        Copy value
-                                    </MenuItem>
-                                {:else}
-                                    <MenuItem
-                                        onclick={() =>
-                                            startEditing(
-                                                variable.key,
-                                                variable.value,
-                                            )}
-                                    >
-                                        Edit
-                                    </MenuItem>
-                                    <MenuItem
-                                        variant="destructive"
-                                        onclick={() => {
-                                            error = "";
-                                            removing = variable.key;
-                                        }}
-                                    >
-                                        Delete
-                                    </MenuItem>
-                                {/if}
-                            </MenuPopup>
-                        </Menu>
-                    {/if}
-                </li>
+                                </MenuTrigger>
+                                <MenuPopup
+                                    align="end"
+                                    class="min-w-40"
+                                >
+                                    {#if readOnly}
+                                        <MenuItem
+                                            onclick={() =>
+                                                void navigator.clipboard.writeText(
+                                                    variable.value,
+                                                )}
+                                        >
+                                            Copy value
+                                        </MenuItem>
+                                    {:else}
+                                        <MenuItem
+                                            onclick={() =>
+                                                startEditing(
+                                                    variable.key,
+                                                    variable.value,
+                                                )}
+                                        >
+                                            Edit
+                                        </MenuItem>
+                                        <MenuItem
+                                            variant="destructive"
+                                            onclick={() => {
+                                                error = "";
+                                                removing =
+                                                    variable.key;
+                                            }}
+                                        >
+                                            Delete
+                                        </MenuItem>
+                                    {/if}
+                                </MenuPopup>
+                            </Menu>
+                        {/if}
+                    {/snippet}
+                </VariableRow>
             {:else}
                 <li class="px-4 py-3 text-sm text-muted-foreground">
                     No variables match "{search.current}".
@@ -669,90 +602,35 @@
                 </p>
                 <ul class="mt-3">
                     {#each systemVariables as variable (variable.key)}
-                        {@const visible = revealed.has(variable.key)}
-                        <li
-                            class="group grid min-h-14 grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-4 rounded-md px-4 py-1.5 hover:bg-accent/50"
+                        <VariableRow
+                            name={variable.key}
+                            description={variable.description}
                         >
-                            <div class="min-w-0">
-                                <p
-                                    class="truncate font-mono text-sm"
-                                    title={variable.key}
-                                >
-                                    {variable.key}
-                                </p>
-                                <p
-                                    class="truncate text-xs text-muted-foreground"
-                                    title={variable.description}
-                                >
-                                    {variable.description}
-                                </p>
-                            </div>
-                            <div
-                                class="flex min-w-0 items-center gap-2"
-                            >
-                                <span
-                                    class="min-w-0 truncate font-mono text-sm"
-                                    title={visible
-                                        ? variable.value
-                                        : undefined}
-                                >
-                                    {visible
-                                        ? variable.value || "(empty)"
-                                        : "*******"}
-                                </span>
-                                <span
-                                    class="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-                                >
-                                    <Button
-                                        size="icon-xs"
-                                        variant="ghost"
-                                        aria-label={visible
-                                            ? `Hide ${variable.key}`
-                                            : `Show ${variable.key}`}
-                                        onclick={() =>
-                                            toggle(variable.key)}
-                                    >
-                                        {#if visible}
-                                            <EyeOff
-                                                class="size-4"
-                                                aria-hidden="true"
-                                            />
-                                        {:else}
-                                            <Eye
-                                                class="size-4"
-                                                aria-hidden="true"
-                                            />
-                                        {/if}
-                                    </Button>
-                                    <Button
-                                        size="icon-xs"
-                                        variant="ghost"
-                                        aria-label="Copy {variable.key}"
-                                        onclick={() =>
-                                            void navigator.clipboard.writeText(
-                                                variable.value,
-                                            )}
-                                    >
-                                        <Copy
-                                            class="size-4"
-                                            aria-hidden="true"
-                                        />
-                                    </Button>
-                                </span>
-                            </div>
-                            <!-- Railway's "Reference": copies the interpolation to paste into Compose or Variables. -->
-                            <Button
-                                size="xs"
-                                variant="outline"
-                                class="text-muted-foreground"
-                                onclick={() =>
+                            <VariableValue
+                                name={variable.key}
+                                value={variable.value}
+                                visible={revealed.has(variable.key)}
+                                ontoggle={() => toggle(variable.key)}
+                                oncopy={() =>
                                     void navigator.clipboard.writeText(
-                                        `\${${variable.key}}`,
+                                        variable.value,
                                     )}
-                            >
-                                Reference
-                            </Button>
-                        </li>
+                            />
+                            {#snippet menu()}
+                                <!-- Railway's "Reference": copies the interpolation to paste into Compose or Variables. -->
+                                <Button
+                                    size="xs"
+                                    variant="outline"
+                                    class="text-muted-foreground"
+                                    onclick={() =>
+                                        void navigator.clipboard.writeText(
+                                            `\${${variable.key}}`,
+                                        )}
+                                >
+                                    Reference
+                                </Button>
+                            {/snippet}
+                        </VariableRow>
                     {/each}
                 </ul>
             {/if}
