@@ -1,9 +1,12 @@
 import { ORPCError } from "@orpc/client";
 import {
     hasPostgresExporter,
+    histogramQuantile,
+    hostGroups,
     httpQueries,
     metricNames,
     parseMetricSeries,
+    parseServiceSeries,
     serviceHosts,
     unpackSeries,
     type ObservabilityContainer,
@@ -292,14 +295,117 @@ it("maps ingress hostnames to per-service HTTP queries", () => {
     expect(httpQueries("cluster", 15, new Map([["web", []]]))).toBeNull();
 
     const queries = httpQueries("cluster", 15, new Map([["web", ["app.example.com"]]]));
-    expect(queries?.httpRequests).toContain(
+    expect(queries?.httpRequests.query).toContain(
         'caddy_http_request_duration_seconds_count{customer_id="cluster",host=~"app\\\\.example\\\\.com",handler="subroute"}',
     );
-    expect(queries?.httpRequests).toContain('"container_label_uncloud_service_id", "web"');
-    expect(queries?.httpErrors).toContain('code=~"5.."');
-    expect(queries?.httpLatency).toContain("histogram_quantile(0.95");
-    expect(queries?.httpLatencyP50).toContain("histogram_quantile(0.5");
-    expect(queries?.httpLatencyP99).toContain("histogram_quantile(0.99");
+    // One scan grouped by host; services are summed from their hosts afterwards.
+    expect(queries?.httpRequests).toMatchObject({ perHost: true });
+    expect(queries?.httpRequests.query).toMatch(/^sum by \(host\) /);
+    expect(queries?.httpErrors.query).toContain('code=~"5.."');
+    expect(queries?.httpLatency).toMatchObject({ perHost: true, quantile: 0.95 });
+    expect(queries?.httpLatency.query).toContain("sum by (host, le)");
+    expect(queries?.httpLatencyP50.quantile).toBe(0.5);
+    expect(queries?.httpLatencyP99.quantile).toBe(0.99);
+    expect(queries?.httpStatus.perHost).toBe(false);
+});
+
+it("sums each service's hosts and takes quantiles like PromQL", () => {
+    // Buckets with 10 requests under 0.1s and 10 more under 1s: the median is the 0.1s bound.
+    expect(
+        histogramQuantile(0.5, [
+            [0.1, 10],
+            [1, 20],
+            [Infinity, 20],
+        ]),
+    ).toBeCloseTo(0.1);
+    expect(
+        histogramQuantile(0.75, [
+            [0.1, 10],
+            [1, 20],
+            [Infinity, 20],
+        ]),
+    ).toBeCloseTo(0.55);
+    // A rank in the +Inf bucket answers with the highest finite bound.
+    expect(
+        histogramQuantile(0.99, [
+            [0.1, 10],
+            [Infinity, 20],
+        ]),
+    ).toBe(0.1);
+    expect(
+        histogramQuantile(0.5, [
+            [0.1, 0],
+            [Infinity, 0],
+        ]),
+    ).toBeNull();
+
+    const hosts = new Map([
+        ["web", ["a.example.com", "b.example.com"]],
+        ["api", ["api.example.com"]],
+        ["idle", ["idle.example.com"]],
+    ]);
+
+    const vector = (series: [Record<string, string>, string[]][]) =>
+        JSON.stringify({
+            status: "success",
+            data: {
+                resultType: "matrix",
+                result: series.map(([metric, values]) => ({
+                    metric,
+                    values: values.map((value, index) => [index * 15, value]),
+                })),
+            },
+        });
+
+    const sums = parseServiceSeries(
+        vector([
+            [{ host: "a.example.com" }, ["1", "2"]],
+            [{ host: "b.example.com" }, ["3", "NaN"]],
+            [{ host: "api.example.com" }, ["5", "6"]],
+            [{ host: "other.example.com" }, ["100", "100"]],
+        ]),
+        0,
+        15,
+        15,
+        hosts,
+    );
+
+    expect(sums.map(({ serviceId, values }) => [serviceId, values])).toEqual([
+        ["web", [4, 2]],
+        ["api", [5, 6]],
+    ]);
+
+    // Both hosts' buckets are added up before the quantile, so it covers all of web's requests.
+    const [latency] = parseServiceSeries(
+        vector([
+            [{ host: "a.example.com", le: "0.1" }, ["10"]],
+            [{ host: "a.example.com", le: "1" }, ["10"]],
+            [{ host: "a.example.com", le: "+Inf" }, ["10"]],
+            [{ host: "b.example.com", le: "0.1" }, ["0"]],
+            [{ host: "b.example.com", le: "1" }, ["10"]],
+            [{ host: "b.example.com", le: "+Inf" }, ["10"]],
+        ]),
+        0,
+        0,
+        15,
+        new Map([["web", ["a.example.com", "b.example.com"]]]),
+        0.75,
+    );
+
+    expect(latency?.values[0]).toBeCloseTo(0.55);
+
+    // Latency charts are queried a few hosts at a time; a service is never split across groups.
+    const groups = hostGroups(
+        new Map([
+            ["a", ["1", "2"]],
+            ["b", ["3"]],
+            ["none", []],
+            ["c", ["4", "5", "6"]],
+        ]),
+        3,
+    );
+
+    expect(groups.map((group) => [...group.keys()])).toEqual([["a", "b"], ["c"]]);
 });
 
 it("bridges short interior gaps so sparse series still draw", () => {

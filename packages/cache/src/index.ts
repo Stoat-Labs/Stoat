@@ -4,7 +4,7 @@ import redisDriver from "unstorage/drivers/redis";
 
 export type { StorageValue };
 
-// 10 minutes, matching the memory layer below. Redis takes seconds.
+// 10 minutes for both layers. Redis takes seconds.
 const ttlSeconds = 10 * 60;
 
 export type CacheLayer = {
@@ -14,29 +14,50 @@ export type CacheLayer = {
     clear(): Promise<void>;
 };
 
+// A dead shared cache must never break a request: a failed call reads as a miss.
+async function bestEffort<T>(op: () => Promise<T>): Promise<T | null> {
+    try {
+        return await op();
+    } catch {
+        // The first command can race the handshake while offline queueing is off.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        try {
+            return await op();
+        } catch {
+            return null;
+        }
+    }
+}
+
+/** The shared Redis/Dragonfly layer alone, so every replica reads the same entries. */
+export function createSharedOnly(shared: CacheLayer): CacheLayer {
+    return {
+        async getItem<T extends StorageValue>(key: string): Promise<T | null> {
+            return bestEffort(() => shared.getItem<T>(key));
+        },
+        async setItem<T extends StorageValue>(key: string, value: T): Promise<void> {
+            await bestEffort(() => shared.setItem(key, value));
+        },
+        async removeItem(key: string): Promise<void> {
+            await bestEffort(() => shared.removeItem(key));
+        },
+        async clear(): Promise<void> {
+            await bestEffort(() => shared.clear());
+        },
+    };
+}
+
 /**
- * Memory-speed reads with a shared Redis/Dragonfly layer for multi-replica coherence.
+ * Memory-speed reads in front of an optional shared Redis/Dragonfly layer. Each replica keeps
+ * its own memory, so another replica's write can stay unseen here until the entry expires.
  * The shared layer is best-effort: any failure degrades to memory-only.
  */
 export function createTwoLevel(shared?: CacheLayer): CacheLayer {
     const memory = createStorage({ driver: lruCacheDriver({ max: 1000, ttl: ttlSeconds * 1000 }) });
 
     async function useShared<T>(op: (layer: CacheLayer) => Promise<T>): Promise<T | null> {
-        if (!shared) return null;
-
-        try {
-            return await op(shared);
-        } catch {
-            // The first command can race the handshake while offline queueing is off.
-            await new Promise((resolve) => setTimeout(resolve, 300));
-
-            try {
-                return await op(shared);
-            } catch {
-                // A dead shared cache must never break a request.
-                return null;
-            }
-        }
+        return shared ? bestEffort(() => op(shared)) : null;
     }
 
     return {
@@ -92,8 +113,20 @@ export function redisLayer(url: string): CacheLayer {
     });
 }
 
+/**
+ * With REDIS_URL set, the cache is Redis only unless APP_USE_INTERNAL_CACHE adds the per-replica
+ * memory layer in front of it (faster, but replicas can serve stale entries). Without Redis,
+ * memory is the only cache.
+ */
+export function createCache(
+    shared = sharedLayer(),
+    useInternal = process.env.APP_USE_INTERNAL_CACHE === "true",
+) {
+    return shared && !useInternal ? createSharedOnly(shared) : createTwoLevel(shared);
+}
+
 // ponytail: single Dragonfly instance is the ceiling; add cluster options if it becomes the bottleneck.
-export const cache: CacheLayer = createTwoLevel(sharedLayer());
+export const cache: CacheLayer = createCache();
 
 const inflight = new Map<string, Promise<unknown>>();
 

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import * as v from "valibot";
 import YAML from "yaml";
+import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
 import { databaseEngines } from "./databases";
 
 // Bundled at build time: adding a template needs a rebuild, but there is no runtime
@@ -9,6 +10,8 @@ const files = import.meta.glob<string>(
     [
         "../../../templates/*/manifest.json",
         "../../../templates/*/versions/*/{compose.yaml,compose.yml,.env}",
+        // Companion resources, e.g. `versions/18/db/compose.yaml`.
+        "../../../templates/*/versions/*/*/{compose.yaml,compose.yml,.env}",
     ],
     // `exhaustive` makes the glob include dotfiles (`.env`).
     { eager: true, exhaustive: true, query: "?raw", import: "default" },
@@ -22,7 +25,10 @@ const logos = import.meta.glob<string>("../../../templates/*/logo.{svg,png}", {
 
 const SEGMENT = "[A-Za-z0-9][A-Za-z0-9._-]*";
 
-const PATH = new RegExp(`/templates/(${SEGMENT})/(?:versions/(${SEGMENT})/)?([^/]+)$`, "u");
+const PATH = new RegExp(
+    `/templates/(${SEGMENT})/(?:versions/(${SEGMENT})/(?:(${SEGMENT})/)?)?([^/]+)$`,
+    "u",
+);
 
 const manifestSchema = v.intersect([
     v.object({
@@ -30,6 +36,18 @@ const manifestSchema = v.intersect([
         description: v.pipe(v.string(), v.trim(), v.minLength(1)),
         icon: v.optional(v.pipe(v.string(), v.regex(new RegExp(`^${SEGMENT}$`, "u")))),
         tags: v.optional(v.array(v.string()), []),
+        // Companion resources by folder name. An `engine` makes one a database; each version
+        // folder holds `<key>/compose.yaml` and `<key>/.env` for it.
+        resources: v.optional(
+            v.record(
+                v.pipe(v.string(), v.regex(new RegExp(`^${SEGMENT}$`, "u"))),
+                v.object({
+                    name: v.pipe(v.string(), v.trim(), v.minLength(1)),
+                    engine: v.optional(v.picklist(databaseEngines)),
+                }),
+            ),
+            {},
+        ),
     }),
     // Database templates name their engine; it is stored in the resource's `settings.engine`.
     v.variant("type", [
@@ -38,9 +56,14 @@ const manifestSchema = v.intersect([
     ]),
 ]);
 
-export interface TemplateVersion {
+export interface TemplateFiles {
     compose: string;
     env: string;
+}
+
+export interface TemplateVersion extends TemplateFiles {
+    /** Companion resources by manifest key; the app reads their Variables as `{{ key.NAME }}`. */
+    companions: Record<string, TemplateFiles>;
 }
 
 export type Template = v.InferOutput<typeof manifestSchema> & {
@@ -52,13 +75,20 @@ export type Template = v.InferOutput<typeof manifestSchema> & {
 function loadTemplates() {
     const apps = new Map<
         string,
-        { manifest?: string; logo?: string; versions: Record<string, Partial<TemplateVersion>> }
+        {
+            manifest?: string;
+            logo?: string;
+            versions: Record<
+                string,
+                Partial<TemplateFiles> & { companions: Record<string, Partial<TemplateFiles>> }
+            >;
+        }
     >();
 
     const app = (id: string) => apps.get(id) ?? apps.set(id, { versions: {} }).get(id)!;
 
     for (const [path, content] of Object.entries(files)) {
-        const [, appId, version, file] = PATH.exec(path) ?? [];
+        const [, appId, version, companion, file] = PATH.exec(path) ?? [];
 
         if (!appId || !file) continue;
 
@@ -67,14 +97,15 @@ function loadTemplates() {
             continue;
         }
 
-        const entry = (app(appId).versions[version] ??= {});
+        const versionEntry = (app(appId).versions[version] ??= { companions: {} });
+        const entry = companion ? (versionEntry.companions[companion] ??= {}) : versionEntry;
 
         if (file === ".env") entry.env = content;
         else entry.compose ??= content;
     }
 
     for (const [path, logo] of Object.entries(logos)) {
-        const [, appId, , file] = PATH.exec(path) ?? [];
+        const [, appId, , , file] = PATH.exec(path) ?? [];
 
         // Prefer logo.svg over logo.png.
         if (appId && (file === "logo.svg" || !app(appId).logo)) app(appId).logo = logo;
@@ -85,11 +116,33 @@ function loadTemplates() {
     for (const [appId, { manifest, logo, versions }] of apps) {
         const parsed = v.safeParse(manifestSchema, JSON.parse(manifest ?? "null"));
 
-        const valid = Object.entries(versions).flatMap(([version, { compose, env }]) =>
-            compose ? [[version, { compose, env: env ?? "" }] as const] : [],
+        if (!parsed.success) continue;
+
+        const keys = Object.keys(parsed.output.resources);
+
+        const valid = Object.entries(versions).flatMap(
+            ([version, { compose, env, companions }]) => {
+                // A version only ships the companions it needs; the manifest names every one.
+                const found = keys.flatMap((key) => {
+                    const entry = companions[key];
+
+                    return entry?.compose
+                        ? [[key, { compose: entry.compose, env: entry.env ?? "" }] as const]
+                        : [];
+                });
+
+                return compose
+                    ? [
+                          [
+                              version,
+                              { compose, env: env ?? "", companions: Object.fromEntries(found) },
+                          ] as const,
+                      ]
+                    : [];
+            },
         );
 
-        if (!parsed.success || valid.length === 0) continue;
+        if (valid.length === 0) continue;
 
         templates.push({
             ...parsed.output,
@@ -130,24 +183,42 @@ const summarySchema = v.object({
     ),
 });
 
-/** Services (with image and volume mounts) and the env keys a template version generates secrets for. */
-export function summarizeVersion({ compose, env }: TemplateVersion) {
-    const { services } = v.parse(summarySchema, YAML.parse(compose));
+/** Services (with image and volume mounts) and the env keys a template version generates secrets for, across all its resources. */
+export function summarizeVersion({
+    companions = {},
+    ...app
+}: TemplateFiles & Partial<TemplateVersion>) {
+    const all = [app, ...Object.values(companions)];
 
     return {
-        services: Object.entries(services).map(([name, service]) => ({
-            name,
-            image: service?.image ?? null,
-            volumes: (service?.volumes ?? []).map(({ source, target }) => ({
-                source: source || null,
-                target,
-            })),
-        })),
-        secrets: env
-            .split("\n")
-            .flatMap((line) => /^\s*([\w.-]+)\s*=.*\{\{.+\}\}/u.exec(line)?.slice(1, 2) ?? []),
-        required: requiredVariables(env),
+        services: all.flatMap(({ compose }) =>
+            Object.entries(v.parse(summarySchema, YAML.parse(compose)).services).map(
+                ([name, service]) => ({
+                    name,
+                    image: service?.image ?? null,
+                    volumes: (service?.volumes ?? []).map(({ source, target }) => ({
+                        source: source || null,
+                        target,
+                    })),
+                }),
+            ),
+        ),
+        secrets: all.flatMap(({ env }) =>
+            env
+                .split("\n")
+                .flatMap((line) => /^\s*([\w.-]+)\s*=.*\{\{.+\}\}/u.exec(line)?.slice(1, 2) ?? []),
+        ),
+        required: all.flatMap(({ env }) => requiredVariables(env)),
     };
+}
+
+/** Points `{{ key.NAME }}` at the companion's resource id, the form the canvas follows and resolves. */
+export function linkCompanions(env: string, ids: Record<string, string>) {
+    return env.replaceAll(VARIABLE_REFERENCE, (reference, key: string, name: string) => {
+        const id = ids[key];
+
+        return id ? `{{ ${id}.${name} }}` : reference;
+    });
 }
 
 // `KEY=` with no value marks a variable the user must fill in before deploying.

@@ -18,6 +18,8 @@ local.db-*
 .env
 .env.prod
 !templates/*/versions/*/.env
+!templates/*/versions/*/*/.env
+!tests/api/fixtures/**/.env
 .env*.local
 
 # IDEs and editors

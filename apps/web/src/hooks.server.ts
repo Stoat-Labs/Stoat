@@ -1,10 +1,11 @@
 import { building, dev } from "$app/environment";
-import type { Handle } from "@sveltejs/kit";
+import type { Handle, RequestEvent } from "@sveltejs/kit";
 import { sequence } from "@sveltejs/kit/hooks";
 import { getRequestEvent } from "$app/server";
 import { svelteKitHandler, sveltekitCookies } from "better-auth/svelte-kit";
 
 import "./lib/server/orpc";
+import "./lib/server/rpc-socket";
 import { identifyUser } from "evlog/better-auth";
 import { createFsDrain } from "evlog/fs";
 import { createEvlogHooks } from "evlog/sveltekit";
@@ -13,9 +14,21 @@ import { CLIENT_IP_HEADER } from "@stoat/auth";
 import { getAuth, setAuthCookiePlugin } from "./services";
 import { startMonitoringWorker } from "./lib/server/worker";
 
+/** WebSocket calls (rpc-socket.ts) read sessions outside any request, with no response to set cookies on. */
+function currentRequestEvent(): RequestEvent | undefined {
+    try {
+        return getRequestEvent();
+    } catch {
+        return undefined;
+    }
+}
+
 // Forwards cookies set by server-side auth calls (session cache refreshes, active organization
 // changes) to the browser.
-setAuthCookiePlugin(sveltekitCookies(getRequestEvent));
+setAuthCookiePlugin(
+    // SAFETY: better-auth skips cookie forwarding when the getter returns no event.
+    sveltekitCookies(currentRequestEvent as () => RequestEvent),
+);
 
 // Server modules also execute during `vite build` (SSR analysis). The worker
 // must only run in a live server, never at build time.

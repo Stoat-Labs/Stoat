@@ -27,8 +27,11 @@
     }: {
         open?: boolean;
         currentIcon: string;
-        onselect: (icon: string) => void;
+        /** Rejecting keeps the dialog open with the error. */
+        onselect: (icon: string) => void | Promise<void>;
     } = $props();
+
+    let saving = $state(false);
 
     let linkDraft = $state("");
 
@@ -64,8 +67,10 @@
         },
     );
 
-    function confirmLink() {
+    async function confirmLink() {
         const value = linkDraft.trim();
+
+        if (saving) return;
 
         if (!value) {
             linkError = "Paste an image URL.";
@@ -92,8 +97,19 @@
         }
 
         linkError = "";
-        onselect(value);
-        open = false;
+        saving = true;
+
+        try {
+            await onselect(value);
+            open = false;
+        } catch (cause) {
+            linkError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not save the icon.";
+        } finally {
+            saving = false;
+        }
     }
 </script>
 
@@ -156,7 +172,11 @@
             <Button variant="outline" onclick={() => (open = false)}>
                 Cancel
             </Button>
-            <Button disabled={!isLinkValid} onclick={confirmLink}>
+            <Button
+                loading={saving}
+                disabled={!isLinkValid || saving}
+                onclick={() => void confirmLink()}
+            >
                 Use icon
             </Button>
         </DialogFooter>

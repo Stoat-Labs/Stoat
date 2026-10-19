@@ -1,55 +1,49 @@
 import { createORPCClient } from "@orpc/client";
-import { RPCLink } from "@orpc/client/fetch";
-import { BatchLinkPlugin } from "@orpc/client/plugins";
+import { RPCLink } from "@orpc/client/websocket";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/svelte-query";
 
-export const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            // Layout (AppShell), sidebars, and detail pages all subscribe to
-            // the same listProjects/listResources keys. Without a staleTime
-            // every mount refetches, so navigating between resources
-            // re-fires identical requests. 15s keeps nav snappy without
-            // serving stale data for long; mutations still invalidate.
-            staleTime: 15_000,
-            gcTime: 5 * 60_000,
-            refetchOnWindowFocus: false,
-            retry: 1,
+export function createQueryClient() {
+    return new QueryClient({
+        defaultOptions: {
+            queries: {
+                // Layout (AppShell), sidebars, and detail pages all subscribe to
+                // the same listProjects/listResources keys. Without a staleTime
+                // every mount refetches, so navigating between resources
+                // re-fires identical requests. 15s keeps nav snappy without
+                // serving stale data for long; mutations still invalidate.
+                staleTime: 15_000,
+                gcTime: 5 * 60_000,
+                refetchOnWindowFocus: false,
+                retry: 1,
+            },
         },
-    },
-    queryCache: new QueryCache({
-        onError: (error) => {
-            console.error(`Error: ${error.message}`);
-        },
-    }),
-});
+        queryCache: new QueryCache({
+            onError: (error) => {
+                console.error(`Error: ${error.message}`);
+            },
+        }),
+    });
+}
 
+// The browser's client. The server builds one per render in the root layout, so one user's
+// cached data (seeded from their page data) never reaches another user's page.
+export const queryClient = createQueryClient();
+
+// Every browser call, streams included, shares one WebSocket. It reconnects on its own, and
+// sign-in/sign-out do a full page load, so the socket's session cookie is never stale.
 export const link = new RPCLink({
-    origin: () => {
+    connect() {
         if (typeof window === "undefined") {
             throw new Error("This link is not allowed on the server side.");
         }
 
-        return window.location.origin;
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+        return new WebSocket(`${protocol}//${window.location.host}/rpc`);
     },
-    url: "/rpc",
-    // One HTTP request per page load instead of 10-20 parallel ones. Caddy treats every request the
-    // browser aborts mid-flight (navigating away) as an upstream failure and drops the only
-    // upstream for 30s, so fewer requests also means fewer aborts. Log streaming polls on its own.
-    plugins: [
-        new BatchLinkPlugin({
-            groups: [{ condition: () => true, context: {} }],
-            filter: ({ path }) => path[0] !== "resources" || path[1] !== "streamLogs",
-        }),
-    ],
-    fetch(url, options) {
-        return fetch(url, {
-            ...options,
-            credentials: "include",
-        });
-    },
+    reconnect: { enabled: true },
 });
 
 declare global {
@@ -121,3 +115,6 @@ export const orpc: OrpcUtils = new Proxy(createTanstackQueryUtils(browserClient)
         return Reflect.has(getUtils(), prop);
     },
 });
+
+// The template catalog ships with the server build, so it only changes on a deploy.
+queryClient.setQueryDefaults(orpc.resources.listTemplates.key(), { staleTime: Infinity });

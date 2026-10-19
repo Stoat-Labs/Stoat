@@ -22,7 +22,10 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Spinner } from "$lib/components/ui/spinner";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import { s3BucketStatusVariant } from "$lib/s3";
+    import {
+        bucketJobPollInterval,
+        s3BucketStatusVariant,
+    } from "$lib/s3";
     import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
     import {
         createMutation,
@@ -41,12 +44,8 @@
     const bucketQuery = createQuery(() =>
         orpc.buckets.get.queryOptions({
             input,
-            // Poll while the background job runs.
             refetchInterval: (query) =>
-                query.state.data?.status === "provisioning" ||
-                query.state.data?.status === "deleting"
-                    ? 2_000
-                    : false,
+                bucketJobPollInterval(query.state.data?.status),
             retry: false,
         }),
     );

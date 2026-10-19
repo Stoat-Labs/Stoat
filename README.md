@@ -17,7 +17,7 @@
 
 ## Features
 
-Stoat sits between the simplicity of Docker and the complexity of Kubernetes: deploy Compose apps across your own machines from a single dashboard.
+Stoat allows you to manage multiple [Uncloud](https://uncloud.run) clusters from a single dashboard.
 
 - **Clusters** - Connect Uncloud clusters and manage every machine from one place.
 - **Projects & Resources** - Group your services into projects and deploy them from Compose files.
@@ -34,7 +34,7 @@ Stoat sits between the simplicity of Docker and the complexity of Kubernetes: de
 
 ## How it works
 
-Stoat does not talk to your servers directly. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
+Stoat does not talk to your servers with ssh keys like similar apps. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
 
 ## Getting Started
 
@@ -65,6 +65,7 @@ If you already have an [Uncloud](https://uncloud.run/) cluster and the Uncloud C
     POSTGRES_PASSWORD=changeme            # openssl rand -hex 32
     SIDECAR_TOKEN=changeme                # openssl rand -hex 32 # please remember this one you'll need to use it when adding your cluster
     REDIS_URL=redis://stoat-cache.internal:6379
+    APP_USE_INTERNAL_CACHE=false          # true adds a per-replica memory cache in front of Redis (single replica only)
     ```
 
 2. **Start Stoat**
@@ -99,7 +100,7 @@ This project is licensed under the [Apache 2.0 License](LICENSE).
 
 ## Credits
 
-Kudos to the creators, maintainers and contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being more of a "docker harness". And the software Stoat uses [Uncloud](https://uncloud.run/). ♥️
+Kudos to the creators, maintainers and contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being more of a "docker harness". The software Stoat uses [Uncloud](https://uncloud.run/). And Railway for letting me copy their ui lol, great platform if you dont want to manage your own infrastructure ♥️
 
 ## Screenshots
 

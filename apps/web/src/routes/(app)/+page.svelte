@@ -1,9 +1,12 @@
 <script lang="ts">
-    import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
+    import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
     import ProjectOverviewCard from "$lib/components/home/project-overview-card.svelte";
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
-    import ProjectCard from "$lib/components/projects/project-card.svelte";
+    import ProjectCard, {
+        placeholderResources,
+    } from "$lib/components/projects/project-card.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -20,7 +23,6 @@
     } from "$lib/components/ui/empty";
     import {
         Frame,
-        FrameDescription,
         FrameHeader,
         FramePanel,
         FrameTitle,
@@ -30,7 +32,6 @@
         InputGroupAddon,
         InputGroupInput,
     } from "$lib/components/ui/input-group";
-    import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         Select,
         SelectContent,
@@ -38,7 +39,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import { orpc, queryClient } from "$lib/api/orpc";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import FolderOpen from "@lucide/svelte/icons/folder-open";
     import Plus from "@lucide/svelte/icons/plus";
@@ -112,6 +113,9 @@
         );
 
         return matches.sort((a, b) => {
+            // Starred projects lead, whatever the order below them.
+            if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+
             if (params.sort.current === "name")
                 return a.name.localeCompare(b.name);
 
@@ -306,13 +310,17 @@
         </Frame>
     {/if}
 
-    <Frame class="min-w-0">
-        <FrameHeader
-            class="flex-row flex-wrap items-center justify-between gap-2 py-3"
+    <!-- No Frame: the project cards are already the panels. -->
+    <section
+        class="min-w-0 space-y-3"
+        aria-labelledby="projects-heading"
+    >
+        <header
+            class="flex flex-wrap items-center justify-between gap-2"
         >
-            <FrameTitle class="text-base">
-                <h2>Projects</h2>
-            </FrameTitle>
+            <h2 id="projects-heading" class="text-base font-semibold">
+                Projects
+            </h2>
             <div class="flex max-w-full flex-wrap gap-2">
                 <Select
                     items={clusterItems}
@@ -368,16 +376,15 @@
                     </SelectContent>
                 </Select>
             </div>
-        </FrameHeader>
+        </header>
         {#if projectsQuery.isPending}
             <Skeleton loading loading-label="Loading projects">
-                <ul class="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {#each { length: 3 }, index (index)}
                         <li class="min-w-0">
                             <ProjectCard
                                 name="Project workspace"
-                                description="Project resources and environments"
-                                resourceCount={3}
+                                resources={placeholderResources}
                                 clusterName={params.cluster
                                     .current === "all"
                                     ? "Cluster name"
@@ -388,14 +395,12 @@
                 </ul>
             </Skeleton>
         {:else if projectsQuery.isError}
-            <FramePanel>
-                <Alert variant="error">
-                    <AlertDescription>
-                        Unable to load projects: {projectsQuery.error
-                            .message}
-                    </AlertDescription>
-                </Alert>
-            </FramePanel>
+            <Alert variant="error">
+                <AlertDescription>
+                    Unable to load projects: {projectsQuery.error
+                        .message}
+                </AlertDescription>
+            </Alert>
         {:else if projects.length === 0}
             <Empty
                 class="rounded-xl border border-dashed border-border bg-background"
@@ -439,7 +444,7 @@
                 </Button>
             </p>
         {:else}
-            <ul class="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
+            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {#each filtered as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard
@@ -451,7 +456,7 @@
                 {/each}
             </ul>
         {/if}
-    </Frame>
+    </section>
 
     <Frame class="min-w-0">
         <FrameHeader

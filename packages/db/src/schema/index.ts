@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
-import { organization } from "./auth";
+import { resourceSlug } from "../slug";
+import { organization, user } from "./auth";
 
 export type MonitoringStorage = { type: "volume" | "bind"; source: string };
 
@@ -13,6 +14,14 @@ export const instanceSettings = t.pgTable(
     (table) => [t.check("instance_settings_singleton", sql`${table.id} = 1`)],
 );
 
+export const userSettings = t.pgTable("user_settings", {
+    userId: t
+        .text("user_id")
+        .primaryKey()
+        .references(() => user.id, { onDelete: "cascade" }),
+    canvasMode: t.boolean("canvas_mode").notNull().default(true),
+});
+
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
     machine: string;
@@ -22,53 +31,86 @@ export type ClusterInitializationConfiguration = {
     alloyStorage?: MonitoringStorage;
 };
 
-export const clusters = t.pgTable("clusters", {
-    id: t.uuid("id").primaryKey(),
-    name: t.text("name").notNull(),
-    sidecarUrl: t.text("sidecar_url").notNull(),
-    sidecarToken: t.text("sidecar_token").notNull(),
-    greptimeUrl: t.text("greptime_url"),
-    organizationId: t
-        .text("organization_id")
-        .notNull()
-        .references(() => organization.id, { onDelete: "cascade" }),
-    initializedAt: t.timestamp("initialised_at", { withTimezone: true }),
-    initializationRequestedAt: t.timestamp("initialization_requested_at", { withTimezone: true }),
-    initializationStatus: t.text("initialization_status").notNull().default("uninitialized"),
-    initializationError: t.text("initialization_error"),
-    initializationConfiguration: t
-        .jsonb("initialization_configuration")
-        .$type<ClusterInitializationConfiguration>(),
-    createdAt: t
-        .timestamp("created_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date()),
-    updatedAt: t
-        .timestamp("updated_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date())
-        .$onUpdate(() => new Date()),
-});
+export const clusters = t.pgTable(
+    "clusters",
+    {
+        id: t.uuid("id").primaryKey(),
+        name: t.text("name").notNull(),
+        sidecarUrl: t.text("sidecar_url").notNull(),
+        sidecarToken: t.text("sidecar_token").notNull(),
+        greptimeUrl: t.text("greptime_url"),
+        organizationId: t
+            .text("organization_id")
+            .notNull()
+            .references(() => organization.id, { onDelete: "cascade" }),
+        initializedAt: t.timestamp("initialised_at", { withTimezone: true }),
+        initializationRequestedAt: t.timestamp("initialization_requested_at", {
+            withTimezone: true,
+        }),
+        initializationStatus: t.text("initialization_status").notNull().default("uninitialized"),
+        initializationError: t.text("initialization_error"),
+        initializationConfiguration: t
+            .jsonb("initialization_configuration")
+            .$type<ClusterInitializationConfiguration>(),
+        createdAt: t
+            .timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date()),
+        updatedAt: t
+            .timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date())
+            .$onUpdate(() => new Date()),
+    },
+    (table) => [t.index("clusters_organization_idx").on(table.organizationId)],
+);
 
-export const projects = t.pgTable("projects", {
-    id: t.uuid("id").primaryKey(),
-    name: t.text("name").notNull(),
-    description: t.text("description"),
-    clusterId: t
-        .uuid("cluster_id")
-        .notNull()
-        .references(() => clusters.id, { onDelete: "cascade" }),
-    createdAt: t
-        .timestamp("created_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date()),
-    isInternal: t.boolean("is_internal").default(false),
-    updatedAt: t
-        .timestamp("updated_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date())
-        .$onUpdate(() => new Date()),
-});
+// Card and frame positions on the project canvas, keyed by node id.
+export type CanvasLayout = Record<string, { x: number; y: number }>;
+
+export const projects = t.pgTable(
+    "projects",
+    {
+        id: t.uuid("id").primaryKey(),
+        name: t.text("name").notNull(),
+        description: t.text("description"),
+        clusterId: t
+            .uuid("cluster_id")
+            .notNull()
+            .references(() => clusters.id, { onDelete: "cascade" }),
+        createdAt: t
+            .timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date()),
+        isInternal: t.boolean("is_internal").default(false),
+        canvasLayout: t.jsonb("canvas_layout").$type<CanvasLayout>(),
+        updatedAt: t
+            .timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date())
+            .$onUpdate(() => new Date()),
+    },
+    (table) => [t.index("projects_cluster_idx").on(table.clusterId)],
+);
+
+// Railway's starred projects, per user.
+export const projectFavorites = t.pgTable(
+    "project_favorites",
+    {
+        userId: t
+            .text("user_id")
+            .notNull()
+            .references(() => user.id, { onDelete: "cascade" }),
+        projectId: t
+            .uuid("project_id")
+            .notNull()
+            .references(() => projects.id, { onDelete: "cascade" }),
+    },
+    (table) => [
+        t.primaryKey({ columns: [table.userId, table.projectId] }),
+        t.index("project_favorites_project_idx").on(table.projectId),
+    ],
+);
 
 export type GitAccount = { id: string; login: string; name: string | null };
 
@@ -129,6 +171,8 @@ export type ResourceGitSource = {
     branch: string;
     path: string;
     revision: string;
+    // The commit message of `revision`.
+    message: string;
     // Object ids at `revision`: the Compose file's blob and the watched directory's tree.
     // A draft whose blob id differs from `blob` has changes that are not in Git yet.
     blob: string;
@@ -138,48 +182,32 @@ export type ResourceGitSource = {
     watchPath: string;
 };
 
-export const resources = t.pgTable("resources", {
-    id: t.uuid("id").primaryKey(),
-    name: t.text("name").notNull(),
-    description: t.text("description"),
-    icon: t.text("icon"),
-    type: t.text("type").default("compose"),
-    // Last successfully deployed source; edits are saved separately.
-    spec: t.text("spec"),
-    draftSpec: t.text("draft_spec"),
-    settings: t.jsonb("settings"),
-    // Migration makes this FK deferred so organization-wide cascades can finish.
-    gitConnectionId: t
-        .uuid("git_connection_id")
-        .references(() => gitConnections.id, { onDelete: "no action" }),
-    gitSource: t.jsonb("git_source").$type<ResourceGitSource>(),
-    projectId: t
-        .uuid("project_id")
-        .notNull()
-        .references(() => projects.id, { onDelete: "cascade" }),
-    createdAt: t
-        .timestamp("created_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date()),
-    updatedAt: t
-        .timestamp("updated_at", { withTimezone: true })
-        .notNull()
-        .$defaultFn(() => new Date())
-        .$onUpdate(() => new Date()),
-});
-
-export const resourceEnvVars = t.pgTable(
-    "resource_env_vars",
+export const resources = t.pgTable(
+    "resources",
     {
         id: t.uuid("id").primaryKey(),
-        resourceId: t
-            .uuid("resource_id")
+        name: t.text("name").notNull(),
+        // Permanent prefix of its service and volume names; see `resourceSlug`.
+        slug: t
+            .text("slug")
             .notNull()
-            .references(() => resources.id, { onDelete: "cascade" }),
-        service: t.text("service"), // null = shared/global, else compose service name
-        key: t.text("key").notNull(),
-        value: t.text("value").notNull(), // plaintext (Dokploy-style)
-        secret: t.boolean("secret").notNull().default(false), // mask in UI when true
+            .$defaultFn(() => resourceSlug()),
+        description: t.text("description"),
+        icon: t.text("icon"),
+        type: t.text("type").default("compose"),
+        // Last successfully deployed source; edits are saved separately.
+        spec: t.text("spec"),
+        draftSpec: t.text("draft_spec"),
+        settings: t.jsonb("settings"),
+        // Migration makes this FK deferred so organization-wide cascades can finish.
+        gitConnectionId: t
+            .uuid("git_connection_id")
+            .references(() => gitConnections.id, { onDelete: "no action" }),
+        gitSource: t.jsonb("git_source").$type<ResourceGitSource>(),
+        projectId: t
+            .uuid("project_id")
+            .notNull()
+            .references(() => projects.id, { onDelete: "cascade" }),
         createdAt: t
             .timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -191,12 +219,9 @@ export const resourceEnvVars = t.pgTable(
             .$onUpdate(() => new Date()),
     },
     (table) => [
-        // nullsNotDistinct: NULL service (global) still conflicts on (resourceId, key)
-        t
-            .unique("resource_env_service_key_uidx")
-            .on(table.resourceId, table.service, table.key)
-            .nullsNotDistinct(),
-        t.index("resource_env_resource_idx").on(table.resourceId),
+        t.index("resources_project_idx").on(table.projectId),
+        t.index("resources_git_connection_idx").on(table.gitConnectionId),
+        t.uniqueIndex("resources_slug_idx").on(table.slug),
     ],
 );
 
@@ -221,6 +246,13 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 
+// Where a resource deployment came from. "docker" is a Compose edited in Stoat, without Git.
+export type DeploymentMetadata = {
+    source: "forgejo" | "github" | "git" | "docker";
+    trigger: "manual" | "webhook" | "poll";
+    commit?: { sha: string; message: string };
+};
+
 export const deployments = t.pgTable(
     "deployments",
     {
@@ -237,6 +269,8 @@ export const deployments = t.pgTable(
         jobId: t.text("job_id").notNull().unique(),
         // Compose spec captured at deploy time. Null for cluster initialization.
         spec: t.text("spec"),
+        // Null for cluster initialization.
+        metadata: t.jsonb("metadata").$type<DeploymentMetadata>(),
         configuration: t.jsonb("configuration").$type<ClusterInitializationConfiguration>(),
         error: t.text("error"),
         progress: t.smallint("progress").notNull().default(0),
@@ -251,7 +285,13 @@ export const deployments = t.pgTable(
             .$onUpdate(() => new Date()),
         finishedAt: t.timestamp("finished_at", { withTimezone: true }),
     },
-    (table) => [t.index("deployments_cluster_idx").on(table.clusterId, table.createdAt.desc())],
+    (table) => [
+        t.index("deployments_cluster_idx").on(table.clusterId, table.createdAt.desc()),
+        // Latest deployment per resource (status badges, history, removal checks).
+        t.index("deployments_resource_idx").on(table.resourceId, table.createdAt.desc()),
+        // The outbox sweep reads queued rows every few seconds.
+        t.index("deployments_queued_idx").on(table.name).where(sql`${table.status} = 'queued'`),
+    ],
 );
 
 export const deploymentLogs = t.pgTable(

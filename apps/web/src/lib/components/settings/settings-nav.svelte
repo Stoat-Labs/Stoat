@@ -3,6 +3,7 @@
 
     export const sections = [
         "profile",
+        "feature-flags",
         "security",
         "organization",
         "members",

@@ -371,6 +371,15 @@ async function requireLiveAccess(
     }
 }
 
+const MAX_LOG_BATCH = 500;
+
+const IDLE = Symbol("idle");
+
+/** Resolves after pending I/O callbacks, so lines already received are read before it wins. */
+function idle() {
+    return new Promise<typeof IDLE>((resolve) => setImmediate(() => resolve(IDLE)));
+}
+
 async function* serviceEvents(
     cluster: LogCluster,
     service: LogService,
@@ -383,6 +392,8 @@ async function* serviceEvents(
     let retryable = true;
     const timeout = setTimeout(() => controller.abort(), 15_000);
     let iterator: AsyncGenerator<LogEvent> | undefined;
+    // Lines the sidecar sends together (the tail, bursts) go out as one event, not one per line.
+    let batch: ResourceLog[] = [];
 
     try {
         const uc = ucClient(cluster.sidecarUrl, {
@@ -475,7 +486,14 @@ async function* serviceEvents(
         yield { type: "status", serviceId: service.id, state: "connected" };
 
         for (;;) {
-            const result = await next;
+            // Wait for a line only while nothing is batched; otherwise flush once upstream idles.
+            const result = batch.length === 0 ? await next : await Promise.race([next, idle()]);
+
+            if (result === IDLE) {
+                yield { type: "logs", logs: batch };
+                batch = [];
+                continue;
+            }
 
             if (upstreamSignal.aborted) break;
 
@@ -493,20 +511,20 @@ async function* serviceEvents(
                     throw new Error("Invalid service log event.");
                 }
 
-                yield {
-                    type: "logs",
-                    logs: [
-                        {
-                            timestamp: canonicalTime(event.timestamp).text,
-                            serviceId: service.id,
-                            serviceName: service.name,
-                            message: event.message,
-                            machine: event.metadata?.machineId ?? null,
-                            container: event.metadata?.containerId ?? null,
-                            stream: event.stream === "unknown" ? null : event.stream,
-                        },
-                    ],
-                };
+                batch.push({
+                    timestamp: canonicalTime(event.timestamp).text,
+                    serviceId: service.id,
+                    serviceName: service.name,
+                    message: event.message,
+                    machine: event.metadata?.machineId ?? null,
+                    container: event.metadata?.containerId ?? null,
+                    stream: event.stream === "unknown" ? null : event.stream,
+                });
+
+                if (batch.length >= MAX_LOG_BATCH) {
+                    yield { type: "logs", logs: batch };
+                    batch = [];
+                }
             }
 
             next = iterator.next();
@@ -516,6 +534,9 @@ async function* serviceEvents(
     } catch (error) {
         controller.abort();
         retryable = retryable && !(error instanceof z.ZodError) && !(error instanceof ORPCError);
+
+        // Lines read before the failure are still valid, so deliver them before the status.
+        if (batch.length > 0 && !signal.aborted) yield { type: "logs", logs: batch };
 
         if (!signal.aborted)
             yield {

@@ -4,7 +4,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 
 ## Layout
 
-- `apps/web`: SvelteKit app (adapter-node). Serves the oRPC API at `src/routes/rpc/[...rest]` and starts the effect-mq worker from `hooks.server.ts` (never during build).
+- `apps/web`: SvelteKit app (adapter-node). The browser calls oRPC over one WebSocket at `/rpc` (`src/lib/server/rpc-socket.ts`, attached by `server.js` in production and `rpc-socket-plugin.ts` in dev); `src/routes/rpc/[...rest]` only serves the REST API for API keys. Starts the effect-mq worker from `hooks.server.ts` (never during build).
 - `apps/sidecar`: Go HTTP API wrapping Uncloud; runs as root on cluster machines. `cmd/openapi` emits its OpenAPI spec.
 - `packages/api`: oRPC routers and business logic. Packages export `src/*.ts` directly; `dist/` is only `tsc -b` output.
 - `packages/db`: Drizzle schema and queries. Migrations live in `packages/db/src/migrations` and **also include** `packages/workflows/src/schema.ts` (effect-mq tables).
@@ -49,3 +49,4 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - do your research before a medium+ sized change.
 - think like a senior engineer
 - creating things (API keys, members, etc.) happens in a dialog, never in an inline card/form. Destructive confirmations use `alert-dialog` (see `settings/confirm-dialog.svelte`), never `confirm()`/`alert()`.
+- stop fucking adding descriptions to frames.

@@ -2,5 +2,11 @@
     "name": "UptimeKit",
     "description": "Self-hosted uptime monitoring with status pages and incident tracking.",
     "type": "compose",
-    "tags": ["monitoring", "status-page"]
+    "tags": ["monitoring", "status-page"],
+    "resources": {
+        "db": {
+            "name": "Database",
+            "engine": "postgresql"
+        }
+    }
 }

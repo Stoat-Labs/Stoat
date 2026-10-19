@@ -111,6 +111,44 @@ export type HttpMetricName =
     | (typeof httpMetricNames)[number]
     | (typeof httpTrafficMetricNames)[number];
 
+/**
+ * A volume's disk size, from the sidecar's `stoat_volume_size_bytes`, and the disk throughput of
+ * the services that mount it, from cAdvisor's per-container counters. Docker volumes aren't
+ * separate mounts, so no throughput is measured per volume itself.
+ */
+export const volumeMetricNames = ["volumeSize", "volumeRead", "volumeWrite"] as const;
+
+export type VolumeMetricName = (typeof volumeMetricNames)[number];
+
+const promRegex = (name: string) => name.replaceAll(/[^A-Za-z0-9_-]/gu, "\\$&");
+
+/**
+ * Series are labelled with the deployed names (`<slug>-<name>`), so no service lookup is needed.
+ * The name goes in `container_label_uncloud_service_id`, the label every chart already groups by.
+ */
+export function volumeMetricQueries(
+    clusterId: string,
+    step: number,
+    prefix: string | undefined,
+    volume: string,
+    services: string[],
+    pinned?: string,
+): Record<VolumeMetricName, string> {
+    const scope = `customer_id=${JSON.stringify(clusterId)}`;
+    const deployed = (name: string) => (prefix ? `${prefix}-${name}` : name);
+    const names = services.map((name) => promRegex(deployed(name))).join("|");
+    const window = `${Math.max(60, step * 2)}s`;
+
+    const rate = (metric: string) =>
+        `label_replace(sum by (machine_id, container_label_uncloud_service_name, name) (rate(${metric}{${scope},container_label_uncloud_service_name=~${JSON.stringify(names)}}[${window}])), "container_label_uncloud_service_id", "$1", "container_label_uncloud_service_name", "(.*)")`;
+
+    return {
+        volumeSize: `label_replace(max by (machine_id, volume) (stoat_volume_size_bytes{${scope},volume=${JSON.stringify(pinned ?? deployed(volume))}}), "container_label_uncloud_service_id", "$1", "volume", "(.*)")`,
+        volumeRead: rate("container_fs_reads_bytes_total"),
+        volumeWrite: rate("container_fs_writes_bytes_total"),
+    };
+}
+
 export const dnsMetricNames = ["dnsQueries", "dnsErrors", "dnsAvailability"] as const;
 
 export type DnsMetricName = (typeof dnsMetricNames)[number];
@@ -363,25 +401,48 @@ function caddySelector(clusterId: string, names: string[]): Selector {
         `${metric}{${hostMatcher(clusterId, names)},handler="subroute"${extra}}`;
 }
 
-/**
- * Hosts are mapped back to services here, one `or` branch per service, so each series carries
- * its service ID.
- */
-function perService(
-    clusterId: string,
-    hosts: [string, string[]][],
-    build: (selector: Selector) => string,
-) {
-    return hosts
-        .map(
-            ([serviceId, names]) =>
-                `label_replace(${build(caddySelector(clusterId, names))}, "container_label_uncloud_service_id", ${JSON.stringify(serviceId)}, "", "")`,
-        )
-        .join(" or ");
-}
-
 function routedHosts(hosts: Map<string, string[]>) {
     return [...hosts].filter(([, names]) => names.length);
+}
+
+/**
+ * One Caddy query covers every selected host, grouped by host, and each service's series is
+ * summed from its hosts in parseServiceSeries. That is one scan instead of one `or` branch per
+ * service, which GreptimeDB evaluates several times slower. (Tagging hosts with label_replace in
+ * PromQL is not an option: GreptimeDB rewrites the label on series that don't match.)
+ */
+export type HttpQuery = {
+    query: string;
+    /** Series carry `host` and are summed into one series per service; otherwise kept as is. */
+    perHost: boolean;
+    /** The per-host series are `le` buckets, and each service gets this quantile of their sum. */
+    quantile?: number;
+};
+
+/**
+ * Splits services into groups of at most `limit` hostnames (a service is never split). A latency
+ * chart returns ~12 `le` series per host, ~55 KB at 120 points, so it is queried a group at a time
+ * to stay under the sidecar's 1 MiB response cap.
+ */
+export function hostGroups(hosts: Map<string, string[]>, limit = 8) {
+    const groups: Map<string, string[]>[] = [];
+    let group = new Map<string, string[]>();
+    let size = 0;
+
+    for (const [serviceId, names] of routedHosts(hosts)) {
+        if (size && size + names.length > limit) {
+            groups.push(group);
+            group = new Map();
+            size = 0;
+        }
+
+        group.set(serviceId, names);
+        size += names.length;
+    }
+
+    if (size) groups.push(group);
+
+    return groups;
 }
 
 /** HTTP metrics are Caddy's own per-host metrics, pushed over OTLP through Alloy. */
@@ -389,43 +450,36 @@ export function httpQueries(
     clusterId: string,
     step: number,
     hosts: Map<string, string[]>,
-): Record<HttpMetricName, string> | null {
-    const entries = routedHosts(hosts);
+): Record<HttpMetricName, HttpQuery> | null {
+    const names = routedHosts(hosts).flatMap(([, list]) => list);
 
-    if (!entries.length) return null;
+    if (!names.length) return null;
     const window = `${Math.max(60, step * 2)}s`;
+    const select = caddySelector(clusterId, names);
+    const rate = (metric: string, extra?: string) => `rate(${select(metric, extra)}[${window}])`;
 
-    const all = caddySelector(
-        clusterId,
-        entries.flatMap(([, names]) => names),
-    );
-
-    const latency = (quantile: number) => (selector: Selector) =>
-        `histogram_quantile(${quantile}, sum by (le) (rate(${selector(caddyBuckets)}[${window}])))`;
+    const latency = (quantile: number): HttpQuery => ({
+        query: `sum by (host, le) (${rate(caddyBuckets)})`,
+        perHost: true,
+        quantile,
+    });
 
     return {
-        httpRequests: perService(
-            clusterId,
-            entries,
-            (selector) => `sum(rate(${selector(caddyRequests)}[${window}]))`,
-        ),
-        // `or … * 0` reports 0 instead of a gap while there is traffic but no 5xx series yet.
-        httpErrors: perService(
-            clusterId,
-            entries,
-            (selector) =>
-                `(sum(rate(${selector(caddyRequests, ',code=~"5.."')}[${window}])) or sum(rate(${selector(caddyRequests)}[${window}])) * 0)`,
-        ),
-        httpLatency: perService(clusterId, entries, latency(0.95)),
-        httpLatencyP50: perService(clusterId, entries, latency(0.5)),
-        httpLatencyP99: perService(clusterId, entries, latency(0.99)),
+        httpRequests: { query: `sum by (host) (${rate(caddyRequests)})`, perHost: true },
+        // `or … * 0` reports 0 instead of a gap while a host has traffic but no 5xx series yet.
+        httpErrors: {
+            query: `sum by (host) (${rate(caddyRequests, ',code=~"5.."')}) or sum by (host) (${rate(caddyRequests)}) * 0`,
+            perHost: true,
+        },
+        httpLatency: latency(0.95),
+        httpLatencyP50: latency(0.5),
+        httpLatencyP99: latency(0.99),
         // One series per status class (2xx, 3xx, …) across all the selected services.
-        httpStatus: `sum by (status_class) (label_replace(rate(${all(caddyRequests)}[${window}]), "status_class", "\${1}xx", "code", "([1-5]).."))`,
-        httpBandwidth: perService(
-            clusterId,
-            entries,
-            (selector) => `sum(rate(${selector(caddyBytes)}[${window}]))`,
-        ),
+        httpStatus: {
+            query: `sum by (status_class) (label_replace(${rate(caddyRequests)}, "status_class", "\${1}xx", "code", "([1-5]).."))`,
+            perHost: false,
+        },
+        httpBandwidth: { query: `sum by (host) (${rate(caddyBytes)})`, perHost: true },
     };
 }
 
@@ -435,42 +489,24 @@ export function httpSummaryQueries(
     duration: number,
     hosts: Map<string, string[]>,
 ) {
-    const entries = routedHosts(hosts);
+    const names = routedHosts(hosts).flatMap(([, list]) => list);
 
-    if (!entries.length) return null;
+    if (!names.length) return null;
     const window = `${duration}s`;
-    const names = entries.flatMap(([, list]) => list);
+    const select = caddySelector(clusterId, names);
 
-    const visitors = (label: string) =>
-        `sum by (${label}) (increase(${visitorRequests}{${hostMatcher(clusterId, names)}}[${window}]))`;
+    const increase = (metric: string, extra?: string) =>
+        `increase(${select(metric, extra)}[${window}])`;
 
+    // Four queries instead of one per figure: GreptimeDB slows down sharply when several range
+    // scans run at once, so each metric is scanned once and split in summarizeServices and breakdown.
     return {
-        requests: perService(
-            clusterId,
-            entries,
-            (selector) => `sum(increase(${selector(caddyRequests)}[${window}]))`,
-        ),
-        errors: perService(
-            clusterId,
-            entries,
-            (selector) => `sum(increase(${selector(caddyRequests, ',code=~"5.."')}[${window}]))`,
-        ),
-        bytes: perService(
-            clusterId,
-            entries,
-            (selector) => `sum(increase(${selector(caddyBytes)}[${window}]))`,
-        ),
-        latency: perService(
-            clusterId,
-            entries,
-            (selector) =>
-                `histogram_quantile(0.95, sum by (le) (increase(${selector(caddyBuckets)}[${window}])))`,
-        ),
-        // Per-service P95s cannot be combined, so the overall one is its own query.
-        totalLatency: `histogram_quantile(0.95, sum by (le) (increase(${caddySelector(clusterId, names)(caddyBuckets)}[${window}])))`,
-        countries: visitors("country"),
-        clients: visitors("client"),
-        protocols: visitors("proto"),
+        // Per status code, so the errors are the 5xx part of the same scan.
+        requests: `sum by (host, code) (${increase(caddyRequests)})`,
+        bytes: `sum by (host) (${increase(caddyBytes)})`,
+        // Summed per service, or across every host for the overall P95.
+        latency: `sum by (host, le) (${increase(caddyBuckets)})`,
+        visitors: `sum by (country, client, proto) (increase(${visitorRequests}{${hostMatcher(clusterId, names)}}[${window}]))`,
     };
 }
 
@@ -495,6 +531,25 @@ const matrix = z.object({
     }),
 });
 
+/** Samples on the `start + i * step` grid, with missing and non-finite ones as null. */
+function onGrid(samples: [number, string][], start: number, end: number, step: number) {
+    const byTime = new Map(samples);
+    const values: (number | null)[] = [];
+
+    for (let time = start; time <= end; time += step) {
+        const raw = byTime.get(time);
+        const value = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
+        values.push(Number.isFinite(value) ? value : null);
+    }
+
+    return values;
+}
+
+// Four significant digits exceed what charts and the one-decimal labels can show.
+function chartValue(value: number | null) {
+    return value === null ? null : Number(Math.max(0, value).toPrecision(4));
+}
+
 /** Preserve missing samples as gaps, including disappeared machines and non-finite Prometheus values. */
 export function parseMetricSeries(
     text: string,
@@ -503,15 +558,7 @@ export function parseMetricSeries(
     step: number,
 ): PackedMetricSeries[] {
     return matrix.parse(JSON.parse(text)).data.result.map((series) => {
-        const samples = new Map(series.values);
-        const values: (number | null)[] = [];
-
-        for (let time = start; time <= end; time += step) {
-            const raw = samples.get(time);
-            const value = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
-            // Four significant digits exceed what charts and the one-decimal labels can show.
-            values.push(Number.isFinite(value) ? Number(Math.max(0, value).toPrecision(4)) : null);
-        }
+        const values = onGrid(series.values, start, end, step).map(chartValue);
 
         return {
             machineId: series.metric.machine_id ?? "",
@@ -542,18 +589,134 @@ const vector = z.object({
 
 export type HttpBreakdown = { key: string; requests: number };
 
-/**
- * Reads a start=end range query as one value per series, keyed by `label`. A series without the
- * label (e.g. requests from an IP with no known country) gets the empty key.
- */
-export function parseTotals(text: string, label: string): HttpBreakdown[] {
-    return vector.parse(JSON.parse(text)).data.result.flatMap((series) => {
-        const value = Number(series.values.at(-1)?.[1]);
+export type Total = { metric: Record<string, string>; value: number };
 
-        return Number.isFinite(value) && value > 0
-            ? [{ key: series.metric[label] ?? "", requests: value }]
-            : [];
+/** Reads a start=end range query as one value per series, leaving out the ones without a number. */
+export function parseTotals(text: string): Total[] {
+    return vector.parse(JSON.parse(text)).data.result.flatMap(({ metric, values }) => {
+        const value = Number(values.at(-1)?.[1]);
+
+        return Number.isFinite(value) ? [{ metric, value }] : [];
     });
+}
+
+function sumBy(totals: Total[], label: string) {
+    const sums = new Map<string, number>();
+
+    for (const { metric, value } of totals)
+        sums.set(metric[label] ?? "", (sums.get(metric[label] ?? "") ?? 0) + value);
+
+    return sums;
+}
+
+const sum = (totals: Total[]) => totals.reduce((all, { value }) => all + value, 0);
+
+/** Requests per value of `label`. A series without the label (e.g. an IP with no known country) gets the empty key. */
+export function breakdown(totals: Total[], label: string): HttpBreakdown[] {
+    return [...sumBy(totals, label)].flatMap(([key, requests]) =>
+        requests > 0 ? [{ key, requests }] : [],
+    );
+}
+
+/** Prometheus' histogram_quantile over one set of cumulative `le` buckets; null without requests. */
+export function histogramQuantile(quantile: number, buckets: [bound: number, count: number][]) {
+    const sorted = buckets.toSorted(([a], [b]) => a - b);
+    const [last, total = 0] = sorted.at(-1) ?? [];
+
+    if (sorted.length < 2 || last !== Infinity || total <= 0) return null;
+    const rank = quantile * total;
+    let lower = 0;
+    let below = 0;
+
+    for (const [bound, cumulative] of sorted) {
+        // Buckets are cumulative, but increase() extrapolation can dip one below the previous.
+        const count = Math.max(cumulative, below);
+
+        if (count >= rank)
+            // Like Prometheus, a rank in the +Inf bucket answers with the highest finite bound.
+            return bound === Infinity
+                ? lower
+                : lower + ((bound - lower) * (rank - below)) / (count - below);
+
+        lower = bound;
+        below = count;
+    }
+
+    return lower;
+}
+
+/**
+ * Sums an HttpQuery's per-host series into one series per service, since a service can have
+ * several hosts. With a quantile, the `le` buckets are summed and the quantile taken per sample.
+ * Services without any series are left out, as PromQL would.
+ */
+function serviceValues(
+    text: string,
+    start: number,
+    end: number,
+    step: number,
+    hosts: Map<string, string[]>,
+    quantile?: number,
+): [serviceId: string, values: (number | null)[]][] {
+    const result = vector.parse(JSON.parse(text)).data.result;
+    const length = Math.floor((end - start) / step) + 1;
+
+    return routedHosts(hosts).flatMap(([serviceId, names]): [string, (number | null)[]][] => {
+        // Keyed by `le` for a quantile; a plain sum has one key.
+        const sums = new Map<string, (number | null)[]>();
+
+        for (const { metric, values } of result) {
+            if (!names.includes(metric.host ?? "")) continue;
+            const key = quantile === undefined ? "" : (metric.le ?? "");
+            const sum = sums.get(key) ?? Array<number | null>(length).fill(null);
+
+            onGrid(values, start, end, step).forEach((value, index) => {
+                if (value !== null) sum[index] = (sum[index] ?? 0) + value;
+            });
+            sums.set(key, sum);
+        }
+
+        if (!sums.size) return [];
+
+        if (quantile === undefined) return [[serviceId, sums.get("") ?? []]];
+
+        return [
+            [
+                serviceId,
+                Array.from({ length }, (_, index) =>
+                    histogramQuantile(
+                        quantile,
+                        [...sums].flatMap(([le, sum]): [number, number][] => {
+                            const count = sum[index] ?? null;
+
+                            return count === null
+                                ? []
+                                : [[le === "+Inf" ? Infinity : Number(le), count]];
+                        }),
+                    ),
+                ),
+            ],
+        ];
+    });
+}
+
+/** Chart series for a per-host HttpQuery, one per service. */
+export function parseServiceSeries(
+    text: string,
+    start: number,
+    end: number,
+    step: number,
+    hosts: Map<string, string[]>,
+    quantile?: number,
+): PackedMetricSeries[] {
+    return serviceValues(text, start, end, step, hosts, quantile).map(([serviceId, values]) => ({
+        machineId: "",
+        serviceId,
+        container: "",
+        start,
+        step,
+        values: values.map(chartValue),
+    }));
 }
 
 export type HttpServiceSummary = {
@@ -567,8 +730,50 @@ export type HttpServiceSummary = {
     latency: number | null;
 };
 
+/** Quantile of the `le` bucket totals, summed across whatever hosts they cover; null without requests. */
+export function bucketQuantile(quantile: number, totals: Total[]) {
+    return histogramQuantile(
+        quantile,
+        [...sumBy(totals, "le")].map(([le, count]): [number, number] => [
+            le === "+Inf" ? Infinity : Number(le),
+            count,
+        ]),
+    );
+}
+
+/** One row per service with a hostname, including those without traffic. */
+export function summarizeServices(
+    hosts: Map<string, string[]>,
+    requests: Total[],
+    bytes: Total[],
+    latency: Total[],
+): HttpServiceSummary[] {
+    return routedHosts(hosts).map(([serviceId, names]) => {
+        const own = (totals: Total[]) =>
+            totals.filter(({ metric }) => names.includes(metric.host ?? ""));
+
+        const served = own(requests);
+
+        return {
+            serviceId,
+            hosts: names,
+            requests: Math.round(sum(served)),
+            errors: Math.round(sum(served.filter(({ metric }) => metric.code?.startsWith("5")))),
+            bytes: Math.round(sum(own(bytes))),
+            latency: bucketQuantile(0.95, own(latency)),
+        };
+    });
+}
+
+/** The summary is streamed in these parts, each one as soon as its queries finish. */
+export const httpSummaryParts = ["services", "latency", "visitors"] as const;
+
+export type HttpSummaryPart = (typeof httpSummaryParts)[number];
+
 export type HttpSummary = {
     status: "ok" | "no-routes" | "not-collecting";
+    /** Parts still being queried; their fields keep empty values until they arrive. */
+    pending: HttpSummaryPart[];
     services: HttpServiceSummary[];
     latency: number | null;
     /** Null until Alloy has counted the first access log with a config that records visitors. */

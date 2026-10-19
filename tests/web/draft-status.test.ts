@@ -39,6 +39,7 @@ it("restores the saved-draft message from loaded data without a successful save 
             id: input.resourceId,
             projectId: input.projectId,
             name: "Resource",
+            slug: "resource-abc123",
             description: null,
             icon: null,
             type: "compose",

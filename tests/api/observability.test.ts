@@ -15,9 +15,11 @@ import {
     metricNames,
     parseMetricSeries,
     unpackSeries,
+    volumeMetricQueries,
     type MetricName,
     type ObservabilityRange,
 } from "../../packages/api/src/observability";
+import type { HttpMetricName, HttpSummary } from "../../packages/api/src/observability";
 import { observabilityRouter } from "../../packages/api/src/routers/cluster/observability";
 import { metricsRouter } from "../../packages/api/src/routers/cluster/metrics";
 
@@ -472,10 +474,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(fetch.mock.calls).toHaveLength(before);
 
-    const http = (
-        name: "httpRequests" | "httpErrors" | "httpLatency" | "httpLatencyP50" | "httpLatencyP99",
-        serviceIds = ["web-id"],
-    ) =>
+    const http = (name: HttpMetricName, serviceIds = ["web-id"]) =>
         call(
             observabilityRouter.getObservabilityMetric,
             { clusterId, name, range, serviceIds },
@@ -513,11 +512,18 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     ).toEqual({ "2xx": expect.closeTo(1.5), "5xx": expect.closeTo(0.5) });
     expect((await http("httpBandwidth")).series[0]?.values.at(-1)).toBeCloseTo(2000);
 
-    const summary = await call(
+    const snapshots: HttpSummary[] = [];
+
+    for await (const snapshot of await call(
         observabilityRouter.getHttpSummary,
         { clusterId, range, serviceIds: ["web-id"] },
         { context },
-    );
+    ))
+        snapshots.push(snapshot);
+
+    // One snapshot per part as it finishes, each with fewer parts pending, ending complete.
+    expect(snapshots.map((snapshot) => snapshot.pending.length)).toEqual([2, 1, 0]);
+    const summary = snapshots.at(-1)!;
 
     expect(summary.status).toBe("ok");
     expect(summary.latency).toBeGreaterThan(0);
@@ -569,4 +575,21 @@ it("preserves missing, NaN and stale samples as gaps rather than inventing zeros
         0, 15000, 30000, 45000, 60000,
     ]);
     expect(() => parseMetricSeries('{"status":"error"}', 0, 60, 15)).toThrow();
+});
+
+it("scopes volume metrics to the resource's deployed names", () => {
+    const queries = volumeMetricQueries("cluster-1", 60, "app-k3f9", "data", ["web", "db.x"]);
+
+    expect(queries.volumeRead).toContain("rate(container_fs_reads_bytes_total{");
+    expect(queries.volumeWrite).toContain("rate(container_fs_writes_bytes_total{");
+    expect(queries.volumeRead).toContain(
+        'container_label_uncloud_service_name=~"app-k3f9-web|app-k3f9-db\\\\.x"',
+    );
+    expect(queries.volumeRead).toContain('customer_id="cluster-1"');
+    expect(queries.volumeSize).toContain(
+        'stoat_volume_size_bytes{customer_id="cluster-1",volume="app-k3f9-data"}',
+    );
+    expect(volumeMetricQueries("cluster-1", 60, undefined, "data", ["web"]).volumeSize).toContain(
+        'volume="data"',
+    );
 });

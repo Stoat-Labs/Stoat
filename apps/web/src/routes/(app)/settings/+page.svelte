@@ -4,6 +4,7 @@
     import OrganizationGeneral from "$lib/components/settings/organization-general.svelte";
     import OrganizationMembers from "$lib/components/settings/organization-members.svelte";
     import PasswordSettings from "$lib/components/settings/password-settings.svelte";
+    import FeatureFlagsSettings from "$lib/components/settings/feature-flags-settings.svelte";
     import ProfileSettings from "$lib/components/settings/profile-settings.svelte";
     import SettingsNav, {
         sections,
@@ -11,6 +12,7 @@
     } from "$lib/components/settings/settings-nav.svelte";
     import KeyRound from "@lucide/svelte/icons/key-round";
     import Lock from "@lucide/svelte/icons/lock";
+    import Flag from "@lucide/svelte/icons/flag";
     import Settings from "@lucide/svelte/icons/settings-2";
     import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
     import User from "@lucide/svelte/icons/user";
@@ -36,6 +38,11 @@
             label: "Account",
             items: [
                 { value: "profile", label: "Profile", icon: User },
+                {
+                    value: "feature-flags",
+                    label: "Feature flags",
+                    icon: Flag,
+                },
                 { value: "security", label: "Security", icon: Lock },
             ],
         },
@@ -79,6 +86,7 @@
     const section = useQueryState(
         "section",
         parseAsStringLiteral(sections).withOptions({
+            history: "push",
             shallow: true,
             scroll: false,
         }),
@@ -106,6 +114,8 @@
         />
         {#if active === "profile"}
             <ProfileSettings user={data.user} />
+        {:else if active === "feature-flags"}
+            <FeatureFlagsSettings />
         {:else if active === "security"}
             <PasswordSettings />
         {:else if organization}

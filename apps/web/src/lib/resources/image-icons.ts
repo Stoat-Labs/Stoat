@@ -1,6 +1,9 @@
 // Image repository name (last path segment, without registry, tag, or digest) to icon.
 // Add an entry here and drop the SVG in `static/icons` to support another image.
-const ICONS = new Map([["postgres", "/icons/postgresql.svg"]]);
+const ICONS = new Map([
+    ["postgres", "/icons/postgresql.svg"],
+    ["rustfs", "/icons/rustfs.svg"],
+]);
 
 export function imageIcon(image: string | null | undefined) {
     const repository = image

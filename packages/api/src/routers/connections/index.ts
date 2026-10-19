@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
 import { organizationAdminProcedure, organizationProcedure, requireAuth } from "../..";
+import { gitWebhookSecret, gitWebhookUrl } from "../../git-webhook";
 import {
     type GitCredentials,
     inspectGitRemote,
@@ -521,6 +522,25 @@ export const connectionsRouter = {
                 return { success: true };
             }),
         ),
+    // Paste both into the repository's push webhook so pushes deploy without waiting for a poll.
+    webhook: organizationAdminProcedure
+        .input(v.object({ connectionId: id }))
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [connection] = await db
+                .select({ id: gitConnections.id })
+                .from(gitConnections)
+                .where(
+                    and(
+                        eq(gitConnections.id, input.connectionId),
+                        eq(gitConnections.organizationId, organizationId),
+                    ),
+                );
+
+            if (!connection)
+                throw new ORPCError("NOT_FOUND", { message: "Git connection not found." });
+
+            return { url: gitWebhookUrl(connection.id), secret: gitWebhookSecret(connection.id) };
+        }),
     getRepositories: organizationProcedure
         .input(v.object({ connectionId: id }))
         .handler(async ({ context: { db, organizationId }, input }) => {

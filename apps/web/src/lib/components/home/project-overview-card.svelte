@@ -1,11 +1,7 @@
 <script lang="ts" module>
-    export type ResourceStatus =
-        | "queued"
-        | "running"
-        | "ready"
-        | "failed"
-        | "cancelled"
-        | null;
+    import type { ProjectCardResource } from "$lib/components/projects/project-card.svelte";
+
+    export type ResourceStatus = ProjectCardResource["status"];
 
     export type ProjectOverview = {
         id: string;
@@ -13,12 +9,11 @@
         description: string | null;
         clusterId: string;
         clusterName: string;
+        favorite: boolean;
         lastActivityAt: Date | string;
-        resources: {
-            id: string;
-            name: string;
-            status: ResourceStatus;
-        }[];
+        resources: (ProjectCardResource & {
+            template: string | null;
+        })[];
     };
 
     export const statusLabels: Record<
@@ -48,21 +43,76 @@
 </script>
 
 <script lang="ts">
+    import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
+    import ProjectRow from "$lib/components/projects/project-row.svelte";
+    import { createQuery } from "@tanstack/svelte-query";
 
     let {
         project,
         showCluster = true,
+        layout = "grid",
     }: {
         project: ProjectOverview;
         showCluster?: boolean;
+        /** Railway's grid of cards, or its list of rows. */
+        layout?: "grid" | "list";
     } = $props();
+
+    const View = $derived(
+        layout === "list" ? ProjectRow : ProjectCard,
+    );
+
+    const canvasModeQuery = createCanvasModeQuery();
+
+    // One cached list for every card; the canvas palette reads the same one.
+    const templatesQuery = createQuery(() =>
+        orpc.resources.listTemplates.queryOptions(),
+    );
+
+    // An uploaded icon wins, then the logo of the template the image runs, as on the canvas.
+    const resources = $derived(
+        project.resources.map((resource) => ({
+            ...resource,
+            icon:
+                resource.icon ??
+                templatesQuery.data?.find(
+                    (template) =>
+                        template.appId === resource.template,
+                )?.logo ??
+                null,
+        })),
+    );
+
+    // Shown at once; the list refetches to settle the order.
+    let starred = $state<boolean | null>(null);
+
+    async function setFavorite(favorite: boolean) {
+        starred = favorite;
+
+        try {
+            await client.projects.setFavorite({
+                projectId: project.id,
+                favorite,
+            });
+            await queryClient.invalidateQueries({
+                queryKey: orpc.projects.listProjectOverviews.key(),
+            });
+        } finally {
+            starred = null;
+        }
+    }
 </script>
 
-<ProjectCard
+<View
     name={project.name}
-    description={project.description}
-    resourceCount={project.resources.length}
+    {resources}
     clusterName={showCluster ? project.clusterName : undefined}
-    href="/projects/{project.id}"
+    href={projectHref(project.id, canvasModeQuery.data.canvasMode)}
+    favorite={starred ?? project.favorite}
+    onfavorite={(favorite: boolean) => void setFavorite(favorite)}
 />

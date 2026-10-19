@@ -8,7 +8,7 @@ services:
             APP_SECRET: ${BETTER_AUTH_SECRET}
             APP_URL: https://${UPTIMEKIT_HOST}
             ENABLE_REGISTRATION: ${ENABLE_REGISTRATION}
-            DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@uptimekit-db:5432/uptimekit
+            DATABASE_URL: ${DATABASE_URL}
         healthcheck:
             test:
                 [
@@ -21,42 +21,3 @@ services:
             timeout: 5s
             retries: 3
             start_period: 60s
-        depends_on:
-            uptimekit-db:
-                condition: service_healthy
-
-    uptimekit-db:
-        image: timescale/timescaledb:2.27.1-pg18
-        restart: unless-stopped
-        environment:
-            POSTGRES_USER: postgres
-            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-            POSTGRES_DB: uptimekit
-        volumes:
-            - uptimekit_postgres_data:/var/lib/postgresql
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres -d uptimekit"]
-            interval: 5s
-            timeout: 5s
-            retries: 12
-            start_period: 10s
-
-    # Cluster monitoring scrapes services whose name ends in `-metrics`.
-    uptimekit-db-metrics:
-        image: prometheuscommunity/postgres-exporter:v0.20.1
-        restart: unless-stopped
-        environment:
-            DATA_SOURCE_URI: ${UPTIMEKIT_DB_INTERNAL_HOST}:5432/uptimekit?sslmode=disable
-            DATA_SOURCE_USER: postgres
-            DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
-        healthcheck:
-            test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9187/"]
-            interval: 30s
-            timeout: 5s
-            retries: 3
-        depends_on:
-            uptimekit-db:
-                condition: service_healthy
-
-volumes:
-    uptimekit_postgres_data:

@@ -325,9 +325,14 @@ test.describe("deploying with references", () => {
         await expect.poll(receivedComposes).toHaveLength(1);
         const [compose] = await receivedComposes();
         const service = Object.values(parse(compose!).services)[0];
+
+        const [postgres] = await sql<{ slug: string }>("SELECT slug FROM resources WHERE id = $1", [
+            ids.postgres,
+        ]);
+
         expect(service).toMatchObject({
             environment: {
-                URL: `postgres://shop@${ids.shop.slice(0, 8)}-${ids.postgres.slice(0, 8)}-db.internal:5432/shop`,
+                URL: `postgres://shop@${postgres!.slug}-db.internal:5432/shop`,
             },
         });
         await expect

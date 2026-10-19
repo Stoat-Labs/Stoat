@@ -131,10 +131,11 @@ export const HealthCheck: Job.Job<
     },
 });
 
-const watchPayload = Schema.Struct({});
+// Without a connection, every Git connection is checked.
+const watchPayload = Schema.Struct({ connectionId: Schema.optional(Schema.String) });
 
 // Polls Git-bound resources with auto-deploy on and deploys pushes to their watched directory.
-// Runs every minute from a schedule.
+// Runs every minute from a schedule, and for one connection when its push webhook fires.
 export const WatchGitSources: Job.Job<
     "WatchGitSources",
     typeof watchPayload,

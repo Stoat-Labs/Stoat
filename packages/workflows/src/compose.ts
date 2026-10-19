@@ -1,11 +1,12 @@
 // Ported from stoat-old's src/lib/server/deployments/deployment-compose.ts:
 // only the formatting/prefixing core, shared by previews and deployment workers.
 
-import YAML, { isAlias, isMap, isNode, isScalar, isSeq } from "yaml";
-import type { Node, YAMLMap } from "yaml";
+import YAML, { isAlias, isMap, isNode, isScalar, isSeq, YAMLMap } from "yaml";
+import type { Node } from "yaml";
 import { Predicate } from "effect";
 import { posix } from "node:path";
 import { parseEnv } from "node:util";
+import { parseIngressComposeWith } from "./ingress";
 import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 
 export interface FormattedCompose {
@@ -15,23 +16,25 @@ export interface FormattedCompose {
 }
 
 /**
- * Deployment prefix for a resource compose spec:
- * `<first 8 of project id>-<first 8 of resource id>`, e.g. `a1b2c3d4-e5f6a7b8-web`.
- * Short enough to stay readable, unique enough that Uncloud treats each
- * resource's services and volumes as distinct. Returns undefined when the
- * resource opted out via `settings.prefixNames === false`.
+ * Deployment prefix for a resource compose spec: its stored slug, e.g. `seafile-k3f9x2-web`.
+ * Unique, so Uncloud treats each resource's services and volumes as distinct, and fixed, so
+ * renames and moves keep them. Returns undefined when the resource opted out via
+ * `settings.prefixNames === false`.
  */
 export function resourceComposePrefix(resource: {
-    projectId: string;
-    id: string;
+    slug: string;
     settings: unknown;
 }): string | undefined {
     if (Predicate.isObject(resource.settings) && resource.settings.prefixNames === false) {
         return undefined;
     }
 
-    return `${resource.projectId.slice(0, 8)}-${resource.id.slice(0, 8)}`;
+    return resource.slug;
 }
+
+/** The `<SERVICE>` part of a service's built-in variables, like `WEB_APP` for `web-app`. */
+export const serviceVariable = (name: string): string =>
+    name.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
 
 const prefixName = (name: string, prefix?: string): string => {
     if (!prefix) {
@@ -40,6 +43,10 @@ const prefixName = (name: string, prefix?: string): string => {
 
     return `${prefix}-${name}`;
 };
+
+/** Uncloud's cluster DNS name for a Compose service, reachable from every other service. */
+export const internalHostname = (name: string, prefix?: string): string =>
+    `${prefixName(name, prefix)}.internal`;
 
 const isNamedVolumeSource = (source: string): boolean => {
     if (source === "") {
@@ -316,9 +323,14 @@ const prefixDependsOn = (service: YAMLMap, rename: Rename): void => {
     }
 };
 
-const CADDY_UPSTREAMS_SERVICE = /(?<open>\{\{\s*upstreams\s+")(?<name>[^"]+)(?<close>")/gu;
+export const CADDY_UPSTREAMS_SERVICE = /(?<open>\{\{\s*upstreams\s+")(?<name>[^"]+)(?<close>")/gu;
 
-const prefixCaddyUpstreams = (service: YAMLMap, rename: Rename): void => {
+// Only this file's services: another resource's service is named through a variable.
+const prefixCaddyUpstreams = (
+    service: YAMLMap,
+    rename: Rename,
+    serviceNames: ReadonlySet<string>,
+): void => {
     const caddy = service.get("x-caddy", true);
 
     if (!isScalar(caddy) || !Predicate.isString(caddy.value)) {
@@ -327,7 +339,8 @@ const prefixCaddyUpstreams = (service: YAMLMap, rename: Rename): void => {
 
     caddy.value = caddy.value.replace(
         CADDY_UPSTREAMS_SERVICE,
-        (_match, open: string, name: string, close: string) => `${open}${rename(name)}${close}`,
+        (match, open: string, name: string, close: string) =>
+            serviceNames.has(name) ? `${open}${rename(name)}${close}` : match,
     );
 };
 
@@ -344,7 +357,7 @@ const prefixServiceFragment = (
     prefixServiceExtends(service, rename);
     prefixServiceVolumesFrom(service, rename);
     prefixServiceNetworkMode(service, rename);
-    prefixCaddyUpstreams(service, rename);
+    prefixCaddyUpstreams(service, rename, serviceNames);
     rewriteServiceEnvironment(service, serviceNames, rename);
 };
 
@@ -630,9 +643,19 @@ export function interpolateCompose(
     prefix?: string,
     domain?: string,
     references?: VariableReferences,
+    identity?: ResourceIdentity,
 ): string {
     const doc = YAML.parseDocument(compose);
-    const { expand } = composeEnvironment(doc, envText, prefix, domain, references);
+
+    const { env, expand, names } = composeEnvironment(
+        doc,
+        envText,
+        prefix,
+        domain,
+        references,
+        identity,
+    );
+
     assertNoComposeReference(compose);
 
     YAML.visit(doc, {
@@ -641,7 +664,176 @@ export function interpolateCompose(
         },
     });
 
+    // The resolved Variables, without the built-ins: what a real `.env` file would hold.
+    const variables: Record<string, string> = {};
+
+    for (const name of names) {
+        const value = env[name];
+
+        if (value !== undefined) variables[name] = value;
+    }
+
+    inlineEnvFiles(doc, variables);
+
     return doc.toString();
+}
+
+const RESOURCE_ENV_FILE = /^(?:\.\/)?\.env$/u;
+
+/** A service's `env_file` entries: short form `- .env`, or long form `- path: .env` with an optional `required: false`. */
+function envFiles(service: YAMLMap) {
+    const entries = service.get("env_file", true);
+
+    if (entries === undefined) return [];
+
+    return (isSeq(entries) ? entries.items : [entries]).map((entry) => {
+        const path = isMap(entry) ? entry.get("path") : isScalar(entry) ? entry.value : entry;
+
+        return {
+            path: Predicate.isString(path) ? path : String(path),
+            required: !isMap(entry) || entry.get("required") !== false,
+        };
+    });
+}
+
+/** Whether a service reads the resource's Variables through `env_file: .env`, so it sees all of them. */
+export function loadsResourceEnv(service: YAMLMap) {
+    return envFiles(service).some(({ path }) => RESOURCE_ENV_FILE.test(path));
+}
+
+/**
+ * Uncloud loads Compose from a temporary directory with no `.env` beside it, so
+ * `env_file: .env` (the resource's Variables) becomes plain `environment` entries.
+ * Keys already in `environment` win, as in Compose. No other env file exists there.
+ */
+function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
+    const services = doc.get("services", true);
+
+    if (!isMap(services)) return;
+
+    for (const { key, value: service } of services.items) {
+        if (!isMap(service) || !service.has("env_file")) continue;
+
+        const unreadable = envFiles(service).find(
+            ({ path, required }) => required && !RESOURCE_ENV_FILE.test(path),
+        );
+
+        if (unreadable)
+            throw new ComposeVariableError(
+                `Service ${String(key)} loads env_file ${unreadable.path}, which a deploy cannot read. Put those variables in the resource's Variables and use env_file: .env.`,
+            );
+
+        const usesResourceEnv = loadsResourceEnv(service);
+
+        service.delete("env_file");
+
+        if (usesResourceEnv) mergeEnvironment(doc, service, variables);
+    }
+}
+
+/** A map's entries as Compose reads them: `<<` merges resolved, under the map's own keys. */
+function mergedEntries(doc: YAML.Document, map: YAMLMap) {
+    const entries = new Map<string, Node | null>();
+    const merges: Node[] = [];
+
+    for (const pair of map.items) {
+        const key = String(isScalar(pair.key) ? pair.key.value : pair.key);
+
+        if (key !== "<<") entries.set(key, isNode(pair.value) ? pair.value : null);
+        else if (isNode(pair.value)) merges.push(pair.value);
+    }
+
+    // Within one `<<: [*a, *b]`, earlier sources win.
+    for (const merge of merges)
+        for (const item of isSeq(merge) ? merge.items : [merge]) {
+            const source = isNode(item) ? resolvedNode(doc, item) : undefined;
+
+            if (!isMap(source)) continue;
+
+            for (const [key, value] of mergedEntries(doc, source))
+                if (!entries.has(key)) entries.set(key, value);
+        }
+
+    return entries;
+}
+
+/** A plain copy of `node`: no anchors, nested aliases resolved. */
+function anchorlessCopy(doc: YAML.Document, node: Node) {
+    return doc.createNode(node.toJS(doc));
+}
+
+/**
+ * Turns every alias of an anchor inside `node` into a copy of what it names, so `node` can be
+ * replaced without leaving those aliases unresolved.
+ */
+function detachAliases(doc: YAML.Document, node: Node) {
+    const anchored = new Set<Node>();
+
+    YAML.visit(node, {
+        Node(_, child) {
+            if (child.anchor) anchored.add(child);
+        },
+    });
+
+    if (anchored.size === 0) return;
+
+    YAML.visit(doc, {
+        Alias(_, alias) {
+            const target = alias.resolve(doc);
+
+            return target && anchored.has(target) ? anchorlessCopy(doc, target) : undefined;
+        },
+    });
+}
+
+function resolvedNode(doc: YAML.Document, node: Node | null | undefined) {
+    return isAlias(node) ? node.resolve(doc) : (node ?? undefined);
+}
+
+/**
+ * Adds the Variables `environment` doesn't set. The service gets its own copy, since an
+ * anchored or merged environment is shared with other services, and keys it gets that way
+ * stay ahead of the Variables.
+ */
+function mergeEnvironment(doc: YAML.Document, service: YAMLMap, variables: Record<string, string>) {
+    // The document is already interpolated, so a literal `$` stays escaped as `$$`.
+    const escape = (value: string) => value.replaceAll("$", "$$$$");
+    const environment = resolvedNode(doc, mergedEntries(doc, service).get("environment"));
+    const own = service.get("environment", true);
+
+    // The service's own environment is replaced below, taking any anchor it defines with it.
+    if (isNode(own) && !isAlias(own)) detachAliases(doc, own);
+
+    if (isSeq(environment)) {
+        const lines = environment.items.flatMap((item) => {
+            const node = isNode(item) ? resolvedNode(doc, item) : undefined;
+
+            return isScalar(node) ? [String(node.value)] : [];
+        });
+
+        const defined = new Set(lines.map((line) => line.split("=", 1)[0]));
+
+        for (const [name, value] of Object.entries(variables))
+            if (!defined.has(name)) lines.push(`${name}=${escape(value)}`);
+
+        service.set("environment", doc.createNode(lines));
+
+        return;
+    }
+
+    const map = new YAMLMap();
+
+    if (isMap(environment))
+        for (const [name, value] of mergedEntries(doc, environment)) {
+            const node = resolvedNode(doc, value);
+
+            map.set(name, isScalar(node) ? anchorlessCopy(doc, node) : null);
+        }
+
+    for (const [name, value] of Object.entries(variables))
+        if (!map.has(name)) map.set(name, escape(value));
+
+    service.set("environment", map);
 }
 
 /**
@@ -676,14 +868,146 @@ export function composeVariables(
     prefix?: string,
     domain?: string,
     references?: VariableReferences,
+    identity?: ResourceIdentity,
 ): Record<string, string> {
-    return composeEnvironment(YAML.parseDocument(compose), envText, prefix, domain, references).env;
+    return composeEnvironment(
+        YAML.parseDocument(compose),
+        envText,
+        prefix,
+        domain,
+        references,
+        identity,
+    ).env;
+}
+
+/** The project and resource a Compose file belongs to, for the `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` built-ins. */
+export type ResourceIdentity = {
+    projectId: string;
+    projectName: string;
+    resourceId: string;
+    resourceName: string;
+};
+
+/** A built-in variable, like Railway's "variables added by Railway". */
+export type SystemVariable = {
+    key: string;
+    value: string;
+    description: string;
+};
+
+/** The built-ins a resource's Compose sees, with the values a deploy would use. */
+export function composeSystemVariables(
+    compose: string,
+    envText: string,
+    prefix?: string,
+    domain?: string,
+    identity?: ResourceIdentity,
+): SystemVariable[] {
+    return composeEnvironment(
+        YAML.parseDocument(compose),
+        envText,
+        prefix,
+        domain,
+        undefined,
+        identity,
+    ).system;
 }
 
 /**
- * Built-ins, each overridable by a same-named user variable:
- * `<SERVICE>_SERVICE_NAME` / `<SERVICE>_INTERNAL_HOST` (deployed name, prefixed when
- * `prefix` is set), `STOAT_PREFIX`, and `STOAT_DOMAIN` when the cluster domain is known.
+ * Stoat's counterpart of Railway's provided variables. Service-scoped ones are per
+ * Compose service (`<SERVICE>_...`), since a resource can run several.
+ */
+function systemVariables(
+    doc: YAML.Document,
+    prefix: string | undefined,
+    domain: string | undefined,
+    identity: ResourceIdentity | undefined,
+    hostnames: Map<string, string>,
+): SystemVariable[] {
+    const variables: SystemVariable[] = [
+        {
+            key: "STOAT_PREFIX",
+            value: prefix ?? "",
+            description:
+                "Prefix of this resource's service, network and volume names; empty when prefixing is off.",
+        },
+    ];
+
+    if (domain)
+        variables.push({
+            key: "STOAT_DOMAIN",
+            value: domain,
+            description: "The cluster's domain, for building public hostnames.",
+        });
+
+    if (identity)
+        variables.push(
+            {
+                key: "STOAT_PROJECT_NAME",
+                value: identity.projectName,
+                description: "The project name the resource belongs to.",
+            },
+            {
+                key: "STOAT_PROJECT_ID",
+                value: identity.projectId,
+                description: "The project ID the resource belongs to.",
+            },
+            {
+                key: "STOAT_RESOURCE_NAME",
+                value: identity.resourceName,
+                description: "The resource name.",
+            },
+            {
+                key: "STOAT_RESOURCE_ID",
+                value: identity.resourceId,
+                description: "The resource ID.",
+            },
+        );
+
+    const services = doc.get("services", true);
+
+    if (isMap(services))
+        for (const { key } of services.items)
+            if (isScalar(key) && Predicate.isString(key.value)) {
+                const variable = serviceVariable(key.value);
+                const name = prefixName(key.value, prefix);
+                const hostname = hostnames.get(key.value);
+
+                variables.push(
+                    {
+                        key: `${variable}_SERVICE_NAME`,
+                        value: name,
+                        description: `The deployed name of the ${key.value} service.`,
+                    },
+                    {
+                        key: `${variable}_INTERNAL_HOST`,
+                        value: internalHostname(key.value, prefix),
+                        description: `The private DNS name of the ${key.value} service.`,
+                    },
+                );
+
+                if (hostname)
+                    variables.push({
+                        key: `${variable}_PUBLIC_DOMAIN`,
+                        value: hostname,
+                        description: `The public domain of the ${key.value} service, from its x-ports.`,
+                    });
+            }
+
+    // `web-app` and `web_app` share `WEB_APP_*`; the first service keeps the name.
+    const seen = new Set<string>();
+
+    return variables.filter((variable) => {
+        if (seen.has(variable.key)) return false;
+
+        seen.add(variable.key);
+
+        return true;
+    });
+}
+
+/**
+ * Built-ins from `systemVariables`, each overridable by a same-named user variable.
  * Without `references`, `{{ ... }}` reference text is kept as-is.
  */
 function composeEnvironment(
@@ -692,26 +1016,12 @@ function composeEnvironment(
     prefix?: string,
     domain?: string,
     references?: VariableReferences,
+    identity?: ResourceIdentity,
 ) {
-    const env: Record<string, string> = {};
-
     if (doc.errors.length > 0) throw new Error("Invalid compose YAML");
 
-    env.STOAT_PREFIX = prefix ?? "";
-
-    if (domain) env.STOAT_DOMAIN = domain;
-
-    const services = doc.get("services", true);
-
-    if (isMap(services))
-        for (const { key } of services.items)
-            if (isScalar(key) && Predicate.isString(key.value)) {
-                const variable = key.value.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
-                const name = prefixName(key.value, prefix);
-
-                env[`${variable}_SERVICE_NAME`] = name;
-                env[`${variable}_INTERNAL_HOST`] = `${name}.internal`;
-            }
+    let system = systemVariables(doc, prefix, domain, identity, new Map());
+    let env: Record<string, string> = {};
 
     const expand = (text: string): string => {
         let out = "";
@@ -810,11 +1120,37 @@ function composeEnvironment(
         ...Object.keys(values),
     ]);
 
-    for (const name of names)
-        if (values[name] !== undefined)
-            env[name] = expand(substitute(values[name])).replaceAll("$$", "$");
+    // A lenient pass skips values that fail, e.g. `${WEB_PUBLIC_DOMAIN:?}` before domains are known.
+    const resolve = (strict: boolean) => {
+        env = Object.fromEntries(system.map((variable) => [variable.key, variable.value]));
 
-    return { env, expand };
+        for (const name of names)
+            if (values[name] !== undefined)
+                try {
+                    env[name] = expand(substitute(values[name])).replaceAll("$$", "$");
+                } catch (error) {
+                    if (strict || !(error instanceof ComposeVariableError)) throw error;
+                }
+    };
+
+    resolve(false);
+
+    // x-ports hostnames are often built from Variables, so public domains are only known
+    // after one pass. The strict second pass lets Variables use `${<SERVICE>_PUBLIC_DOMAIN}` too.
+    const hostnames = new Map<string, string>();
+
+    try {
+        for (const entry of parseIngressComposeWith(doc.toString(), (name) => env[name]).entries)
+            if (entry.kind === "http" && entry.hostname && !hostnames.has(entry.service))
+                hostnames.set(entry.service, entry.hostname);
+    } catch {
+        // Public domains are best effort; the deploy reports Compose problems itself.
+    }
+
+    system = systemVariables(doc, prefix, domain, identity, hostnames);
+    resolve(true);
+
+    return { env, expand, names, system };
 }
 
 /** Undo only the transformations made by formatComposeFile; keep user YAML intact. */

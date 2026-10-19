@@ -22,6 +22,18 @@ async function rpc(page: Page, path: string, headers: Record<string, string> = {
     });
 }
 
+test("Back returns to the previous settings section", async ({ page }) => {
+    await section(page, "security");
+    await expect(page.getByLabel("Current password")).toBeVisible();
+
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
+    await expect(page.getByLabel("Full name")).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL(/section=security/u);
+    await expect(page.getByLabel("Current password")).toBeVisible();
+});
+
 test.describe("account", () => {
     test("changing your name shows everywhere", async ({ browser }) => {
         const { account, context, page } = await freshAccount(browser);
@@ -71,10 +83,12 @@ test.describe("account", () => {
         const otherPage = await other.newPage();
         await otherPage.goto("/projects");
         await expect(otherPage).toHaveURL(/\/login/u);
+
         const response = await other.request.post("/rpc/projects/listProjects", {
             data: { json: {} },
             headers: { origin: process.env.E2E_BASE_URL! },
         });
+
         expect(response.status()).toBe(401);
         await page.goto("/projects");
         await expect(page).toHaveURL(/\/projects$/u);

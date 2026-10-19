@@ -60,3 +60,8 @@ export const s3BucketStatusVariant = {
     deleting: "warning",
     failed: "error",
 } as const;
+
+// A bucket's status changes in a background job; poll until it settles.
+export function bucketJobPollInterval(status: string | undefined) {
+    return status === "provisioning" || status === "deleting" ? 2_000 : false;
+}

@@ -489,6 +489,43 @@ describe("resource logs backend", () => {
         ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
 
+    it("batches lines that arrive together into one event", async () => {
+        await db
+            .update(resources)
+            .set({ spec: "services:\n  web: { image: nginx }\n", settings: { prefixNames: false } })
+            .where(eq(resources.id, resourceId));
+
+        const stream = await call(resourcesRouter.streamLogs, selection, { context });
+
+        try {
+            expect((await stream.next()).value).toMatchObject({
+                type: "status",
+                state: "connected",
+            });
+            streams
+                .get("web-id")!
+                .enqueue(
+                    new TextEncoder().encode(
+                        ["one", "two", "three"]
+                            .map((message) => `data: ${JSON.stringify(log(message))}\n\n`)
+                            .join(""),
+                    ),
+                );
+            expect((await stream.next()).value).toMatchObject({
+                type: "logs",
+                logs: [{ message: "one" }, { message: "two" }, { message: "three" }],
+            });
+
+            send("web-id", log("later"));
+            expect((await stream.next()).value).toMatchObject({
+                type: "logs",
+                logs: [{ message: "later" }],
+            });
+        } finally {
+            await stream.return(undefined);
+        }
+    });
+
     it("reports a missing deployment migration accurately across log procedures", async () => {
         await db.$client.query(
             "ALTER TABLE deployments RENAME COLUMN resource_id TO missing_resource_id",
@@ -1528,6 +1565,7 @@ describe("resource logs backend", () => {
         async (result) => {
             await deployment();
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
             const stream = await call(resourcesRouter.streamLogs, selection, { context });
 
             try {
@@ -1755,6 +1793,14 @@ describe("resource logs backend", () => {
                     })
                     .where(eq(resources.id, resourceId));
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+
+            const [stored] = await db
+                .select({ slug: resources.slug })
+                .from(resources)
+                .where(eq(resources.id, resourceId));
+
+            const slug = stored!.slug;
+
             const stream = await call(resourcesRouter.streamLogs, selection, { context });
 
             try {
@@ -1776,10 +1822,7 @@ describe("resource logs backend", () => {
                         .update(resources)
                         .set({ settings: { prefixNames: true } })
                         .where(eq(resources.id, resourceId));
-                    current.set(
-                        `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`,
-                        "prefixed-id",
-                    );
+                    current.set(`${slug}-web`, "prefixed-id");
                 }
 
                 inspected.length = 0;
@@ -1795,9 +1838,7 @@ describe("resource logs backend", () => {
                 expect((await stream.next()).done).toBe(true);
                 expect(inspected).toEqual([
                     "web",
-                    scope === "imported settings"
-                        ? `${projectId.slice(0, 8)}-${resourceId.slice(0, 8)}-web`
-                        : "worker",
+                    scope === "imported settings" ? `${slug}-web` : "worker",
                 ]);
                 expect(openedStreams).toEqual(["web-id"]);
                 expect(cancelled).toEqual(new Set(["web-id"]));

@@ -18,6 +18,7 @@ services:
             APP_URL: https://${APP_URL:-stoat.example.com}
             DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
             REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
+            APP_USE_INTERNAL_CACHE: ${APP_USE_INTERNAL_CACHE:-false}
         x-pre_deploy:
             command:
                 [

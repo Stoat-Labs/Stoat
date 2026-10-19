@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Predicate } from "effect";
 import { Document, parse } from "yaml";
+import { withCaddyMetrics } from "./caddy-metrics";
 import { DeploymentError, followDeployment } from "./deploy-compose";
 import { DeployCaddy } from "./jobs";
 import { ALLOY_SERVICE } from "./monitoring-compose";
@@ -31,40 +32,6 @@ export const CADDY_METRICS_ENV = {
     OTEL_SERVICE_NAME: "caddy",
     OTEL_METRIC_EXPORT_INTERVAL: "15000",
 };
-
-const METRICS_OPTION = ["\tmetrics {", "\t\tper_host", "\t\totlp", "\t}"];
-
-/**
- * Turns on per-host HTTP metrics with OTLP export in the global options block, creating the
- * block when there is none. A `metrics` option the user already wrote is left alone.
- */
-export function withCaddyMetrics(caddyfile: string): string {
-    const lines = caddyfile.trim().split("\n");
-    const start = lines.findIndex((line) => line.trim() !== "" && !line.trim().startsWith("#"));
-
-    // Caddy only accepts the global options block as the first thing in the file.
-    if (start === -1 || lines[start]!.trim() !== "{") {
-        const block = ["{", ...METRICS_OPTION, "}"].join("\n");
-
-        return caddyfile.trim() ? `${block}\n\n${caddyfile.trim()}\n` : `${block}\n`;
-    }
-
-    let depth = 0;
-
-    for (const line of lines.slice(start).map((value) => value.trim())) {
-        if (line.startsWith("#")) continue;
-
-        if (depth === 1 && /^metrics(\s|$)/.test(line)) return caddyfile;
-
-        depth += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
-
-        if (depth === 0) break;
-    }
-
-    lines.splice(start + 1, 0, ...METRICS_OPTION);
-
-    return `${lines.join("\n")}\n`;
-}
 
 /**
  * The deployment's `spec` snapshot: the caddy service as a Compose file, with the global

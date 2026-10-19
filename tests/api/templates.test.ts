@@ -7,11 +7,13 @@ import { databaseEngines } from "../../packages/api/src/databases";
 import {
     expandSecrets,
     fillVariables,
+    linkCompanions,
     requiredVariables,
     summarizeVersion,
     templates,
 } from "../../packages/api/src/templates";
 import { formatComposeFile, interpolateCompose } from "../../packages/workflows/src/compose";
+import { VARIABLE_REFERENCE } from "../../packages/workflows/src/variable-reference";
 
 const renderedSchema = v.object({
     services: v.record(
@@ -180,15 +182,24 @@ describe("templates", () => {
 
     describe.each(
         templates.flatMap(({ appId, versions }) =>
-            Object.entries(versions).map(([version, files]) => ({ appId, version, files })),
+            Object.entries(versions).flatMap(([version, { companions, ...app }]) => [
+                { appId, version, resource: "app", files: app },
+                ...Object.entries(companions).map(([resource, files]) => ({
+                    appId,
+                    version,
+                    resource,
+                    files,
+                })),
+            ]),
         ),
-    )("$appId@$version", ({ appId, files }) => {
+    )("$appId@$version $resource", ({ appId, resource, files }) => {
         const prefix = "a1b2c3d4-e5f6a7b8";
         const domain = "abc.uncld.dev";
 
         // Same steps as creating the resource and then deploying it.
+        // References to companion resources resolve to a value of their own at deploy time.
         const env = fillVariables(
-            expandSecrets(files.env, domain),
+            expandSecrets(files.env, domain).replaceAll(VARIABLE_REFERENCE, "linked-value"),
             Object.fromEntries(requiredVariables(files.env).map((key) => [key, "required-value"])),
         );
 
@@ -242,7 +253,9 @@ describe("templates", () => {
 
             expect(missing).toEqual(
                 // FROM scratch images: nothing inside it can run a probe.
-                ["basedbin", "drizzle-gateway"].includes(appId) ? [`${prefix}-${appId}`] : [],
+                resource === "app" && ["basedbin", "drizzle-gateway"].includes(appId)
+                    ? [`${prefix}-${appId}`]
+                    : [],
             );
         });
 
@@ -254,6 +267,43 @@ describe("templates", () => {
                 }
             }
         });
+    });
+
+    it("only references variables its companion resources define", () => {
+        const references = templates.flatMap(({ appId, resources, versions }) =>
+            Object.entries(versions).flatMap(([version, { env, companions }]) =>
+                Array.from(env.matchAll(VARIABLE_REFERENCE), ([, key = "", name = ""]) => {
+                    const companion = companions[key];
+
+                    const defined = companion
+                        ? [
+                              ...Object.keys(parseEnv(companion.env)),
+                              ...summarizeVersion(companion).services.map(
+                                  ({ name: service }) =>
+                                      `${service.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_")}_INTERNAL_HOST`,
+                              ),
+                          ]
+                        : [];
+
+                    return key in resources && defined.includes(name)
+                        ? null
+                        : `${appId}@${version} {{ ${key}.${name} }}`;
+                }),
+            ),
+        );
+
+        expect(references.filter(Boolean)).toEqual([]);
+    });
+
+    it("links companion references to the created resource ids", () => {
+        expect(
+            linkCompanions("A={{ db.PASSWORD }}:{{ cache.HOST }} {{ 32 }} {{ other.X }}", {
+                db: "11111111-1111-4111-8111-111111111111",
+                cache: "22222222-2222-4222-8222-222222222222",
+            }),
+        ).toBe(
+            "A={{ 11111111-1111-4111-8111-111111111111.PASSWORD }}:{{ 22222222-2222-4222-8222-222222222222.HOST }} {{ 32 }} {{ other.X }}",
+        );
     });
 
     it("expands {{ DNS }} to the cluster domain", () => {

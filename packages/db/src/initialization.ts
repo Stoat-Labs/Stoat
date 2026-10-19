@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import type { Database } from "./index";
+import { resourceSlug } from "./slug";
 import { clusterMonitoring, clusters, projects, resources } from "./schema";
 
 export async function getInitialization(db: Database, clusterId: string) {
@@ -49,6 +50,7 @@ export async function prepareMonitoring(
             id: resourceId,
             projectId,
             name: "Monitoring",
+            slug: resourceSlug("monitoring"),
             type: "compose",
             draftSpec: template,
             settings: cluster.initializationConfiguration,

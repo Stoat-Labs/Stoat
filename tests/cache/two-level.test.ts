@@ -1,5 +1,11 @@
 import { expect, it, vi } from "vite-plus/test";
-import { createTwoLevel, type CacheLayer, type StorageValue } from "../../packages/cache/src/index";
+import {
+    createCache,
+    createSharedOnly,
+    createTwoLevel,
+    type CacheLayer,
+    type StorageValue,
+} from "../../packages/cache/src/index";
 
 function mapLayer() {
     const store = new Map<string, StorageValue>();
@@ -64,4 +70,37 @@ it("degrades to memory-only when the shared layer fails", async () => {
     await expect(cache.getItem("missing")).resolves.toBeNull();
     await cache.clear();
     await expect(cache.getItem("key")).resolves.toBeNull();
+});
+
+it("reads every call from the shared layer unless the internal cache is enabled", async () => {
+    const { layer: shared } = mapLayer();
+    const get = vi.spyOn(shared, "getItem");
+
+    const cache = createCache(shared, false);
+    await cache.setItem("key", { value: 4 });
+    // Another replica changes the entry; a Redis-only cache sees it at once.
+    await shared.setItem("key", { value: 5 });
+    await expect(cache.getItem("key")).resolves.toEqual({ value: 5 });
+    expect(get).toHaveBeenCalledTimes(1);
+
+    const internal = createCache(shared, true);
+    await internal.setItem("key", { value: 6 });
+    await shared.setItem("key", { value: 7 });
+    await expect(internal.getItem("key")).resolves.toEqual({ value: 6 });
+});
+
+it("treats a dead shared layer as a miss in Redis-only mode", async () => {
+    const cache = createSharedOnly(deadLayer());
+
+    await cache.setItem("key", { value: 8 });
+    await expect(cache.getItem("key")).resolves.toBeNull();
+    await cache.removeItem("key");
+    await cache.clear();
+});
+
+it("falls back to memory when there is no shared layer", async () => {
+    const cache = createCache(undefined, false);
+
+    await cache.setItem("key", { value: 9 });
+    await expect(cache.getItem("key")).resolves.toEqual({ value: 9 });
 });

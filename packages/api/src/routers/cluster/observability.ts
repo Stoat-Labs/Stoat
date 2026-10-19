@@ -13,19 +13,28 @@ import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
 import { z } from "zod";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
+import { pinnedVolumeName } from "../../compose-volumes";
 import {
     chartPoints,
     counterTotalQuery,
     dnsMetricNames,
     dnsMetricQueries,
     httpMetricNames,
+    hostGroups,
     httpQueries,
     httpSummaryQueries,
     httpTrafficMetricNames,
     caddyMetricTables,
+    parseServiceSeries,
     parseTotals,
+    breakdown,
+    bucketQuantile,
+    summarizeServices,
+    type Total,
     visitorRequests,
+    httpSummaryParts,
     type HttpSummary,
+    type HttpSummaryPart,
     metricNames,
     metricQueries,
     metricWindow,
@@ -43,6 +52,9 @@ import {
     type ObservabilityRange,
     type PackedMetricSeries,
     type PostgresMetricName,
+    type VolumeMetricName,
+    volumeMetricNames,
+    volumeMetricQueries,
     type ObservabilityContainer,
     type ObservabilityService,
 } from "../../observability";
@@ -211,10 +223,78 @@ type MetricResponse = {
     status: "ok" | "no-routes" | "not-collecting";
 };
 
-type ObservabilityMetricName = MetricName | HttpMetricName | DnsMetricName | PostgresMetricName;
+type ObservabilityMetricName =
+    | MetricName
+    | HttpMetricName
+    | DnsMetricName
+    | PostgresMetricName
+    | VolumeMetricName;
 
 function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
     return [...httpMetricNames, ...httpTrafficMetricNames].some((item) => item === name);
+}
+
+function isVolumeMetric(name: ObservabilityMetricName): name is VolumeMetricName {
+    return volumeMetricNames.some((item) => item === name);
+}
+
+/** The Docker name a volume is pinned to (moved services keep theirs), from the running spec first. */
+function pinnedName(resource: { spec: string | null; draftSpec: string | null }, volume: string) {
+    try {
+        const compose = resource.spec?.trim() ? resource.spec : resource.draftSpec;
+
+        return compose ? pinnedVolumeName(compose, volume) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+async function volumeMetric(
+    cluster: MonitoringCluster,
+    uc: UcClient,
+    name: VolumeMetricName,
+    range: ObservabilityRange,
+    points: ChartPoints,
+    prefix: string | undefined,
+    volume: string,
+    services: string[],
+    pinned: string | undefined,
+): Promise<MetricResponse> {
+    const { start, end, step } = metricWindow(range, points);
+
+    return swr(
+        `volume:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${prefix}:${volume}:${pinned}:${services.toSorted().join(",")}`,
+        end,
+        async () => {
+            try {
+                // The size table appears once a sidecar that reports volume sizes has been scraped.
+                if (
+                    name === "volumeSize" &&
+                    !(await collecting(cluster, uc, "volume", ["stoat_volume_size_bytes"]))
+                )
+                    return { start, end, step, series: [], status: "not-collecting" as const };
+
+                const query = volumeMetricQueries(
+                    cluster.id,
+                    step,
+                    prefix,
+                    volume,
+                    services,
+                    pinned,
+                )[name];
+
+                return {
+                    start,
+                    end,
+                    step,
+                    series: await queryRange(cluster, uc, query, start, end, step),
+                    status: "ok" as const,
+                };
+            } catch {
+                throw unreachable();
+            }
+        },
+    );
 }
 
 function isPostgresMetric(name: ObservabilityMetricName): name is PostgresMetricName {
@@ -277,6 +357,17 @@ async function serviceHostMap(cluster: MonitoringCluster, uc: UcClient, serviceI
     return hosts;
 }
 
+/**
+ * The selected services' hostnames, and whether Caddy's tables exist yet (null when GreptimeDB
+ * could not be asked). Both are cached; on a miss they are two sidecar round-trips, run together.
+ */
+function recordedHosts(cluster: MonitoringCluster, uc: UcClient, serviceIds: string[]) {
+    return Promise.all([
+        serviceHostMap(cluster, uc, serviceIds),
+        collecting(cluster, uc, "http", caddyMetricTables).catch(() => null),
+    ]);
+}
+
 async function httpMetric(
     cluster: MonitoringCluster,
     uc: UcClient,
@@ -286,26 +377,37 @@ async function httpMetric(
     serviceIds: string[],
 ): Promise<MetricResponse> {
     const { start, end, step } = metricWindow(range, points);
-    const hosts = await serviceHostMap(cluster, uc, serviceIds);
+    const [hosts, recorded] = await recordedHosts(cluster, uc, serviceIds);
     const queries = httpQueries(cluster.id, step, hosts);
 
     if (!queries) return { start, end, step, series: [], status: "no-routes" };
+
+    if (recorded === null) throw unreachable();
+
+    if (!recorded) return { start, end, step, series: [], status: "not-collecting" };
 
     return swr(
         `http:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${JSON.stringify([...hosts].sort())}`,
         end,
         async () => {
             try {
-                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
-                    return { start, end, step, series: [], status: "not-collecting" as const };
+                // Latency charts return every host's buckets, so they go a few hosts at a time.
+                const groups = queries[name].quantile === undefined ? [hosts] : hostGroups(hosts);
 
-                return {
-                    start,
-                    end,
-                    step,
-                    series: await queryRange(cluster, uc, queries[name], start, end, step),
-                    status: "ok" as const,
-                };
+                const series = await Promise.all(
+                    groups.map(async (group) => {
+                        const query = httpQueries(cluster.id, step, group)?.[name];
+
+                        if (!query) return [];
+                        const text = await queryText(cluster, uc, query.query, start, end, step);
+
+                        return query.perHost
+                            ? parseServiceSeries(text, start, end, step, group, query.quantile)
+                            : parseMetricSeries(text, start, end, step);
+                    }),
+                );
+
+                return { start, end, step, series: series.flat(), status: "ok" as const };
             } catch {
                 throw unreachable();
             }
@@ -315,86 +417,108 @@ async function httpMetric(
 
 const noTraffic = (status: HttpSummary["status"]): HttpSummary => ({
     status,
+    pending: [],
     services: [],
     latency: null,
     visitors: null,
 });
 
-/** Range totals for the HTTP traffic page: per-service figures and who sent the requests. */
-async function httpSummary(
+type HttpSummaryPatch = Partial<Pick<HttpSummary, HttpSummaryPart>>;
+
+/**
+ * Range totals for the HTTP traffic page: per-service figures and who sent the requests. Each part
+ * is cached and streamed on its own, so a slow visitor breakdown never holds back the totals.
+ */
+async function* httpSummary(
     cluster: MonitoringCluster,
     uc: UcClient,
     range: ObservabilityRange,
     serviceIds: string[],
-): Promise<HttpSummary> {
+): AsyncGenerator<HttpSummary> {
     const { end, duration } = metricWindow(range);
-    const hosts = await serviceHostMap(cluster, uc, serviceIds);
+    const [hosts, recorded] = await recordedHosts(cluster, uc, serviceIds);
     const queries = httpSummaryQueries(cluster.id, duration, hosts);
 
-    if (!queries) return noTraffic("no-routes");
+    if (!queries) {
+        yield noTraffic("no-routes");
 
-    return swr(
-        `http-summary:${cluster.id}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`,
-        end,
-        async () => {
+        return;
+    }
+
+    if (recorded === null) throw unreachable();
+
+    if (!recorded) {
+        yield noTraffic("not-collecting");
+
+        return;
+    }
+
+    const key = `http-summary:${cluster.id}:${JSON.stringify(range)}:${JSON.stringify([...hosts].sort())}`;
+
+    const total = async (query: string) =>
+        parseTotals(await queryText(cluster, uc, query, end, end, 15));
+
+    // The services and the overall P95 both read the buckets, which is the heaviest scan.
+    let bucketScan: Promise<Total[]> | undefined;
+    const buckets = () => (bucketScan ??= total(queries.latency));
+
+    const services = async () => {
+        const [requests, bytes, latency] = await Promise.all([
+            total(queries.requests),
+            total(queries.bytes),
+            buckets(),
+        ]);
+
+        return summarizeServices(hosts, requests, bytes, latency);
+    };
+
+    const latency = async () => bucketQuantile(0.95, await buckets());
+
+    const visitors = async () => {
+        if (!(await collecting(cluster, uc, "visitors", [visitorRequests]))) return null;
+
+        const series = await total(queries.visitors);
+
+        return {
+            countries: breakdown(series, "country"),
+            clients: breakdown(series, "client"),
+            protocols: breakdown(series, "proto"),
+        };
+    };
+
+    function load<T>(part: HttpSummaryPart, query: () => Promise<T>) {
+        return swr(`${key}:${part}`, end, async () => {
             try {
-                if (!(await collecting(cluster, uc, "http", caddyMetricTables)))
-                    return noTraffic("not-collecting");
-
-                const total = async (query: string, label: string) =>
-                    parseTotals(await queryText(cluster, uc, query, end, end, 15), label);
-
-                const perService = async (query: string) =>
-                    new Map(
-                        (await total(query, "container_label_uncloud_service_id")).map(
-                            ({ key, requests }) => [key, requests],
-                        ),
-                    );
-
-                const [requests, errors, bytes, latency, [overall], visitors] = await Promise.all([
-                    perService(queries.requests),
-                    perService(queries.errors),
-                    perService(queries.bytes),
-                    perService(queries.latency),
-                    total(queries.totalLatency, ""),
-                    collecting(cluster, uc, "visitors", [visitorRequests]).then(async (recorded) =>
-                        recorded
-                            ? {
-                                  countries: await total(queries.countries, "country"),
-                                  clients: await total(queries.clients, "client"),
-                                  protocols: await total(queries.protocols, "proto"),
-                              }
-                            : null,
-                    ),
-                ]);
-
-                // Every service with a hostname gets a row, including those without traffic.
-                const services = [...hosts].flatMap(([serviceId, names]) =>
-                    names.length
-                        ? [
-                              {
-                                  serviceId,
-                                  hosts: names,
-                                  requests: Math.round(requests.get(serviceId) ?? 0),
-                                  errors: Math.round(errors.get(serviceId) ?? 0),
-                                  bytes: Math.round(bytes.get(serviceId) ?? 0),
-                                  latency: latency.get(serviceId) ?? null,
-                              },
-                          ]
-                        : [],
-                );
-
-                return {
-                    status: "ok" as const,
-                    services,
-                    latency: overall?.requests ?? null,
-                    visitors,
-                };
+                return await query();
             } catch {
                 throw unreachable();
             }
-        },
-    );
+        });
+    }
+
+    const loading = new Map<HttpSummaryPart, Promise<[HttpSummaryPart, HttpSummaryPatch]>>([
+        ["services", load("services", services).then((value) => ["services", { services: value }])],
+        ["latency", load("latency", latency).then((value) => ["latency", { latency: value }])],
+        ["visitors", load("visitors", visitors).then((value) => ["visitors", { visitors: value }])],
+    ]);
+
+    const summary: HttpSummary = {
+        status: "ok",
+        pending: [...httpSummaryParts],
+        services: [],
+        latency: null,
+        visitors: null,
+    };
+
+    // Yields in completion order; race also handles the rejections of the parts still running.
+    while (loading.size) {
+        const [part, patch] = await Promise.race(loading.values());
+        loading.delete(part);
+        Object.assign(summary, patch, { pending: [...loading.keys()] });
+
+        // A copy, so every chunk the client caches is its own object.
+        yield { ...summary };
+    }
 }
 
 const monitoringMiddleware = organizationProcedure.middleware(
@@ -558,9 +682,18 @@ export const observabilityRouter = {
                     ...httpTrafficMetricNames,
                     ...dnsMetricNames,
                     ...postgresMetricNames,
+                    ...volumeMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
                 serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
+                // Volume metrics: the resource and volume (Compose names) and the services mounting it.
+                volume: z
+                    .object({
+                        resourceId: z.uuid(),
+                        name: z.string().min(1).max(128),
+                        services: z.array(z.string().min(1).max(128)).max(100),
+                    })
+                    .optional(),
                 range: rangeInput,
                 // Sparklines ask for fewer points than full-size charts.
                 points: z.literal(chartPoints).default(120),
@@ -569,11 +702,49 @@ export const observabilityRouter = {
         .use(monitoringMiddleware)
         .handler(
             async ({
-                context: { cluster, uc },
-                input: { name, range, points, serviceIds },
+                context: { db, cluster, uc },
+                input: { name, range, points, serviceIds, volume },
             }): Promise<MetricResponse> => {
                 if (isHttpMetric(name))
                     return httpMetric(cluster, uc, name, range, points, serviceIds ?? []);
+
+                if (isVolumeMetric(name)) {
+                    if (!volume)
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: "Volume metrics need the volume and its resource.",
+                        });
+
+                    const [resource] = await db
+                        .select({
+                            slug: resources.slug,
+                            settings: resources.settings,
+                            spec: resources.spec,
+                            draftSpec: resources.draftSpec,
+                        })
+                        .from(resources)
+                        .innerJoin(projects, eq(projects.id, resources.projectId))
+                        .where(
+                            and(
+                                eq(resources.id, volume.resourceId),
+                                eq(projects.clusterId, cluster.id),
+                            ),
+                        );
+
+                    if (!resource)
+                        throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+                    return volumeMetric(
+                        cluster,
+                        uc,
+                        name,
+                        range,
+                        points,
+                        resourceComposePrefix(resource),
+                        volume.name,
+                        volume.services,
+                        pinnedName(resource, volume.name),
+                    );
+                }
 
                 // Exporter series are only meaningful per resource, so they require a service scope.
                 if (isPostgresMetric(name)) {

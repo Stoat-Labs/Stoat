@@ -9,9 +9,11 @@ import {
     inlineComposeConfigs,
     interpolateCompose,
     resourceEnv,
+    type ResourceIdentity,
 } from "./compose";
 import { deployCompose, DeploymentError, environmentCredentials } from "./deploy-compose";
 import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
+import { deployedServiceNames, staleServices } from "./stale-services";
 
 export const RESOURCE_FAILURE_MESSAGE =
     "Resource deployment failed. Check the Compose configuration and sidecar connectivity, then retry.";
@@ -89,6 +91,16 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             signal.throwIfAborted();
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
+            const {
+                rows: [identity],
+            } = await db.$client.query<ResourceIdentity>(
+                `SELECT r.id AS "resourceId", r.name AS "resourceName",
+                        p.id AS "projectId", p.name AS "projectName"
+                 FROM resources r JOIN projects p ON p.id = r.project_id
+                 WHERE r.id = $1`,
+                [deployment.resourceId],
+            );
+
             const referencedIds = referencedResourceIds(input.env);
 
             const targets = referencedIds.length
@@ -97,7 +109,10 @@ export async function deployResource(db: Database, deploymentId: string, signal:
 
             // Only ask the sidecar when STOAT_DOMAIN is used, including by referenced resources.
             const variableSources = [deployedSpec, input.env].concat(
-                targets.map((target) => target.spec + resourceEnv(target)),
+                // Drafts too: a reference can resolve from a service only the draft has yet.
+                targets.map(
+                    (target) => `${target.spec}\n${target.draftSpec ?? ""}\n${resourceEnv(target)}`,
+                ),
             );
 
             let domain: string | undefined;
@@ -120,6 +135,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     input.prefix ?? undefined,
                     domain,
                     references,
+                    identity,
                 );
             } catch (error) {
                 if (!(error instanceof ComposeVariableError)) throw error;
@@ -140,6 +156,55 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             }
 
             await log(`Formatted ${compose.serviceCount} service(s).`);
+
+            // Renamed, deleted or moved services would otherwise keep running beside their replacement,
+            // possibly on the same volume, so they go before the new Compose starts. Volumes stay.
+            step = "Removing services the Compose file no longer has.";
+
+            const deployed = await deployedServiceNames(
+                db,
+                deployment.clusterId,
+                deployment.resourceId,
+            );
+
+            // Services left by a failed deploy are in no snapshot, but still carry this resource's prefix.
+            const leftovers = input.prefix
+                ? await unwrap(uc.GET("/api/v1/services", { signal })).then(
+                      ({ items }) =>
+                          items
+                              .map((item) => item.name)
+                              .filter((name) => name.startsWith(`${input.prefix}-`)),
+                      () => [],
+                  )
+                : [];
+
+            for (const name of staleServices(
+                [...deployed.own, ...leftovers],
+                compose.serviceNames,
+                deployed.others,
+            )) {
+                signal.throwIfAborted();
+                await log(
+                    `Removing ${name}: it is no longer in the Compose file. Its volumes are kept.`,
+                );
+
+                const result = await uc
+                    .DELETE("/api/v1/services/{id}", {
+                        params: { path: { id: name } },
+                        signal,
+                    })
+                    .catch(() => null);
+
+                // Already gone is what we wanted. Anything else stops the deploy: the old service may
+                // still run on the volume its replacement would start on.
+                if (!result || (!result.response.ok && result.response.status !== 404)) {
+                    const reason = `Could not remove ${name}: ${result?.error?.error ?? "the sidecar did not respond"}. Remove it from the cluster by hand, then deploy again.`;
+
+                    await log(reason, "error", "attempt-failed");
+                    throw new DeploymentError(reason);
+                }
+            }
+
             step = "Deploying Compose to the cluster.";
             await log(step);
 

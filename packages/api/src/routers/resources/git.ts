@@ -52,7 +52,7 @@ export function resolveComposePath(path: string, files: string[]): string {
     });
 }
 
-function validateCompose(spec: string) {
+export function validateCompose(spec: string) {
     try {
         formatComposeFile(spec, "");
     } catch (error) {
@@ -89,6 +89,7 @@ export async function loadGitCompose(
             branch: repo.branch,
             path,
             revision: file.revision,
+            message: file.message,
             blob: file.blob,
             tree: file.tree,
             autoDeploy: false,
@@ -209,6 +210,7 @@ export const resourceGitRouter = {
                         gitSource: {
                             ...resource.gitSource,
                             revision: file.revision,
+                            message: file.message,
                             blob: file.blob,
                             tree: file.tree,
                         },
@@ -286,7 +288,8 @@ export const resourceGitRouter = {
                             ...resource.gitSource,
                             autoDeploy: input.autoDeploy,
                             watchPath,
-                            // Both are at the synced revision, checked above.
+                            // All three are at the synced revision, checked above.
+                            message: file.message,
                             blob: file.blob,
                             tree: file.tree,
                         },
