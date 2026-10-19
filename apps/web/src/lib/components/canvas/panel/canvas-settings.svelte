@@ -12,6 +12,7 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Switch } from "$lib/components/ui/switch";
     import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { bucketJobPollInterval } from "$lib/s3";
     import { bytes } from "$lib/observability";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
@@ -94,6 +95,8 @@
                 resourceId: resource.id,
             },
             enabled: isBucket,
+            refetchInterval: (query) =>
+                bucketJobPollInterval(query.state.data?.status),
             retry: false,
         }),
     );

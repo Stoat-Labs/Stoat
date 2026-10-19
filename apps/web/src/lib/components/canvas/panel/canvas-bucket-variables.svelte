@@ -13,6 +13,7 @@
     } from "$lib/components/ui/menu";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { client, orpc } from "$lib/api/orpc";
+    import { bucketJobPollInterval } from "$lib/s3";
     import Braces from "@lucide/svelte/icons/braces";
     import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
     import { createQuery } from "@tanstack/svelte-query";
@@ -32,7 +33,13 @@
     });
 
     const bucketQuery = createQuery(() =>
-        orpc.buckets.get.queryOptions({ input, retry: false }),
+        orpc.buckets.get.queryOptions({
+            input,
+            // The panel can open while the bucket is still being created.
+            refetchInterval: (query) =>
+                bucketJobPollInterval(query.state.data?.status),
+            retry: false,
+        }),
     );
 
     const bucket = $derived(bucketQuery.data);
