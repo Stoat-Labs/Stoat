@@ -13,7 +13,7 @@
 </div>
 <br/>
 
-<img width="2237" height="1332" alt="image" src="https://github.com/user-attachments/assets/01725fe7-3840-4b43-b302-262ff5b38667" />
+<img width="2240" height="1337" alt="image" src="https://github.com/user-attachments/assets/23fdd9c0-b7e0-4926-b6af-1bc202e97e25" />
 
 ## Features
 
@@ -100,14 +100,20 @@ This project is licensed under the [Apache 2.0 License](LICENSE).
 
 ## Credits
 
-Kudos to the creators, maintainers and contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being more of a "docker harness". The software Stoat uses [Uncloud](https://uncloud.run/). And Railway for letting me copy their ui lol, great platform if you dont want to manage your own infrastructure ♥️
+Kudos to the contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being closer to docker compose. The software Stoat uses [Uncloud](https://uncloud.run/). And Railway for letting me copy their ui lol, great platform if you dont want to manage your own infrastructure ♥️
 
 ## Screenshots
 
-<img width="2239" height="1328" alt="image" src="https://github.com/user-attachments/assets/7b76f206-6e87-4571-ab97-e09b8ce9815b" />
-<img width="2240" height="1332" alt="image" src="https://github.com/user-attachments/assets/786b2f71-a012-415d-bf7f-c6f4a4cd9b1a" />
-<img width="2233" height="1328" alt="image" src="https://github.com/user-attachments/assets/1db12f13-2ebc-4822-97a0-11654006b6fd" />
-<img width="2234" height="1329" alt="image" src="https://github.com/user-attachments/assets/ade3eb8e-84e6-4038-9056-936cdae6a294" />
+<img width="2242" height="1334" alt="image" src="https://github.com/user-attachments/assets/c3ac1f85-a097-4f1e-a603-a5d183ef8dbd" />
+<img width="2242" height="1336" alt="image" src="https://github.com/user-attachments/assets/6cc931ac-b1d0-4dd8-b1a1-3f2f302f00f0" />
+<img width="2243" height="1338" alt="image" src="https://github.com/user-attachments/assets/27913699-748c-46f0-9b0a-55d0a47005f6" />
+<img width="2248" height="1336" alt="image" src="https://github.com/user-attachments/assets/6d69d901-efc5-4f3e-89a0-63e42de5f65e" />
+<img width="2240" height="1338" alt="image" src="https://github.com/user-attachments/assets/6a5b98b9-4c83-4e71-acfa-674291b77730" />
+<img width="2241" height="1337" alt="image" src="https://github.com/user-attachments/assets/7b059d7c-bfa4-4a10-ab08-3cd44cd3025b" />
+
+
+
+
 and there's more...
 
 ---
