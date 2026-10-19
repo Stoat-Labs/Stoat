@@ -7,6 +7,7 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
+    import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
     import Plus from "@lucide/svelte/icons/plus";
     import {
         Background,
@@ -1176,6 +1177,20 @@
             }
         }
 
+        // Ctrl/Cmd+K opens the add palette, from anywhere on the page.
+        if (
+            (event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === "k" &&
+            !empty &&
+            !isInternal &&
+            !add.current
+        ) {
+            event.preventDefault();
+            void add.set("root");
+
+            return;
+        }
+
         // Railway: Escape closes the details panel, unless a dialog or field has focus.
         if (
             event.key !== "Escape" ||
@@ -1350,6 +1365,10 @@
                 >
                     <Plus class="size-4" aria-hidden="true" />
                     Add
+                    <KbdGroup class="hidden sm:inline-flex">
+                        <Kbd>Ctrl</Kbd>
+                        <Kbd>K</Kbd>
+                    </KbdGroup>
                 </Button>
             </div>
         {/if}
@@ -1390,8 +1409,10 @@
     </div>
 
     {#if empty && !isInternal}
+        <!-- Pinned near the top like the dialog: centred, the box would move as pages change length
+             and slide another row under a resting pointer. -->
         <div
-            class="pointer-events-none absolute inset-0 flex items-center justify-center p-4"
+            class="pointer-events-none absolute inset-0 flex items-start justify-center px-4 pt-[max(4rem,15vh)]"
         >
             <div class="pointer-events-auto">
                 <AddPalette

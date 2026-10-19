@@ -2,6 +2,7 @@
     import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
     import Search from "@lucide/svelte/icons/search";
     import { Autocomplete as AutocompletePrimitive } from "@shardsui/svelte/autocomplete";
+    import type { Snippet } from "svelte";
     import type {
         HTMLButtonAttributes,
         HTMLInputAttributes,
@@ -18,6 +19,8 @@
         };
         ref?: HTMLInputElement | null;
         showClear?: boolean;
+        /** Replaces the search icon, e.g. with a back button. */
+        start?: Snippet;
         showTrigger?: boolean;
         size?: "sm" | "default" | "lg";
         triggerProps?: Omit<HTMLButtonAttributes, "class"> & {
@@ -30,6 +33,7 @@
         class: className,
         showTrigger = false,
         showClear = false,
+        start,
         size = "lg",
         autofocus = true,
         clearProps,
@@ -65,11 +69,18 @@
         data-slot="command-input-group"
     >
         <div
-            aria-hidden="true"
-            class="[&_svg]:-mx-0.5 pointer-events-none absolute inset-y-0 start-px z-10 flex items-center ps-[calc(--spacing(3)-1px)] opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4"
+            aria-hidden={start ? undefined : "true"}
+            class={cn(
+                "[&_svg]:-mx-0.5 absolute inset-y-0 start-px z-10 flex items-center ps-[calc(--spacing(3)-1px)] opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+                !start && "pointer-events-none",
+            )}
             data-slot="command-start-addon"
         >
-            <Search />
+            {#if start}
+                {@render start()}
+            {:else}
+                <Search />
+            {/if}
         </div>
         <span
             class={cn(

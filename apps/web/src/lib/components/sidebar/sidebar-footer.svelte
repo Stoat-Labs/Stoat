@@ -23,5 +23,5 @@
 <p
     class="px-2 text-center text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
 >
-    v0.0.1
+    v0.2.0
 </p>
