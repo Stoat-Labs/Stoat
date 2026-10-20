@@ -864,6 +864,9 @@
                 aria-label={placeholder}
                 disabled={creating}
                 onkeydown={(event) => {
+                    // Keys typed while an input method composes a character belong to it.
+                    if (event.isComposing) return;
+
                     if (step) {
                         // A step's input is a value, not a search: Enter submits it.
                         if (event.key === "Enter") {
