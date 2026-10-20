@@ -9,11 +9,14 @@ import { expect, it } from "vite-plus/test";
 import DeploymentsTable from "../../apps/web/src/lib/components/deployments/deployments-table.svelte";
 import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/header-actions";
 import { orpc } from "../../apps/web/src/lib/api/orpc";
-import { listPageSize } from "../../apps/web/src/lib/params/query-params";
+
+// The full view fits rows to the viewport; during SSR that is the 900px
+// default, so floor((900 - 290) / 49) rows.
+const ssrPageSize = 12;
 
 function renderDeployments(latest: number | undefined, search: string, resourceId?: string) {
     const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
-    const limit = latest ?? listPageSize;
+    const limit = latest ?? ssrPageSize;
 
     const status: "failed" | undefined = latest === undefined ? "failed" : undefined;
 
@@ -87,7 +90,7 @@ it("preserves resource scoping and contextual deployment links in latest mode", 
 
 it("keeps URL filtering and pagination for the full deployments view", () => {
     const body = renderDeployments(undefined, "page=3&status=failed");
-    expect(body).toContain(`${2 * listPageSize + 1}–${3 * listPageSize} of 80`);
+    expect(body).toContain(`${2 * ssrPageSize + 1}–${3 * ssrPageSize} of 80`);
     expect(body).toContain('data-slot="pagination"');
     expect(body).not.toContain("Recent deployments");
     expect(body).not.toContain("View all deployments");

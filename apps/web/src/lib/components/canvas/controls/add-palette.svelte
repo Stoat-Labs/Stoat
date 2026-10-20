@@ -22,7 +22,6 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Button } from "$lib/components/ui/button";
     import {
         Command,
         CommandCollection,
@@ -41,7 +40,9 @@
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Info from "@lucide/svelte/icons/info";
+    import KeyRound from "@lucide/svelte/icons/key-round";
     import Layers from "@lucide/svelte/icons/layers";
+    import Search from "@lucide/svelte/icons/search";
     import Settings from "@lucide/svelte/icons/settings";
     import SquareTerminal from "@lucide/svelte/icons/square-terminal";
     import { ORPCError } from "@orpc/client";
@@ -68,8 +69,6 @@
         imageServiceName,
         isImageReference,
     } from "./docker-image";
-    import BucketDialog from "./bucket-dialog.svelte";
-    import TemplateDialog from "./template-dialog.svelte";
     import { volumeNodeId, type VolumeTarget } from "../graph";
 
     let {
@@ -155,6 +154,14 @@
     const current = $derived(add.current ?? (inline ? "root" : null));
 
     let query = $state("");
+
+    let input = $state<HTMLInputElement | null>(null);
+
+    // Each page mounts a new input. Inside the dialog, the focus trap catches focus when the old one
+    // is removed, so `autofocus` never fires and the arrow keys would go nowhere.
+    $effect(() => {
+        input?.focus();
+    });
 
     let creating = $state(false);
 
@@ -484,20 +491,45 @@
     // Docker Hub logos 404 for repositories without one; those rows show `icon` instead.
     let brokenLogos = $state(new Set<string>());
 
+    // Values typed for the template's required variables. They may be secrets, so they stay out of
+    // the URL; the template step asks for one variable at a time.
+    let templateValues = $state<Record<string, string>>({});
+
+    let templateStep = $state(0);
+
+    const requiredKeys = $derived(
+        configuredTemplate?.versions[0]?.required ?? [],
+    );
+
+    const templateKey = $derived(requiredKeys[templateStep] ?? "");
+
+    // Railway never opens a second dialog: the last questions are asked in the palette's own input.
+    const step = $derived(
+        volumeTarget
+            ? "volume"
+            : configuredConnection
+              ? "bucket"
+              : configuredTemplate
+                ? "template"
+                : null,
+    );
+
     const items = $derived(
-        current === "git"
-            ? gitEntries
-            : current === "docker"
-              ? dockerEntries
-              : current === "bucket"
-                ? bucketEntries
-                : current === "volume"
-                  ? volumeTarget
-                      ? []
-                      : volumeEntries
-                  : current === "template" || current === "database"
-                    ? templateEntries
-                    : rootEntries,
+        step
+            ? []
+            : current === "git"
+              ? gitEntries
+              : current === "docker"
+                ? dockerEntries
+                : current === "bucket"
+                  ? bucketEntries
+                  : current === "volume"
+                    ? volumeTarget
+                        ? []
+                        : volumeEntries
+                    : current === "template" || current === "database"
+                      ? templateEntries
+                      : rootEntries,
     );
 
     const titles: Record<AddPage, string> = {
@@ -507,7 +539,7 @@
         template: "Template",
         docker: "Docker Image",
         bucket: "Bucket",
-        volume: "Attach volume to service",
+        volume: "Volume",
     };
 
     const placeholders: Record<AddPage, string> = {
@@ -520,10 +552,34 @@
         volume: "Service to attach volume to",
     };
 
-    const placeholder = $derived(
-        current === "volume" && volumeTarget
-            ? "Mount path of the volume"
-            : placeholders[current ?? "root"],
+    const placeholder = $derived.by(() => {
+        if (step === "volume") return "Mount path of the volume";
+
+        if (step === "bucket") return "Bucket name";
+
+        if (step === "template") return `Value for ${templateKey}`;
+
+        return placeholders[current ?? "root"];
+    });
+
+    // The chips above the palette: the page, then what the step is about.
+    const breadcrumbs = $derived(
+        current && current !== "root"
+            ? [
+                  titles[current],
+                  ...(step === "volume" && volumeTarget
+                      ? [volumeTarget.label]
+                      : step === "bucket" && configuredConnection
+                        ? [configuredConnection.name]
+                        : step === "template" && configuredTemplate
+                          ? [configuredTemplate.name, templateKey]
+                          : []),
+              ]
+            : [],
+    );
+
+    const secretCount = $derived(
+        configuredTemplate?.versions[0]?.secrets.length ?? 0,
     );
 
     const repositoriesPending = $derived(
@@ -544,8 +600,85 @@
     function open(next: AddPage | null) {
         query = "";
         createError = "";
+        templateValues = {};
+        templateStep = 0;
         void volumeKey.set(null);
+        void configuring.set(null);
+        void configuringBucket.set(null);
         void add.set(next);
+    }
+
+    // Enter in a step: the volume and bucket steps create, the template one moves to the next variable.
+    function submitStep() {
+        const value = query.trim();
+
+        createError = "";
+
+        if (step === "volume" && volumeTarget) {
+            if (value.startsWith("/"))
+                void createVolume(volumeTarget, value);
+            else createError = "The mount path must start with /.";
+        } else if (step === "bucket" && configuredConnection) {
+            if (/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u.test(value))
+                void createBucket(
+                    configuredConnection.id,
+                    value,
+                    value,
+                );
+            else
+                createError =
+                    "Bucket names are 3-63 lowercase letters, digits, or hyphens.";
+        } else if (step === "template" && configuredTemplate) {
+            if (!value) {
+                createError = `${templateKey} is required.`;
+
+                return;
+            }
+
+            templateValues[templateKey] = value;
+
+            if (templateStep < requiredKeys.length - 1) {
+                templateStep += 1;
+                query = templateValues[templateKey] ?? "";
+            } else
+                void createResource(
+                    templateInput(configuredTemplate, {
+                        ...templateValues,
+                    }),
+                );
+        }
+    }
+
+    // The row the arrow keys are on, so → can open its page.
+    let highlighted = $state<Entry | undefined>();
+
+    // Escape always steps back; Backspace and ← do once the input is empty, as in Railway.
+    function goesBack(event: KeyboardEvent) {
+        return (
+            event.key === "Escape" ||
+            (query === "" &&
+                (event.key === "Backspace" ||
+                    event.key === "ArrowLeft"))
+        );
+    }
+
+    // Escape, or Backspace or ← on an empty input, undoes one step.
+    function stepBack() {
+        createError = "";
+
+        if (step === "template" && templateStep > 0) {
+            templateStep -= 1;
+            query = templateValues[templateKey] ?? "";
+
+            return;
+        }
+
+        query = "";
+        templateValues = {};
+        templateStep = 0;
+        void volumeKey.set(null);
+        void configuringBucket.set(null);
+        void configuring.set(null);
     }
 
     async function showCreated(resourceId: string) {
@@ -562,8 +695,6 @@
         ]);
 
         open(null);
-        void configuring.set(null);
-        void configuringBucket.set(null);
         oncreated(resourceId);
     }
 
@@ -691,11 +822,11 @@
             query = "";
             void volumeKey.set(keyOf(target.volumeService));
         } else if ("bucket" in target) {
-            open(null);
+            query = "";
             void configuringBucket.set(target.bucket.connectionId);
         } else if (target.template.versions[0]?.required.length) {
             // Railway asks for nothing; Stoat templates may need values first.
-            open(null);
+            query = "";
             void configuring.set(target.template.appId);
         } else
             void createResource(templateInput(target.template, {}));
@@ -703,90 +834,98 @@
 </script>
 
 {#snippet palette()}
-    {#if current && current !== "root"}
-        <!-- Railway's breadcrumb chip, with the way back beside it. -->
-        <div class="flex items-center gap-1.5 px-2.5 pt-2.5">
-            <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Back"
-                onclick={() => {
-                    if (volumeTarget) {
-                        query = "";
-                        void volumeKey.set(null);
-                    } else open("root");
-                }}
-            >
-                <ArrowLeft class="size-4" aria-hidden="true" />
-            </Button>
-            <span
-                class="rounded-md border bg-muted/60 px-2 py-0.5 text-xs font-medium"
-            >
-                {titles[current]}
-            </span>
-            {#if current === "volume" && volumeTarget}
+    {#if breadcrumbs.length}
+        <!-- Railway's breadcrumb chips float above the palette. -->
+        <div class="absolute start-0 bottom-full mb-2 flex gap-1.5">
+            {#each breadcrumbs as crumb, index (index)}
                 <span
-                    class="rounded-md border bg-muted/60 px-2 py-0.5 text-xs font-medium"
+                    class="rounded-md border bg-popover px-2 py-0.5 font-medium text-popover-foreground text-xs shadow-xs/5"
                 >
-                    Volume mount path
+                    {crumb}
                 </span>
-            {/if}
+            {/each}
         </div>
     {/if}
-    <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. -->
-    {#key current}
+    <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. Steps
+         remount it too, so coming back to a list highlights its first row again. -->
+    {#key `${current}:${step}`}
         <Command
             {items}
             bind:value={query}
             {...current === "docker" ? { filter: null } : {}}
             itemToStringValue={(entry: Entry) =>
                 `${entry.label} ${entry.description ?? ""}`}
+            onItemHighlighted={(entry: Entry | undefined) =>
+                (highlighted = entry)}
         >
             <CommandInput
+                bind:ref={input}
                 {placeholder}
                 aria-label={placeholder}
                 disabled={creating}
                 onkeydown={(event) => {
-                    if (current === "root") return;
+                    // Keys typed while an input method composes a character belong to it.
+                    if (event.isComposing) return;
 
-                    if (current === "volume" && volumeTarget) {
-                        // The mount path step: Enter creates, and the way back is the service list.
+                    if (step) {
+                        // A step's input is a value, not a search: Enter submits it.
                         if (event.key === "Enter") {
                             event.preventDefault();
-
-                            if (query.trim().startsWith("/"))
-                                void createVolume(
-                                    volumeTarget,
-                                    query.trim(),
-                                );
-                            else
-                                createError =
-                                    "The mount path must start with /.";
-                        } else if (
-                            event.key === "Escape" ||
-                            (event.key === "Backspace" &&
-                                query === "")
-                        ) {
+                            submitStep();
+                        } else if (goesBack(event)) {
                             event.preventDefault();
                             event.stopPropagation();
-                            void volumeKey.set(null);
+                            stepBack();
                         }
 
                         return;
                     }
 
-                    // Escape steps back a page before it closes the palette; Backspace on an empty
-                    // search does too, as in Railway.
+                    // → with the caret at the end opens the highlighted row's page, like Enter.
                     if (
-                        event.key === "Escape" ||
-                        (event.key === "Backspace" && query === "")
+                        event.key === "ArrowRight" &&
+                        highlighted &&
+                        "page" in highlighted.target &&
+                        event.currentTarget.selectionStart ===
+                            query.length
                     ) {
+                        event.preventDefault();
+                        choose(highlighted);
+
+                        return;
+                    }
+
+                    // Escape steps back a page before it closes the palette.
+                    if (current !== "root" && goesBack(event)) {
                         event.preventDefault();
                         event.stopPropagation();
                         open("root");
                     }
                 }}
-            />
+            >
+                {#snippet start()}
+                    {#if current && current !== "root"}
+                        <button
+                            type="button"
+                            aria-label="Back"
+                            class="-ms-0.5 flex rounded-sm p-0.5 hover:bg-accent"
+                            onclick={() => {
+                                if (step) stepBack();
+                                else open("root");
+
+                                input?.focus();
+                            }}
+                        >
+                            <ArrowLeft
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </button>
+                    {:else}
+                        <Search aria-hidden="true" />
+                    {/if}
+                {/snippet}
+            </CommandInput>
             {#if createError}
                 <Alert variant="error" class="mx-2.5 mb-1.5 w-auto">
                     <AlertDescription>{createError}</AlertDescription>
@@ -798,6 +937,32 @@
                         {repositoryErrors.join(" ")}
                     </AlertDescription>
                 </Alert>
+            {/if}
+            {#if step === "bucket" && configuredConnection && !s3Providers[configuredConnection.provider].scopedKeys}
+                <p
+                    class="mx-2.5 mb-1.5 flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-sm text-info-foreground dark:bg-info/16"
+                >
+                    <Info
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    {s3Providers[configuredConnection.provider].name} can't
+                    scope keys, so this bucket shares the connection's access
+                    keys.
+                </p>
+            {/if}
+            {#if step === "template" && templateStep === requiredKeys.length - 1 && secretCount > 0}
+                <p
+                    class="mx-2.5 mb-1.5 flex items-center gap-2 rounded-lg bg-info/8 px-3 py-2 text-sm text-info-foreground dark:bg-info/16"
+                >
+                    <KeyRound
+                        class="size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    {secretCount}
+                    {secretCount === 1 ? "secret is" : "secrets are"} generated
+                    for you.
+                </p>
             {/if}
             {#if current === "docker"}
                 <p
@@ -811,33 +976,41 @@
                     the cluster can pull.
                 </p>
             {/if}
-            <CommandEmpty>
-                {#if current === "docker"}
-                    <div class="space-y-1.5 px-1 text-start">
-                        <p class="font-medium text-foreground">
-                            Examples
-                        </p>
-                        <ul
-                            class="list-inside list-disc space-y-0.5 font-mono text-xs"
-                        >
-                            <li>traefik/whoami</li>
-                            <li>ghcr.io/username/repo:latest</li>
-                            <li>quay.io/username/repo:tag</li>
-                            <li>
-                                registry.gitlab.com/username/repo:tag
-                            </li>
-                        </ul>
-                    </div>
-                {:else if current === "bucket" && s3ConnectionsQuery.isPending}
-                    Loading connections...
-                {:else if current === "git" && repositoriesPending}
-                    Loading repositories...
-                {:else if (current === "template" || current === "database") && templatesQuery.isPending}
-                    Loading templates...
-                {:else}
-                    Nothing matches "{query}".
-                {/if}
-            </CommandEmpty>
+            {#if step && creating}
+                <p class="px-4 pb-3 text-muted-foreground text-xs">
+                    Adding...
+                </p>
+            {/if}
+            <!-- A step has no list to be empty. -->
+            {#if !step}
+                <CommandEmpty>
+                    {#if current === "docker"}
+                        <div class="space-y-1.5 px-1 text-start">
+                            <p class="font-medium text-foreground">
+                                Examples
+                            </p>
+                            <ul
+                                class="list-inside list-disc space-y-0.5 font-mono text-xs"
+                            >
+                                <li>traefik/whoami</li>
+                                <li>ghcr.io/username/repo:latest</li>
+                                <li>quay.io/username/repo:tag</li>
+                                <li>
+                                    registry.gitlab.com/username/repo:tag
+                                </li>
+                            </ul>
+                        </div>
+                    {:else if current === "bucket" && s3ConnectionsQuery.isPending}
+                        Loading connections...
+                    {:else if current === "git" && repositoriesPending}
+                        Loading repositories...
+                    {:else if (current === "template" || current === "database") && templatesQuery.isPending}
+                        Loading templates...
+                    {:else}
+                        Nothing matches "{query}".
+                    {/if}
+                </CommandEmpty>
+            {/if}
             <!-- Browsers fire a mousemove when rows appear under a resting pointer, which would
                  highlight (and scroll to) whatever row landed there instead of the first. -->
             <CommandList
@@ -910,7 +1083,7 @@
 {#if inline}
     <!-- The dialog's size and surface, but part of the page. -->
     <div
-        class="flex max-h-105 w-[420px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-popover text-popover-foreground shadow-lg/5"
+        class="relative flex max-h-105 w-[420px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-popover text-popover-foreground shadow-lg/5"
     >
         {@render palette()}
     </div>
@@ -928,34 +1101,4 @@
             {@render palette()}
         </CommandDialogPopup>
     </CommandDialog>
-{/if}
-
-{#if configuredConnection}
-    <BucketDialog
-        connection={configuredConnection}
-        pending={creating}
-        error={createError}
-        onsubmit={(name, bucket) =>
-            void createBucket(configuredConnection.id, name, bucket)}
-        onclose={() => {
-            createError = "";
-            void configuringBucket.set(null);
-        }}
-    />
-{/if}
-
-{#if configuredTemplate}
-    <TemplateDialog
-        template={configuredTemplate}
-        pending={creating}
-        error={createError}
-        onsubmit={(variables) =>
-            void createResource(
-                templateInput(configuredTemplate, variables),
-            )}
-        onclose={() => {
-            createError = "";
-            void configuring.set(null);
-        }}
-    />
 {/if}
