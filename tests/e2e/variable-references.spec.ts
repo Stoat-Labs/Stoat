@@ -1,7 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 import { parse } from "yaml";
 import { SIDECAR_DOMAIN } from "./fake-sidecar";
-import { ids, receivedComposes, ref, resetData, sql, variablesPath } from "./fixtures";
+import {
+    ids,
+    receivedComposes,
+    ref,
+    resetData,
+    routeRpc,
+    sql,
+    variablesPath,
+    waitForRpc,
+} from "./fixtures";
 
 const popup = (page: Page) => page.locator('[data-slot="autocomplete-popup"]');
 
@@ -19,9 +28,7 @@ async function openVariables(
     projectId: string = ids.shop,
     resourceId: string = ids.api,
 ) {
-    const targets = page.waitForResponse((response) =>
-        response.url().includes("listVariableReferences"),
-    );
+    const targets = waitForRpc(page, "resources/listVariableReferences");
 
     await page.goto(variablesPath(projectId, resourceId));
     await expect(editor(page)).toBeVisible();
@@ -196,9 +203,8 @@ test.describe("picking a reference", () => {
 
         const held = new Promise<void>((done) => (release = done));
 
-        await page.route("**/rpc/resources/listVariableReferences**", async (route) => {
-            await held;
-            await route.continue();
+        await routeRpc(page, "resources/listVariableReferences", (route) => {
+            void held.then(route.forward);
         });
         await page.goto(variablesPath(ids.shop, ids.api));
         await typeOnNewLine(page, "URL={{");
@@ -209,18 +215,14 @@ test.describe("picking a reference", () => {
     });
 
     test("explains a failure to load the resources", async ({ page }) => {
-        await page.route("**/rpc/resources/listVariableReferences**", (route) =>
-            route.fulfill({
-                status: 500,
-                contentType: "application/json",
-                body: JSON.stringify({
-                    json: {
-                        defined: false,
-                        code: "INTERNAL_SERVER_ERROR",
-                        status: 500,
-                        message: "boom",
-                    },
-                }),
+        await routeRpc(page, "resources/listVariableReferences", (route) =>
+            route.fulfill(500, {
+                json: {
+                    defined: false,
+                    code: "INTERNAL_SERVER_ERROR",
+                    status: 500,
+                    message: "boom",
+                },
             }),
         );
         await page.goto(variablesPath(ids.shop, ids.api));

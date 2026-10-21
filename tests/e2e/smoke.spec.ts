@@ -1,6 +1,5 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
-import * as v from "valibot";
-import { assetsId, ids, memberStorageState, resetData, sql } from "./fixtures";
+import { assetsId, ids, memberStorageState, onRpcResponse, resetData, sql } from "./fixtures";
 
 /** Where the crawl starts; everything else is found by following links. */
 const entryPoints = (assets: string) => [
@@ -62,7 +61,6 @@ async function visit(page: Page, path: string) {
     const problems: string[] = [];
     const consoleErrors: string[] = [];
     const expected = new Set<string>();
-    const pending: Promise<void>[] = [];
 
     const onConsole = (message: { type(): string; text(): string }) => {
         if (message.type() === "error" && !message.text().startsWith("Failed to load resource"))
@@ -70,30 +68,17 @@ async function visit(page: Page, path: string) {
     };
 
     const onResponse = (response: Response) => {
-        const status = response.status();
-
-        if (status < 400) return;
-
-        if (status !== 412) {
-            problems.push(`HTTP ${status} ${new URL(response.url()).pathname}`);
-
-            return;
-        }
-
-        pending.push(
-            response.json().then(
-                (body) => {
-                    const error = v.safeParse(
-                        v.object({ json: v.object({ message: v.string() }) }),
-                        body,
-                    );
-
-                    if (error.success) expected.add(`Error: ${error.output.json.message}`);
-                },
-                () => {},
-            ),
-        );
+        if (response.status() >= 400)
+            problems.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`);
     };
+
+    // Queries run over the /rpc WebSocket, so their failures never show up as HTTP responses.
+    const stopRpc = onRpcResponse(page, (response) => {
+        if (response.status < 400) return;
+
+        if (response.status !== 412) problems.push(`RPC ${response.status} ${response.path}`);
+        else if (response.message) expected.add(`Error: ${response.message}`);
+    });
 
     const onPageError = (error: Error) => problems.push(`page error: ${error.message}`);
     page.on("console", onConsole);
@@ -112,8 +97,6 @@ async function visit(page: Page, path: string) {
             .locator("a[href]")
             .evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href") ?? ""));
 
-        await Promise.all(pending);
-
         for (const text of consoleErrors)
             if (!expected.has(text)) problems.push(`console: ${text}`);
 
@@ -121,6 +104,7 @@ async function visit(page: Page, path: string) {
     } finally {
         page.off("console", onConsole);
         page.off("response", onResponse);
+        stopRpc();
         page.off("pageerror", onPageError);
     }
 }

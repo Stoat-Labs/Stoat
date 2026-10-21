@@ -16,8 +16,8 @@ const section = (page: Page, name: string) =>
 const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alertdialog"));
 
 async function rpc(page: Page, path: string, headers: Record<string, string> = {}) {
-    return page.request.post(`/rpc/${path}`, {
-        data: { json: {} },
+    return page.request.post(`/rpc/api/${path}`, {
+        data: {},
         headers: { origin: process.env.E2E_BASE_URL!, ...headers },
     });
 }
@@ -84,8 +84,8 @@ test.describe("account", () => {
         await otherPage.goto("/projects");
         await expect(otherPage).toHaveURL(/\/login/u);
 
-        const response = await other.request.post("/rpc/projects/listProjects", {
-            data: { json: {} },
+        const response = await other.request.post("/rpc/api/projects/listProjects", {
+            data: {},
             headers: { origin: process.env.E2E_BASE_URL! },
         });
 
@@ -285,13 +285,11 @@ test.describe("danger zone", () => {
     test("an organization that still has clusters is kept", async ({ browser }) => {
         const { context, page, organizationId } = await freshAccount(browser);
 
-        const created = await page.request.post("/rpc/cluster/createCluster", {
+        const created = await page.request.post("/rpc/api/cluster/createCluster", {
             data: {
-                json: {
-                    name: "Keep me",
-                    sidecarUrl: process.env.E2E_SIDECAR_URL!,
-                    sidecarToken: "e2e-token",
-                },
+                name: "Keep me",
+                sidecarUrl: process.env.E2E_SIDECAR_URL!,
+                sidecarToken: "e2e-token",
             },
             headers: { origin: process.env.E2E_BASE_URL! },
         });

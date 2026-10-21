@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Page, WebSocket } from "@playwright/test";
 import { createDb } from "@stoat/db";
 import * as v from "valibot";
 
@@ -123,19 +123,149 @@ export async function resetSidecar() {
  * about. Fails the test on any error and returns the created row's id when there is one.
  */
 export async function rpc(page: Page, path: string, input: JsonObject) {
-    const response = await page.request.post(`/rpc/${path}`, {
-        data: { json: input },
+    const response = await page.request.post(`/rpc/api/${path}`, {
+        data: input,
         headers: { origin: process.env.E2E_BASE_URL! },
     });
 
     if (!response.ok()) throw new Error(`${path} failed: ${await response.text()}`);
 
+    // A procedure without output answers with an empty body.
+    const text = await response.text();
+
     const body = v.parse(
-        v.object({ json: v.optional(v.nullable(v.looseObject({ id: v.optional(v.string()) }))) }),
-        await response.json(),
+        v.nullable(v.looseObject({ id: v.optional(v.string()) })),
+        text ? JSON.parse(text) : null,
     );
 
-    return { id: body.json?.id ?? "" };
+    return { id: body?.id ?? "" };
+}
+
+// The browser calls oRPC over one WebSocket at /rpc. Its frames are JSON peer messages: a call is
+// `{ id, kind: "request", json: { url, body } }` and its answer `{ id, kind: "response", json:
+// { status, body } }`, where status is left out for 200.
+const peerMessage = v.object({
+    id: v.string(),
+    kind: v.string(),
+    json: v.optional(
+        v.object({
+            url: v.optional(v.string()),
+            status: v.optional(v.number()),
+            body: v.optional(v.unknown()),
+        }),
+    ),
+});
+
+const rpcError = v.object({ json: v.object({ message: v.string() }) });
+
+function readPeerMessage(payload: string | Buffer) {
+    try {
+        const parsed = v.safeParse(peerMessage, JSON.parse(payload.toString()));
+
+        return parsed.success ? parsed.output : null;
+    } catch {
+        // Binary frames (uploads, octet streams) carry nothing the tests look at.
+        return null;
+    }
+}
+
+/** A call's procedure path, such as `resources/listVariableReferences`. */
+function procedurePath(url: string) {
+    return new URL(url, "http://rpc").pathname.slice(1);
+}
+
+/** An answer the page's /rpc WebSocket received. */
+export type RpcResponse = { path: string; status: number; message: string | undefined };
+
+/**
+ * Calls `listener` with every answer the page's /rpc WebSocket receives, the socket counterpart
+ * of page.on("response"). Returns a function that stops listening.
+ */
+export function onRpcResponse(page: Page, listener: (response: RpcResponse) => void) {
+    let listening = true;
+
+    const onSocket = (socket: WebSocket) => {
+        if (new URL(socket.url()).pathname !== "/rpc") return;
+
+        const paths = new Map<string, string>();
+
+        socket.on("framesent", ({ payload }) => {
+            const message = readPeerMessage(payload);
+
+            if (message?.kind === "request" && message.json?.url)
+                paths.set(message.id, procedurePath(message.json.url));
+        });
+        socket.on("framereceived", ({ payload }) => {
+            const message = readPeerMessage(payload);
+            const path = message ? paths.get(message.id) : undefined;
+
+            if (!listening || message?.kind !== "response" || !path) return;
+
+            paths.delete(message.id);
+            const error = v.safeParse(rpcError, message.json?.body);
+
+            listener({
+                path,
+                status: message.json?.status ?? 200,
+                message: error.success ? error.output.json.message : undefined,
+            });
+        });
+    };
+
+    page.on("websocket", onSocket);
+
+    return () => {
+        listening = false;
+        page.off("websocket", onSocket);
+    };
+}
+
+/** Resolves once the page's /rpc WebSocket answers a call to `path`, like page.waitForResponse. */
+export function waitForRpc(page: Page, path: string) {
+    return new Promise<RpcResponse>((resolve) => {
+        const stop = onRpcResponse(page, (response) => {
+            if (response.path !== path) return;
+
+            stop();
+            resolve(response);
+        });
+    });
+}
+
+/** A held call to a routed procedure: pass it on to the server, or answer it in its place. */
+export type RpcRoute = { forward: () => void; fulfill: (status: number, body: Json) => void };
+
+/**
+ * Hands every call to `path` on the page's /rpc WebSocket to `handle`, the socket counterpart of
+ * page.route. Other messages pass through untouched. `body` is what the server would send: the
+ * serialized output or error, as `{ json: ... }`.
+ */
+export async function routeRpc(page: Page, path: string, handle: (route: RpcRoute) => void) {
+    await page.routeWebSocket("**/rpc", (socket) => {
+        const server = socket.connectToServer();
+
+        socket.onMessage((payload) => {
+            const message = readPeerMessage(payload);
+
+            if (
+                message?.kind !== "request" ||
+                !message.json?.url ||
+                procedurePath(message.json.url) !== path
+            ) {
+                server.send(payload);
+
+                return;
+            }
+
+            handle({
+                forward: () => server.send(payload),
+                fulfill: (status, body) =>
+                    socket.send(
+                        JSON.stringify({ id: message.id, kind: "response", json: { status, body } }),
+                    ),
+            });
+        });
+    });
 }
 
 /** Names of the services the fake sidecar is running. */

@@ -47,8 +47,8 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     await expect(row(page, name)).toContainText("0");
 
     // The token never comes back to the browser.
-    const listing = await page.request.post("/rpc/cluster/listClusters", {
-        data: { json: {} },
+    const listing = await page.request.post("/rpc/api/cluster/listClusters", {
+        data: {},
         headers: { origin: process.env.E2E_BASE_URL! },
     });
 
@@ -119,15 +119,12 @@ test("an unreachable sidecar shows as unknown instead of breaking the page", asy
     await expect(page.getByText("Diagnostics unavailable")).toBeVisible();
 
     // The home page checks each cluster's health; an unreachable one is no server error.
-    const health = page.waitForResponse(
-        (response) =>
-            (response.request().postData() ?? "").includes(`"url":"/rpc/cluster/healthz"`) &&
-            (response.request().postData() ?? "").includes(cluster.id),
-    );
+    const health = await page.request.post("/rpc/api/cluster/healthz", {
+        data: { clusterId: cluster.id },
+        headers: { origin: process.env.E2E_BASE_URL! },
+    });
 
-    await page.goto("/");
-    // oRPC batches the home page's calls into one response, which it reports as 207.
-    expect((await health).ok()).toBe(true);
+    expect(health.ok()).toBe(true);
 });
 
 test.describe("monitoring", () => {
@@ -196,8 +193,8 @@ test.describe("as a member", () => {
             ["cluster/createCluster", { name: "x", sidecarUrl: "http://x", sidecarToken: "x" }],
             ["cluster/deleteCluster", { clusterId: ids.lonelyCluster }],
         ] as const) {
-            const response = await page.request.post(`/rpc/${path}`, {
-                data: { json: input },
+            const response = await page.request.post(`/rpc/api/${path}`, {
+                data: input,
                 headers: { origin: process.env.E2E_BASE_URL! },
             });
 
