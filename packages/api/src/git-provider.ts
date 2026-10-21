@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 
 import { ORPCError } from "@orpc/server";
 import { Predicate } from "effect";
-import * as z from "zod";
+import * as v from "valibot";
 
 import { isBlockedAddress, validateGitBranch, validateGitUrl } from "./git";
 
@@ -15,6 +15,23 @@ export type GitProvider = "github" | "forgejo" | "generic";
 export type GitAccount = { id: string; login: string; name: string | null };
 
 export type GitDiscoveredRepository = { url: string; name: string; defaultBranch: string };
+
+export type JsonValue =
+    | string
+    | number
+    | boolean
+    | null
+    | JsonValue[]
+    | { [key: string]: JsonValue };
+
+// The body comes from JSON.parse, so every value is already JSON; only the object shape is checked.
+const jsonObject = v.pipe(
+    v.record(
+        v.string(),
+        v.custom<JsonValue>(() => true),
+    ),
+    v.check((value) => !Array.isArray(value)),
+);
 
 type AccountInput = {
     provider: Exclude<GitProvider, "generic">;
@@ -126,7 +143,7 @@ async function pinnedAddress(host: string): Promise<string> {
 export async function gitProviderRequest(
     url: string,
     options: RequestOptions = {},
-): Promise<z.JSONType> {
+): Promise<JsonValue> {
     const parsed = parseUrl(url, false, true);
     const method = options.method ?? "GET";
 
@@ -180,7 +197,7 @@ export async function gitProviderRequest(
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     try {
-        return await new Promise<z.JSONType>((resolve, reject) => {
+        return await new Promise<JsonValue>((resolve, reject) => {
             let settled = false;
 
             const fail = (
@@ -256,7 +273,7 @@ export async function gitProviderRequest(
                                 Buffer.concat(chunks),
                             );
 
-                            const data = z.json().parse(JSON.parse(text));
+                            const data: JsonValue = JSON.parse(text);
                             settled = true;
                             resolve(data);
                         } catch {
@@ -301,12 +318,12 @@ function accountConfig(input: AccountInput) {
     return { server, api, headers };
 }
 
-function record(value: z.JSONType) {
-    const result = z.record(z.string(), z.json()).safeParse(value);
+function record(value: JsonValue) {
+    const result = v.safeParse(jsonObject, value);
 
     if (!result.success) badResponse();
 
-    return result.data;
+    return result.output;
 }
 
 function safeText(value: unknown, limit: number): value is string {

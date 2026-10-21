@@ -158,12 +158,22 @@
     }
 
     // Per-resource panel state (search, filters, expanded rows) belongs to the node it was set on.
+    // Only ever cleared here, so the parsers just need the right keys.
     const panelState = useQueryStates(
         {
             details: parseAsBoolean,
             hideHistory: parseAsBoolean,
             settingsFilter: parseAsString,
             variableSearch: parseAsString,
+            systemVariables: parseAsBoolean,
+            formatted: parseAsBoolean,
+            limitDialog: parseAsBoolean,
+            paused: parseAsBoolean,
+            metricsLayout: parseAsString,
+            rangeOpen: parseAsBoolean,
+            range: parseAsString,
+            from: parseAsString,
+            to: parseAsString,
         },
         { shallow: true, scroll: false },
     );

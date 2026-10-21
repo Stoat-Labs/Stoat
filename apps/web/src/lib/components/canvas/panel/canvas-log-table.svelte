@@ -9,12 +9,20 @@
     import ArrowUp from "@lucide/svelte/icons/arrow-up";
     import WrapText from "@lucide/svelte/icons/wrap-text";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
+    import {
+        createTable,
+        functionalUpdate,
+        getCoreRowModel,
+        type ColumnDef,
+        type ColumnSizingInfoState,
+        type ColumnSizingState,
+    } from "@tanstack/table-core";
     import { tick, untrack, type Snippet } from "svelte";
 
     let {
         logs,
         label = "Log output",
-        timeWidth,
+        timeChars,
         formatTime,
         highlight = "",
         source,
@@ -26,8 +34,8 @@
     }: {
         logs: T[];
         label?: string;
-        /** Width of the time column in `ch`, e.g. "19ch". */
-        timeWidth: string;
+        /** Width of the time column in characters, e.g. 19. */
+        timeChars: number;
         formatTime: (value: string) => string;
         highlight?: string;
         /** Adds a source column, e.g. the service a line came from. */
@@ -50,6 +58,93 @@
     };
 
     let atTop = $state(true);
+
+    // shortcut: assumes text-xs mono glyphs are 0.6em wide, measure the font if it ever changes.
+    const charWidth = 7.2;
+
+    const maxSourceChars = 32;
+
+    // The source column fits the longest name, capped so long container names truncate.
+    const sourceChars = $derived(
+        source
+            ? Math.min(
+                  maxSourceChars,
+                  logs.reduce(
+                      (longest, log) =>
+                          Math.max(longest, source(log).length),
+                      "Source".length,
+                  ),
+              )
+            : 0,
+    );
+
+    let columnSizing = $state<ColumnSizingState>({});
+
+    let columnSizingInfo = $state<ColumnSizingInfoState>({
+        startOffset: null,
+        startSize: null,
+        deltaOffset: null,
+        deltaPercentage: null,
+        isResizingColumn: false,
+        columnSizingStart: [],
+    });
+
+    // Only the header and column widths come from the table; rows stay virtualized from `logs`.
+    const table = $derived.by(() => {
+        const columns: ColumnDef<T>[] = [
+            {
+                id: "time",
+                header: "Time",
+                size: timeChars * charWidth,
+                minSize: 6 * charWidth,
+            },
+            ...(source
+                ? [
+                      {
+                          id: "source",
+                          header: "Source",
+                          size: sourceChars * charWidth,
+                          minSize: 6 * charWidth,
+                      },
+                  ]
+                : []),
+            { id: "data", header: "Data", enableResizing: false },
+        ];
+
+        const instance = createTable<T>({
+            data: [],
+            columns,
+            state: {},
+            onStateChange: () => {},
+            renderFallbackValue: "",
+            columnResizeMode: "onChange",
+            onColumnSizingChange: (update) => {
+                columnSizing = functionalUpdate(update, columnSizing);
+            },
+            onColumnSizingInfoChange: (update) => {
+                columnSizingInfo = functionalUpdate(
+                    update,
+                    columnSizingInfo,
+                );
+            },
+            getCoreRowModel: getCoreRowModel(),
+        });
+
+        const state = {
+            ...instance.initialState,
+            columnSizing,
+            columnSizingInfo,
+        };
+
+        instance.setOptions((options) => ({ ...options, state }));
+
+        return instance;
+    });
+
+    const headers = $derived(table.getFlatHeaders());
+
+    const width = (id: string) =>
+        `${table.getColumn(id)?.getSize() ?? 0}px`;
 
     const virtualizer = createVirtualizer<
         HTMLDivElement,
@@ -116,18 +211,35 @@
 <div
     class="relative flex min-h-0 min-w-0 flex-1 flex-col"
     class:has-source={!!source}
-    style:--log-time={timeWidth}
+    class:select-none={columnSizingInfo.isResizingColumn}
+    style:--log-time={width("time")}
+    style:--log-source={source ? width("source") : undefined}
 >
     <div
         class="flex shrink-0 items-center border-b py-2 pr-2 text-xs font-medium"
     >
-        <p class="table-columns min-w-0 flex-1 pl-6">
-            <span>Time</span>
-            {#if source}<span class="hidden md:inline">
-                    Source
-                </span>{/if}
-            <span>Data</span>
-        </p>
+        <div class="table-columns min-w-0 flex-1 pl-6" role="row">
+            {#each headers as header (header.id)}
+                <div
+                    class="relative min-w-0 truncate"
+                    class:source-column={header.id === "source"}
+                    role="columnheader"
+                >
+                    {header.column.columnDef.header}
+                    {#if header.column.getCanResize()}
+                        <!-- svelte-ignore a11y_no_static_element_interactions (Pointer-only drag handle; double-click resets the width.) -->
+                        <div
+                            class="absolute inset-y-0 -right-2.5 z-10 w-1 cursor-col-resize touch-none rounded-full hover:bg-border"
+                            class:bg-primary={header.column.getIsResizing()}
+                            onmousedown={header.getResizeHandler()}
+                            ontouchstart={header.getResizeHandler()}
+                            ondblclick={() =>
+                                header.column.resetSize()}
+                        ></div>
+                    {/if}
+                </div>
+            {/each}
+        </div>
         <Button
             variant={wrap ? "secondary" : "ghost"}
             size="icon-xs"
@@ -188,7 +300,7 @@
                                     {formatTime(log.timestamp)}
                                 </time>
                                 {#if source}<span
-                                        class="hidden min-w-0 truncate text-muted-foreground md:inline"
+                                        class="source-column min-w-0 truncate text-muted-foreground"
                                         title={source(log)}
                                     >
                                         {source(log)}
@@ -235,11 +347,14 @@
 </div>
 
 <style>
-    /* Columns are sized in the rows' mono `ch`, so the header labels line up with them. */
+    /* Header and rows share the table's pixel widths, so the labels line up with the cells. */
     .table-columns {
         display: grid;
         grid-template-columns: var(--log-time) minmax(0, 1fr);
         column-gap: 1rem;
+    }
+    .source-column {
+        display: none;
     }
     .nowrap .log-message {
         max-height: 18px;
@@ -248,11 +363,13 @@
         text-overflow: ellipsis;
     }
     @media (min-width: 768px) {
+        .source-column {
+            display: block;
+        }
         .has-source .table-columns {
-            grid-template-columns: var(--log-time) 22ch minmax(
-                    0,
-                    1fr
-                );
+            grid-template-columns:
+                var(--log-time) var(--log-source)
+                minmax(0, 1fr);
         }
     }
 </style>

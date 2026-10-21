@@ -25,7 +25,7 @@
     } from "@tanstack/svelte-query";
     import { untrack } from "svelte";
     import { fade } from "svelte/transition";
-    import { z } from "zod";
+    import * as v from "valibot";
 
     let {
         projectId,
@@ -41,9 +41,10 @@
         }),
     );
 
-    const prefixNamesSchema = z
-        .object({ prefixNames: z.boolean().catch(true) })
-        .catch({ prefixNames: true });
+    const prefixNamesSchema = v.fallback(
+        v.object({ prefixNames: v.fallback(v.boolean(), true) }),
+        { prefixNames: true },
+    );
 
     let prefixNames = $state(true);
 
@@ -60,7 +61,8 @@
             onSuccess: (updated, input) => {
                 if (loadedResourceId === updated.id) {
                     failedValue = null;
-                    savedPrefixNames = prefixNamesSchema.parse(
+                    savedPrefixNames = v.parse(
+                        prefixNamesSchema,
                         updated.settings,
                     ).prefixNames;
                 }
@@ -92,7 +94,8 @@
 
         if (!current) return;
         untrack(() => {
-            const saved = prefixNamesSchema.parse(
+            const saved = v.parse(
+                prefixNamesSchema,
                 current.settings,
             ).prefixNames;
 

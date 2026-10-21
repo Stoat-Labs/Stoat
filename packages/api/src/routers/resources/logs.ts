@@ -18,7 +18,7 @@ import {
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, desc, DrizzleQueryError, eq, sql } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
+import * as v from "valibot";
 import { organizationProcedure, requireAuth, resourceReadMiddleware } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import { cancellableStream } from "../../stream";
@@ -55,55 +55,78 @@ type LogService = Service;
 
 type LogCluster = { id: string; sidecarUrl: string; sidecarToken: string };
 
-const scopeInput = { projectId: z.uuid(), resourceId: z.uuid() };
-
-const identifier = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,255}$/u);
-
-const selectionInput = {
-    ...scopeInput,
-    serviceIds: z
-        .array(identifier)
-        .min(1)
-        .max(20)
-        .refine((ids) => new Set(ids).size === ids.length),
+const scopeInput = {
+    projectId: v.pipe(v.string(), v.uuid()),
+    resourceId: v.pipe(v.string(), v.uuid()),
 };
 
-const timestamp = z.iso.datetime({ offset: true }).max(40);
+const identifier = v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,255}$/u));
 
-const cursorSchema = z.object({
-    scope: z.string(),
+const serviceIdsInput = v.pipe(
+    v.array(identifier),
+    v.minLength(1),
+    v.maxLength(20),
+    v.check((ids) => new Set(ids).size === ids.length),
+);
+
+const selectionInput = { ...scopeInput, serviceIds: serviceIdsInput };
+
+/** False for dates Date.parse would roll over, like 2024-02-30. */
+function isCalendarDate(value: string) {
+    const date = value.slice(0, 10);
+    const day = new Date(`${date}T00:00:00Z`);
+
+    // Valibot runs this even after the regex fails, so garbage must return false, not throw.
+    return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(date);
+}
+
+/** RFC 3339 with seconds and a `Z` or `±hh:mm` offset. */
+const timestamp = v.pipe(
+    v.string(),
+    v.maxLength(40),
+    v.regex(
+        /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u,
+    ),
+    v.check(isCalendarDate),
+);
+
+const cursorSchema = v.object({
+    scope: v.string(),
     timestamp,
-    offset: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    offset: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
 });
 
-const optionalLabel = z.string().max(1024).nullish();
+const optionalLabel = v.nullish(v.pipe(v.string(), v.maxLength(1024)));
 
-const logMessage = z
-    .string()
-    .max(32 * 1024)
-    .refine((message) => Buffer.byteLength(message) <= 32 * 1024);
+const nullableLabel = v.nullable(v.pipe(v.string(), v.maxLength(1024)));
 
-const liveEvent = z.object({
+const logMessage = v.pipe(
+    v.string(),
+    v.maxLength(32 * 1024),
+    v.check((message) => Buffer.byteLength(message) <= 32 * 1024),
+);
+
+const liveEvent = v.object({
     timestamp,
-    message: logMessage.optional(),
-    error: z.string().optional(),
-    stream: z.enum(["stdout", "stderr", "heartbeat", "unknown"]),
-    metadata: z
-        .object({
+    message: v.optional(logMessage),
+    error: v.optional(v.string()),
+    stream: v.picklist(["stdout", "stderr", "heartbeat", "unknown"]),
+    metadata: v.optional(
+        v.object({
             serviceId: optionalLabel,
             machineId: optionalLabel,
             containerId: optionalLabel,
-        })
-        .optional(),
+        }),
+    ),
 });
 
-const historicalRow = z.tuple([
-    z.string().max(40),
+const historicalRow = v.tuple([
+    v.pipe(v.string(), v.maxLength(40)),
     identifier,
     logMessage,
-    z.string().max(1024).nullable(),
-    z.string().max(1024).nullable(),
-    z.string().max(1024).nullable(),
+    nullableLabel,
+    nullableLabel,
+    nullableLabel,
 ]);
 
 function bounded(signal?: AbortSignal, ms = 20_000) {
@@ -186,7 +209,7 @@ async function deployedServices(
               .catch((error) => {
                   if (
                       error instanceof DrizzleQueryError &&
-                      z.object({ code: z.enum(["42P01", "42703"]) }).safeParse(error.cause).success
+                      v.is(v.object({ code: v.picklist(["42P01", "42703"]) }), error.cause)
                   )
                       throw new ORPCError("PRECONDITION_FAILED", {
                           message:
@@ -255,8 +278,7 @@ async function deployedServices(
             serviceNames.slice(offset, offset + 8).map(async (name) => {
                 signal.throwIfAborted();
 
-                if (!identifier.safeParse(name).success)
-                    throw new Error("Invalid deployed service name.");
+                if (!v.is(identifier, name)) throw new Error("Invalid deployed service name.");
 
                 const result = await uc.GET("/api/v1/services/{id}", {
                     params: { path: { id: name } },
@@ -266,7 +288,7 @@ async function deployedServices(
                 if (result.response.status === 404) return null;
                 const service = await unwrap(Promise.resolve(result));
 
-                if (service.name !== name || !identifier.safeParse(service.id).success)
+                if (service.name !== name || !v.is(identifier, service.id))
                     throw new Error("Invalid service inspection.");
 
                 return service;
@@ -498,7 +520,7 @@ async function* serviceEvents(
             if (upstreamSignal.aborted) break;
 
             if (result.done) throw new Error("Log stream closed.");
-            const event = liveEvent.parse(result.value);
+            const event = v.parse(liveEvent, result.value);
 
             if (event.error) throw new Error("Service log failure.");
 
@@ -533,7 +555,7 @@ async function* serviceEvents(
         if (!signal.aborted) throw new Error("Log stream interrupted.");
     } catch (error) {
         controller.abort();
-        retryable = retryable && !(error instanceof z.ZodError) && !(error instanceof ORPCError);
+        retryable = retryable && !(error instanceof v.ValiError) && !(error instanceof ORPCError);
 
         // Lines read before the failure are still valid, so deliver them before the status.
         if (batch.length > 0 && !signal.aborted) yield { type: "logs", logs: batch };
@@ -588,7 +610,7 @@ async function* followServiceEvents(
 
             retryable = false;
 
-            if (current.name !== service.name || !identifier.safeParse(current.id).success)
+            if (current.name !== service.name || !v.is(identifier, current.id))
                 throw new Error("Invalid service identity.");
 
             if (current.id !== service.id) {
@@ -609,23 +631,24 @@ async function* followServiceEvents(
                 current = next;
             }
 
-            const containers = z
-                .array(
-                    z.object({
-                        machineId: z.string(),
-                        container: z.object({
-                            Id: z.string(),
+            const containers = v.parse(
+                v.array(
+                    v.object({
+                        machineId: v.string(),
+                        container: v.object({
+                            Id: v.string(),
                             Name: optionalLabel,
-                            State: z
-                                .object({
-                                    Running: z.boolean().optional(),
-                                    Status: z.string().optional(),
-                                })
-                                .nullish(),
+                            State: v.nullish(
+                                v.object({
+                                    Running: v.optional(v.boolean()),
+                                    Status: v.optional(v.string()),
+                                }),
+                            ),
                         }),
                     }),
-                )
-                .parse(current.containers);
+                ),
+                current.containers,
+            );
 
             containerNames.clear();
 
@@ -748,7 +771,7 @@ async function* followServiceEvents(
 }
 
 const logProcedure = organizationProcedure
-    .input(z.object(scopeInput))
+    .input(v.object(scopeInput))
     .use(resourceReadMiddleware)
     .use(async ({ context, next }) => {
         const [cluster] = await context.db
@@ -803,18 +826,17 @@ export const resourceLogsRouter = {
     streamLogs: logProcedure
         .use(requireAuth)
         .input(
-            z
-                .object({
-                    ...selectionInput,
-                    serviceIds: selectionInput.serviceIds.optional(),
-                    serviceNames: selectionInput.serviceIds.optional(),
-                })
-                .refine(
+            v.pipe(
+                v.object({
+                    ...scopeInput,
+                    serviceIds: v.optional(serviceIdsInput),
+                    serviceNames: v.optional(serviceIdsInput),
+                }),
+                v.check(
                     (input) => input.serviceIds === undefined || input.serviceNames === undefined,
-                    {
-                        message: "Select services by either ID or name, not both.",
-                    },
+                    "Select services by either ID or name, not both.",
                 ),
+            ),
         )
         .handler(({ context, input, signal }) =>
             cancellableStream(async function* (signal): AsyncGenerator<ResourceLogEvent> {
@@ -1014,15 +1036,16 @@ export const resourceLogsRouter = {
 
     searchLogs: logProcedure
         .input(
-            z.object({
+            v.object({
                 ...selectionInput,
                 start: timestamp,
                 end: timestamp,
-                query: z
-                    .string()
-                    .max(4096)
-                    .refine((value) => !value.includes("\0")),
-                cursor: z.string().max(2048).optional(),
+                query: v.pipe(
+                    v.string(),
+                    v.maxLength(4096),
+                    v.check((value) => !value.includes("\0")),
+                ),
+                cursor: v.optional(v.pipe(v.string(), v.maxLength(2048))),
             }),
         )
         .handler(async ({ context: { db, logCluster, resource }, input, signal }) => {
@@ -1077,7 +1100,7 @@ export const resourceLogsRouter = {
                         .update(`stoat/log-cursor/v2-desc:${payload}`)
                         .digest();
 
-                let cursor: z.infer<typeof cursorSchema> | undefined;
+                let cursor: v.InferOutput<typeof cursorSchema> | undefined;
 
                 if (input.cursor) {
                     try {
@@ -1088,7 +1111,8 @@ export const resourceLogsRouter = {
 
                         if (decoded.length !== 32 || !timingSafeEqual(sign(payload), decoded))
                             throw new Error();
-                        cursor = cursorSchema.parse(
+                        cursor = v.parse(
+                            cursorSchema,
                             JSON.parse(Buffer.from(payload, "base64url").toString("utf8")),
                         );
                         const time = canonicalTime(cursor.timestamp);
@@ -1124,7 +1148,7 @@ export const resourceLogsRouter = {
                 );
 
                 if (columns.length === 0) return { logs: [], nextCursor: null };
-                const names = new Set(columns.map((row) => z.string().parse(row[0])));
+                const names = new Set(columns.map((row) => v.parse(v.string(), row[0])));
 
                 if (
                     ![
@@ -1181,15 +1205,17 @@ export const resourceLogsRouter = {
                 const machineLabels = await machineNames;
 
                 const logs = rows.slice(0, pageSize).map((row): ResourceLog => {
-                    const [time, serviceId, message, machine, container, stream] =
-                        historicalRow.parse(row);
+                    const [time, serviceId, message, machine, container, stream] = v.parse(
+                        historicalRow,
+                        row,
+                    );
 
                     const service = services.find((service) => service.id === serviceId);
 
                     if (!service) throw new Error("Unexpected log service.");
 
                     const parsed = canonicalTime(
-                        timestamp.parse(time.endsWith("Z") ? time : `${time}Z`),
+                        v.parse(timestamp, time.endsWith("Z") ? time : `${time}Z`),
                     );
 
                     if (parsed.nanos < start.nanos || parsed.nanos >= end.nanos)

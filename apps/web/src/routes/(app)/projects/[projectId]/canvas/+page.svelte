@@ -138,25 +138,68 @@
                     layout={loaded.project.canvasLayout ?? {}}
                 />
             {:else}
-                <Skeleton
-                    loading
-                    loading-label="Loading canvas"
-                    class="block size-full"
+                <!-- The exact SVG Svelte Flow draws for project-canvas's dots (gap 24, size 0.6, default #91919a), behind one card shaped like card-node. -->
+                <div
+                    class="relative flex size-full items-center justify-center"
                 >
-                    <div
-                        class="flex size-full items-center justify-center gap-24 p-8"
+                    <svg
+                        class="absolute inset-0 size-full"
+                        aria-hidden="true"
                     >
-                        {#each { length: 3 }, column (column)}
-                            <div class="flex flex-col gap-12">
-                                {#each { length: column === 1 ? 2 : 1 }, row (row)}
-                                    <div
-                                        class="h-21 w-60 rounded-xl border border-border"
-                                    ></div>
-                                {/each}
+                        <pattern
+                            id="canvas-loading-dots"
+                            width="24"
+                            height="24"
+                            patternUnits="userSpaceOnUse"
+                            patternTransform="translate(-0.3,-0.3)"
+                        >
+                            <circle
+                                cx="0.3"
+                                cy="0.3"
+                                r="0.3"
+                                fill="#91919a"
+                            />
+                        </pattern>
+                        <rect
+                            width="100%"
+                            height="100%"
+                            fill="url(#canvas-loading-dots)"
+                        />
+                    </svg>
+                    <Skeleton
+                        loading
+                        loading-label="Loading canvas"
+                        class="relative"
+                    >
+                        <div
+                            class="flex h-36 w-72 flex-col justify-between rounded-xl border border-foreground/14 bg-card p-6 shadow-xs/5"
+                        >
+                            <div class="flex items-start gap-3">
+                                <span
+                                    class="size-6 shrink-0 rounded-md"
+                                ></span>
+                                <div class="flex flex-col gap-1">
+                                    <p
+                                        class="w-fit text-base font-semibold"
+                                    >
+                                        Service name
+                                    </p>
+                                    <p class="w-fit text-sm">
+                                        example.com
+                                    </p>
+                                </div>
                             </div>
-                        {/each}
-                    </div>
-                </Skeleton>
+                            <div
+                                class="grid grid-cols-[24px_1fr] items-center gap-3"
+                            >
+                                <span
+                                    class="mx-auto size-2 rounded-full"
+                                ></span>
+                                <p class="w-fit text-sm">Online</p>
+                            </div>
+                        </div>
+                    </Skeleton>
+                </div>
             {/if}
         </div>
     {/if}

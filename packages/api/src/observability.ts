@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as v from "valibot";
 
 export const rangePresets = ["1h", "6h", "12h", "24h", "3d", "7d", "14d", "30d"] as const;
 
@@ -510,22 +510,24 @@ export function httpSummaryQueries(
     };
 }
 
-const matrix = z.object({
-    status: z.literal("success"),
-    data: z.object({
-        resultType: z.literal("matrix"),
-        result: z.array(
-            z.object({
-                metric: z.object({
-                    machine_id: z.string().optional(),
-                    container_label_uncloud_service_id: z.string().optional(),
-                    name: z.string().optional(),
-                    device: z.string().optional(),
-                    mountpoint: z.string().optional(),
-                    fstype: z.string().optional(),
-                    status_class: z.string().optional(),
+const samples = v.array(v.tuple([v.pipe(v.number(), v.finite()), v.string()]));
+
+const matrix = v.object({
+    status: v.literal("success"),
+    data: v.object({
+        resultType: v.literal("matrix"),
+        result: v.array(
+            v.object({
+                metric: v.object({
+                    machine_id: v.optional(v.string()),
+                    container_label_uncloud_service_id: v.optional(v.string()),
+                    name: v.optional(v.string()),
+                    device: v.optional(v.string()),
+                    mountpoint: v.optional(v.string()),
+                    fstype: v.optional(v.string()),
+                    status_class: v.optional(v.string()),
                 }),
-                values: z.array(z.tuple([z.number().finite(), z.string()])),
+                values: samples,
             }),
         ),
     }),
@@ -557,7 +559,7 @@ export function parseMetricSeries(
     end: number,
     step: number,
 ): PackedMetricSeries[] {
-    return matrix.parse(JSON.parse(text)).data.result.map((series) => {
+    return v.parse(matrix, JSON.parse(text)).data.result.map((series) => {
         const values = onGrid(series.values, start, end, step).map(chartValue);
 
         return {
@@ -575,13 +577,13 @@ export function parseMetricSeries(
     });
 }
 
-const vector = z.object({
-    status: z.literal("success"),
-    data: z.object({
-        result: z.array(
-            z.object({
-                metric: z.record(z.string(), z.string()),
-                values: z.array(z.tuple([z.number().finite(), z.string()])),
+const vector = v.object({
+    status: v.literal("success"),
+    data: v.object({
+        result: v.array(
+            v.object({
+                metric: v.record(v.string(), v.string()),
+                values: samples,
             }),
         ),
     }),
@@ -593,7 +595,7 @@ export type Total = { metric: Record<string, string>; value: number };
 
 /** Reads a start=end range query as one value per series, leaving out the ones without a number. */
 export function parseTotals(text: string): Total[] {
-    return vector.parse(JSON.parse(text)).data.result.flatMap(({ metric, values }) => {
+    return v.parse(vector, JSON.parse(text)).data.result.flatMap(({ metric, values }) => {
         const value = Number(values.at(-1)?.[1]);
 
         return Number.isFinite(value) ? [{ metric, value }] : [];
@@ -658,7 +660,7 @@ function serviceValues(
     hosts: Map<string, string[]>,
     quantile?: number,
 ): [serviceId: string, values: (number | null)[]][] {
-    const result = vector.parse(JSON.parse(text)).data.result;
+    const result = v.parse(vector, JSON.parse(text)).data.result;
     const length = Math.floor((end - start) / step) + 1;
 
     return routedHosts(hosts).flatMap(([serviceId, names]): [string, (number | null)[]][] => {

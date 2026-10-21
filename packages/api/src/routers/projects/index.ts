@@ -10,7 +10,7 @@ import {
 } from "@stoat/db/schema/index";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import * as v from "valibot";
 import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure } from "../..";
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
@@ -60,7 +60,7 @@ export const projectsRouter = {
     ),
 
     getProject: organizationProcedure
-        .input(z.object({ projectId: z.string().uuid() }))
+        .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
             const [row] = await db
                 .select({
@@ -105,7 +105,7 @@ export const projectsRouter = {
         }),
 
     setFavorite: organizationProcedure
-        .input(z.object({ projectId: z.string().uuid(), favorite: z.boolean() }))
+        .input(v.object({ projectId: v.pipe(v.string(), v.uuid()), favorite: v.boolean() }))
         .handler(async ({ context: { db, organizationId, session }, input }) => {
             if (!session?.user)
                 throw new ORPCError("UNAUTHORIZED", {
@@ -264,10 +264,10 @@ export const projectsRouter = {
 
     createProject: organizationProcedure
         .input(
-            z.object({
-                name: z.string().trim().min(1).max(100),
-                description: z.string().trim().max(500).optional(),
-                clusterId: z.string().uuid(),
+            v.object({
+                name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
+                description: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
+                clusterId: v.pipe(v.string(), v.uuid()),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -310,10 +310,10 @@ export const projectsRouter = {
 
     updateProject: organizationProcedure
         .input(
-            z.object({
-                projectId: z.string().uuid(),
-                name: z.string().trim().min(1).max(100),
-                description: z.string().trim().max(500).optional(),
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
+                description: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(500))),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -347,9 +347,12 @@ export const projectsRouter = {
         }),
     setCanvasLayout: organizationProcedure
         .input(
-            z.object({
-                projectId: z.string().uuid(),
-                layout: z.record(z.string().max(100), z.object({ x: z.number(), y: z.number() })),
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                layout: v.record(
+                    v.pipe(v.string(), v.maxLength(100)),
+                    v.object({ x: v.number(), y: v.number() }),
+                ),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -385,7 +388,7 @@ export const projectsRouter = {
     // Removes every resource's services from the cluster, then the project. Buckets go first,
     // through their own flow, so their provider keys are revoked.
     deleteProject: organizationAdminProcedure
-        .input(z.object({ projectId: z.string().uuid() }))
+        .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
                 const [project] = await tx

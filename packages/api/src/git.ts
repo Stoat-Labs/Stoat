@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 
 import { ORPCError } from "@orpc/server";
-import { z } from "zod";
+import * as v from "valibot";
 
 export type GitCredentials = {
     username?: string;
@@ -85,7 +85,7 @@ function checkHost(host: string) {
 }
 
 export function validateGitUrl(url: string): string {
-    if (!z.string().max(4096).safeParse(url).success || /[\s\x00-\x1f\x7f\\]/u.test(url)) {
+    if (!v.is(v.pipe(v.string(), v.maxLength(4096)), url) || /[\s\x00-\x1f\x7f\\]/u.test(url)) {
         invalid("Invalid Git URL");
     }
 
@@ -152,7 +152,7 @@ export function validateGitUrl(url: string): string {
 
 export function validateGitPath(path: string): string {
     if (
-        !z.string().safeParse(path).success ||
+        !v.is(v.string(), path) ||
         !path ||
         Buffer.byteLength(path) > 4096 ||
         control.test(path) ||
@@ -177,7 +177,7 @@ export function validateGitPath(path: string): string {
 
 export function validateGitBranch(branch: string): string {
     if (
-        !z.string().safeParse(branch).success ||
+        !v.is(v.string(), branch) ||
         !branch ||
         Buffer.byteLength(branch) > 255 ||
         branch === "HEAD" ||
@@ -279,7 +279,7 @@ async function withRepository<T>(
     for (const value of Object.values(credentials)) {
         if (
             value !== undefined &&
-            (!z.string().safeParse(value).success ||
+            (!v.is(v.string(), value) ||
                 Buffer.byteLength(value) > 128 * 1024 ||
                 value.includes("\0"))
         )
@@ -808,7 +808,7 @@ export async function pushGitFile(
     const path = validateGitPath(input.path);
     const watchPath = input.watchPath ?? posix.dirname(path);
 
-    if (!z.string().safeParse(input.content).success || !input.content.isWellFormed())
+    if (!v.is(v.string(), input.content) || !input.content.isWellFormed())
         invalid("Git file must be UTF-8 text");
 
     if (Buffer.byteLength(input.content) > maxTextBytes) invalid("Git files must be at most 1 MiB");
@@ -818,7 +818,7 @@ export async function pushGitFile(
     if (!oidPattern.test(input.expectedRevision)) invalid("Invalid expected Git revision");
 
     if (
-        !z.string().safeParse(input.message).success ||
+        !v.is(v.string(), input.message) ||
         !input.message.trim() ||
         Buffer.byteLength(input.message) > 4096 ||
         input.message.includes("\0") ||
@@ -828,7 +828,7 @@ export async function pushGitFile(
 
     for (const value of [input.author.name, input.author.email]) {
         if (
-            !z.string().safeParse(value).success ||
+            !v.is(v.string(), value) ||
             !value.trim() ||
             Buffer.byteLength(value) > 256 ||
             /[<>\x00-\x1f\x7f]/u.test(value) ||

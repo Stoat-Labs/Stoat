@@ -1,25 +1,27 @@
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import { Match } from "effect";
-import { z } from "zod";
+import * as v from "valibot";
 
-const text = z
-    .string()
-    .refine((value) => value.trim().length > 0)
-    .optional()
-    .catch(undefined);
+import { lenient } from "./lenient";
 
-const inspectionSchema = z.object({
+const text = lenient(
+    v.pipe(
+        v.string(),
+        v.check((value) => value.trim().length > 0),
+    ),
+);
+
+const inspectionSchema = v.object({
     Id: text,
     Name: text,
     Image: text,
-    Config: z.object({ Image: text }).optional().catch(undefined),
-    State: z
-        .object({
+    Config: lenient(v.object({ Image: text })),
+    State: lenient(
+        v.object({
             Status: text,
-            Health: z.object({ Status: text }).optional().catch(undefined),
-        })
-        .optional()
-        .catch(undefined),
+            Health: lenient(v.object({ Status: text })),
+        }),
+    ),
 });
 
 export function containerInfo(
@@ -27,7 +29,7 @@ export function containerInfo(
         ReturnType<AppRouterClient["resources"]["getContainers"]>
     >[number]["container"],
 ) {
-    const inspection = inspectionSchema.parse(container);
+    const inspection = v.parse(inspectionSchema, container);
     const health = inspection.State?.Health?.Status;
     const id = inspection.Id;
 

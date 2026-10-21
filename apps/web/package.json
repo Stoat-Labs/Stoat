@@ -31,7 +31,6 @@
         "@orpc/server": "catalog:",
         "@orpc/tanstack-query": "catalog:",
         "@orpc/valibot": "catalog:",
-        "@orpc/zod": "catalog:",
         "@shardsui/svelte": "0.1.0-beta.0",
         "@stoat/api": "workspace:*",
         "@stoat/auth": "workspace:*",
@@ -56,9 +55,9 @@
         "nuqs-svelte": "^1.2.2",
         "runed": "0.37.1",
         "svelte-toolbelt": "^0.10.6",
+        "valibot": "catalog:",
         "varlock": "catalog:",
-        "yaml": "catalog:",
-        "zod": "catalog:"
+        "yaml": "catalog:"
     },
     "devDependencies": {
         "@fontsource-variable/outfit": "^5.3.0",

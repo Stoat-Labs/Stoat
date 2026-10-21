@@ -21,7 +21,7 @@
     },
     "dependencies": {
         "openapi-fetch": "^0.17.0",
-        "zod": "catalog:"
+        "valibot": "catalog:"
     },
     "devDependencies": {
         "@stoat/config": "workspace:*",

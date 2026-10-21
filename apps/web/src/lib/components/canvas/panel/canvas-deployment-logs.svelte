@@ -408,7 +408,7 @@
             <CanvasLogTable
                 logs={visibleLogs}
                 label="Deployment logs"
-                timeWidth="8ch"
+                timeChars={8}
                 formatTime={stream.offset}
                 highlight={view.deploymentQuery.current}
                 bind:wrap={

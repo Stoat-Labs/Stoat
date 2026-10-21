@@ -1,5 +1,7 @@
 import type { ResourceLog } from "@stoat/api/routers/resources/logs";
-import { z } from "zod";
+import * as v from "valibot";
+
+import { lenient } from "./lenient";
 
 export type LogLevel = "error" | "warning" | "success" | "other";
 
@@ -50,22 +52,21 @@ export function selectedLogServices(
         : services.filter((service) => names.includes(service.name));
 }
 
-const statusCode = z.union([z.number(), z.string()]).optional().catch(undefined);
+const statusCode = lenient(v.union([v.number(), v.string()]));
 
-const structuredLog = z.object({
-    level: z.union([z.string(), z.number()]).optional().catch(undefined),
-    severity: z.string().optional().catch(undefined),
-    severity_text: z.string().optional().catch(undefined),
+const structuredLog = v.object({
+    level: lenient(v.union([v.string(), v.number()])),
+    severity: lenient(v.string()),
+    severity_text: lenient(v.string()),
     status: statusCode,
     statusCode,
-    res: z.object({ statusCode }).optional().catch(undefined),
-    http: z
-        .object({
+    res: lenient(v.object({ statusCode })),
+    http: lenient(
+        v.object({
             status_code: statusCode,
-            response: z.object({ status_code: statusCode }).optional().catch(undefined),
-        })
-        .optional()
-        .catch(undefined),
+            response: lenient(v.object({ status_code: statusCode })),
+        }),
+    ),
 });
 
 const logTimestamp = String.raw`(?:\[[\d:.TZ +/-]+\]|\d{4}-\d{2}-\d{2}[T ]\s*\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)`;
@@ -92,7 +93,8 @@ export function classifyLog(message: string): LogLevel {
     let status = Number.NaN;
 
     try {
-        const entry = structuredLog.safeParse(JSON.parse(message)).data;
+        const parsed = v.safeParse(structuredLog, JSON.parse(message));
+        const entry = parsed.success ? parsed.output : undefined;
         level = entry?.level ?? entry?.severity ?? entry?.severity_text;
         status = Number(
             entry?.statusCode ??

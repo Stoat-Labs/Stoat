@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
-import { z } from "zod";
+import * as v from "valibot";
 
 import type { GitCredentials } from "./git";
 
@@ -7,12 +7,14 @@ type Scope = { organizationId: string; connectionId: string };
 
 const domain = "stoat/git-credentials/v1";
 
-const credentialField = z
-    .string()
-    .refine((value) => Buffer.byteLength(value) <= 128 * 1024)
-    .optional();
+const credentialField = v.optional(
+    v.pipe(
+        v.string(),
+        v.check((value) => Buffer.byteLength(value) <= 128 * 1024),
+    ),
+);
 
-const credentialsSchema = z.strictObject({
+const credentialsSchema = v.strictObject({
     username: credentialField,
     password: credentialField,
     privateKey: credentialField,
@@ -22,9 +24,9 @@ const credentialsSchema = z.strictObject({
     expiresAt: credentialField,
 });
 
-const scopeSchema = z.object({
-    organizationId: z.string().min(1).max(1024),
-    connectionId: z.string().min(1).max(1024),
+const scopeSchema = v.object({
+    organizationId: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
+    connectionId: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
 });
 
 function keyMaterial(scope: Scope, salt: Buffer) {
@@ -34,7 +36,7 @@ function keyMaterial(scope: Scope, salt: Buffer) {
         throw new Error("APP_SECRET must contain at least 32 bytes");
     }
 
-    if (!scopeSchema.safeParse(scope).success) {
+    if (!v.is(scopeSchema, scope)) {
         throw new Error("Invalid Git credential scope");
     }
 
@@ -44,10 +46,10 @@ function keyMaterial(scope: Scope, salt: Buffer) {
 }
 
 export function encryptGitCredentials(credentials: GitCredentials, scope: Scope): string {
-    const parsed = credentialsSchema.safeParse(credentials);
+    const parsed = v.safeParse(credentialsSchema, credentials);
 
     if (!parsed.success) throw new Error("Invalid Git credentials");
-    const plaintext = Buffer.from(JSON.stringify(parsed.data));
+    const plaintext = Buffer.from(JSON.stringify(parsed.output));
 
     if (plaintext.length > 512 * 1024) throw new Error("Git credentials exceed storage limits");
     const salt = randomBytes(32);
@@ -64,13 +66,7 @@ export function encryptGitCredentials(credentials: GitCredentials, scope: Scope)
 
 export function decryptGitCredentials(envelope: string, scope: Scope): GitCredentials {
     try {
-        if (
-            !z
-                .string()
-                .max(1024 * 1024)
-                .safeParse(envelope).success
-        )
-            throw new Error();
+        if (!v.is(v.pipe(v.string(), v.maxLength(1024 * 1024)), envelope)) throw new Error();
         const parts = envelope.split(".");
 
         if (parts.length !== 5 || parts[0] !== "v1") throw new Error();
@@ -103,7 +99,7 @@ export function decryptGitCredentials(envelope: string, scope: Scope): GitCreden
         decipher.setAuthTag(tag);
         const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 
-        return credentialsSchema.parse(JSON.parse(plaintext.toString("utf8")));
+        return v.parse(credentialsSchema, JSON.parse(plaintext.toString("utf8")));
     } catch {
         // Never attach crypto errors or the encrypted payload as an error cause.
         throw new Error("Unable to decrypt Git credentials");

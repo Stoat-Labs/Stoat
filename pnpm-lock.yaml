@@ -182,9 +182,6 @@ catalogs:
     '@orpc/valibot':
       specifier: 2.0.0-beta.35
       version: 2.0.0-beta.35
-    '@orpc/zod':
-      specifier: 2.0.0-beta.35
-      version: 2.0.0-beta.35
     better-auth:
       specifier: 1.7.3
       version: 1.7.3
@@ -209,9 +206,6 @@ catalogs:
     yaml:
       specifier: ^2.9.0
       version: 2.9.1
-    zod:
-      specifier: ^4.5.4
-      version: 4.6.2
 
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@0.3.1
@@ -227,10 +221,6 @@ patchedDependencies:
 importers:
 
   .:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.2
     devDependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.1146.0
@@ -358,9 +348,6 @@ importers:
       '@orpc/valibot':
         specifier: 'catalog:'
         version: 2.0.0-beta.35(crossws@0.3.5)(valibot@1.5.0(typescript@6.0.3))
-      '@orpc/zod':
-        specifier: 'catalog:'
-        version: 2.0.0-beta.35(crossws@0.3.5)(zod@4.6.2)
       '@shardsui/svelte':
         specifier: 0.1.0-beta.0
         version: 0.1.0-beta.0(svelte@5.57.0)
@@ -433,15 +420,15 @@ importers:
       svelte-toolbelt:
         specifier: ^0.10.6
         version: 0.10.6(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)
+      valibot:
+        specifier: 'catalog:'
+        version: 1.5.0(typescript@6.0.3)
       varlock:
         specifier: 'catalog:'
         version: 1.18.0
       yaml:
         specifier: 'catalog:'
         version: 2.9.1
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.2
     devDependencies:
       '@fontsource-variable/outfit':
         specifier: ^5.3.0
@@ -545,9 +532,6 @@ importers:
       yaml:
         specifier: 'catalog:'
         version: 2.9.1
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.2
     devDependencies:
       '@stoat/config':
         specifier: workspace:*
@@ -570,9 +554,6 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0(supports-color@10.2.2)
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.2
     devDependencies:
       '@stoat/config':
         specifier: workspace:*
@@ -657,9 +638,9 @@ importers:
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
-      zod:
+      valibot:
         specifier: 'catalog:'
-        version: 4.6.2
+        version: 1.5.0(typescript@6.0.3)
     devDependencies:
       '@stoat/config':
         specifier: workspace:*
@@ -1465,11 +1446,6 @@ packages:
     resolution: {integrity: sha512-GSaFjaqfRRPQHO3UE0ebM/ze0hcO5vIjjaxr90hdnDmM7a7IWBYLYiktZSkSpS7DDiagZ0zdNQnFsKhf7dcOZQ==}
     peerDependencies:
       valibot: '>=1.0.0'
-
-  '@orpc/zod@2.0.0-beta.35':
-    resolution: {integrity: sha512-rCl/wppjx6Fy3Hz0wjR3KrsGC0Ic33mmCwtQZTlWUHxzTtXWj7wroQMwOGd2Hy9OZmclfBsprCAqQxQYRLJ3Xg==}
-    peerDependencies:
-      zod: '>=4.5.0'
 
   '@oxc-parser/binding-android-arm-eabi@0.114.0':
     resolution: {integrity: sha512-O64coa+5VuqhwQV5t7PcgiY1ubGy35QZSMi+GrXewCRbi7MMzQcuyfv2xg1FV7Kj7SR47+gg/eC9xrOph2Pbcg==}
@@ -6125,15 +6101,6 @@ snapshots:
       '@orpc/json-schema': 2.0.0-beta.35(crossws@0.3.5)
       '@valibot/to-json-schema': 1.8.0(valibot@1.5.0(typescript@6.0.3))
       valibot: 1.5.0(typescript@6.0.3)
-    transitivePeerDependencies:
-      - crossws
-      - fastify
-
-  '@orpc/zod@2.0.0-beta.35(crossws@0.3.5)(zod@4.6.2)':
-    dependencies:
-      '@openapi-spec/types': 0.1.0
-      '@orpc/json-schema': 2.0.0-beta.35(crossws@0.3.5)
-      zod: 4.6.2
     transitivePeerDependencies:
       - crossws
       - fastify

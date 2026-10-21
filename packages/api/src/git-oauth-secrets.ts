@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
-import { z } from "zod";
+import * as v from "valibot";
 
 type Scope = {
     organizationId: string;
@@ -24,7 +24,8 @@ function keyMaterial(scope: Scope, salt: Buffer) {
         scope.clientId,
     ];
 
-    if (!z.array(z.string().min(1).max(2048)).safeParse(values).success) throw new Error();
+    if (!v.is(v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(2048))), values))
+        throw new Error();
     // Bind the secret to the organization, app, and destination, not just its row ID.
     const context = Buffer.from(JSON.stringify([domain, ...values]));
 
@@ -33,7 +34,7 @@ function keyMaterial(scope: Scope, salt: Buffer) {
 
 export function encryptGitOAuthClientSecret(secret: string, scope: Scope): string {
     try {
-        if (!z.string().min(1).max(8192).safeParse(secret).success) throw new Error();
+        if (!v.is(v.pipe(v.string(), v.minLength(1), v.maxLength(8192)), secret)) throw new Error();
         const salt = randomBytes(32);
         const nonce = randomBytes(12);
         const { key, context } = keyMaterial(scope, salt);
@@ -51,13 +52,7 @@ export function encryptGitOAuthClientSecret(secret: string, scope: Scope): strin
 
 export function decryptGitOAuthClientSecret(envelope: string, scope: Scope): string {
     try {
-        if (
-            !z
-                .string()
-                .max(64 * 1024)
-                .safeParse(envelope).success
-        )
-            throw new Error();
+        if (!v.is(v.pipe(v.string(), v.maxLength(64 * 1024)), envelope)) throw new Error();
         const parts = envelope.split(".");
 
         if (parts.length !== 5 || parts[0] !== "v1") throw new Error();

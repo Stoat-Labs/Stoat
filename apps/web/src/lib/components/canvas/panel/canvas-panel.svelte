@@ -16,6 +16,7 @@
     import { prefersReducedMotion } from "svelte/motion";
     import { fly } from "svelte/transition";
     import type { CanvasResource, CanvasService } from "../graph";
+    import CanvasCompose from "./canvas-compose.svelte";
     import CanvasDeployments from "./canvas-deployments.svelte";
     import CanvasSettings from "./canvas-settings.svelte";
     import CanvasBucketVariables from "./canvas-bucket-variables.svelte";
@@ -49,6 +50,7 @@
     const tabs = [
         "deployments",
         "variables",
+        "compose",
         "metrics",
         "logs",
         "settings",
@@ -57,6 +59,7 @@
     const labels: Record<(typeof tabs)[number], string> = {
         deployments: "Deployments",
         variables: "Variables",
+        compose: "Compose",
         metrics: "Metrics",
         logs: "Logs",
         settings: "Settings",
@@ -95,7 +98,9 @@
     );
 
     const fullBleed = $derived(
-        active === "logs" || active === "settings",
+        active === "logs" ||
+            active === "settings" ||
+            active === "compose",
     );
 
     // Railway: the panel travels a fifth of its width while fading, settling slowly on open and leaving faster.
@@ -208,7 +213,9 @@
     <div
         class={[
             "min-h-0 flex-1",
-            active === "logs" ? "overflow-hidden" : "overflow-y-auto",
+            active === "logs" || active === "compose"
+                ? "overflow-hidden"
+                : "overflow-y-auto",
             !fullBleed && "px-12 pt-8 pb-12",
         ]}
         role="tabpanel"
@@ -226,6 +233,8 @@
             <CanvasBucketVariables {resource} />
         {:else if active === "variables"}
             <CanvasVariables {resource} />
+        {:else if active === "compose"}
+            <CanvasCompose {resource} />
         {:else if active === "metrics"}
             <ResourceMetricsView
                 projectId={resource.projectId}

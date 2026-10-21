@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { JSONType } from "zod";
+import type { JsonValue } from "../../packages/api/src/git-provider";
 import { createDb, type Database } from "@stoat/db";
 import * as organizations from "@stoat/db/organizations";
 import type { Context } from "../../packages/api/src/context";
@@ -399,7 +399,7 @@ describe("Git OAuth exchange and refresh", () => {
         );
     });
 
-    it.each<JSONType>([
+    it.each<JsonValue>([
         {},
         { access_token: "token", token_type: "mac" },
         { access_token: "token", token_type: "bearer", expires_in: 3600 },

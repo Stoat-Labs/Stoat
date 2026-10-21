@@ -200,7 +200,7 @@
         <CanvasLogTable
             logs={visibleLogs}
             label="Resource logs"
-            timeWidth="19ch"
+            timeChars={19}
             {formatTime}
             highlight={view.logQuery.current}
             source={(log) =>

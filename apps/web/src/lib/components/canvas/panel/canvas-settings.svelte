@@ -1,20 +1,21 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
+    import BucketLimitDialog from "$lib/components/s3/bucket-limit-dialog.svelte";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import BucketLimitDialog from "$lib/components/s3/bucket-limit-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
+    import { Kbd } from "$lib/components/ui/kbd";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Switch } from "$lib/components/ui/switch";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
-    import { bucketJobPollInterval } from "$lib/s3";
     import { bytes } from "$lib/observability";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
+    import { bucketJobPollInterval } from "$lib/s3";
     import ArrowRight from "@lucide/svelte/icons/arrow-right";
     import Cable from "@lucide/svelte/icons/cable";
     import CircleCheck from "@lucide/svelte/icons/circle-check";
@@ -23,9 +24,9 @@
     import FileCode2 from "@lucide/svelte/icons/file-code-2";
     import Flame from "@lucide/svelte/icons/flame";
     import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import Globe from "@lucide/svelte/icons/globe";
+    import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Network from "@lucide/svelte/icons/network";
     import Pencil from "@lucide/svelte/icons/pencil";
     import Plus from "@lucide/svelte/icons/plus";
@@ -47,13 +48,13 @@
         useQueryState,
     } from "nuqs-svelte";
     import type { Component, Snippet } from "svelte";
-    import { z } from "zod";
+    import * as v from "valibot";
+    import { getCanvasActions } from "../context";
+    import type { CanvasResource, CanvasService } from "../graph";
     import CanvasIngressDialog, {
         type IngressMode,
     } from "./canvas-ingress-dialog.svelte";
     import CanvasSourceDialog from "./canvas-source-dialog.svelte";
-    import { getCanvasActions } from "../context";
-    import type { CanvasResource, CanvasService } from "../graph";
 
     let {
         resource,
@@ -149,17 +150,28 @@
 
     let sourceDialogOpen = $state(false);
 
+    // The panel's tab, so Compose can be opened from here; pushed like the panel's own tabs.
+    const tab = useQueryState(
+        "tab",
+        parseAsString.withOptions({
+            history: "push",
+            shallow: true,
+            scroll: false,
+        }),
+    );
+
     // Follows the saved value until edited; saving or a refetch resets it.
     let watchPath = $derived(source?.watchPath ?? ".");
 
     let commitMessage = $state("");
 
-    const settingsSchema = z
-        .object({ prefixNames: z.boolean().catch(true) })
-        .catch({ prefixNames: true });
+    const settingsSchema = v.fallback(
+        v.object({ prefixNames: v.fallback(v.boolean(), true) }),
+        { prefixNames: true },
+    );
 
     const prefixNames = $derived(
-        settingsSchema.parse(details?.settings).prefixNames,
+        v.parse(settingsSchema, details?.settings).prefixNames,
     );
 
     let savingPrefix = $state(false);
@@ -194,9 +206,10 @@
         }
     }
 
-    const envSchema = z
-        .object({ env: z.string().catch("") })
-        .catch({ env: "" });
+    const envSchema = v.fallback(
+        v.object({ env: v.fallback(v.string(), "") }),
+        { env: "" },
+    );
 
     // Ingress is edited in the draft, like the Ingress page; the next deploy publishes it.
     const draftCompose = $derived(details?.draftSpec ?? "");
@@ -205,7 +218,7 @@
         try {
             return parseIngressCompose(
                 draftCompose,
-                envSchema.parse(details?.settings).env,
+                v.parse(envSchema, details?.settings).env,
             );
         } catch {
             return null;
@@ -580,6 +593,13 @@
                         {source.path}
                     </span>
                     <Button
+                        size="sm"
+                        variant="ghost"
+                        onclick={() => void tab.set("compose")}
+                    >
+                        Edit
+                    </Button>
+                    <Button
                         size="icon-sm"
                         variant="ghost"
                         aria-label="Change Compose file"
@@ -708,7 +728,7 @@
                 </Button>
                 <Button
                     variant="ghost"
-                    href="/projects/{resource.projectId}/{resource.id}"
+                    onclick={() => void tab.set("compose")}
                 >
                     Open editor
                 </Button>
@@ -1099,7 +1119,9 @@
 
 <div class="@container flex min-h-full flex-col">
     <!-- Railway's filter bar, pinned under the tabs. -->
-    <div class="sticky top-0 z-10 border-b bg-card px-3 py-3">
+    <div
+        class="sticky top-0 z-10 border-b bg-card/70 backdrop-blur-lg px-3 py-3"
+    >
         <div class="relative">
             <Input
                 bind:ref={filterInput}
@@ -1111,11 +1133,9 @@
                 placeholder="Filter settings..."
                 aria-label="Filter settings"
             />
-            <kbd
-                class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border px-1.5 font-mono text-xs text-muted-foreground"
-            >
+            <Kbd>
                 /
-            </kbd>
+            </Kbd>
         </div>
     </div>
 

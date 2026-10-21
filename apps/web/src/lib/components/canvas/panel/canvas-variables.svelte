@@ -39,7 +39,7 @@
         useQueryState,
     } from "nuqs-svelte";
     import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
-    import { z } from "zod";
+    import * as v from "valibot";
     import CanvasReferenceMenu from "./canvas-reference-menu.svelte";
     import {
         VariableHeader,
@@ -85,12 +85,13 @@
 
     const references = $derived(referencesQuery.data ?? []);
 
-    const envSchema = z
-        .object({ env: z.string().catch("") })
-        .catch({ env: "" });
+    const envSchema = v.fallback(
+        v.object({ env: v.fallback(v.string(), "") }),
+        { env: "" },
+    );
 
     const env = $derived(
-        envSchema.parse(resourceQuery.data?.settings).env,
+        v.parse(envSchema, resourceQuery.data?.settings).env,
     );
 
     const variables = $derived(parseEnvLines(env));
@@ -208,7 +209,7 @@
 
             const updated = await client.resources.updateVariables({
                 ...input,
-                env: next(envSchema.parse(current.settings).env),
+                env: next(v.parse(envSchema, current.settings).env),
             });
 
             queryClient.setQueryData(

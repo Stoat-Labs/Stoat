@@ -45,7 +45,7 @@
         type IngressEntry,
     } from "@stoat/workflows/ingress";
     import { createQuery } from "@tanstack/svelte-query";
-    import { z } from "zod";
+    import * as v from "valibot";
 
     useHeaderActions(ingressStatus);
 
@@ -90,11 +90,14 @@
 
     type Snapshot = ReturnType<typeof parseIngressCompose>;
 
-    const envSchema = z
-        .object({ env: z.string().catch("") })
-        .catch({ env: "" });
+    const envSchema = v.fallback(
+        v.object({ env: v.fallback(v.string(), "") }),
+        { env: "" },
+    );
 
-    const envText = $derived(envSchema.parse(resource?.settings).env);
+    const envText = $derived(
+        v.parse(envSchema, resource?.settings).env,
+    );
 
     const snapshot = $derived.by((): Snapshot | null => {
         if (!draft.compose.trim())

@@ -35,7 +35,7 @@
     import { untrack } from "svelte";
     import { watch } from "runed";
     import type { EditorView } from "@codemirror/view";
-    import { z } from "zod";
+    import * as v from "valibot";
 
     let {
         projectId,
@@ -74,9 +74,10 @@
 
     let editorView = $state<EditorView>();
 
-    const envSchema = z
-        .object({ env: z.string().catch("") })
-        .catch({ env: "" });
+    const envSchema = v.fallback(
+        v.object({ env: v.fallback(v.string(), "") }),
+        { env: "" },
+    );
 
     let env = $state("");
 
@@ -112,11 +113,11 @@
             if (loadedResourceId !== current.id) {
                 showVariables.current = false;
                 loadedResourceId = current.id;
-                env = envSchema.parse(current.settings).env;
+                env = v.parse(envSchema, current.settings).env;
                 savedEnv = env;
                 saveMutation.reset();
             } else if (!isDirty) {
-                env = envSchema.parse(current.settings).env;
+                env = v.parse(envSchema, current.settings).env;
                 savedEnv = env;
             }
         });
@@ -126,7 +127,10 @@
         orpc.resources.updateVariables.mutationOptions({
             onSuccess: (updated, input) => {
                 if (loadedResourceId === updated.id)
-                    savedEnv = envSchema.parse(updated.settings).env;
+                    savedEnv = v.parse(
+                        envSchema,
+                        updated.settings,
+                    ).env;
                 queryClient.setQueryData(
                     orpc.resources.getResource.queryKey({
                         input: {

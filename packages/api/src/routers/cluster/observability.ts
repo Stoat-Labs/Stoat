@@ -10,7 +10,7 @@ import {
 } from "@stoat/workflows/monitoring-compose";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
-import { z } from "zod";
+import * as v from "valibot";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import { pinnedVolumeName } from "../../compose-volumes";
@@ -59,31 +59,32 @@ import {
     type ObservabilityService,
 } from "../../observability";
 
-const containerInspect = z
-    .object({
-        Id: z.string().optional(),
-        Name: z.string().optional(),
-        RestartCount: z.number().optional(),
-        State: z
-            .object({
-                Running: z.boolean().optional(),
-                Status: z.string().optional(),
-                OOMKilled: z.boolean().optional(),
-                StartedAt: z.string().optional(),
-                Health: z.object({ Status: z.string() }).nullish(),
-            })
-            .nullish(),
-        HostConfig: z
-            .object({ Memory: z.number().optional(), NanoCpus: z.number().optional() })
-            .nullish(),
-        Config: z
-            .object({
-                Image: z.string().optional(),
-                Labels: z.record(z.string(), z.string()).nullish(),
-            })
-            .nullish(),
-    })
-    .catch({});
+const containerInspect = v.fallback(
+    v.object({
+        Id: v.optional(v.string()),
+        Name: v.optional(v.string()),
+        RestartCount: v.optional(v.number()),
+        State: v.nullish(
+            v.object({
+                Running: v.optional(v.boolean()),
+                Status: v.optional(v.string()),
+                OOMKilled: v.optional(v.boolean()),
+                StartedAt: v.optional(v.string()),
+                Health: v.nullish(v.object({ Status: v.string() })),
+            }),
+        ),
+        HostConfig: v.nullish(
+            v.object({ Memory: v.optional(v.number()), NanoCpus: v.optional(v.number()) }),
+        ),
+        Config: v.nullish(
+            v.object({
+                Image: v.optional(v.string()),
+                Labels: v.nullish(v.record(v.string(), v.string())),
+            }),
+        ),
+    }),
+    {},
+);
 
 const unreachable = () => new ORPCError("BAD_GATEWAY", { message: "Monitoring is unreachable." });
 
@@ -96,16 +97,24 @@ const latestOnly = new Set<MetricName | DnsMetricName>([
     "serviceNetworkOut",
 ]);
 
-const clusterInput = z.object({ clusterId: z.uuid() });
+const clusterInput = v.object({ clusterId: v.pipe(v.string(), v.uuid()) });
 
-const rangeInput = z.union([
-    z.enum(rangePresets),
-    z
-        .object({ from: z.int().positive(), to: z.int().positive() })
-        .refine(({ from, to }) => to - from >= 60 && to - from <= 400 * 86400, {
-            message: "Custom ranges must span between 1 minute and 400 days.",
-        }),
+const positiveInteger = v.pipe(v.number(), v.integer(), v.gtValue(0));
+
+const rangeInput = v.union([
+    v.picklist(rangePresets),
+    v.pipe(
+        v.object({ from: positiveInteger, to: positiveInteger }),
+        v.check(
+            ({ from, to }) => to - from >= 60 && to - from <= 400 * 86400,
+            "Custom ranges must span between 1 minute and 400 days.",
+        ),
+    ),
 ]);
+
+const serviceIdsInput = v.optional(
+    v.pipe(v.array(v.pipe(v.string(), v.regex(serviceIdPattern))), v.maxLength(100)),
+);
 
 type MonitoringCluster = { id: string; password: string };
 
@@ -186,7 +195,7 @@ function collecting(
 function toContainer(
     machineId: string,
     machineName: string,
-    container: z.infer<typeof containerInspect>,
+    container: v.InferOutput<typeof containerInspect>,
 ): ObservabilityContainer {
     const memory = container.HostConfig?.Memory;
     const cpus = container.HostConfig?.NanoCpus;
@@ -346,7 +355,7 @@ async function serviceHostMap(cluster: MonitoringCluster, uc: UcClient, serviceI
                 ...new Set(
                     service.containers.flatMap((item) =>
                         serviceHosts(
-                            containerInspect.parse(item.container).Config?.Labels?.[
+                            v.parse(containerInspect, item.container).Config?.Labels?.[
                                 "uncloud.service.ports"
                             ],
                         ),
@@ -648,7 +657,7 @@ export const observabilityRouter = {
                                     toContainer(
                                         item.machineId,
                                         item.machineName,
-                                        containerInspect.parse(item.container),
+                                        v.parse(containerInspect, item.container),
                                     ),
                                 )
                                 .sort(
@@ -663,9 +672,10 @@ export const observabilityRouter = {
         ),
     getHttpSummary: organizationProcedure
         .input(
-            clusterInput.extend({
+            v.object({
+                ...clusterInput.entries,
                 range: rangeInput,
-                serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
+                serviceIds: serviceIdsInput,
             }),
         )
         .use(monitoringMiddleware)
@@ -675,8 +685,9 @@ export const observabilityRouter = {
     // HTTP, DNS, and Postgres metrics share this procedure to stay within tsc's router type serialization limit.
     getObservabilityMetric: organizationProcedure
         .input(
-            clusterInput.extend({
-                name: z.enum([
+            v.object({
+                ...clusterInput.entries,
+                name: v.picklist([
                     ...metricNames,
                     ...httpMetricNames,
                     ...httpTrafficMetricNames,
@@ -685,18 +696,21 @@ export const observabilityRouter = {
                     ...volumeMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
-                serviceIds: z.array(z.string().regex(serviceIdPattern)).max(100).optional(),
+                serviceIds: serviceIdsInput,
                 // Volume metrics: the resource and volume (Compose names) and the services mounting it.
-                volume: z
-                    .object({
-                        resourceId: z.uuid(),
-                        name: z.string().min(1).max(128),
-                        services: z.array(z.string().min(1).max(128)).max(100),
-                    })
-                    .optional(),
+                volume: v.optional(
+                    v.object({
+                        resourceId: v.pipe(v.string(), v.uuid()),
+                        name: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+                        services: v.pipe(
+                            v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(128))),
+                            v.maxLength(100),
+                        ),
+                    }),
+                ),
                 range: rangeInput,
                 // Sparklines ask for fewer points than full-size charts.
-                points: z.literal(chartPoints).default(120),
+                points: v.optional(v.picklist(chartPoints), 120),
             }),
         )
         .use(monitoringMiddleware)

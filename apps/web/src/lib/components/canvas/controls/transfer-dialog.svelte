@@ -28,7 +28,7 @@
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { createQuery } from "@tanstack/svelte-query";
     import { untrack } from "svelte";
-    import { z } from "zod";
+    import * as v from "valibot";
     import type { CanvasResource } from "../graph";
 
     let {
@@ -64,12 +64,13 @@
         }),
     );
 
-    const settingsSchema = z
-        .object({ prefixNames: z.boolean().catch(true) })
-        .catch({ prefixNames: true });
+    const settingsSchema = v.fallback(
+        v.object({ prefixNames: v.fallback(v.boolean(), true) }),
+        { prefixNames: true },
+    );
 
     const prefixed = $derived(
-        settingsSchema.parse(resourceQuery.data?.settings)
+        v.parse(settingsSchema, resourceQuery.data?.settings)
             .prefixNames,
     );
 

@@ -34,7 +34,7 @@
         useQueryState,
     } from "nuqs-svelte";
     import { parse } from "yaml";
-    import { z } from "zod";
+    import * as v from "valibot";
     import { getCanvasClock } from "../context";
     import type { CanvasResource, CanvasService } from "../graph";
 
@@ -210,25 +210,29 @@
         },
     };
 
-    const composeSchema = z
-        .object({
-            services: z
-                .record(
-                    z.string(),
-                    z
-                        .object({ image: z.string().optional() })
-                        .catch({}),
-                )
-                .catch({}),
-        })
-        .catch({ services: {} });
+    const composeSchema = v.fallback(
+        v.object({
+            services: v.fallback(
+                v.record(
+                    v.string(),
+                    v.fallback(
+                        v.object({ image: v.optional(v.string()) }),
+                        {},
+                    ),
+                ),
+                {},
+            ),
+        }),
+        { services: {} },
+    );
 
     // The images a deployment shipped, from its Compose snapshot; the selected service's comes first.
     function images(spec: string | null) {
         let services: Record<string, { image?: string }> = {};
 
         try {
-            services = composeSchema.parse(
+            services = v.parse(
+                composeSchema,
                 parse(spec ?? ""),
             ).services;
         } catch {

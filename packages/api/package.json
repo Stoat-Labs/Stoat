@@ -28,8 +28,7 @@
         "ofetch": "catalog:",
         "unstorage": "^1.17.5",
         "valibot": "catalog:",
-        "yaml": "catalog:",
-        "zod": "catalog:"
+        "yaml": "catalog:"
     },
     "devDependencies": {
         "@stoat/config": "workspace:*",

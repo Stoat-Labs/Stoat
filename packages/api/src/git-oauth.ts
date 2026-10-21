@@ -11,7 +11,7 @@ import type { Database } from "@stoat/db";
 import { getOrganizationMembership } from "@stoat/db/organizations";
 import { gitConnections, gitOAuthProviders, member } from "@stoat/db/schema/index";
 import { and, asc, eq } from "drizzle-orm";
-import { z } from "zod";
+import * as v from "valibot";
 
 import type { Context } from "./context";
 import type { GitCredentials } from "./git";
@@ -24,18 +24,16 @@ import {
 import { encryptGitCredentials } from "./git-secrets";
 import { decryptGitOAuthClientSecret, encryptGitOAuthClientSecret } from "./git-oauth-secrets";
 
-const providerSchema = z
-    .object({
-        id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
-        name: z.string().trim().min(1).max(100),
-        provider: z.enum(["github", "forgejo"]),
-        serverUrl: z.string().min(1).max(2048),
-        clientId: z.string().trim().min(1).max(2048),
-        clientSecret: z.string().min(1).max(8192),
-    })
-    .strict();
+const providerSchema = v.strictObject({
+    id: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,64}$/)),
+    name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
+    provider: v.picklist(["github", "forgejo"]),
+    serverUrl: v.pipe(v.string(), v.minLength(1), v.maxLength(2048)),
+    clientId: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(2048)),
+    clientSecret: v.pipe(v.string(), v.minLength(1), v.maxLength(8192)),
+});
 
-export type GitOAuthProvider = z.infer<typeof providerSchema>;
+export type GitOAuthProvider = v.InferOutput<typeof providerSchema>;
 
 export type GitOAuthIdentity = { userId: string; sessionId: string; organizationId: string };
 
@@ -108,7 +106,7 @@ export async function getOrganizationGitOAuthProviders(
         return stored.map((row) => {
             if (row.organizationId !== organizationId) throw new Error();
 
-            return providerSchema.parse({
+            return v.parse(providerSchema, {
                 id: row.id,
                 name: row.name,
                 provider: row.provider,
@@ -130,7 +128,7 @@ export async function createOrganizationGitOAuthProvider(
     let provider: GitOAuthProvider;
 
     try {
-        provider = providerSchema.parse({ ...input, id: `db_${randomUUID()}` });
+        provider = v.parse(providerSchema, { ...input, id: `db_${randomUUID()}` });
         provider.serverUrl = validateGitServerUrl(provider.serverUrl, provider.provider);
     } catch {
         throw new GitOAuthError("invalid_request", "Invalid Git OAuth application configuration.");
@@ -254,7 +252,7 @@ export async function getGitOAuthConnection(
     connectionId: string,
     provider: GitOAuthProvider,
 ) {
-    if (!z.string().uuid().safeParse(connectionId).success)
+    if (!v.is(v.pipe(v.string(), v.uuid()), connectionId))
         throw new GitOAuthError("invalid_request");
 
     const [connection] = await db
@@ -366,23 +364,23 @@ export function getGitOAuthCookieConfig() {
 
 const domain = "stoat/git-oauth-state/v1";
 
-const flowSchema = z
-    .object({
-        userId: z.string().min(1).max(256),
-        sessionId: z.string().min(1).max(256),
-        organizationId: z.string().min(1).max(256),
-        providerId: providerSchema.shape.id,
-        providerFingerprint: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
-        name: z.string().trim().min(1).max(100),
-        connectionId: z.string().uuid().optional(),
-        state: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
-        verifier: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
-        createdAt: z.number().int(),
-        expiresAt: z.number().int(),
-    })
-    .strict();
+const randomToken = v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{43}$/));
 
-export type GitOAuthFlow = z.infer<typeof flowSchema>;
+const flowSchema = v.strictObject({
+    userId: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    sessionId: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    organizationId: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    providerId: providerSchema.entries.id,
+    providerFingerprint: randomToken,
+    name: providerSchema.entries.name,
+    connectionId: v.optional(v.pipe(v.string(), v.uuid())),
+    state: randomToken,
+    verifier: randomToken,
+    createdAt: v.pipe(v.number(), v.integer()),
+    expiresAt: v.pipe(v.number(), v.integer()),
+});
+
+export type GitOAuthFlow = v.InferOutput<typeof flowSchema>;
 
 function fingerprint(provider: GitOAuthProvider): string {
     return createHash("sha256")
@@ -432,7 +430,7 @@ export function createGitOAuthFlow(
         );
     const now = Date.now();
 
-    const result = flowSchema.safeParse({
+    const result = v.safeParse(flowSchema, {
         ...input,
         providerFingerprint: fingerprint(provider),
         state: randomBytes(32).toString("base64url"),
@@ -442,7 +440,7 @@ export function createGitOAuthFlow(
     });
 
     if (!result.success) throw new GitOAuthError("invalid_request");
-    const flow = result.data;
+    const flow = result.output;
     const salt = randomBytes(32);
     const nonce = randomBytes(12);
     const { key, context } = stateKey(salt, flow);
@@ -501,7 +499,8 @@ export function readGitOAuthFlow(
         decipher.setAAD(context);
         decipher.setAuthTag(tag);
 
-        const flow = flowSchema.parse(
+        const flow = v.parse(
+            flowSchema,
             JSON.parse(
                 Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8"),
             ),
@@ -530,19 +529,25 @@ export function readGitOAuthFlow(
     }
 }
 
-const tokenString = z
-    .string()
-    .min(1)
-    .max(16384)
-    .regex(/^[\x21-\x7e]+$/);
+const tokenString = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(16384),
+    v.regex(/^[\x21-\x7e]+$/),
+);
 
-const tokenSchema = z.object({
+const positiveInteger = v.pipe(v.number(), v.integer(), v.gtValue(0));
+
+const tokenSchema = v.object({
     access_token: tokenString,
-    token_type: z.string().refine((value) => value.toLowerCase() === "bearer"),
-    expires_in: z.number().int().positive().optional(),
-    refresh_token: tokenString.optional(),
-    refresh_token_expires_in: z.number().int().positive().optional(),
-    error: z.unknown().optional(),
+    token_type: v.pipe(
+        v.string(),
+        v.check((value) => value.toLowerCase() === "bearer"),
+    ),
+    expires_in: v.optional(positiveInteger),
+    refresh_token: v.optional(tokenString),
+    refresh_token_expires_in: v.optional(positiveInteger),
+    error: v.optional(v.unknown()),
 });
 
 async function requestToken(provider: GitOAuthProvider, parameters: Record<string, string>) {
@@ -569,11 +574,11 @@ async function requestToken(provider: GitOAuthProvider, parameters: Record<strin
         throw new GitOAuthError("token_exchange_failed");
     }
 
-    const parsed = tokenSchema.safeParse(response);
+    const parsed = v.safeParse(tokenSchema, response);
 
-    if (!parsed.success || parsed.data.error !== undefined)
+    if (!parsed.success || parsed.output.error !== undefined)
         throw new GitOAuthError("invalid_token");
-    const token = parsed.data;
+    const token = parsed.output;
 
     const expiresAt =
         token.expires_in === undefined ? undefined : requestedAt + token.expires_in * 1000;

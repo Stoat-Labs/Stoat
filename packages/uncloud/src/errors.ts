@@ -1,7 +1,7 @@
 import type { ErrorResponse } from "./types";
-import * as z from "zod";
+import * as v from "valibot";
 
-export const errorResponseSchema = z.object({ error: z.string() });
+export const errorResponseSchema = v.object({ error: v.string() });
 
 /**
  * Thrown by `unwrap()` and by the streaming helpers when the sidecar returns a
@@ -19,7 +19,8 @@ export class UcApiError extends Error {
     readonly body: ErrorResponse | undefined;
 
     constructor(response: { status: number; statusText: string; url: string }, cause?: unknown) {
-        const parsed = errorResponseSchema.safeParse(cause).data;
+        const result = v.safeParse(errorResponseSchema, cause);
+        const parsed = result.success ? result.output : undefined;
         super(
             parsed?.error ??
                 `Sidecar request failed: ${response.status} ${response.statusText} (${response.url})`,
