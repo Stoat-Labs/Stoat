@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { MACHINE } from "./fake-sidecar";
-import { ids, resetSidecar, rpc, sql } from "./fixtures";
+import { ids, onRpcResponse, resetSidecar, rpc, sql } from "./fixtures";
 
 const views = ["", "/health", "/http", "/dns", "/services"];
 
@@ -12,6 +12,10 @@ async function problemsOn(page: Page, path: string) {
     page.on("response", (response) => {
         if (response.status() >= 400)
             problems.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`);
+    });
+    // Queries run over the /rpc WebSocket, so their failures never show up as HTTP responses.
+    onRpcResponse(page, (response) => {
+        if (response.status >= 400) problems.push(`RPC ${response.status} ${response.path}`);
     });
     await page.goto(path);
     await expect(page.locator("phantom-ui[loading]")).toHaveCount(0, { timeout: 15_000 });

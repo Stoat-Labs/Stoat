@@ -139,8 +139,8 @@ test("only one deploy of a resource runs at a time", async ({ page }) => {
     await deploy(page, target.path);
     await expect(status(page)).toHaveText("Running");
 
-    const second = await page.request.post("/rpc/resources/deploy", {
-        data: { json: { projectId: target.projectId, resourceId: target.id } },
+    const second = await page.request.post("/rpc/api/resources/deploy", {
+        data: { projectId: target.projectId, resourceId: target.id },
         headers: { origin: process.env.E2E_BASE_URL! },
     });
 
@@ -288,8 +288,8 @@ test.describe("deleting", () => {
             bucket: `keep-${Date.now()}`,
         });
 
-        const refused = await page.request.post("/rpc/projects/deleteProject", {
-            data: { json: { projectId: target.projectId } },
+        const refused = await page.request.post("/rpc/api/projects/deleteProject", {
+            data: { projectId: target.projectId },
             headers: { origin: process.env.E2E_BASE_URL! },
         });
 
@@ -313,8 +313,8 @@ test.describe("as a member", () => {
         await expect(page.locator(".cm-content")).toContainText("nginx:alpine");
         await expect(page.getByRole("button", { name: /^Deploy/u })).toHaveCount(0);
 
-        const refused = await page.request.post("/rpc/resources/deploy", {
-            data: { json: { projectId: api!.project_id, resourceId: api!.id } },
+        const refused = await page.request.post("/rpc/api/resources/deploy", {
+            data: { projectId: api!.project_id, resourceId: api!.id },
             headers: { origin: process.env.E2E_BASE_URL! },
         });
 
@@ -340,8 +340,8 @@ test.describe("as a member", () => {
             ["resources/deleteResource", { projectId: api!.project_id, resourceId: api!.id }],
             ["projects/deleteProject", { projectId: api!.project_id }],
         ] as const) {
-            const refused = await page.request.post(`/rpc/${path}`, {
-                data: { json: input },
+            const refused = await page.request.post(`/rpc/api/${path}`, {
+                data: input,
                 headers: { origin: process.env.E2E_BASE_URL! },
             });
 

@@ -119,20 +119,18 @@ test("a wrong host key is refused before anything is stored", async ({ page }) =
     const server = gitServer();
     await page.goto("/git");
 
-    const response = await page.request.post("/rpc/connections/create", {
+    const response = await page.request.post("/rpc/api/connections/create", {
         data: {
-            json: {
-                name: unique("Spoofed"),
-                provider: "generic",
-                serverUrl: server.serverUrl,
-                credentials: {
-                    username: "git",
-                    privateKey: server.privateKey,
-                    // Some other server's key.
-                    knownHosts: `${server.address} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFSBlmPpGBkQXr1QG8V4QbVnWDQ3z1G6ZpYw7J5r6s0Q\n`,
-                },
-                repositories: [{ url: server.repositoryUrl, name: "app", defaultBranch: "main" }],
+            name: unique("Spoofed"),
+            provider: "generic",
+            serverUrl: server.serverUrl,
+            credentials: {
+                username: "git",
+                privateKey: server.privateKey,
+                // Some other server's key.
+                knownHosts: `${server.address} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFSBlmPpGBkQXr1QG8V4QbVnWDQ3z1G6ZpYw7J5r6s0Q\n`,
             },
+            repositories: [{ url: server.repositoryUrl, name: "app", defaultBranch: "main" }],
         },
         headers: { origin: process.env.E2E_BASE_URL! },
     });

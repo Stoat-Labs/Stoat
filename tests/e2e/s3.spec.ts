@@ -149,15 +149,13 @@ test.describe("connections", () => {
     test("a loopback endpoint is refused", async ({ page }) => {
         await page.goto("/s3");
 
-        const response = await page.request.post("/rpc/s3/create", {
+        const response = await page.request.post("/rpc/api/s3/create", {
             data: {
-                json: {
-                    name: unique("Sneaky"),
-                    connection: {
-                        provider: "rustfs",
-                        endpoint: "https://127.0.0.1:9000",
-                        ...rustfsRoot,
-                    },
+                name: unique("Sneaky"),
+                connection: {
+                    provider: "rustfs",
+                    endpoint: "https://127.0.0.1:9000",
+                    ...rustfsRoot,
                 },
             },
             headers: { origin: process.env.E2E_BASE_URL! },

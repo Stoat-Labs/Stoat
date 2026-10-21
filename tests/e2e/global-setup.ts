@@ -141,8 +141,9 @@ export default async function globalSetup() {
     const [rustfs, git] = await Promise.all([startRustfs(), startGitServer()]);
     const log = openSync(resolve(root, "test-results/e2e/server.log"), "w");
 
+    // server.js, like production: it serves the build and attaches the /rpc WebSocket.
     // Its own process group, so teardown stops the server and its worker together.
-    const server = spawn("node", ["build/index.js"], {
+    const server = spawn("node", ["server.js"], {
         cwd: resolve(root, "apps/web"),
         detached: true,
         stdio: ["ignore", log, log],
@@ -269,12 +270,11 @@ async function seedBucket(baseUrl: string, endpoint: string) {
     });
 
     async function call(path: string, input: JsonObject) {
-        const response = await api.post(`/rpc/${path}`, { data: { json: input } });
+        const response = await api.post(`/rpc/api/${path}`, { data: input });
 
         if (!response.ok()) throw new Error(`${path} failed: ${await response.text()}`);
 
-        return v.parse(v.object({ json: v.object({ id: v.string() }) }), await response.json())
-            .json;
+        return v.parse(v.object({ id: v.string() }), await response.json());
     }
 
     const connection = await call("s3/create", {
