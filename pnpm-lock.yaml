@@ -554,6 +554,9 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0(supports-color@10.2.2)
+      zod:
+        specifier: 4.6.2
+        version: 4.6.2
     devDependencies:
       '@stoat/config':
         specifier: workspace:*

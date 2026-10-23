@@ -254,6 +254,8 @@ export const projectsRouter = {
                             image,
                             // Logos are large, so the client looks this app id up in the template list.
                             template: templateFor(image),
+                            // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
+                            // column; the subquery alias only widens its type to string.
                             status: (item.status ?? null) as DeploymentStatus | null,
                         };
                     }),

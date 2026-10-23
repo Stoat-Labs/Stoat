@@ -26,7 +26,7 @@ test("Back returns to the previous settings section", async ({ page }) => {
     await section(page, "security");
     await expect(page.getByLabel("Current password")).toBeVisible();
 
-    await page.getByRole("button", { name: "Profile", exact: true }).click();
+    await page.getByRole("link", { name: "Profile", exact: true }).click();
     await expect(page.getByLabel("Full name")).toBeVisible();
 
     await page.goBack();
@@ -314,16 +314,16 @@ test.describe("as a member", () => {
     test("owner-only sections are hidden and settings are read-only", async ({ page }) => {
         await page.goto("/settings");
         const nav = page.getByRole("navigation", { name: "Settings" });
-        await expect(nav.getByRole("button", { name: "Members" })).toBeVisible();
-        await expect(nav.getByRole("button", { name: "API keys" })).toHaveCount(0);
-        await expect(nav.getByRole("button", { name: "Danger zone" })).toHaveCount(0);
+        await expect(nav.getByRole("link", { name: "Members" })).toBeVisible();
+        await expect(nav.getByRole("link", { name: "API keys" })).toHaveCount(0);
+        await expect(nav.getByRole("link", { name: "Danger zone" })).toHaveCount(0);
 
-        await nav.getByRole("button", { name: "General" }).click();
+        await nav.getByRole("link", { name: "General" }).click();
         await expect(page).toHaveURL(/section=organization/u);
         await expect(page.getByLabel("Name")).toBeDisabled();
         await expect(page.getByText("Only owners can change these settings.")).toBeVisible();
 
-        await nav.getByRole("button", { name: "Members" }).click();
+        await nav.getByRole("link", { name: "Members" }).click();
         await expect(page.getByRole("button", { name: "Invite member" })).toHaveCount(0);
     });
 

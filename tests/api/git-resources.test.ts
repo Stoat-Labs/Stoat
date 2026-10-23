@@ -3029,6 +3029,42 @@ describe("Git connections/resources (PostgreSQL)", () => {
             expect(await storedResource()).toEqual(before);
         });
 
+        it("skips a resource staged for deletion while its push was being read", async () => {
+            const before = await storedResource();
+            head.mockImplementation(async () => {
+                await db
+                    .update(resources)
+                    .set({ pendingDelete: true })
+                    .where(eq(resources.id, resourceId));
+
+                return nextRevision;
+            });
+            read.mockResolvedValue({
+                revision: nextRevision,
+                message: "Update Compose",
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+
+            try {
+                await watch();
+
+                expect(await storedResource()).toMatchObject({
+                    draftSpec: before.draftSpec,
+                    gitSource: before.gitSource,
+                    pendingDelete: true,
+                });
+                expect(await resourceDeployments()).toEqual([]);
+            } finally {
+                await db
+                    .update(resources)
+                    .set({ pendingDelete: false })
+                    .where(eq(resources.id, resourceId));
+            }
+        });
+
         it("ignores resources with auto-deploy off", async () => {
             const { gitSource } = await storedResource();
             await db

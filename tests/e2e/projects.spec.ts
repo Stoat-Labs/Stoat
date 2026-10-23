@@ -294,6 +294,8 @@ test.describe("as a member", () => {
     test("projects and resources can be browsed", async ({ page }) => {
         await page.goto("/projects");
         await page.getByRole("link", { name: "Shop" }).first().click();
+        // Projects open on the canvas by default; its cards are not links.
+        await page.getByRole("link", { name: "List view" }).click();
         const api = page.getByRole("main").getByRole("link", { name: "api", exact: true });
         await expect(api).toBeVisible();
         await api.click();

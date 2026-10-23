@@ -12,6 +12,8 @@ import { organization } from "better-auth/plugins/organization";
 import { listUserOrganizations, organizationHasInfrastructure } from "@stoat/db/organizations";
 
 import { createSessionStorage } from "./session-storage";
+// Lets tsc name the zod types in createAuth's inferred return type (TS2883).
+import type {} from "zod/v4/core";
 
 export type AuthConfig = {
     APP_URL: string;

@@ -93,7 +93,11 @@
             </SidebarMenuItem>
         </SidebarMenu>
     </SidebarHeader>
-    <SidebarContent class="overflow-x-hidden">
+    <SidebarContent
+        class="overflow-x-hidden"
+        role="navigation"
+        aria-label="Settings"
+    >
         {#each groups as group, index (group.label)}
             {#if index > 0}<SidebarSeparator />{/if}
             <SidebarGroup>

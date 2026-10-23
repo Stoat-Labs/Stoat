@@ -31,6 +31,7 @@ it("restores the saved-draft message from loaded data without a successful save 
                 isInternal: false,
                 description: null,
                 clusterId: "cluster",
+                canvasLayout: {},
                 createdAt: timestamp,
                 updatedAt: timestamp,
             },

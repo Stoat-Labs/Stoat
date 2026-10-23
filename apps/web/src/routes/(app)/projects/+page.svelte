@@ -191,7 +191,11 @@
                     </KbdGroup>
                 </InputGroupAddon>
             </InputGroup>
-            <Button disabled={!ready} onclick={openCreate}>
+            <Button
+                disabled={!ready}
+                onclick={openCreate}
+                aria-label="New project"
+            >
                 <Plus class="size-4" aria-hidden="true" />
                 New
             </Button>

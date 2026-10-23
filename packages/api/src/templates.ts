@@ -203,12 +203,20 @@ export function summarizeVersion({
                 }),
             ),
         ),
-        secrets: all.flatMap(({ env }) =>
-            env
-                .split("\n")
-                .flatMap((line) => /^\s*([\w.-]+)\s*=.*\{\{.+\}\}/u.exec(line)?.slice(1, 2) ?? []),
-        ),
-        required: all.flatMap(({ env }) => requiredVariables(env)),
+        // An app and its companion can both set a key (Seafile's REDIS_PASSWORD); the UI keys by it.
+        secrets: [
+            ...new Set(
+                all.flatMap(({ env }) =>
+                    env
+                        .split("\n")
+                        .flatMap(
+                            (line) =>
+                                /^\s*([\w.-]+)\s*=.*\{\{.+\}\}/u.exec(line)?.slice(1, 2) ?? [],
+                        ),
+                ),
+            ),
+        ],
+        required: [...new Set(all.flatMap(({ env }) => requiredVariables(env)))],
     };
 }
 
