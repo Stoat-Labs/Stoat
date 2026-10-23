@@ -2,18 +2,15 @@
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProjectCanvas from "$lib/components/canvas/project-canvas.svelte";
-    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Button } from "$lib/components/ui/button";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         streamErrorToast,
         subscribeToStream,
     } from "$lib/deployments/stream";
-    import LayoutList from "@lucide/svelte/icons/layout-list";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
 
@@ -73,8 +70,6 @@
 
     const watchToast = streamErrorToast();
 
-    useHeaderActions(listViewAction);
-
     onMount(() => {
         // A finished deployment can change both status and the deployed Compose services.
         const stop = subscribeToStream(
@@ -110,13 +105,6 @@
         {projectQuery.data?.name ?? "Project"} canvas / Stoat
     </title>
 </svelte:head>
-
-{#snippet listViewAction()}
-    <Button size="sm" variant="ghost" href="/projects/{projectId}">
-        <LayoutList class="size-4" aria-hidden="true" />
-        List view
-    </Button>
-{/snippet}
 
 <!-- Fills the canvas shell's card. -->
 <div class="flex min-h-0 flex-1 flex-col">

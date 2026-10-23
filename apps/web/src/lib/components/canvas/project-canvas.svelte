@@ -8,6 +8,8 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
+    import LayoutList from "@lucide/svelte/icons/layout-list";
     import Plus from "@lucide/svelte/icons/plus";
     import {
         Background,
@@ -1146,7 +1148,32 @@
     function repairLayout() {
         commit({ ...positions, ...repairOverlaps(nodes) });
     }
+
+    useHeaderActions(headerActions);
 </script>
+
+{#snippet headerActions()}
+    <div class="flex items-center gap-2">
+        <Button size="sm" variant="ghost" href="/projects/{projectId}">
+            <LayoutList class="size-4" aria-hidden="true" />
+            List view
+        </Button>
+        {#if !empty && !isInternal}
+            <Button
+                size="sm"
+                variant="outline"
+                onclick={() => void add.set("root")}
+            >
+                <Plus class="size-4" aria-hidden="true" />
+                Add
+                <KbdGroup class="hidden sm:inline-flex">
+                    <Kbd>Ctrl</Kbd>
+                    <Kbd>K</Kbd>
+                </KbdGroup>
+            </Button>
+        {/if}
+    </div>
+{/snippet}
 
 <svelte:window
     onkeydown={(event) => {
@@ -1350,23 +1377,6 @@
         class:hidden={narrow && selectedResource}
         style:right="{selectedResource ? panelWidth : 0}px"
     >
-        {#if !empty && !isInternal}
-            <div class="pointer-events-auto absolute top-4 right-4">
-                <Button
-                    size="sm"
-                    variant="outline"
-                    class="backdrop-blur-lg"
-                    onclick={() => void add.set("root")}
-                >
-                    <Plus class="size-4" aria-hidden="true" />
-                    Add
-                    <KbdGroup class="hidden sm:inline-flex">
-                        <Kbd>Ctrl</Kbd>
-                        <Kbd>K</Kbd>
-                    </KbdGroup>
-                </Button>
-            </div>
-        {/if}
         {#if changes.length && !moveNotice}
             <div
                 class="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2"
