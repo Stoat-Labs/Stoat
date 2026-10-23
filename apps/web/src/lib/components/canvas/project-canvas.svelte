@@ -1175,8 +1175,9 @@
     </div>
 {/snippet}
 
+<!-- Capture runs before focused widgets like the metric charts, which swallow Escape. -->
 <svelte:window
-    onkeydown={(event) => {
+    onkeydowncapture={(event) => {
         const typing =
             event.target instanceof HTMLElement &&
             event.target.closest(

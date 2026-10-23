@@ -11,7 +11,46 @@
 
     // Server renders share this module, so each one gets its own cache.
     const client = browser ? queryClient : createQueryClient();
+
+    // Chrome rings a clicked button as soon as an unmodified key like Escape is pressed, so such a key drops click focus instead.
+    const navigationKeys = new Set([
+        "Tab",
+        "Enter",
+        " ",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+    ]);
+
+    let pointer = false;
+
+    let clicked: EventTarget | null = null;
 </script>
+
+<svelte:window
+    onpointerdown={() => (pointer = true)}
+    onpointerup={() => (pointer = false)}
+    onfocusin={(event) => (clicked = pointer ? event.target : null)}
+    onkeydown={(event) => {
+        if (
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            navigationKeys.has(event.key) ||
+            !(clicked instanceof HTMLElement) ||
+            clicked !== document.activeElement ||
+            clicked.matches(
+                "input, textarea, select, [contenteditable]",
+            )
+        )
+            return;
+
+        clicked.blur();
+    }}
+/>
 
 <QueryClientProvider {client}>
     <NuqsAdapter>
