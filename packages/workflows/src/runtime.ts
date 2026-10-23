@@ -182,7 +182,8 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
                     (signal) => watchGitSources(db, signal, connectionId),
                     (error) => error,
                 ),
-            { concurrency: 1 },
+            // A webhook check runs beside a slow poll instead of waiting behind it; row locks keep both safe.
+            { concurrency: 2 },
         ),
     );
 }
@@ -296,7 +297,7 @@ function workerLive(db: Database) {
             deploy: { concurrency: 4 },
             buckets: { concurrency: 2 },
             health: { concurrency: 1 },
-            git: { concurrency: 1 },
+            git: { concurrency: 2 },
         },
         lockDuration: "10 minutes",
         // effect-mq also delivers cross-process cancellation on this heartbeat.

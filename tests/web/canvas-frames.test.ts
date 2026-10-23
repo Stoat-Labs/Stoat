@@ -131,25 +131,34 @@ describe("settle", () => {
         });
     });
 
-    it("moves a card dropped on another to the nearest free grid spot, keeping a gap", () => {
-        const moved = settle([card("a", 0, 0), card("b", 48, 24)], "b");
+    it("lets a card partly overlap another", () => {
+        expect(settle([card("a", 0, 0), card("b", 144, 72)], "b")).toEqual({
+            b: { x: 144, y: 72 },
+        });
+    });
 
-        const { x, y } = moved.b ?? { x: 0, y: 0 };
-        const clear = x >= 288 + 24 || x + 288 + 24 <= 0 || y >= 144 + 24 || y + 144 + 24 <= 0;
+    it("cascades a card dropped right on top of another one grid step down-right", () => {
+        expect(settle([card("a", 0, 0), card("b", 10, -5)], "b")).toEqual({
+            b: { x: 24, y: 24 },
+        });
+    });
 
-        expect(clear).toBe(true);
-        expect(x % 24 === 0 && y % 24 === 0).toBe(true);
+    it("shifts a card that hides another's left edge, keeping its own vertical offset", () => {
+        expect(settle([card("a", 0, 0), card("b", 0, 48)], "b")).toEqual({
+            b: { x: 24, y: 48 },
+        });
+    });
+
+    it("keeps cascading past a card already cascaded there", () => {
+        expect(settle([card("a", 0, 0), card("b", 24, 24), card("c", 0, 0)], "c")).toEqual({
+            c: { x: 48, y: 48 },
+        });
     });
 
     it("keeps a card inside a frame off its siblings", () => {
-        const moved = settle(
-            [card("s:a", 0, 48, "s", true), card("s:b", 24, 72, "s", true)],
-            "s:b",
-        );
+        const moved = settle([card("s:a", 0, 48, "s", true), card("s:b", 0, 48, "s", true)], "s:b");
 
-        const { x, y } = moved["s:b"] ?? { x: 0, y: 0 };
-
-        expect(Math.abs(y - 48) >= 144 + 24 || Math.abs(x) >= 288 + 24).toBe(true);
+        expect(moved["s:b"]).toEqual({ x: 24, y: 72 });
     });
 });
 

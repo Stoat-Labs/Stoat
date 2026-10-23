@@ -23,6 +23,7 @@ const resource = {
     type: "compose",
     spec: null,
     draftSpec: null,
+    pendingDelete: false,
     settings: null,
     gitConnectionId: null,
     gitSource: null,

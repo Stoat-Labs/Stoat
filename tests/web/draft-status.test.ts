@@ -45,6 +45,7 @@ it("restores the saved-draft message from loaded data without a successful save 
             type: "compose",
             spec: deployedSpec,
             draftSpec,
+            pendingDelete: false,
             settings: null,
             gitConnectionId: null,
             gitSource: null,

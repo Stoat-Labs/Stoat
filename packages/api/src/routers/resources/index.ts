@@ -271,6 +271,11 @@ export const resourcesRouter = {
                     throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
                 const { resource, clusterId } = row;
 
+                if (resource.pendingDelete)
+                    throw new ORPCError("CONFLICT", {
+                        message: "This resource is staged for deletion. Undo the delete first.",
+                    });
+
                 const [connection] = resource.gitConnectionId
                     ? await tx
                           .select({ provider: gitConnections.provider })
@@ -377,6 +382,27 @@ export const resourcesRouter = {
             await queueResourceDeployment(id).catch(() => {});
 
             return { id, status: "queued" as const };
+        }),
+    // Railway's "Delete Service" on the canvas: staged like any other change, applied from the bar.
+    setPendingDelete: organizationAdminProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+                pendingDelete: v.boolean(),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [row] = await deployTarget(db, organizationId, input);
+
+            if (!row) throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+            await db
+                .update(resources)
+                .set({ pendingDelete: input.pendingDelete })
+                .where(eq(resources.id, row.resource.id));
+
+            return { id: row.resource.id };
         }),
     // Removes the resource's services from the cluster (volumes stay), then the resource.
     deleteResource: organizationAdminProcedure
@@ -928,6 +954,7 @@ export const resourcesRouter = {
                     projectId: resources.projectId,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
+                    pendingDelete: resources.pendingDelete,
                     settings: resources.settings,
                     deployedEnv: lastDeploy.env,
                     deployedPrefix: lastDeploy.prefix,

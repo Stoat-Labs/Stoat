@@ -71,6 +71,13 @@
       "when": 1792353606822,
       "tag": "0009_queued_deployments_index",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792693925026,
+      "tag": "0010_resource_pending_delete",
+      "breakpoints": true
     }
   ]
 }

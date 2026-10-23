@@ -235,6 +235,35 @@ function overlapping(rect: Rect, placed: Rect[]) {
     );
 }
 
+/**
+ * Cards may overlap, just not bury each other: a card covering most of another must leave at
+ * least a grid step of its top and left edge showing, so it cascades down-right until it does.
+ */
+function cascade(rect: Rect, obstacles: Rect[]): XYPosition {
+    const buried = (spot: XYPosition) =>
+        obstacles.find((other) => {
+            const dx = spot.x - other.x;
+            const dy = spot.y - other.y;
+
+            const mostlyCovered =
+                Math.abs(dx) < Math.min(rect.width, other.width) / 2 &&
+                Math.abs(dy) < Math.min(rect.height, other.height) / 2;
+
+            return mostlyCovered && (Math.abs(dx) < GROUP_PADDING || Math.abs(dy) < GROUP_PADDING);
+        });
+
+    let spot = { x: rect.x, y: rect.y };
+
+    // Positions only grow, so a fixed card never buries the same one again.
+    for (let hit = buried(spot); hit; hit = buried(spot))
+        spot = {
+            x: Math.abs(spot.x - hit.x) < GROUP_PADDING ? hit.x + GROUP_PADDING : spot.x,
+            y: Math.abs(spot.y - hit.y) < GROUP_PADDING ? hit.y + GROUP_PADDING : spot.y,
+        };
+
+    return spot;
+}
+
 /** The closest grid spot to `rect` that keeps a gap from every obstacle, searching outwards. */
 export function nearestFree(rect: Rect, obstacles: Rect[]): XYPosition {
     if (!overlapping(rect, obstacles)) return { x: rect.x, y: rect.y };
@@ -259,7 +288,8 @@ export function nearestFree(rect: Rect, obstacles: Rect[]): XYPosition {
 }
 
 /**
- * Cards never overlap: the dragged node settles into the nearest free spot. A card inside a
+ * Cards never sit right on top of each other: the dragged node cascades off any card it landed
+ * on (partial overlap is fine). A card inside a
  * frame avoids its siblings and every other block; a frame or lone card avoids every other block.
  * Returns new card positions for whatever moved.
  */
@@ -288,7 +318,7 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
             : []),
     ].map(nodeRect);
 
-    const spot = nearestFree(nodeRect(dragged), obstacles);
+    const spot = cascade(nodeRect(dragged), obstacles);
     const delta = { x: spot.x - dragged.position.x, y: spot.y - dragged.position.y };
     const positions: Positions = {};
 

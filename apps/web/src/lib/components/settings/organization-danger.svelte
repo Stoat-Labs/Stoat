@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { Card, CardPanel } from "$lib/components/ui/card";
     import { authClient } from "$lib/api/auth-client";
     import { Button } from "$lib/components/ui/button";
     import ConfirmDialog from "./confirm-dialog.svelte";
@@ -45,24 +46,32 @@
     title="Danger zone"
     description="Irreversible actions for {organization.name}."
 >
-    <div class="flex flex-wrap items-center justify-between gap-4">
-        <div class="min-w-0 space-y-1">
-            <h3 class="text-sm font-medium">Delete organization</h3>
-            <p class="text-sm text-muted-foreground">
-                Permanently delete this organization with its projects
-                and clusters.
-            </p>
-        </div>
-        <Button
-            variant="destructive"
-            onclick={() => {
-                error = "";
-                open = true;
-            }}
-        >
-            Delete organization
-        </Button>
-    </div>
+    <Card>
+        <CardPanel class="p-5 sm:p-6">
+            <div
+                class="flex flex-wrap items-center justify-between gap-4"
+            >
+                <div class="min-w-0 space-y-1">
+                    <h3 class="text-sm font-medium">
+                        Delete organization
+                    </h3>
+                    <p class="text-sm text-muted-foreground">
+                        Permanently delete this organization with its
+                        projects and clusters.
+                    </p>
+                </div>
+                <Button
+                    variant="destructive"
+                    onclick={() => {
+                        error = "";
+                        open = true;
+                    }}
+                >
+                    Delete organization
+                </Button>
+            </div>
+        </CardPanel>
+    </Card>
 </SettingsSection>
 
 <ConfirmDialog

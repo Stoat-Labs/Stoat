@@ -588,6 +588,25 @@ export function moveComposeService(options: {
         isMap(pair.value) ? [pair.value] : [],
     );
 
+    // A resource's only service gets every Variable without `env_file: .env`, so moves change that.
+    const [onlyTarget] = existingTargetServices;
+    const [onlySource] = remaining;
+
+    if (existingTargetServices.length === 1 && onlyTarget && !loadsResourceEnv(onlyTarget))
+        warnings.push(
+            `"${serviceNames(targetServices)[0]}" is no longer the target's only service, so it only gets the Variables it references.`,
+        );
+
+    if (existingTargetServices.length && remaining.length === 0 && !loadsResourceEnv(service))
+        warnings.push(
+            `"${name}" is no longer its resource's only service, so it only gets the Variables it references.`,
+        );
+
+    if (remaining.length === 1 && onlySource && !loadsResourceEnv(onlySource))
+        warnings.push(
+            `"${remainingNames[0]}" is now the source's only service, so it gets all of its Variables.`,
+        );
+
     targetServices.set(name, moved);
     sourceServices.delete(name);
 

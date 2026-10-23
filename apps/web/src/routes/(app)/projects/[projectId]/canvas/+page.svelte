@@ -9,7 +9,10 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { subscribeToStream } from "$lib/deployments/stream";
+    import {
+        streamErrorToast,
+        subscribeToStream,
+    } from "$lib/deployments/stream";
     import LayoutList from "@lucide/svelte/icons/layout-list";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
@@ -68,19 +71,19 @@
             graphQuery.error,
     );
 
-    let watchError = $state("");
+    const watchToast = streamErrorToast();
 
     useHeaderActions(listViewAction);
 
-    onMount(() =>
+    onMount(() => {
         // A finished deployment can change both status and the deployed Compose services.
-        subscribeToStream(
+        const stop = subscribeToStream(
             (signal) =>
                 client.cluster.watchDeployments(undefined, {
                     signal,
                 }),
             () => {
-                watchError = "";
+                watchToast.clear();
                 void queryClient.invalidateQueries({
                     queryKey: orpc.resources.listResources.key(),
                 });
@@ -91,11 +94,15 @@
                     queryKey: orpc.cluster.listAllDeployments.key(),
                 });
             },
-            (streamError, reconnecting) => {
-                watchError = `${streamError.message || "Live updates unavailable."}${reconnecting ? " Reconnecting..." : " Reload the page to reconnect."}`;
-            },
-        ),
-    );
+            (streamError, reconnecting) =>
+                watchToast.show(streamError, reconnecting),
+        );
+
+        return () => {
+            stop();
+            watchToast.clear();
+        };
+    });
 </script>
 
 <svelte:head>
@@ -113,12 +120,6 @@
 
 <!-- Fills the canvas shell's card. -->
 <div class="flex min-h-0 flex-1 flex-col">
-    {#if watchError}
-        <Alert variant="warning" class="mx-3 mt-3 w-auto">
-            <AlertDescription>{watchError}</AlertDescription>
-        </Alert>
-    {/if}
-
     {#if error}
         <Alert variant="error" class="mx-3 mt-3 w-auto">
             <AlertDescription>

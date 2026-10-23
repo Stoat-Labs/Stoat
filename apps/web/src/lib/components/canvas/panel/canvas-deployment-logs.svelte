@@ -52,12 +52,17 @@
         deploymentId,
         name,
         icon,
+        redeploy,
         onclose,
+        onopen,
     }: {
         deploymentId: string;
         name: string;
         icon: string | null;
+        /** Set when this resource can be redeployed from its live config right now. */
+        redeploy?: { projectId: string; resourceId: string };
         onclose: () => void;
+        onopen: (deploymentId: string) => void;
     } = $props();
 
     // Details is the condensed step timeline; Logs is every raw line, like Railway's Deploy Logs.
@@ -185,6 +190,21 @@
         }),
     );
 
+    // Railway's "Redeploy": recreates the containers even when nothing changed, then shows the new deployment.
+    const redeployMutation = createMutation(() =>
+        orpc.resources.deploy.mutationOptions({
+            onSuccess: async ({ id }) => {
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listAllDeployments.key(),
+                });
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.resources.listResources.key(),
+                });
+                onopen(id);
+            },
+        }),
+    );
+
     const deleteMutation = createMutation(() =>
         orpc.cluster.deleteDeployment.mutationOptions({
             onSuccess: async (_data, input) => {
@@ -283,7 +303,7 @@
                 View spec
             </Button>
         {/if}
-        {#if stream.canDelete || stream.canCancel}
+        {#if stream.canDelete || stream.canCancel || (redeploy && stream.status === "ready")}
             <Menu>
                 <MenuTrigger
                     class="flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent"
@@ -295,6 +315,18 @@
                     />
                 </MenuTrigger>
                 <MenuPopup align="end" class="min-w-48">
+                    {#if redeploy && stream.status === "ready"}
+                        <MenuItem
+                            disabled={redeployMutation.isPending}
+                            onclick={() =>
+                                redeployMutation.mutate({
+                                    ...redeploy,
+                                    recreate: true,
+                                })}
+                        >
+                            Redeploy
+                        </MenuItem>
+                    {/if}
                     {#if stream.canCancel}
                         <MenuItem
                             disabled={cancelMutation.isPending}
@@ -328,9 +360,10 @@
         </Button>
     </header>
 
-    {#if cancelMutation.error}
+    {#if cancelMutation.error || redeployMutation.error}
         <p class="px-12 pb-3 text-sm text-destructive-foreground">
-            {cancelMutation.error.message}
+            {(cancelMutation.error ?? redeployMutation.error)
+                ?.message}
         </p>
     {/if}
 

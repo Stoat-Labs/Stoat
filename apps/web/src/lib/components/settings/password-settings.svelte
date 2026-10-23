@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { Card, CardPanel } from "$lib/components/ui/card";
     import { authClient } from "$lib/api/auth-client";
     import {
         Alert,
@@ -70,69 +71,79 @@
     title="Password"
     description="Changing it signs you out of your other sessions."
 >
-    <form
-        onsubmit={save}
-        class="max-w-xl space-y-4"
-        aria-busy={pending}
-    >
-        <Field>
-            <Label for="current-password">Current password</Label>
-            <Input
-                id="current-password"
-                type="password"
-                autocomplete="current-password"
-                bind:value={currentPassword}
-                required
-                disabled={!ready || pending}
-            />
-        </Field>
-        <Field>
-            <Label for="new-password">New password</Label>
-            <Input
-                id="new-password"
-                type="password"
-                autocomplete="new-password"
-                bind:value={newPassword}
-                required
-                minlength={8}
-                maxlength={128}
-                disabled={!ready || pending}
-            />
-        </Field>
-        <Field>
-            <Label for="confirm-password">Confirm new password</Label>
-            <Input
-                id="confirm-password"
-                type="password"
-                autocomplete="new-password"
-                bind:value={confirmPassword}
-                required
-                disabled={!ready || pending}
-            />
-        </Field>
-        {#if mismatch}
-            <Alert variant="error">
-                <AlertDescription>
-                    Passwords do not match.
-                </AlertDescription>
-            </Alert>
-        {/if}
-        {#if error}
-            <Alert variant="error">
-                <AlertDescription>{error}</AlertDescription>
-            </Alert>
-        {/if}
-        {#if saved}
-            <Alert variant="success" role="status">
-                <AlertDescription>Password changed.</AlertDescription>
-            </Alert>
-        {/if}
-        <Button
-            type="submit"
-            disabled={!ready || mismatch}
-            loading={pending}
-        >
-            Change password
-        </Button>
-    </form>
+    <Card>
+        <CardPanel class="p-5 sm:p-6">
+            <form
+                onsubmit={save}
+                class="space-y-4"
+                aria-busy={pending}
+            >
+                <Field>
+                    <Label for="current-password">
+                        Current password
+                    </Label>
+                    <Input
+                        id="current-password"
+                        type="password"
+                        autocomplete="current-password"
+                        bind:value={currentPassword}
+                        required
+                        disabled={!ready || pending}
+                    />
+                </Field>
+                <Field>
+                    <Label for="new-password">New password</Label>
+                    <Input
+                        id="new-password"
+                        type="password"
+                        autocomplete="new-password"
+                        bind:value={newPassword}
+                        required
+                        minlength={8}
+                        maxlength={128}
+                        disabled={!ready || pending}
+                    />
+                </Field>
+                <Field>
+                    <Label for="confirm-password">
+                        Confirm new password
+                    </Label>
+                    <Input
+                        id="confirm-password"
+                        type="password"
+                        autocomplete="new-password"
+                        bind:value={confirmPassword}
+                        required
+                        disabled={!ready || pending}
+                    />
+                </Field>
+                {#if mismatch}
+                    <Alert variant="error">
+                        <AlertDescription>
+                            Passwords do not match.
+                        </AlertDescription>
+                    </Alert>
+                {/if}
+                {#if error}
+                    <Alert variant="error">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                {/if}
+                {#if saved}
+                    <Alert variant="success" role="status">
+                        <AlertDescription>
+                            Password changed.
+                        </AlertDescription>
+                    </Alert>
+                {/if}
+                <Button
+                    type="submit"
+                    disabled={!ready || mismatch}
+                    loading={pending}
+                >
+                    Change password
+                </Button>
+            </form>
+        </CardPanel>
+    </Card>
 </SettingsSection>

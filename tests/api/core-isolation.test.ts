@@ -813,6 +813,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
     it("discards staged changes back to the last deploy, removing never-deployed drafts", async () => {
         const live = await resource({
             settings: { env: "STAGED=1\n", prefixNames: true, custom: "kept" },
+            pendingDelete: true,
         });
 
         const draft = await resource({ spec: null });
@@ -845,6 +846,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(await client.discardChanges(input)).toEqual({ restored: 1, removed: 1 });
             expect(await storedResource(live.id)).toMatchObject({
                 draftSpec: spec,
+                pendingDelete: false,
                 settings: { env: "LIVE=1\n", prefixNames: false, custom: "kept" },
             });
             expect(await db.select().from(resources).where(eq(resources.id, draft.id))).toEqual([]);

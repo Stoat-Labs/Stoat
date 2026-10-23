@@ -198,6 +198,8 @@ export const resources = t.pgTable(
         // Last successfully deployed source; edits are saved separately.
         spec: t.text("spec"),
         draftSpec: t.text("draft_spec"),
+        // Staged for deletion: removed when the staged changes are applied, cleared by discard.
+        pendingDelete: t.boolean("pending_delete").notNull().default(false),
         settings: t.jsonb("settings"),
         // Migration makes this FK deferred so organization-wide cascades can finish.
         gitConnectionId: t

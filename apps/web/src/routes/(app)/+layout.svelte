@@ -6,6 +6,7 @@
     import AppShell from "$lib/components/sidebar/app-shell.svelte";
     import AppSidebar from "$lib/components/sidebar/sidebar.svelte";
     import AdminSidebar from "$lib/components/sidebar/admin-sidebar.svelte";
+    import SettingsSidebar from "$lib/components/sidebar/settings-sidebar.svelte";
 
     const { children, data } = $props();
 
@@ -48,6 +49,12 @@
         {#snippet sidebar()}
             {#if page.url.pathname === "/admin" || page.url.pathname.startsWith("/admin/")}
                 <AdminSidebar user={data.user} />
+            {:else if page.url.pathname === "/settings"}
+                <SettingsSidebar
+                    user={data.user}
+                    organizations={data.organizations}
+                    activeOrganizationId={data.activeOrganizationId}
+                />
             {:else}
                 <AppSidebar
                     user={data.user}

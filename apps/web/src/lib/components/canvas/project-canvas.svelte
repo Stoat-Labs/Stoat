@@ -239,12 +239,13 @@
             saveCollapsed(projectId, next);
         },
         isCollapsed: (resourceId) => collapsed.has(resourceId),
-        remove: (resourceId) => {
-            pendingDelete = resources.find(
-                (resource) => resource.id === resourceId,
-            );
-            deleteError = "";
-        },
+        remove: (resourceId) =>
+            void setPendingDelete(resourceId, true),
+        restore: (resourceId) =>
+            void setPendingDelete(resourceId, false),
+        isPendingDelete: (resourceId) =>
+            graph.find((item) => item.id === resourceId)
+                ?.pendingDelete ?? false,
         redeploy: (resourceId) => {
             pendingRedeploy = resources.find(
                 (resource) => resource.id === resourceId,
@@ -275,54 +276,30 @@
         ungroup: (resourceId) => void ungroup(resourceId),
     });
 
-    // Railway's "Delete Service", for a whole resource: confirmed in an alert dialog first.
-    let pendingDelete = $state<CanvasResource>();
-
-    let deleting = $state(false);
-
-    let deleteError = $state("");
-
-    async function deleteResource() {
-        if (!pendingDelete) return;
-
-        deleting = true;
-        deleteError = "";
-
+    // Railway's "Delete Service": staged like any other change and applied from the bar.
+    async function setPendingDelete(
+        resourceId: string,
+        pendingDelete: boolean,
+    ) {
         try {
-            const target = {
+            await client.resources.setPendingDelete({
                 projectId,
-                resourceId: pendingDelete.id,
-            };
-
-            // A bucket revokes its provider keys in a background job, which then removes it.
-            if (pendingDelete.type === "bucket")
-                await client.buckets.remove(target);
-            else await client.resources.deleteResource(target);
-
-            if (
-                selected.current &&
-                parseNodeId(selected.current).resourceId ===
-                    pendingDelete.id
-            )
-                select(null);
-
-            pendingDelete = undefined;
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-            ]);
+                resourceId,
+                pendingDelete,
+            });
         } catch (error) {
-            deleteError =
-                error instanceof Error
-                    ? error.message
-                    : "The resource could not be deleted.";
-        } finally {
-            deleting = false;
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The resource could not be updated.",
+                warnings: [],
+            };
         }
+
+        await queryClient.invalidateQueries({
+            queryKey: orpc.resources.getProjectGraph.key(),
+        });
     }
 
     // A volume nobody mounts leaves the Compose draft; confirmed in an alert dialog first.
@@ -807,7 +784,13 @@
             );
 
             return entry?.changed
-                ? [{ resource, removed: entry.removed }]
+                ? [
+                      {
+                          resource,
+                          removed: entry.removed,
+                          pendingDelete: entry.pendingDelete,
+                      },
+                  ]
                 : [];
         }),
     );
@@ -860,7 +843,7 @@
         );
     }
 
-    // Cards never end up on top of each other: the drop settles into the nearest free spot,
+    // Cards never sit right on top of each other: the drop cascades off any card it landed on,
     // and a frame that grew into a neighbour moves clear of it with its cards.
     function settleDragged(id: string) {
         let next = withPositions(nodes, settle(nodes, id));
@@ -1211,7 +1194,9 @@
         )
             return;
 
-        select(null);
+        // An open deployment steps back to the panel first.
+        if (deployment.current) void deployment.set(null);
+        else select(null);
     }}
 />
 
@@ -1488,27 +1473,6 @@
         pending={deletingVolume}
         error={volumeDeleteError}
         onconfirm={() => void deleteVolume()}
-    />
-{/if}
-
-{#if pendingDelete}
-    <ConfirmDialog
-        bind:open={
-            () => pendingDelete !== undefined,
-            (open) => {
-                if (!open && !deleting) pendingDelete = undefined;
-            }
-        }
-        title={`Delete ${pendingDelete.name}?`}
-        description={pendingDelete.type === "bucket"
-            ? "Stoat revokes this bucket's keys and deletes the bucket if it is empty. A bucket that still holds objects is kept at the provider."
-            : "Its services are removed from the cluster and its deployment history is deleted. Volumes stay on the machines. This cannot be undone."}
-        confirmLabel={pendingDelete.type === "bucket"
-            ? "Delete bucket"
-            : "Delete resource"}
-        pending={deleting}
-        error={deleteError}
-        onconfirm={() => void deleteResource()}
     />
 {/if}
 

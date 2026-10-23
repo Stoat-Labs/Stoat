@@ -116,6 +116,35 @@ describe("buildProjectGraph", () => {
         expect(draft?.services.map((service) => service.name)).toEqual(["api"]);
         expect(broken).toMatchObject({ parseError: true, services: [] });
     });
+
+    it("stages a deletion as a change that removes every deployed service", () => {
+        const spec = "services:\n  api: {}\n  worker: {}\n";
+
+        const {
+            resources: [graph],
+        } = buildProjectGraph(
+            [
+                {
+                    id: api,
+                    slug: "graph-k3f9x2",
+                    projectId: project,
+                    deployed: { env: "", prefix: "" },
+                    attempted: { spec, env: "", prefix: "", failed: false },
+                    spec,
+                    draftSpec: spec,
+                    pendingDelete: true,
+                    settings: null,
+                },
+            ],
+            [],
+        );
+
+        expect(graph).toMatchObject({
+            changed: true,
+            pendingDelete: true,
+            removed: ["api", "worker"],
+        });
+    });
 });
 
 describe("buildProjectGraph logos", () => {

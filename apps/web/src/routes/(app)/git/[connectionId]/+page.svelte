@@ -310,10 +310,10 @@
                 </FrameHeader>
                 <FramePanel class="space-y-4">
                     <p class="text-sm text-muted-foreground">
-                        Add a push webhook to each repository with
-                        these values (content type <span
-                            class="font-mono"
-                        >
+                        Turning on auto deploy adds this webhook to
+                        the repository when the token allows it.
+                        Otherwise, add a push webhook with these
+                        values (content type <span class="font-mono">
                             application/json
                         </span>
                         ). Resources with auto deploy on are checked right

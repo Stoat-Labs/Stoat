@@ -79,6 +79,17 @@ describe("moveComposeService", () => {
         expect(back.warnings).toContain('"web" no longer waits for "db", which stays behind.');
     });
 
+    it("warns when a move changes which service gets every Variable implicitly", () => {
+        const result = move("db");
+
+        expect(result.warnings).toContain(
+            '"web" is now the source\'s only service, so it gets all of its Variables.',
+        );
+        expect(result.warnings).toContain(
+            '"worker" is no longer the target\'s only service, so it only gets the Variables it references.',
+        );
+    });
+
     it("copies the variables the service interpolates, keeping the target's own values", () => {
         expect(move("db").targetEnv).toBe("OTHER=1\nDB_PASSWORD='p@ss'\n");
         expect(move("db", { targetEnv: "DB_PASSWORD=mine\n" }).targetEnv).toBe(

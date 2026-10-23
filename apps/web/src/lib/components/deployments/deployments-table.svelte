@@ -13,7 +13,10 @@
         TableHead,
         TableRow,
     } from "$lib/components/ui/table";
-    import { subscribeToStream } from "$lib/deployments/stream";
+    import {
+        streamErrorToast,
+        subscribeToStream,
+    } from "$lib/deployments/stream";
     import {
         deploymentStatusLabel,
         deploymentStatusVariant,
@@ -147,7 +150,7 @@
         });
     });
 
-    let watchError = $state("");
+    const watchToast = streamErrorToast();
 
     const deleteMutation = createMutation(() =>
         orpc.cluster.deleteDeployment.mutationOptions({
@@ -183,7 +186,7 @@
                     signal,
                 }),
             () => {
-                watchError = "";
+                watchToast.clear();
                 onDeploymentChange?.();
 
                 // Cancel even the initial fetch: it may predate subscription readiness.
@@ -196,15 +199,15 @@
                             });
                     });
             },
-            (error, reconnecting) => {
-                watchError = `${error instanceof Error ? error.message : "Live updates unavailable."}${reconnecting ? " Reconnecting..." : " Reload the page to reconnect."}`;
-            },
+            (error, reconnecting) =>
+                watchToast.show(error, reconnecting),
         );
 
         return () => {
             stopped = true;
             clearInterval(clock);
             stop();
+            watchToast.clear();
         };
     });
 
@@ -325,12 +328,6 @@
         ? "w-full space-y-6 pt-6"
         : "w-full space-y-3"}
 >
-    {#if watchError}
-        <Alert variant="warning">
-            <AlertDescription>{watchError}</AlertDescription>
-        </Alert>
-    {/if}
-
     {#if deploymentsQuery.isError}
         <Alert variant="error">
             <AlertDescription>

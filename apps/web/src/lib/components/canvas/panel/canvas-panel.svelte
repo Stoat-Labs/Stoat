@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import CanvasDeploymentLogs from "./canvas-deployment-logs.svelte";
     import CanvasResourceLogs from "./canvas-resource-logs.svelte";
     import ResourceMetricsView from "$lib/components/projects/resource-metrics-view.svelte";
@@ -267,7 +268,15 @@
                 deploymentId={deployment.current}
                 name={resource.name}
                 {icon}
+                redeploy={page.data.isOrganizationAdmin === true &&
+                !changed
+                    ? {
+                          projectId: resource.projectId,
+                          resourceId: resource.id,
+                      }
+                    : undefined}
                 onclose={() => void deployment.set(null)}
+                onopen={(id) => void deployment.set(id)}
             />
         {/key}
     </aside>

@@ -13,7 +13,14 @@ import {
 } from "../..";
 import { formatComposeFile } from "../../compose";
 import { gitBlobId, listGitFiles, pushGitFile, readGitFile, validateGitPath } from "../../git";
-import { getGitConnection, gitFilePath, gitMessage, gitRevision, gitText } from "../connections";
+import {
+    getGitConnection,
+    gitFilePath,
+    gitMessage,
+    gitRevision,
+    gitText,
+    registerGitWebhook,
+} from "../connections";
 
 export const gitSourceInput = v.object({
     connectionId: v.pipe(v.string(), v.uuid()),
@@ -273,7 +280,7 @@ export const resourceGitRouter = {
                     message: "Git has newer commits. Pull from Git before changing auto-deploy.",
                 });
 
-            return db.transaction(async (tx) => {
+            const updated = await db.transaction(async (tx) => {
                 const resource = await lockedComposeResource(tx, input);
 
                 if (!resource.gitConnectionId || !resource.gitSource)
@@ -299,6 +306,17 @@ export const resourceGitRouter = {
 
                 return updated!;
             });
+
+            // Never throws, and the toggle should not wait on the provider.
+            if (input.autoDeploy)
+                void registerGitWebhook(
+                    db,
+                    organizationId,
+                    source.connectionId,
+                    source.repositoryUrl,
+                );
+
+            return updated;
         }),
     pushGitSource: organizationAdminProcedure
         .use(requireAuth)

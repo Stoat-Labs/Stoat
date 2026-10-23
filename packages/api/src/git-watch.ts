@@ -47,6 +47,8 @@ export async function watchGitSources(db: Database, signal: AbortSignal, connect
                 isNotNull(resources.gitConnectionId),
                 connectionId ? eq(resources.gitConnectionId, connectionId) : undefined,
                 sql`(${resources.gitSource}->>'autoDeploy')::boolean is true`,
+                // A resource staged for deletion must not be redeployed behind the user's back.
+                eq(resources.pendingDelete, false),
                 sql`${projects.isInternal} is not true`,
             ),
         );

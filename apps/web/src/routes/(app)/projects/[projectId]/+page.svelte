@@ -37,7 +37,10 @@
         deploymentStatusVariant,
         isActiveDeploymentStatus,
     } from "$lib/deployments/status";
-    import { subscribeToStream } from "$lib/deployments/stream";
+    import {
+        streamErrorToast,
+        subscribeToStream,
+    } from "$lib/deployments/stream";
     import { ago, elapsed } from "$lib/format";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { s3BucketStatusVariant } from "$lib/s3";
@@ -78,7 +81,7 @@
 
     let now = $state(Date.now());
 
-    let watchError = $state("");
+    const watchToast = streamErrorToast();
 
     useHeaderActions(newResourceAction);
 
@@ -92,19 +95,19 @@
                     signal,
                 }),
             () => {
-                watchError = "";
+                watchToast.clear();
                 void queryClient.invalidateQueries({
                     queryKey: orpc.resources.listResources.key(),
                 });
             },
-            (error, reconnecting) => {
-                watchError = `${error.message || "Live updates unavailable."}${reconnecting ? " Reconnecting..." : " Reload the page to reconnect."}`;
-            },
+            (error, reconnecting) =>
+                watchToast.show(error, reconnecting),
         );
 
         return () => {
             clearInterval(clock);
             stop();
+            watchToast.clear();
         };
     });
 
@@ -175,12 +178,6 @@
             </EmptyContent>
         </Empty>
     {:else}
-        {#if watchError}
-            <Alert variant="warning">
-                <AlertDescription>{watchError}</AlertDescription>
-            </Alert>
-        {/if}
-
         {#if isInternal}
             <Alert variant="info">
                 <AlertDescription>

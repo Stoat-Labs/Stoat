@@ -2170,6 +2170,24 @@ describe("interpolateCompose", () => {
         expect(list.other.environment).toEqual(["MODE=explicit"]);
     });
 
+    it("gives a resource's only service every Variable, without env_file", () => {
+        const single = YAML.parse(
+            interpolateCompose(
+                "services:\n  web:\n    image: x\n    environment:\n      PORT: '1'\n",
+                "PORT=2\nMASTERPASS=s3cret\n",
+            ),
+        );
+
+        expect(single.services.web.environment).toEqual({ PORT: "1", MASTERPASS: "s3cret" });
+
+        const multi = YAML.parse(
+            interpolateCompose("services:\n  web:\n    image: x\n  db:\n    image: y\n", "A=1\n"),
+        );
+
+        expect(multi.services.web.environment).toBeUndefined();
+        expect(multi.services.db.environment).toBeUndefined();
+    });
+
     it("rejects env files a deploy cannot read", () => {
         expect(() =>
             interpolateCompose("services:\n  web:\n    image: x\n    env_file: app.env\n", ""),
