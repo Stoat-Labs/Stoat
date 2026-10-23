@@ -337,7 +337,7 @@ test.describe("as a member", () => {
         ).toHaveCount(0);
 
         for (const [path, input] of [
-            ["resources/deleteResource", { projectId: api!.project_id, resourceId: api!.id }],
+            ["resources/deleteResource", { projectId: api!.project_id, resourceIds: [api!.id] }],
             ["projects/deleteProject", { projectId: api!.project_id }],
         ] as const) {
             const refused = await page.request.post(`/rpc/api/${path}`, {

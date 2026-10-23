@@ -127,23 +127,39 @@
 
         try {
             // Deleted first, so their services are gone before anything moved out of them starts.
-            for (const { resource } of deletions) {
-                const target = { projectId, resourceId: resource.id };
+            // One batch, so resources that reference each other don't block each other. Buckets
+            // go after it, since the apps reading them must be gone first.
+            const resourceIds = deletions.flatMap(({ resource }) =>
+                resource.type === "bucket" ? [] : [resource.id],
+            );
 
-                // A bucket revokes its provider keys in a background job, which then removes it.
-                await (
-                    resource.type === "bucket"
-                        ? client.buckets.remove(target)
-                        : client.resources.deleteResource(target)
-                ).catch((cause) => {
-                    // Its CONFLICTs (still referenced, deploying) are not the Git one handled below.
-                    throw new Error(
-                        cause instanceof Error
-                            ? cause.message
-                            : `${resource.name} could not be deleted.`,
-                    );
-                });
-            }
+            const buckets = deletions.flatMap(({ resource }) =>
+                resource.type === "bucket" ? [resource] : [],
+            );
+
+            // Their CONFLICTs (still referenced, deploying) are not the Git one handled below.
+            if (resourceIds.length)
+                await client.resources
+                    .deleteResource({ projectId, resourceIds })
+                    .catch((cause) => {
+                        throw new Error(
+                            cause instanceof Error
+                                ? cause.message
+                                : "The resources could not be deleted.",
+                        );
+                    });
+
+            // A bucket revokes its provider keys in a background job, which then removes it.
+            for (const bucket of buckets)
+                await client.buckets
+                    .remove({ projectId, resourceId: bucket.id })
+                    .catch((cause) => {
+                        throw new Error(
+                            cause instanceof Error
+                                ? cause.message
+                                : `${bucket.name} could not be deleted.`,
+                        );
+                    });
 
             for (const { resource } of losing) {
                 const { id } = await client.resources.deploy({

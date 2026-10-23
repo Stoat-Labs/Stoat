@@ -859,6 +859,39 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         }
     });
 
+    it("deletes resources that reference each other together, but not one alone", async () => {
+        const database = await resource({ spec: null, settings: { env: "PASSWORD=x\n" } });
+
+        const app = await resource({
+            spec: null,
+            settings: { env: `DB_PASSWORD={{ ${database.id}.PASSWORD }}\n` },
+        });
+
+        try {
+            await db.$client.query(
+                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
+            );
+
+            await expect(
+                client.deleteResource({ projectId, resourceIds: [database.id] }),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+
+            await client.deleteResource({ projectId, resourceIds: [database.id, app.id] });
+
+            expect(
+                await db
+                    .select()
+                    .from(resources)
+                    .where(inArray(resources.id, [database.id, app.id])),
+            ).toEqual([]);
+        } finally {
+            await db.$client.query(
+                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+            );
+            await db.delete(resources).where(inArray(resources.id, [database.id, app.id]));
+        }
+    });
+
     it("compares what a resource runs with what its next deploy ships", async () => {
         const staged = await resource({ settings: { env: "NEXT=1\n", prefixNames: true } });
 

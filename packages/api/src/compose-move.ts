@@ -224,11 +224,14 @@ function interpolated(service: YAMLMap) {
     return [...JSON.stringify(service.toJSON()).matchAll(VARIABLE)].map((match) => match[1] ?? "");
 }
 
-/** Variables a service reads from `values`: the ones it interpolates, or all with `env_file: .env`. */
-function variablesRead(service: YAMLMap, values: Record<string, string | undefined>) {
+/**
+ * Variables a service reads from `values`: the ones it interpolates, or all of them with
+ * `env_file: .env` or as its resource's only service (see `inlineEnvFiles`).
+ */
+function variablesRead(service: YAMLMap, values: Record<string, string | undefined>, only = false) {
     const keys = interpolated(service);
 
-    return loadsResourceEnv(service) ? [...keys, ...Object.keys(values)] : keys;
+    return only || loadsResourceEnv(service) ? [...keys, ...Object.keys(values)] : keys;
 }
 
 // --- Hostnames across resources ---
@@ -635,7 +638,11 @@ export function moveComposeService(options: {
     const sourceValues = parseEnv(sourceEnv);
     const targetKeys = new Set(Object.keys(parseEnv(targetEnv)));
 
-    const needed = withDependencies(variablesRead(service, sourceValues), sourceValues, targetKeys);
+    const needed = withDependencies(
+        variablesRead(service, sourceValues, remaining.length === 0),
+        sourceValues,
+        targetKeys,
+    );
 
     const copiedLines = envLines(sourceEnv, needed);
 

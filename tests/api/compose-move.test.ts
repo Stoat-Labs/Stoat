@@ -224,6 +224,21 @@ describe("services reading env_file: .env", () => {
 
         expect(parseEnv(result.sourceEnv)).toHaveProperty("PEER");
     });
+
+    it("include a resource's only service, which reads every Variable without it", () => {
+        const result = moveComposeService({
+            service: "only",
+            source: "services:\n  only:\n    image: app\n",
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: undefined,
+            sourceEnv: "API_KEY=key\n",
+            targetEnv: "",
+        });
+
+        expect(parseEnv(result.targetEnv)).toEqual({ API_KEY: "key" });
+    });
 });
 
 describe("unpinVolumeNames", () => {
