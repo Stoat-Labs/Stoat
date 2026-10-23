@@ -271,6 +271,11 @@ export const resourcesRouter = {
                     throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
                 const { resource, clusterId } = row;
 
+                if (resource.pendingDelete)
+                    throw new ORPCError("CONFLICT", {
+                        message: "This resource is staged for deletion. Undo the delete first.",
+                    });
+
                 const [connection] = resource.gitConnectionId
                     ? await tx
                           .select({ provider: gitConnections.provider })
@@ -378,36 +383,65 @@ export const resourcesRouter = {
 
             return { id, status: "queued" as const };
         }),
-    // Removes the resource's services from the cluster (volumes stay), then the resource.
-    deleteResource: organizationAdminProcedure
+    // Railway's "Delete Service" on the canvas: staged like any other change, applied from the bar.
+    setPendingDelete: organizationAdminProcedure
         .input(
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
+                pendingDelete: v.boolean(),
+            }),
+        )
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            const [row] = await deployTarget(db, organizationId, input);
+
+            if (!row) throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+
+            await db
+                .update(resources)
+                .set({ pendingDelete: input.pendingDelete })
+                .where(eq(resources.id, row.resource.id));
+
+            return { id: row.resource.id };
+        }),
+    // Removes the resources' services from the cluster (volumes stay), then the resources. One
+    // batch, so resources that reference each other can be deleted together.
+    deleteResource: organizationAdminProcedure
+        .input(
+            v.object({
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceIds: v.pipe(v.array(v.pipe(v.string(), v.uuid())), v.minLength(1)),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
-                const [row] = await tx
+                const rows = await tx
                     .select({ resource: resources, clusterId: projects.clusterId })
                     .from(resources)
                     .innerJoin(projects, eq(resources.projectId, projects.id))
                     .innerJoin(clusters, eq(projects.clusterId, clusters.id))
                     .where(
                         and(
-                            eq(resources.id, input.resourceId),
+                            inArray(resources.id, input.resourceIds),
                             eq(projects.id, input.projectId),
                             sql`${projects.isInternal} is not true`,
                             eq(clusters.organizationId, organizationId),
                         ),
                     )
+                    // A fixed lock order keeps two overlapping deletes from deadlocking.
+                    .orderBy(asc(resources.id))
                     .for("update", { of: resources });
 
-                if (!row) throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
+                if (rows.length === 0 || rows.length !== new Set(input.resourceIds).size)
+                    throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
 
-                await removeResources(tx, row.clusterId, [row.resource]);
+                await removeResources(
+                    tx,
+                    rows[0]!.clusterId,
+                    rows.map((row) => row.resource),
+                );
 
-                return { id: row.resource.id };
+                return { ids: rows.map((row) => row.resource.id) };
             }),
         ),
     // Drag a service onto another resource on the canvas: both drafts change, nothing deploys.
@@ -928,6 +962,7 @@ export const resourcesRouter = {
                     projectId: resources.projectId,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
+                    pendingDelete: resources.pendingDelete,
                     settings: resources.settings,
                     deployedEnv: lastDeploy.env,
                     deployedPrefix: lastDeploy.prefix,

@@ -54,7 +54,6 @@ export const resourceDiscardRouter = {
                         and(
                             inArray(resources.id, input.resourceIds),
                             eq(resources.projectId, input.projectId),
-                            inArray(resources.type, composeResourceTypes),
                         ),
                     )
                     .for("update");
@@ -62,9 +61,27 @@ export const resourceDiscardRouter = {
                 if (rows.length !== new Set(input.resourceIds).size)
                     throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
 
-                const drafts = rows.filter((row) => !row.spec?.trim());
+                // A bucket is never deployed, so its only staged change is a deletion.
+                const buckets = rows.filter((row) => row.type === "bucket");
 
-                const live = rows.filter((row) => row.spec?.trim());
+                if (buckets.length)
+                    await tx
+                        .update(resources)
+                        .set({ pendingDelete: false })
+                        .where(
+                            inArray(
+                                resources.id,
+                                buckets.map((row) => row.id),
+                            ),
+                        );
+
+                const compose = rows.filter((row) =>
+                    composeResourceTypes.some((type) => type === row.type),
+                );
+
+                const drafts = compose.filter((row) => !row.spec?.trim());
+
+                const live = compose.filter((row) => row.spec?.trim());
 
                 for (const row of live) {
                     const [last] = await tx
@@ -97,7 +114,7 @@ export const resourceDiscardRouter = {
 
                     await tx
                         .update(resources)
-                        .set({ draftSpec: row.spec, settings })
+                        .set({ draftSpec: row.spec, settings, pendingDelete: false })
                         .where(eq(resources.id, row.id));
                 }
 

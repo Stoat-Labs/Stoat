@@ -15,15 +15,49 @@
     }: {
         projectId: string;
         /** Resources with saved changes that are not live, and the running services deploying them removes. */
-        changes: { resource: CanvasResource; removed: string[] }[];
+        changes: {
+            resource: CanvasResource;
+            removed: string[];
+            pendingDelete: boolean;
+        }[];
     } = $props();
+
+    const deletions = $derived(
+        changes.filter(({ pendingDelete }) => pendingDelete),
+    );
 
     const isAdmin = $derived(page.data.isOrganizationAdmin === true);
 
     const removals = $derived(
-        changes.flatMap(({ resource, removed }) =>
-            removed.map((service) => `${service} (${resource.name})`),
+        changes.flatMap(({ resource, removed, pendingDelete }) =>
+            pendingDelete
+                ? []
+                : removed.map(
+                      (service) => `${service} (${resource.name})`,
+                  ),
         ),
+    );
+
+    const deletedNames = $derived(
+        deletions.map(({ resource }) => resource.name).join(", "),
+    );
+
+    const confirmTitle = $derived(
+        deletions.length
+            ? `Deploy and delete ${deletions.length === 1 ? deletedNames : `${deletions.length} resources`}?`
+            : `Deploy and remove ${removals.length === 1 ? "a service" : `${removals.length} services`}?`,
+    );
+
+    const confirmDescription = $derived(
+        [
+            deletions.length &&
+                `Deleting ${deletedNames} removes their services from the cluster and their deployment history. Buckets have their keys revoked and are deleted if empty. This cannot be undone.`,
+            removals.length &&
+                `Deploying stops and removes ${removals.join(", ")}, which the Compose file no longer has.`,
+            "Volumes stay on the machines.",
+        ]
+            .filter(Boolean)
+            .join(" "),
     );
 
     // Railway's "Details": the diffs behind the count, in the URL like other canvas dialogs.
@@ -71,7 +105,7 @@
     function startDeploy() {
         error = "";
 
-        if (removals.length) confirming = true;
+        if (removals.length || deletions.length) confirming = true;
         else void deploy();
     }
 
@@ -81,13 +115,52 @@
         deploying = true;
         error = "";
 
-        const losing = changes.filter(
+        const deploys = changes.filter(
+            ({ pendingDelete }) => !pendingDelete,
+        );
+
+        const losing = deploys.filter(
             ({ removed }) => removed.length,
         );
 
-        const rest = changes.filter(({ removed }) => !removed.length);
+        const rest = deploys.filter(({ removed }) => !removed.length);
 
         try {
+            // Deleted first, so their services are gone before anything moved out of them starts.
+            // One batch, so resources that reference each other don't block each other. Buckets
+            // go after it, since the apps reading them must be gone first.
+            const resourceIds = deletions.flatMap(({ resource }) =>
+                resource.type === "bucket" ? [] : [resource.id],
+            );
+
+            const buckets = deletions.flatMap(({ resource }) =>
+                resource.type === "bucket" ? [resource] : [],
+            );
+
+            // Their CONFLICTs (still referenced, deploying) are not the Git one handled below.
+            if (resourceIds.length)
+                await client.resources
+                    .deleteResource({ projectId, resourceIds })
+                    .catch((cause) => {
+                        throw new Error(
+                            cause instanceof Error
+                                ? cause.message
+                                : "The resources could not be deleted.",
+                        );
+                    });
+
+            // A bucket revokes its provider keys in a background job, which then removes it.
+            for (const bucket of buckets)
+                await client.buckets
+                    .remove({ projectId, resourceId: bucket.id })
+                    .catch((cause) => {
+                        throw new Error(
+                            cause instanceof Error
+                                ? cause.message
+                                : `${bucket.name} could not be deleted.`,
+                        );
+                    });
+
             for (const { resource } of losing) {
                 const { id } = await client.resources.deploy({
                     projectId,
@@ -242,7 +315,7 @@
     title="Discard {changes.length === 1
         ? 'this change'
         : `${changes.length} changes`}?"
-    description="Each resource goes back to what it last deployed, and resources that were never deployed are removed. This can't be undone."
+    description="Each resource goes back to what it last deployed, staged deletions are undone, and resources that were never deployed are removed. This can't be undone."
     confirmLabel="Discard changes"
     pending={discarding}
     error={discardError}
@@ -251,12 +324,8 @@
 
 <ConfirmDialog
     bind:open={confirming}
-    title="Deploy and remove {removals.length === 1
-        ? 'a service'
-        : `${removals.length} services`}?"
-    description="Deploying stops and removes {removals.join(
-        ', ',
-    )}, which the Compose file no longer has. Their volumes stay on the machines."
+    title={confirmTitle}
+    description={confirmDescription}
     confirmLabel="Deploy"
     pending={deploying}
     {error}

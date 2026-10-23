@@ -51,6 +51,7 @@
     import type { AddPage } from "./add-palette.svelte";
     import { getCanvasActions } from "../context";
     import Trash2 from "@lucide/svelte/icons/trash-2";
+    import Undo2 from "@lucide/svelte/icons/undo-2";
 
     let {
         projectId,
@@ -281,13 +282,22 @@
             {#if wholeResource && resourceId}
                 {@const id = resourceId}
                 <ContextMenuSeparator />
-                <ContextMenuItem
-                    variant="destructive"
-                    onclick={() => actions.remove(id)}
-                >
-                    <Trash2 aria-hidden="true" />
-                    Delete resource
-                </ContextMenuItem>
+                {#if actions.isPendingDelete(id)}
+                    <ContextMenuItem
+                        onclick={() => actions.restore(id)}
+                    >
+                        <Undo2 aria-hidden="true" />
+                        Undo delete
+                    </ContextMenuItem>
+                {:else}
+                    <ContextMenuItem
+                        variant="destructive"
+                        onclick={() => actions.remove(id)}
+                    >
+                        <Trash2 aria-hidden="true" />
+                        Delete resource
+                    </ContextMenuItem>
+                {/if}
             {/if}
         {:else if !canAdd}
             <ContextMenuGroup>

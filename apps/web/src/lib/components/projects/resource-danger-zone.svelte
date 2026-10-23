@@ -92,5 +92,6 @@
     confirmLabel="Delete resource"
     pending={removeState.isPending}
     error={removeState.error?.message ?? ""}
-    onconfirm={() => removeState.mutate({ projectId, resourceId })}
+    onconfirm={() =>
+        removeState.mutate({ projectId, resourceIds: [resourceId] })}
 />

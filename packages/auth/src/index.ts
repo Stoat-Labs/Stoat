@@ -12,6 +12,8 @@ import { organization } from "better-auth/plugins/organization";
 import { listUserOrganizations, organizationHasInfrastructure } from "@stoat/db/organizations";
 
 import { createSessionStorage } from "./session-storage";
+// Lets tsc name the zod types in createAuth's inferred return type (TS2883).
+import type {} from "zod/v4/core";
 
 export type AuthConfig = {
     APP_URL: string;
@@ -100,6 +102,9 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
             // With secondary storage, Postgres keeps a durable copy so a Dragonfly flush or
             // outage falls back to it instead of signing everyone out.
             storeSessionInDatabase: true,
+            // listSessions refuses sessions older than freshAge (one day by default); the only
+            // other fresh-gated endpoint, unlink-account, has nothing to unlink without social login.
+            freshAge: 0,
         },
         // Invitation and verification tokens must survive a Dragonfly flush.
         verification: { storeInDatabase: true },

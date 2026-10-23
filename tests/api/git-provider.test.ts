@@ -113,6 +113,7 @@ afterAll(() => {
 });
 
 import {
+    ensureGitWebhook,
     getGitAccount,
     gitProviderRequest,
     listGitRepositories,
@@ -158,6 +159,7 @@ afterEach(() => {
 describe("Git server validation", () => {
     it("exports exactly the agreed runtime API", async () => {
         expect(Object.keys(await import("../../packages/api/src/git-provider")).sort()).toEqual([
+            "ensureGitWebhook",
             "getGitAccount",
             "gitProviderRequest",
             "listGitRepositories",
@@ -748,5 +750,45 @@ describe("Repository discovery", () => {
                 ? { data: [repo(1)] }
                 : { status: 500, data: "secret" };
         await expect(listGitRepositories(github)).rejects.toMatchObject({ code: "BAD_GATEWAY" });
+    });
+});
+
+describe("Push webhooks", () => {
+    const hookUrl = "https://stoat.example/git/webhook/connection";
+
+    it("creates a GitHub hook for the repository", async () => {
+        network.reply = (url) => ({ data: url.search ? [] : { id: 1 } });
+        await ensureGitWebhook(github, "https://github.com/team/repo.git", hookUrl, "secret");
+
+        const [list, create] = network.calls;
+        expect(list!.url.href).toBe("https://api.github.com/repos/team/repo/hooks?per_page=100");
+        expect(create!.url.href).toBe("https://api.github.com/repos/team/repo/hooks");
+        expect(JSON.parse(create!.body!)).toEqual({
+            name: "web",
+            config: { url: hookUrl, content_type: "json", secret: "secret" },
+            events: ["push"],
+            active: true,
+        });
+    });
+
+    it("skips a Forgejo repository that already has the hook", async () => {
+        network.reply = () => ({ data: [{ id: 1, config: { url: hookUrl } }] });
+        await ensureGitWebhook(
+            forgejo,
+            "https://git.example.com/forge/team/repo.git",
+            hookUrl,
+            "secret",
+        );
+
+        expect(network.calls.map(({ url }) => url.href)).toEqual([
+            "https://git.example.com/forge/api/v1/repos/team/repo/hooks?limit=100",
+        ]);
+    });
+
+    it("rejects a repository on another server", async () => {
+        await expect(
+            ensureGitWebhook(github, "https://evil.example/team/repo.git", hookUrl, "secret"),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        expect(network.calls).toEqual([]);
     });
 });

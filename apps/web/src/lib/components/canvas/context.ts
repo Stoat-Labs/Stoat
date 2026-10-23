@@ -10,8 +10,11 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     edit: (action: GroupAction, resourceId: string) => void;
     toggleCollapsed: (resourceId: string) => void;
     isCollapsed: (resourceId: string) => boolean;
-    /** Asks to delete a whole resource; the canvas confirms it first. */
+    /** Stages a whole resource for deletion; applying the staged changes removes it. */
     remove: (resourceId: string) => void;
+    /** Undoes a staged deletion. */
+    restore: (resourceId: string) => void;
+    isPendingDelete: (resourceId: string) => boolean;
     /** Asks to roll out a resource again even if nothing changed; the canvas confirms it first. */
     redeploy: (resourceId: string) => void;
     /** Staged edits would ship with a redeploy, so it is only offered without any. */

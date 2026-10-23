@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { Card, CardPanel } from "$lib/components/ui/card";
     import { invalidateAll } from "$app/navigation";
     import { authClient } from "$lib/api/auth-client";
     import {
@@ -79,58 +80,62 @@
     title="General"
     description="The name and slug identify this organization."
 >
-    <form
-        onsubmit={save}
-        class="max-w-xl space-y-4"
-        aria-busy={pending}
-    >
-        <Field>
-            <Label for="organization-name">Name</Label>
-            <Input
-                id="organization-name"
-                bind:value={name}
-                required
-                maxlength={100}
-                pattern=".*\S.*"
-                disabled={!ready || pending || !canManage}
-            />
-        </Field>
-        <Field>
-            <Label for="organization-slug">Slug</Label>
-            <Input
-                id="organization-slug"
-                bind:value={slug}
-                required
-                maxlength={64}
-                pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                title="Lowercase letters, numbers and dashes"
-                disabled={!ready || pending || !canManage}
-            />
-        </Field>
-        {#if error}
-            <Alert variant="error">
-                <AlertDescription>{error}</AlertDescription>
-            </Alert>
-        {/if}
-        {#if saved}
-            <Alert variant="success" role="status">
-                <AlertDescription>
-                    Organization updated.
-                </AlertDescription>
-            </Alert>
-        {/if}
-        {#if !canManage}
-            <p class="text-xs text-muted-foreground">
-                Only owners can change these settings.
-            </p>
-        {:else}
-            <Button
-                type="submit"
-                disabled={!ready || unchanged}
-                loading={pending}
+    <Card>
+        <CardPanel class="p-5 sm:p-6">
+            <form
+                onsubmit={save}
+                class="space-y-4"
+                aria-busy={pending}
             >
-                Save changes
-            </Button>
-        {/if}
-    </form>
+                <Field>
+                    <Label for="organization-name">Name</Label>
+                    <Input
+                        id="organization-name"
+                        bind:value={name}
+                        required
+                        maxlength={100}
+                        pattern=".*\S.*"
+                        disabled={!ready || pending || !canManage}
+                    />
+                </Field>
+                <Field>
+                    <Label for="organization-slug">Slug</Label>
+                    <Input
+                        id="organization-slug"
+                        bind:value={slug}
+                        required
+                        maxlength={64}
+                        pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                        title="Lowercase letters, numbers and dashes"
+                        disabled={!ready || pending || !canManage}
+                    />
+                </Field>
+                {#if error}
+                    <Alert variant="error">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                {/if}
+                {#if saved}
+                    <Alert variant="success" role="status">
+                        <AlertDescription>
+                            Organization updated.
+                        </AlertDescription>
+                    </Alert>
+                {/if}
+                {#if !canManage}
+                    <p class="text-xs text-muted-foreground">
+                        Only owners can change these settings.
+                    </p>
+                {:else}
+                    <Button
+                        type="submit"
+                        disabled={!ready || unchanged}
+                        loading={pending}
+                    >
+                        Save changes
+                    </Button>
+                {/if}
+            </form>
+        </CardPanel>
+    </Card>
 </SettingsSection>

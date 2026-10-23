@@ -4,6 +4,7 @@
     import { QueryClientProvider } from "@tanstack/svelte-query";
     import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
     import { NuqsAdapter } from "nuqs-svelte/adapters/svelte-kit";
+    import { ToastProvider } from "$lib/components/ui/toast";
     import "../app.css";
 
     const { children } = $props();
@@ -14,7 +15,9 @@
 
 <QueryClientProvider {client}>
     <NuqsAdapter>
-        {@render children()}
+        <ToastProvider>
+            {@render children()}
+        </ToastProvider>
     </NuqsAdapter>
     <SvelteQueryDevtools />
 </QueryClientProvider>

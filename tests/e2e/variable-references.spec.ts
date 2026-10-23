@@ -96,6 +96,10 @@ test.describe("picking a reference", () => {
             "POSTGRES_PASSWORD",
             "POSTGRES_USER",
             "STOAT_PREFIX",
+            "STOAT_PROJECT_ID",
+            "STOAT_PROJECT_NAME",
+            "STOAT_RESOURCE_ID",
+            "STOAT_RESOURCE_NAME",
         ]);
 
         await choose(page, "DATABASE");

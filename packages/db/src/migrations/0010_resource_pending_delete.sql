@@ -1,0 +1,1 @@
+ALTER TABLE "resources" ADD COLUMN "pending_delete" boolean DEFAULT false NOT NULL;

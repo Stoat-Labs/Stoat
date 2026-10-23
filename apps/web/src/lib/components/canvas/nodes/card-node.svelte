@@ -116,7 +116,13 @@
                     {/if}
                 </div>
             </div>
-            {#if data.parseError}
+            {#if actions.isPendingDelete(resource.id)}
+                <p
+                    class="truncate text-sm text-destructive-foreground"
+                >
+                    Will be deleted
+                </p>
+            {:else if data.parseError}
                 <p
                     class="truncate text-sm text-destructive-foreground"
                 >

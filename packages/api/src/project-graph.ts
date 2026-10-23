@@ -80,6 +80,8 @@ export type GraphResourceInput = {
     projectId: string;
     spec: string | null;
     draftSpec: string | null;
+    /** Staged for deletion: the next apply removes the whole resource. */
+    pendingDelete?: boolean;
     settings: unknown;
     /** The `.env` and name prefix of the latest successful deploy; null if it never deployed. */
     deployed: { env: string; prefix: string } | null;
@@ -284,25 +286,33 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             row.deployed !== null && row.deployed.prefix !== (resourceComposePrefix(row) ?? "");
 
         const kept = new Set(services.map((service) => service.name));
-        const removed = [...(deployed ?? [])].filter((name) => prefixChanged || !kept.has(name));
+
+        const removed = [...(deployed ?? [])].filter(
+            (name) => row.pendingDelete || prefixChanged || !kept.has(name),
+        );
 
         // Like Railway, deploying commits staged changes: a queued, running or failed deploy
         // reports on its card, and only edits made after it count as staged again.
         // A failed deploy may not have removed its services yet, which would leave the old ones
         // running (a moved service next to its new copy), so those stay staged until one succeeds.
-        const changed = row.attempted
-            ? row.draftSpec !== row.attempted.spec ||
-              safeEnv(row) !== row.attempted.env ||
-              (resourceComposePrefix(row) ?? "") !== row.attempted.prefix ||
-              (row.attempted.failed && removed.length > 0)
-            : draftOnly ||
-              Boolean(row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec) ||
-              (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
-              prefixChanged;
+        const changed =
+            row.pendingDelete ||
+            (row.attempted
+                ? row.draftSpec !== row.attempted.spec ||
+                  safeEnv(row) !== row.attempted.env ||
+                  (resourceComposePrefix(row) ?? "") !== row.attempted.prefix ||
+                  (row.attempted.failed && removed.length > 0)
+                : draftOnly ||
+                  Boolean(
+                      row.spec?.trim() && row.draftSpec?.trim() && row.draftSpec !== row.spec,
+                  ) ||
+                  (row.deployed !== null && row.deployed.env !== safeEnv(row)) ||
+                  prefixChanged);
 
         return {
             id: row.id,
             draftOnly,
+            pendingDelete: row.pendingDelete ?? false,
             // Anything the next deploy would change: a first deploy, Compose edits, variables,
             // or the prefix setting.
             changed,

@@ -32,6 +32,7 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
         name: "DeployResource",
         status: "failed",
         spec: null,
+        metadata: null,
         clusterId: "cluster",
         clusterName: "Production",
         projectId: "project",

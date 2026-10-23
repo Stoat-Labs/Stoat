@@ -26,6 +26,7 @@
     import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
     import UserIcon from "@lucide/svelte/icons/user";
     import LogOut from "@lucide/svelte/icons/log-out";
+    import ThemeSwitcher from "$lib/components/theme-switcher.svelte";
     import { watch } from "runed";
 
     let {
@@ -135,7 +136,7 @@
     </MenuTrigger>
     <MenuPopup
         class="w-(--anchor-width) min-w-56 max-w-[calc(100vw-2rem)]"
-        side="bottom"
+        side={sidebar.isMobile ? "bottom" : "right"}
         align="end"
         sideOffset={4}
     >
@@ -153,6 +154,12 @@
             >
                 <UserIcon aria-hidden="true" />Settings
             </MenuLinkItem>
+            <div
+                class="flex items-center justify-between gap-2 py-1 ps-2 pe-1"
+            >
+                <span class="text-sm">Theme</span>
+                <ThemeSwitcher />
+            </div>
         </MenuGroup>
         <MenuSeparator />
         <MenuItem

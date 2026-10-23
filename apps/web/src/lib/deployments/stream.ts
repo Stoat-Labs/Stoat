@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/client";
+import { toastManager } from "$lib/components/ui/toast";
 
 /** Reconnect transport failures and explicitly retryable API errors; completed streams stay stopped. */
 export function subscribeToStream<T>(
@@ -49,5 +50,29 @@ export function subscribeToStream<T>(
     return () => {
         controller.abort();
         clearTimeout(retry);
+    };
+}
+
+/** One warning toast per live stream: kept up to date while it retries, closed once events flow again. */
+export function streamErrorToast() {
+    let id: string | undefined;
+
+    return {
+        show(error: Error, reconnecting: boolean) {
+            const toast = {
+                type: "warning",
+                title: reconnecting ? "Live updates lost. Reconnecting..." : "Live updates stopped",
+                description: reconnecting
+                    ? error.message
+                    : `${error.message} Reload the page to reconnect.`,
+                timeout: 0,
+            };
+
+            if (id) toastManager.update(id, toast);
+            else id = toastManager.add({ ...toast, onClose: () => (id = undefined) });
+        },
+        clear() {
+            if (id) toastManager.close(id);
+        },
     };
 }

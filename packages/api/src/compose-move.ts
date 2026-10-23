@@ -224,11 +224,14 @@ function interpolated(service: YAMLMap) {
     return [...JSON.stringify(service.toJSON()).matchAll(VARIABLE)].map((match) => match[1] ?? "");
 }
 
-/** Variables a service reads from `values`: the ones it interpolates, or all with `env_file: .env`. */
-function variablesRead(service: YAMLMap, values: Record<string, string | undefined>) {
+/**
+ * Variables a service reads from `values`: the ones it interpolates, or all of them with
+ * `env_file: .env` or as its resource's only service (see `inlineEnvFiles`).
+ */
+function variablesRead(service: YAMLMap, values: Record<string, string | undefined>, only = false) {
     const keys = interpolated(service);
 
-    return loadsResourceEnv(service) ? [...keys, ...Object.keys(values)] : keys;
+    return only || loadsResourceEnv(service) ? [...keys, ...Object.keys(values)] : keys;
 }
 
 // --- Hostnames across resources ---
@@ -588,6 +591,25 @@ export function moveComposeService(options: {
         isMap(pair.value) ? [pair.value] : [],
     );
 
+    // A resource's only service gets every Variable without `env_file: .env`, so moves change that.
+    const [onlyTarget] = existingTargetServices;
+    const [onlySource] = remaining;
+
+    if (existingTargetServices.length === 1 && onlyTarget && !loadsResourceEnv(onlyTarget))
+        warnings.push(
+            `"${serviceNames(targetServices)[0]}" is no longer the target's only service, so it only gets the Variables it references.`,
+        );
+
+    if (existingTargetServices.length && remaining.length === 0 && !loadsResourceEnv(service))
+        warnings.push(
+            `"${name}" is no longer its resource's only service, so it only gets the Variables it references.`,
+        );
+
+    if (remaining.length === 1 && onlySource && !loadsResourceEnv(onlySource))
+        warnings.push(
+            `"${remainingNames[0]}" is now the source's only service, so it gets all of its Variables.`,
+        );
+
     targetServices.set(name, moved);
     sourceServices.delete(name);
 
@@ -616,7 +638,11 @@ export function moveComposeService(options: {
     const sourceValues = parseEnv(sourceEnv);
     const targetKeys = new Set(Object.keys(parseEnv(targetEnv)));
 
-    const needed = withDependencies(variablesRead(service, sourceValues), sourceValues, targetKeys);
+    const needed = withDependencies(
+        variablesRead(service, sourceValues, remaining.length === 0),
+        sourceValues,
+        targetKeys,
+    );
 
     const copiedLines = envLines(sourceEnv, needed);
 

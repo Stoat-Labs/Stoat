@@ -6,6 +6,7 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Badge } from "$lib/components/ui/badge";
+    import { Card, CardPanel } from "$lib/components/ui/card";
     import {
         Button,
         buttonVariants,
@@ -238,7 +239,6 @@
     count={membersQuery.data
         ? `${membersQuery.data.length} ${membersQuery.data.length === 1 ? "member" : "members"}`
         : undefined}
-    panelClass="p-0"
 >
     {#snippet actions()}
         {#if canManage}
@@ -249,185 +249,225 @@
         {/if}
     {/snippet}
     {#if error}
-        <Alert variant="error" class="m-3 w-auto">
+        <Alert variant="error">
             <AlertDescription>{error}</AlertDescription>
         </Alert>
     {/if}
-    {#if membersQuery.isPending}
-        <Skeleton
-            loading
-            count={2}
-            count-gap={1}
-            loading-label="Loading members"
-        >
-            <div
-                class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-            >
-                <span
-                    class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                >
-                    <User class="size-5" aria-hidden="true" />
-                </span>
-                <div class="min-w-0">
-                    <h3
-                        class="truncate text-sm font-medium leading-5"
+    {#if membersQuery.isPending || membersQuery.data}
+        <Card>
+            <CardPanel class="p-0">
+                {#if membersQuery.isPending}
+                    <Skeleton
+                        loading
+                        count={2}
+                        count-gap={1}
+                        loading-label="Loading members"
                     >
-                        Member name
-                    </h3>
-                    <p
-                        class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                    >
-                        member@example.com
-                    </p>
-                </div>
-                <Badge variant="secondary">Member</Badge>
-            </div>
-        </Skeleton>
-    {:else if membersQuery.data}
-        <ul>
-            {#each invitationsQuery.data ?? [] as invitation, index (invitation.id)}
-                <li class="min-w-0">
-                    {#if index > 0}<Separator />{/if}
-                    <div
-                        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-                    >
-                        <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                        <div
+                            class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
                         >
-                            <Mail class="size-5" aria-hidden="true" />
-                        </span>
-                        <div class="min-w-0">
-                            <h3
-                                class="truncate text-sm font-medium leading-5"
-                                title={invitation.email}
+                            <span
+                                class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
                             >
-                                {invitation.email}
-                            </h3>
-                            <p
-                                class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                aria-live="polite"
-                            >
-                                {copiedId === invitation.id
-                                    ? "Invite link copied"
-                                    : `Invited as ${invitation.role} · expires ${new Date(
-                                          invitation.expiresAt,
-                                      ).toLocaleDateString()}`}
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <Badge variant="warning">Pending</Badge>
-                            <Menu>
-                                <MenuTrigger
-                                    class={buttonVariants({
-                                        variant: "ghost",
-                                        size: "icon-sm",
-                                    })}
-                                    aria-label={`Actions for invitation to ${invitation.email}`}
+                                <User
+                                    class="size-5"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                            <div class="min-w-0">
+                                <h3
+                                    class="truncate text-sm font-medium leading-5"
                                 >
-                                    <Ellipsis
-                                        class="size-4"
-                                        aria-hidden="true"
-                                    />
-                                </MenuTrigger>
-                                <MenuPopup align="end">
-                                    <MenuItem
-                                        onclick={() =>
-                                            copyLink(invitation.id)}
-                                    >
-                                        <Link aria-hidden="true" />
-                                        Copy invite link
-                                    </MenuItem>
-                                    <MenuItem
-                                        variant="destructive"
-                                        onclick={() =>
-                                            cancelInvitation(
-                                                invitation.id,
-                                            )}
-                                    >
-                                        <X aria-hidden="true" />
-                                        Cancel invitation
-                                    </MenuItem>
-                                </MenuPopup>
-                            </Menu>
+                                    Member name
+                                </h3>
+                                <p
+                                    class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                >
+                                    member@example.com
+                                </p>
+                            </div>
+                            <Badge variant="secondary">Member</Badge>
                         </div>
-                    </div>
-                </li>
-            {/each}
-            {#each membersQuery.data as member, index (member.id)}
-                <li class="min-w-0">
-                    {#if index > 0 || invitationsQuery.data?.length}<Separator
-                        />{/if}
-                    <div
-                        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-                    >
-                        <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                        >
-                            <User class="size-5" aria-hidden="true" />
-                        </span>
-                        <div class="min-w-0">
-                            <h3
-                                class="truncate text-sm font-medium leading-5"
-                                title={member.user.name}
-                            >
-                                {member.user.name}
-                                {#if member.user.email === currentUserEmail}
+                    </Skeleton>
+                {:else if membersQuery.data}
+                    <ul>
+                        {#each invitationsQuery.data ?? [] as invitation, index (invitation.id)}
+                            <li class="min-w-0">
+                                {#if index > 0}<Separator />{/if}
+                                <div
+                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+                                >
                                     <span
-                                        class="font-normal text-muted-foreground"
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
                                     >
-                                        (you)
-                                    </span>
-                                {/if}
-                            </h3>
-                            <p
-                                class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                                title={member.user.email}
-                            >
-                                {member.user.email}
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <Badge
-                                variant="secondary"
-                                class="capitalize"
-                            >
-                                {member.role}
-                            </Badge>
-                            {#if canManage && member.user.email !== currentUserEmail}
-                                <Menu>
-                                    <MenuTrigger
-                                        class={buttonVariants({
-                                            variant: "ghost",
-                                            size: "icon-sm",
-                                        })}
-                                        aria-label={`Actions for ${member.user.name}`}
-                                    >
-                                        <Ellipsis
-                                            class="size-4"
+                                        <Mail
+                                            class="size-5"
                                             aria-hidden="true"
                                         />
-                                    </MenuTrigger>
-                                    <MenuPopup align="end">
-                                        <MenuItem
-                                            variant="destructive"
-                                            onclick={() =>
-                                                askRemove(member)}
+                                    </span>
+                                    <div class="min-w-0">
+                                        <h3
+                                            class="truncate text-sm font-medium leading-5"
+                                            title={invitation.email}
                                         >
-                                            <UserMinus
-                                                aria-hidden="true"
-                                            />
-                                            Remove member
-                                        </MenuItem>
-                                    </MenuPopup>
-                                </Menu>
-                            {:else if canManage}
-                                <span class="size-8 sm:size-7"></span>
-                            {/if}
-                        </div>
-                    </div>
-                </li>
-            {/each}
-        </ul>
+                                            {invitation.email}
+                                        </h3>
+                                        <p
+                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                            aria-live="polite"
+                                        >
+                                            {copiedId ===
+                                            invitation.id
+                                                ? "Invite link copied"
+                                                : `Invited as ${invitation.role} · expires ${new Date(
+                                                      invitation.expiresAt,
+                                                  ).toLocaleDateString()}`}
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="flex items-center gap-2"
+                                    >
+                                        <Badge variant="warning">
+                                            Pending
+                                        </Badge>
+                                        <Menu>
+                                            <MenuTrigger
+                                                class={buttonVariants(
+                                                    {
+                                                        variant:
+                                                            "ghost",
+                                                        size: "icon-sm",
+                                                    },
+                                                )}
+                                                aria-label={`Actions for invitation to ${invitation.email}`}
+                                            >
+                                                <Ellipsis
+                                                    class="size-4"
+                                                    aria-hidden="true"
+                                                />
+                                            </MenuTrigger>
+                                            <MenuPopup align="end">
+                                                <MenuItem
+                                                    onclick={() =>
+                                                        copyLink(
+                                                            invitation.id,
+                                                        )}
+                                                >
+                                                    <Link
+                                                        aria-hidden="true"
+                                                    />
+                                                    Copy invite link
+                                                </MenuItem>
+                                                <MenuItem
+                                                    variant="destructive"
+                                                    onclick={() =>
+                                                        cancelInvitation(
+                                                            invitation.id,
+                                                        )}
+                                                >
+                                                    <X
+                                                        aria-hidden="true"
+                                                    />
+                                                    Cancel invitation
+                                                </MenuItem>
+                                            </MenuPopup>
+                                        </Menu>
+                                    </div>
+                                </div>
+                            </li>
+                        {/each}
+                        {#each membersQuery.data as member, index (member.id)}
+                            <li class="min-w-0">
+                                {#if index > 0 || invitationsQuery.data?.length}<Separator
+                                    />{/if}
+                                <div
+                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+                                >
+                                    <span
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                    >
+                                        <User
+                                            class="size-5"
+                                            aria-hidden="true"
+                                        />
+                                    </span>
+                                    <div class="min-w-0">
+                                        <h3
+                                            class="truncate text-sm font-medium leading-5"
+                                            title={member.user.name}
+                                        >
+                                            {member.user.name}
+                                            {#if member.user.email === currentUserEmail}
+                                                <span
+                                                    class="font-normal text-muted-foreground"
+                                                >
+                                                    (you)
+                                                </span>
+                                            {/if}
+                                        </h3>
+                                        <p
+                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                            title={member.user.email}
+                                        >
+                                            {member.user.email}
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="flex items-center gap-2"
+                                    >
+                                        <Badge
+                                            variant="secondary"
+                                            class="capitalize"
+                                        >
+                                            {member.role}
+                                        </Badge>
+                                        {#if canManage && member.user.email !== currentUserEmail}
+                                            <Menu>
+                                                <MenuTrigger
+                                                    class={buttonVariants(
+                                                        {
+                                                            variant:
+                                                                "ghost",
+                                                            size: "icon-sm",
+                                                        },
+                                                    )}
+                                                    aria-label={`Actions for ${member.user.name}`}
+                                                >
+                                                    <Ellipsis
+                                                        class="size-4"
+                                                        aria-hidden="true"
+                                                    />
+                                                </MenuTrigger>
+                                                <MenuPopup
+                                                    align="end"
+                                                >
+                                                    <MenuItem
+                                                        variant="destructive"
+                                                        onclick={() =>
+                                                            askRemove(
+                                                                member,
+                                                            )}
+                                                    >
+                                                        <UserMinus
+                                                            aria-hidden="true"
+                                                        />
+                                                        Remove member
+                                                    </MenuItem>
+                                                </MenuPopup>
+                                            </Menu>
+                                        {:else if canManage}
+                                            <span
+                                                class="size-8 sm:size-7"
+                                            ></span>
+                                        {/if}
+                                    </div>
+                                </div>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </CardPanel>
+        </Card>
     {/if}
 </SettingsSection>
 

@@ -8,6 +8,7 @@
         Button,
         buttonVariants,
     } from "$lib/components/ui/button";
+    import { Card, CardPanel } from "$lib/components/ui/card";
     import { Field } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
@@ -159,7 +160,6 @@
     count={keysQuery.data
         ? `${keysQuery.data.length} ${keysQuery.data.length === 1 ? "key" : "keys"}`
         : undefined}
-    panelClass="p-0"
 >
     {#snippet actions()}
         <Button
@@ -176,105 +176,12 @@
         </Button>
     {/snippet}
     {#if error}
-        <Alert variant="error" class="m-3 w-auto">
+        <Alert variant="error">
             <AlertDescription>{error}</AlertDescription>
         </Alert>
     {/if}
-    {#if keysQuery.isPending}
-        <Skeleton
-            loading
-            count={2}
-            count-gap={1}
-            loading-label="Loading API keys"
-        >
-            <div
-                class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-            >
-                <span
-                    class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                >
-                    <KeyRound class="size-5" aria-hidden="true" />
-                </span>
-                <div class="min-w-0">
-                    <h3
-                        class="truncate text-sm font-medium leading-5"
-                    >
-                        CI deploys
-                    </h3>
-                    <p
-                        class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                    >
-                        stoat_abc… &middot; Created 1/1/2026
-                    </p>
-                </div>
-                <span class="size-8 sm:size-7"></span>
-            </div>
-        </Skeleton>
-    {:else if keysQuery.data?.length}
-        <ul>
-            {#each keysQuery.data as key, index (key.id)}
-                <li class="min-w-0">
-                    {#if index > 0}<Separator />{/if}
-                    <div
-                        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-                    >
-                        <span
-                            class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                        >
-                            <KeyRound
-                                class="size-5"
-                                aria-hidden="true"
-                            />
-                        </span>
-                        <div class="min-w-0">
-                            <h3
-                                class="truncate text-sm font-medium leading-5"
-                                title={key.name ?? "Unnamed key"}
-                            >
-                                {key.name ?? "Unnamed key"}
-                            </h3>
-                            <p
-                                class="mt-1 truncate text-xs leading-5 text-muted-foreground"
-                            >
-                                <span class="font-mono">
-                                    {key.start}…
-                                </span>
-                                &middot; Created {new Date(
-                                    key.createdAt,
-                                ).toLocaleDateString()}
-                            </p>
-                        </div>
-                        <Menu>
-                            <MenuTrigger
-                                class={buttonVariants({
-                                    variant: "ghost",
-                                    size: "icon-sm",
-                                })}
-                                aria-label={`Actions for ${key.name ?? "unnamed key"}`}
-                            >
-                                <Ellipsis
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </MenuTrigger>
-                            <MenuPopup align="end">
-                                <MenuItem
-                                    variant="destructive"
-                                    onclick={() => askDelete(key.id)}
-                                >
-                                    <Trash2 aria-hidden="true" />
-                                    Delete
-                                </MenuItem>
-                            </MenuPopup>
-                        </Menu>
-                    </div>
-                </li>
-            {/each}
-        </ul>
-    {:else if keysQuery.isSuccess}
-        <Empty
-            class="m-3 rounded-xl border border-dashed border-border p-4 md:py-6"
-        >
+    {#if keysQuery.isSuccess && keysQuery.data.length === 0}
+        <Empty class="rounded-xl border border-dashed border-border">
             <EmptyHeader>
                 <EmptyMedia variant="icon">
                     <KeyRound aria-hidden="true" />
@@ -286,6 +193,112 @@
                 </EmptyDescription>
             </EmptyHeader>
         </Empty>
+    {:else if keysQuery.isPending || keysQuery.data?.length}
+        <Card>
+            <CardPanel class="p-0">
+                {#if keysQuery.isPending}
+                    <Skeleton
+                        loading
+                        count={2}
+                        count-gap={1}
+                        loading-label="Loading API keys"
+                    >
+                        <div
+                            class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+                        >
+                            <span
+                                class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                            >
+                                <KeyRound
+                                    class="size-5"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                            <div class="min-w-0">
+                                <h3
+                                    class="truncate text-sm font-medium leading-5"
+                                >
+                                    CI deploys
+                                </h3>
+                                <p
+                                    class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                >
+                                    stoat_abc… &middot; Created
+                                    1/1/2026
+                                </p>
+                            </div>
+                            <span class="size-8 sm:size-7"></span>
+                        </div>
+                    </Skeleton>
+                {:else if keysQuery.data}
+                    <ul>
+                        {#each keysQuery.data as key, index (key.id)}
+                            <li class="min-w-0">
+                                {#if index > 0}<Separator />{/if}
+                                <div
+                                    class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+                                >
+                                    <span
+                                        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                    >
+                                        <KeyRound
+                                            class="size-5"
+                                            aria-hidden="true"
+                                        />
+                                    </span>
+                                    <div class="min-w-0">
+                                        <h3
+                                            class="truncate text-sm font-medium leading-5"
+                                            title={key.name ??
+                                                "Unnamed key"}
+                                        >
+                                            {key.name ??
+                                                "Unnamed key"}
+                                        </h3>
+                                        <p
+                                            class="mt-1 truncate text-xs leading-5 text-muted-foreground"
+                                        >
+                                            <span class="font-mono">
+                                                {key.start}…
+                                            </span>
+                                            &middot; Created {new Date(
+                                                key.createdAt,
+                                            ).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <Menu>
+                                        <MenuTrigger
+                                            class={buttonVariants({
+                                                variant: "ghost",
+                                                size: "icon-sm",
+                                            })}
+                                            aria-label={`Actions for ${key.name ?? "unnamed key"}`}
+                                        >
+                                            <Ellipsis
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        </MenuTrigger>
+                                        <MenuPopup align="end">
+                                            <MenuItem
+                                                variant="destructive"
+                                                onclick={() =>
+                                                    askDelete(key.id)}
+                                            >
+                                                <Trash2
+                                                    aria-hidden="true"
+                                                />
+                                                Delete
+                                            </MenuItem>
+                                        </MenuPopup>
+                                    </Menu>
+                                </div>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </CardPanel>
+        </Card>
     {/if}
 </SettingsSection>
 

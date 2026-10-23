@@ -17,6 +17,7 @@ const templates = [
         description: "A cache service",
         logo: null,
         tags: ["storage"],
+        resources: {},
         versions: [
             {
                 version: "2",
@@ -39,6 +40,7 @@ const templates = [
         description: "A background worker",
         logo: null,
         tags: ["jobs"],
+        resources: {},
         versions: [{ version: "1", services: [], required: [], secrets: [] }],
     },
 ];
@@ -52,6 +54,7 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
         isInternal: false,
         description: null,
         clusterId: "cluster",
+        canvasLayout: {},
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-01"),
     });

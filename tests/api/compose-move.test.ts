@@ -79,6 +79,17 @@ describe("moveComposeService", () => {
         expect(back.warnings).toContain('"web" no longer waits for "db", which stays behind.');
     });
 
+    it("warns when a move changes which service gets every Variable implicitly", () => {
+        const result = move("db");
+
+        expect(result.warnings).toContain(
+            '"web" is now the source\'s only service, so it gets all of its Variables.',
+        );
+        expect(result.warnings).toContain(
+            '"worker" is no longer the target\'s only service, so it only gets the Variables it references.',
+        );
+    });
+
     it("copies the variables the service interpolates, keeping the target's own values", () => {
         expect(move("db").targetEnv).toBe("OTHER=1\nDB_PASSWORD='p@ss'\n");
         expect(move("db", { targetEnv: "DB_PASSWORD=mine\n" }).targetEnv).toBe(
@@ -212,6 +223,21 @@ describe("services reading env_file: .env", () => {
         });
 
         expect(parseEnv(result.sourceEnv)).toHaveProperty("PEER");
+    });
+
+    it("include a resource's only service, which reads every Variable without it", () => {
+        const result = moveComposeService({
+            service: "only",
+            source: "services:\n  only:\n    image: app\n",
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: undefined,
+            sourceEnv: "API_KEY=key\n",
+            targetEnv: "",
+        });
+
+        expect(parseEnv(result.targetEnv)).toEqual({ API_KEY: "key" });
     });
 });
 

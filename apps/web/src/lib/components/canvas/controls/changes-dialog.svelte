@@ -32,7 +32,11 @@
     }: {
         open?: boolean;
         projectId: string;
-        changes: { resource: CanvasResource; removed: string[] }[];
+        changes: {
+            resource: CanvasResource;
+            removed: string[];
+            pendingDelete: boolean;
+        }[];
         canDeploy: boolean;
         deploying: boolean;
         ondeploy: () => void;
@@ -41,16 +45,17 @@
 
     // Fetched only while open: each one carries the resource's variables.
     const queries = createQueries(() => ({
-        queries: changes.map(({ resource }) =>
+        queries: changes.map(({ resource, pendingDelete }) =>
             orpc.resources.getPendingChanges.queryOptions({
                 input: { projectId, resourceId: resource.id },
-                enabled: open,
+                // A deleted resource ships nothing, so it has no diff.
+                enabled: open && !pendingDelete,
             }),
         ),
     }));
 </script>
 
-{#snippet diffBlock(title: string, diff: DiffLine[])}
+{#snippet diffBlock(title: string, diff: DiffLine[], secret = false)}
     <div class="overflow-hidden rounded-lg border">
         <p
             class="border-b bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground"
@@ -77,7 +82,15 @@
                                     ? "+ "
                                     : line.kind === "remove"
                                       ? "- "
-                                      : "  "}</span>{line.text}</span>{/if}{/each}</code></pre>
+                                      : "  "}</span>{#if secret && line.text.includes("=")}{@const separator =
+                                    line.text.indexOf("=") +
+                                    1}{line.text.slice(
+                                    0,
+                                    separator,
+                                )}<span
+                                    class="blur-[5px] transition hover:blur-none">{line.text.slice(
+                                        separator,
+                                    )}</span>{:else}{line.text}{/if}</span>{/if}{/each}</code></pre>
     </div>
 {/snippet}
 
@@ -94,14 +107,18 @@
             </DialogDescription>
         </DialogHeader>
         <DialogPanel class="space-y-6">
-            {#each changes as { resource, removed }, index (resource.id)}
+            {#each changes as { resource, removed, pendingDelete }, index (resource.id)}
                 {@const query = queries[index]}
                 <section class="space-y-3">
                     <div class="flex flex-wrap items-center gap-2">
                         <h3 class="text-sm font-semibold">
                             {resource.name}
                         </h3>
-                        {#if query?.data?.firstDeploy}
+                        {#if pendingDelete}
+                            <Badge variant="error">
+                                Will be deleted
+                            </Badge>
+                        {:else if query?.data?.firstDeploy}
                             <Badge variant="success">
                                 Will be added
                             </Badge>
@@ -112,7 +129,15 @@
                         {/if}
                     </div>
 
-                    {#if query?.isError}
+                    {#if pendingDelete}
+                        <p
+                            class="text-sm text-destructive-foreground"
+                        >
+                            {resource.type === "bucket"
+                                ? "Revokes its keys and deletes the bucket if it is empty."
+                                : "Removes its services from the cluster and its deployment history. Volumes stay on the machines."}
+                        </p>
+                    {:else if query?.isError}
                         <Alert variant="error">
                             <AlertDescription>
                                 Unable to load the changes: {query
@@ -140,7 +165,11 @@
                             {@render diffBlock("Compose", compose)}
                         {/if}
                         {#if env.some((line) => line.kind === "add" || line.kind === "remove")}
-                            {@render diffBlock("Variables", env)}
+                            {@render diffBlock(
+                                "Variables",
+                                env,
+                                true,
+                            )}
                         {/if}
                         {#if data.prefix.live !== null && data.prefix.live !== data.prefix.next}
                             <p class="text-sm text-muted-foreground">

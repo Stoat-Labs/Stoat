@@ -50,7 +50,14 @@ describe("templates", () => {
         );
 
         for (const template of templates) {
-            for (const version of Object.values(template.versions)) summarizeVersion(version);
+            for (const version of Object.values(template.versions)) {
+                // The create page keys its lists by these, so a repeat crashes it.
+                const { services, secrets, required } = summarizeVersion(version);
+
+                expect(new Set(services.map(({ name }) => name)).size).toBe(services.length);
+                expect(new Set(secrets).size).toBe(secrets.length);
+                expect(new Set(required).size).toBe(required.length);
+            }
         }
     });
 

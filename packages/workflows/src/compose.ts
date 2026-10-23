@@ -704,6 +704,7 @@ export function loadsResourceEnv(service: YAMLMap) {
 /**
  * Uncloud loads Compose from a temporary directory with no `.env` beside it, so
  * `env_file: .env` (the resource's Variables) becomes plain `environment` entries.
+ * A resource's only service gets them without it, like a Railway service.
  * Keys already in `environment` win, as in Compose. No other env file exists there.
  */
 function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
@@ -712,7 +713,7 @@ function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
     if (!isMap(services)) return;
 
     for (const { key, value: service } of services.items) {
-        if (!isMap(service) || !service.has("env_file")) continue;
+        if (!isMap(service)) continue;
 
         const unreadable = envFiles(service).find(
             ({ path, required }) => required && !RESOURCE_ENV_FILE.test(path),
@@ -723,7 +724,7 @@ function inlineEnvFiles(doc: YAML.Document, variables: Record<string, string>) {
                 `Service ${String(key)} loads env_file ${unreadable.path}, which a deploy cannot read. Put those variables in the resource's Variables and use env_file: .env.`,
             );
 
-        const usesResourceEnv = loadsResourceEnv(service);
+        const usesResourceEnv = services.items.length === 1 || loadsResourceEnv(service);
 
         service.delete("env_file");
 

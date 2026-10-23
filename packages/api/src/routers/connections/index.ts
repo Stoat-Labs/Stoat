@@ -17,6 +17,7 @@ import {
     validateGitUrl,
 } from "../../git";
 import {
+    ensureGitWebhook,
     getGitAccount,
     listGitRepositories,
     validateGitServerUrl,
@@ -306,6 +307,36 @@ export async function getBoundGitRepository(
     );
 
     return { url: validateGitUrl(repositoryUrl), branch: validateGitBranch(branch), credentials };
+}
+
+// Best effort, so pushes deploy right away: without APP_URL, a public Stoat, or a token allowed to
+// manage hooks, the minutely poll still picks pushes up.
+export async function registerGitWebhook(
+    db: Database,
+    organizationId: string,
+    connectionId: string,
+    repositoryUrl: string,
+) {
+    try {
+        const { connection, credentials } = await db.transaction((tx) =>
+            accountConnection(tx, organizationId, connectionId),
+        );
+
+        if (connection.provider === "generic" || !credentials.password) return;
+
+        await ensureGitWebhook(
+            {
+                provider: connection.provider,
+                serverUrl: connection.serverUrl,
+                token: credentials.password,
+            },
+            repositoryUrl,
+            gitWebhookUrl(connectionId),
+            gitWebhookSecret(connectionId),
+        );
+    } catch (error) {
+        console.warn(`Registering the Git webhook for ${repositoryUrl} failed:`, error);
+    }
 }
 
 export const connectionsRouter = {

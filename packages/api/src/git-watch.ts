@@ -47,6 +47,8 @@ export async function watchGitSources(db: Database, signal: AbortSignal, connect
                 isNotNull(resources.gitConnectionId),
                 connectionId ? eq(resources.gitConnectionId, connectionId) : undefined,
                 sql`(${resources.gitSource}->>'autoDeploy')::boolean is true`,
+                // A resource staged for deletion must not be redeployed behind the user's back.
+                eq(resources.pendingDelete, false),
                 sql`${projects.isInternal} is not true`,
             ),
         );
@@ -148,6 +150,8 @@ async function syncResource(
         // draft edits. Those wait until the user deploys (which pushes) or pulls.
         if (
             !locked?.gitSource?.autoDeploy ||
+            // Staged for deletion after the watch query above picked it up.
+            locked.pendingDelete ||
             locked.gitConnectionId !== connectionId ||
             !sameSource(locked.gitSource, source) ||
             unpushedGitSource(locked)

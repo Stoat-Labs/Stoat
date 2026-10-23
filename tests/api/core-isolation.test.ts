@@ -813,6 +813,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
     it("discards staged changes back to the last deploy, removing never-deployed drafts", async () => {
         const live = await resource({
             settings: { env: "STAGED=1\n", prefixNames: true, custom: "kept" },
+            pendingDelete: true,
         });
 
         const draft = await resource({ spec: null });
@@ -845,6 +846,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(await client.discardChanges(input)).toEqual({ restored: 1, removed: 1 });
             expect(await storedResource(live.id)).toMatchObject({
                 draftSpec: spec,
+                pendingDelete: false,
                 settings: { env: "LIVE=1\n", prefixNames: false, custom: "kept" },
             });
             expect(await db.select().from(resources).where(eq(resources.id, draft.id))).toEqual([]);
@@ -854,6 +856,39 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             );
             await db.delete(deployments).where(eq(deployments.id, deploymentId));
             await db.delete(resources).where(inArray(resources.id, [live.id, draft.id]));
+        }
+    });
+
+    it("deletes resources that reference each other together, but not one alone", async () => {
+        const database = await resource({ spec: null, settings: { env: "PASSWORD=x\n" } });
+
+        const app = await resource({
+            spec: null,
+            settings: { env: `DB_PASSWORD={{ ${database.id}.PASSWORD }}\n` },
+        });
+
+        try {
+            await db.$client.query(
+                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
+            );
+
+            await expect(
+                client.deleteResource({ projectId, resourceIds: [database.id] }),
+            ).rejects.toMatchObject({ code: "CONFLICT" });
+
+            await client.deleteResource({ projectId, resourceIds: [database.id, app.id] });
+
+            expect(
+                await db
+                    .select()
+                    .from(resources)
+                    .where(inArray(resources.id, [database.id, app.id])),
+            ).toEqual([]);
+        } finally {
+            await db.$client.query(
+                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+            );
+            await db.delete(resources).where(inArray(resources.id, [database.id, app.id]));
         }
     });
 

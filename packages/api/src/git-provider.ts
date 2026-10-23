@@ -429,3 +429,50 @@ export async function listGitRepositories(input: AccountInput): Promise<{
 
     return { repositories, truncated: true };
 }
+
+/** Adds a push webhook to the repository unless one already points at `hookUrl`. */
+export async function ensureGitWebhook(
+    input: AccountInput,
+    repositoryUrl: string,
+    hookUrl: string,
+    secret: string,
+): Promise<void> {
+    const { server, api, headers } = accountConfig(input);
+    const prefix = `${new URL(server).pathname.replace(/\/$/u, "")}/`;
+    const repository = new URL(validateGitUrl(repositoryUrl));
+    const name = repository.pathname.slice(prefix.length).replace(/\.git$/u, "");
+
+    if (
+        repository.origin !== new URL(server).origin ||
+        !repository.pathname.startsWith(prefix) ||
+        !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/u.test(name)
+    )
+        invalid();
+    const hooks = `${api}/repos/${name}/hooks`;
+
+    // GitHub caps a repository at 20 hooks, so one page of 100 sees all of them.
+    const existing = await gitProviderRequest(
+        `${hooks}?${input.provider === "github" ? "per_page" : "limit"}=100`,
+        { headers },
+    );
+
+    if (!Array.isArray(existing)) badResponse();
+
+    const ours = v.object({ config: v.object({ url: v.literal(hookUrl) }) });
+
+    // shortcut: an existing hook is not checked, so a rotated APP_SECRET leaves it failing;
+    // PATCH it if secret rotation becomes common.
+    if (existing.some((hook) => v.is(ours, hook))) return;
+
+    await gitProviderRequest(hooks, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+            // GitHub requires "web"; "gitea" works on both Forgejo and Gitea servers.
+            ...(input.provider === "github" ? { name: "web" } : { type: "gitea" }),
+            config: { url: hookUrl, content_type: "json", secret },
+            events: ["push"],
+            active: true,
+        }),
+    });
+}
