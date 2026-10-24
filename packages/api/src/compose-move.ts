@@ -6,7 +6,7 @@ import {
     serviceVariable,
 } from "@stoat/workflows/compose";
 import { referenceResourceId, VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
-import YAML, { isMap, isScalar, isSeq } from "yaml";
+import YAML, { isAlias, isMap, isScalar, isSeq } from "yaml";
 import type { Document, YAMLMap } from "yaml";
 
 // Top-level sections a service can point into by key.
@@ -76,6 +76,51 @@ function sectionKeys(service: YAMLMap, section: (typeof SHARED_SECTIONS)[number]
             ? [String(source.value)]
             : [];
     });
+}
+
+/**
+ * A service as Compose reads it, with anchors and `<<` merge keys expanded. A node's own
+ * `toJSON()` can't see the document's anchors, so it would turn `<<: *base` into junk.
+ */
+function resolved(doc: Document, service: YAMLMap) {
+    let value;
+
+    try {
+        value = service.toJS(doc);
+    } catch (error) {
+        // An alias whose anchor a move removed.
+        if (error instanceof ReferenceError) throw new ComposeMoveError(BROKEN_ANCHOR);
+
+        throw error;
+    }
+
+    // Shared objects would otherwise come back as new `&a1` anchors.
+    const node = doc.createNode(value, { aliasDuplicateObjects: false });
+
+    if (!isMap(node)) throw new ComposeMoveError("A service must be a mapping.");
+
+    return node;
+}
+
+const BROKEN_ANCHOR =
+    "Services left behind use a YAML anchor defined in what moves. Move the anchor into an x- block first.";
+
+/** Throws when an alias in `doc` lost its anchor, which would leave the file unreadable. */
+function assertAnchorsKept(doc: Document) {
+    const anchors = new Set<string>();
+    let dangling = false;
+
+    // Anchors always come before their aliases, so one pass in document order is enough.
+    YAML.visit(doc, {
+        Alias(_, alias) {
+            if (!anchors.has(alias.source)) dangling = true;
+        },
+        Node(_, node) {
+            if (node.anchor) anchors.add(node.anchor);
+        },
+    });
+
+    if (dangling) throw new ComposeMoveError(BROKEN_ANCHOR);
 }
 
 function dependsOn(service: YAMLMap) {
@@ -469,7 +514,10 @@ function collapseSelfReferences(doc: Document, envText: string, resourceId: stri
     );
 
     // A key still read somewhere else, like a `command`, stays with the plain name.
-    const serviceMaps = services.items.flatMap((pair) => (isMap(pair.value) ? [pair.value] : []));
+    const serviceMaps = services.items.flatMap((pair) =>
+        isMap(pair.value) ? [resolved(doc, pair.value)] : [],
+    );
+
     const envValues = parseEnv(env);
 
     const used = withDependencies(
@@ -511,8 +559,8 @@ export function moveComposeService(options: {
     targetEnv: string;
 }): ComposeMove {
     const { service: name, sourceId, targetId, sourcePrefix } = options;
-    const sourceDoc = YAML.parseDocument(options.source);
-    const targetDoc = YAML.parseDocument(options.target);
+    const sourceDoc = YAML.parseDocument(options.source, { merge: true });
+    const targetDoc = YAML.parseDocument(options.target, { merge: true });
 
     if (sourceDoc.errors.length || targetDoc.errors.length)
         throw new ComposeMoveError("Fix the Compose YAML errors before moving services.");
@@ -524,9 +572,12 @@ export function moveComposeService(options: {
         ? servicesOf(targetDoc, "The target Compose file")
         : sectionOf(targetDoc, "services");
 
-    const service = sourceServices.get(name, true);
+    const node = sourceServices.get(name, true);
 
-    if (!isMap(service)) throw new ComposeMoveError(`Service "${name}" was not found.`);
+    if (!isMap(node)) throw new ComposeMoveError(`Service "${name}" was not found.`);
+
+    // The moved service leaves its anchors behind, so it travels expanded.
+    const service = resolved(sourceDoc, node);
 
     if (targetServices.has(name))
         throw new ComposeMoveError(`The target already has a service named "${name}".`);
@@ -539,12 +590,16 @@ export function moveComposeService(options: {
 
     const remainingNames = serviceNames(sourceServices).filter((other) => other !== name);
 
+    // `remaining` is edited in place below, so its expanded form is read fresh each time.
+    const remainingResolved = () => remaining.map((other) => resolved(sourceDoc, other));
+
     // Copy shared definitions the service uses; keep them in the source while others still do.
     for (const section of SHARED_SECTIONS) {
         const sourceEntries = sourceDoc.get(section, true);
 
         for (const key of new Set(sectionKeys(service, section))) {
-            const definition = isMap(sourceEntries) ? sourceEntries.get(key, true) : undefined;
+            const entry = isMap(sourceEntries) ? sourceEntries.get(key, true) : undefined;
+            const definition = isAlias(entry) ? entry.resolve(sourceDoc) : entry;
             const targetEntries = sectionOf(targetDoc, section);
 
             if (targetEntries.has(key))
@@ -552,7 +607,9 @@ export function moveComposeService(options: {
                     `The target already defines ${section.slice(0, -1)} "${key}".`,
                 );
 
-            const copied = targetDoc.createNode(isMap(definition) ? definition.toJSON() : {});
+            const copied = isMap(definition)
+                ? resolved(sourceDoc, definition)
+                : targetDoc.createNode({});
 
             targetEntries.set(key, copied);
 
@@ -567,7 +624,9 @@ export function moveComposeService(options: {
                     sourcePrefix ? `${sourcePrefix}-${key}` : key,
                 );
 
-            const stillUsed = remaining.some((other) => sectionKeys(other, section).includes(key));
+            const stillUsed = remainingResolved().some((other) =>
+                sectionKeys(other, section).includes(key),
+            );
 
             if (!stillUsed && isMap(sourceEntries)) sourceEntries.delete(key);
 
@@ -588,12 +647,12 @@ export function moveComposeService(options: {
     }
 
     const existingTargetServices = targetServices.items.flatMap((pair) =>
-        isMap(pair.value) ? [pair.value] : [],
+        isMap(pair.value) ? [resolved(targetDoc, pair.value)] : [],
     );
 
     // A resource's only service gets every Variable without `env_file: .env`, so moves change that.
     const [onlyTarget] = existingTargetServices;
-    const [onlySource] = remaining;
+    const [onlySource] = remainingResolved();
 
     if (existingTargetServices.length === 1 && onlyTarget && !loadsResourceEnv(onlyTarget))
         warnings.push(
@@ -612,6 +671,7 @@ export function moveComposeService(options: {
 
     targetServices.set(name, moved);
     sourceServices.delete(name);
+    assertAnchorsKept(sourceDoc);
 
     const targetNames = serviceNames(targetServices);
 
@@ -622,8 +682,18 @@ export function moveComposeService(options: {
         if (isMap(entries) && entries.items.length === 0) sourceDoc.delete(section);
     }
 
-    for (const other of remaining) {
-        if (!dependsOn(other).includes(name)) continue;
+    const remainingNow = remainingResolved();
+
+    for (const [index, other] of remaining.entries()) {
+        if (!dependsOn(other).includes(name)) {
+            // Editing a shared anchor would change every service using it, so the user decides.
+            if (remainingNow[index] && dependsOn(remainingNow[index]).includes(name))
+                throw new ComposeMoveError(
+                    `"${remainingNames[index]}" waits for "${name}" through a YAML anchor. Remove it there first.`,
+                );
+
+            continue;
+        }
 
         dropDependency(other, name);
         warnings.push(`A service left behind no longer waits for "${name}".`);
@@ -667,7 +737,7 @@ export function moveComposeService(options: {
     for (const other of remaining) toTarget.rewriteService(other);
 
     const sourceUsed = withDependencies(
-        remaining.flatMap((other) => variablesRead(other, sourceValues)),
+        remainingResolved().flatMap((other) => variablesRead(other, sourceValues)),
         sourceValues,
     );
 
@@ -701,7 +771,10 @@ export function moveComposeService(options: {
         source: sourceDoc.toString(),
         target: targetDoc.toString(),
         // Links only the moved service used stay behind otherwise, and the canvas would draw them.
-        sourceEnv: withoutEnvKeys(collapsedSource, unusedLinks(remaining, collapsedSource)),
+        sourceEnv: withoutEnvKeys(
+            collapsedSource,
+            unusedLinks(remainingResolved(), collapsedSource),
+        ),
         targetEnv: collapsedTarget,
         sourceEmpty: remaining.length === 0,
         warnings,
