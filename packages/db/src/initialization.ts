@@ -2,8 +2,8 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import type { Database } from "./index";
-import { resourceSlug } from "./slug";
 import { clusterMonitoring, clusters, projects, resources } from "./schema";
+import { resourceSlug } from "./slug";
 
 export async function getInitialization(db: Database, clusterId: string) {
     const [cluster] = await db.select().from(clusters).where(eq(clusters.id, clusterId));

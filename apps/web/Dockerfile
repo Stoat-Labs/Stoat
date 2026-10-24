@@ -24,6 +24,10 @@ FROM deps AS build
 
 COPY . .
 
+# Shown in the sidebar footer. Without APP_VERSION this is a "-dev" build.
+ARG GIT_COMMIT
+ARG APP_VERSION
+
 RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local,required=false \
     --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
     export NODE_ENV=production APP_SECRET=build-only-secret-that-is-not-used-at-runtime APP_URL=http://localhost:3001 DATABASE_URL=postgresql://build:build@localhost:5432/build \

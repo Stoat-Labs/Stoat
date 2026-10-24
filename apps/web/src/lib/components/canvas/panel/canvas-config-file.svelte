@@ -78,16 +78,16 @@
     }
 </script>
 
-<div class="flex items-center justify-between gap-4">
-    <h3 class="flex items-center gap-3 text-xl text-muted-foreground">
-        Content
+<div class="flex h-full flex-col">
+    <!-- The compose tab's strip; Save stays rendered so the strip does not shift. -->
+    <div
+        class="flex h-10 shrink-0 items-center gap-3 border-b pr-2 pl-6 text-xs font-medium"
+    >
+        <p class="min-w-0 flex-1 truncate font-mono">{file}</p>
         {#if fileQuery.data?.edited}
             <Badge variant="outline">Commits on deploy</Badge>
-        {/if}
-    </h3>
-    <div class="flex gap-2">
-        {#if fileQuery.data?.edited}
             <Button
+                size="xs"
                 variant="outline"
                 disabled={pending}
                 onclick={() => void save(null)}
@@ -96,6 +96,7 @@
             </Button>
         {/if}
         <Button
+            size="xs"
             disabled={!dirty || pending}
             loading={pending && dirty}
             onclick={() => void save(typed ?? "")}
@@ -103,39 +104,47 @@
             Save
         </Button>
     </div>
+    {#if error}
+        <Alert
+            variant="error"
+            class="rounded-none border-x-0 border-t-0"
+        >
+            <AlertDescription>{error}</AlertDescription>
+        </Alert>
+    {/if}
+    {#if fileQuery.isPending}
+        <Skeleton
+            loading
+            count={8}
+            loading-label="Loading {file}"
+            class="px-3 py-4"
+        >
+            <div class="h-6 font-mono text-sm">config</div>
+        </Skeleton>
+    {:else if fileQuery.isError}
+        <Alert
+            variant="error"
+            class="rounded-none border-x-0 border-t-0"
+        >
+            <AlertDescription>
+                {fileQuery.error.message}
+            </AlertDescription>
+        </Alert>
+    {:else}
+        <!-- The editor reads its value once, so a revert remounts it with the committed file. -->
+        {#key fileQuery.data.edited}
+            <div class="min-h-0 flex-1">
+                <CodeEditor
+                    bind:value={
+                        () => typed ?? fileQuery.data.content,
+                        (value) => (typed = value)
+                    }
+                    language="text"
+                    label="{file} content"
+                    readOnly={pending}
+                    fill
+                />
+            </div>
+        {/key}
+    {/if}
 </div>
-<p class="font-mono text-sm text-muted-foreground">{file}</p>
-{#if error}
-    <Alert variant="error">
-        <AlertDescription>{error}</AlertDescription>
-    </Alert>
-{/if}
-{#if fileQuery.isPending}
-    <Skeleton
-        loading
-        count={6}
-        loading-label="Loading {file}"
-        class="rounded-lg border px-3 py-4"
-    >
-        <div class="h-6 font-mono text-sm">config</div>
-    </Skeleton>
-{:else if fileQuery.isError}
-    <Alert variant="error">
-        <AlertDescription>{fileQuery.error.message}</AlertDescription>
-    </Alert>
-{:else}
-    <!-- The editor reads its value once, so a revert remounts it with the committed file. -->
-    {#key fileQuery.data.edited}
-        <div class="overflow-hidden rounded-lg border">
-            <CodeEditor
-                bind:value={
-                    () => typed ?? fileQuery.data.content,
-                    (value) => (typed = value)
-                }
-                language="text"
-                label="{file} content"
-                readOnly={pending}
-            />
-        </div>
-    {/key}
-{/if}

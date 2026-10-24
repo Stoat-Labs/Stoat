@@ -261,7 +261,11 @@ export async function routeRpc(page: Page, path: string, handle: (route: RpcRout
                 forward: () => server.send(payload),
                 fulfill: (status, body) =>
                     socket.send(
-                        JSON.stringify({ id: message.id, kind: "response", json: { status, body } }),
+                        JSON.stringify({
+                            id: message.id,
+                            kind: "response",
+                            json: { status, body },
+                        }),
                     ),
             });
         });

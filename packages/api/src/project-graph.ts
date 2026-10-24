@@ -229,6 +229,7 @@ function serviceDomains(compose: string, row: GraphResourceInput) {
     }
 
     const { entries, caddyRoutes } = parseIngressCompose(compose, env);
+
     const add = (service: string, host: string) => {
         const hosts = domains.get(service) ?? [];
 

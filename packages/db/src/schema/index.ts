@@ -452,11 +452,4 @@ export const s3Buckets = t.pgTable(
     ],
 );
 
-export const configs = t.pgTable("configs", {
-    resourceId: t
-        .uuid("resource_id")
-        .primaryKey()
-        .references(() => resources.id, { onDelete: "cascade" }),
-});
-
 export * from "./auth";

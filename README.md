@@ -111,9 +111,6 @@ Kudos to the contributors of [Coolify](https://coolify.io/) and [Dokploy](https:
 <img width="2240" height="1338" alt="image" src="https://github.com/user-attachments/assets/6a5b98b9-4c83-4e71-acfa-674291b77730" />
 <img width="2241" height="1337" alt="image" src="https://github.com/user-attachments/assets/7b059d7c-bfa4-4a10-ab08-3cd44cd3025b" />
 
-
-
-
 and there's more...
 
 ---
