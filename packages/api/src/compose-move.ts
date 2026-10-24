@@ -594,6 +594,9 @@ export function moveComposeService(options: {
     const remainingResolved = () => remaining.map((other) => resolved(sourceDoc, other));
 
     // Copy shared definitions the service uses; keep them in the source while others still do.
+    // Deleting waits until every copy is made, since a later definition can alias an earlier one.
+    const unused: [YAMLMap, string][] = [];
+
     for (const section of SHARED_SECTIONS) {
         const sourceEntries = sourceDoc.get(section, true);
 
@@ -628,12 +631,14 @@ export function moveComposeService(options: {
                 sectionKeys(other, section).includes(key),
             );
 
-            if (!stillUsed && isMap(sourceEntries)) sourceEntries.delete(key);
+            if (!stillUsed && isMap(sourceEntries)) unused.push([sourceEntries, key]);
 
             if (section === "configs" && isMap(definition) && definition.has("file"))
                 warnings.push(`Config "${key}" reads a file; make sure the target can reach it.`);
         }
     }
+
+    for (const [entries, key] of unused) entries.delete(key);
 
     const moved = targetDoc.createNode(service.toJSON());
 
@@ -734,7 +739,20 @@ export function moveComposeService(options: {
         name,
     ]);
 
-    for (const other of remaining) toTarget.rewriteService(other);
+    for (const [index, other] of remaining.entries()) {
+        toTarget.rewriteService(other);
+
+        // Hostnames left in an anchor are shared with other services, so the user edits them.
+        const expanded = resolved(sourceDoc, other);
+        const before = JSON.stringify(expanded.toJSON());
+
+        toTarget.rewriteService(expanded);
+
+        if (JSON.stringify(expanded.toJSON()) !== before)
+            throw new ComposeMoveError(
+                `"${remainingNames[index]}" reaches "${name}" through a YAML anchor. Inline it there first.`,
+            );
+    }
 
     const sourceUsed = withDependencies(
         remainingResolved().flatMap((other) => variablesRead(other, sourceValues)),

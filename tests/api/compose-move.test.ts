@@ -302,6 +302,43 @@ configs:
         expect(YAML.parse(result.target).configs).toEqual({ shared: { content: "hello" } });
     });
 
+    it("copies a definition aliasing another one it also moves", () => {
+        const result = split(
+            "hazel",
+            `services:
+  luna:
+    image: a
+  hazel:
+    image: a
+    configs: [a, b]
+configs:
+  a: &cfg
+    content: hello
+  b: *cfg
+`,
+        );
+
+        expectValid(result);
+        expect(YAML.parse(result.target).configs).toEqual({
+            a: { content: "hello" },
+            b: { content: "hello" },
+        });
+    });
+
+    it("refuses when what stays names the service through an anchor", () => {
+        const source = `x-env: &env
+  DB_HOST: hazel
+services:
+  luna:
+    image: a
+    environment: *env
+  hazel:
+    image: a
+`;
+
+        expect(() => split("hazel", source)).toThrow(ComposeMoveError);
+    });
+
     it("moves into a target with its own anchors without touching them", () => {
         const result = moveComposeService({
             service: "hazel",
