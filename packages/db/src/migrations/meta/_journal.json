@@ -78,6 +78,13 @@
       "when": 1792693925026,
       "tag": "0010_resource_pending_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792858617702,
+      "tag": "0011_resource_draft_config_files",
+      "breakpoints": true
     }
   ]
 }

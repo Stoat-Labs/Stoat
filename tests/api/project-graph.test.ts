@@ -208,6 +208,28 @@ describe("buildProjectGraph domains", () => {
             [],
         ]);
     });
+
+    it("lists x-caddy site addresses resolved through the .env", () => {
+        const { resources } = buildProjectGraph(
+            [
+                {
+                    id: api,
+                    slug: "graph-k3f9x2",
+                    projectId: project,
+                    deployed: null,
+                    attempted: null,
+                    spec: 'services:\n  web:\n    image: nginx\n    x-caddy: |\n      ${HOST:?Variable is not set} {\n        handle_path /api/* {\n          reverse_proxy {{upstreams "api" 80}}\n        }\n        reverse_proxy {{upstreams 80}}\n      }\n',
+                    draftSpec: null,
+                    settings: { env: "HOST=files.example.com\n" },
+                },
+            ],
+            [],
+        );
+
+        expect(resources[0]?.services.map((service) => service.domains)).toEqual([
+            ["files.example.com"],
+        ]);
+    });
 });
 
 describe("buildProjectGraph staged edits", () => {
@@ -304,6 +326,25 @@ describe("buildProjectGraph staged edits", () => {
             expect(graphOf(row)).toMatchObject({ changed: true, removed: ["web", "worker"] });
             // Nothing left to remove, so a failed deploy of the same draft is not staged again.
             expect(graphOf({ ...row, spec: draftSpec })).toMatchObject({
+                changed: false,
+                removed: [],
+            });
+        });
+
+        it("does not list a service moved into another resource as removed", () => {
+            const draftSpec = "services:\n  web:\n    image: nginx\n";
+
+            const row = deployedRow("", {
+                draftSpec,
+                attempted: { spec: draftSpec, env: "", prefix: "api-k3f9x2", failed: true },
+            });
+
+            const owner = deployedRow("", {
+                id: db,
+                spec: "services:\n  worker:\n    image: busybox\n",
+            });
+
+            expect(buildProjectGraph([row, owner], []).resources[0]).toMatchObject({
                 changed: false,
                 removed: [],
             });

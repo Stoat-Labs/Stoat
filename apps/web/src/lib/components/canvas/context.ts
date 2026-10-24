@@ -8,6 +8,8 @@ export type GroupAction = "rename" | "icon-upload" | "icon-link" | "move" | "cop
 
 export const [getCanvasActions, setCanvasActions] = createContext<{
     edit: (action: GroupAction, resourceId: string) => void;
+    /** Saves a name typed inline on a card. */
+    rename: (resourceId: string, name: string) => Promise<void>;
     toggleCollapsed: (resourceId: string) => void;
     isCollapsed: (resourceId: string) => boolean;
     /** Stages a whole resource for deletion; applying the staged changes removes it. */
@@ -28,6 +30,16 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     /** Railway's "Disconnect volume": unmounts it from its service, and it stays on the canvas. */
     disconnectVolume: (nodeId: string) => void;
     isVolumeMounted: (nodeId: string) => boolean;
+    /** Opens a config's pane, from its tray or its own card. */
+    selectConfig: (resourceId: string, config: string) => void;
+    /** Asks to delete a config; the canvas confirms it first. */
+    removeConfig: (nodeId: string) => void;
+    /** Unmounts a config from every service; it stays on the canvas as a card of its own. */
+    disconnectConfig: (nodeId: string) => void;
+    isConfigMounted: (nodeId: string) => boolean;
     /** Railway's "Remove Group": every service but the first moves out into a resource of its own. */
     ungroup: (resourceId: string) => void;
 }>();
+
+/** The project's cluster, so cards can ask it how their containers are doing. */
+export const [getCanvasCluster, setCanvasCluster] = createContext<{ id: string }>();

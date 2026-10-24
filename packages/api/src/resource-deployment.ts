@@ -25,6 +25,12 @@ type Transaction = Pick<Database, "select" | "insert">;
 
 const maxComposeBytes = 4 * 1024 * 1024;
 
+/** A relative `configs.*.file` path as a repository path, resolved against the Compose file. */
+export function configFilePath(composePath: string, file: string) {
+    // A path leaving the repository normalizes to `../…`, which validateGitPath rejects.
+    return validateGitPath(posix.normalize(posix.join(posix.dirname(composePath), file)));
+}
+
 /**
  * Reads the relative `configs.*.file` paths of `compose` from Git, resolved against the
  * Compose file's directory. Call before locking the resource row: it fetches the branch.
@@ -38,12 +44,7 @@ export async function readComposeConfigFiles(
 
     if (files.length === 0) return {};
 
-    const directory = posix.dirname(composePath);
-
-    // A path leaving the repository normalizes to `../…`, which validateGitPath rejects.
-    const paths = new Map(
-        files.map((file) => [file, validateGitPath(posix.normalize(posix.join(directory, file)))]),
-    );
+    const paths = new Map(files.map((file) => [file, configFilePath(composePath, file)]));
 
     let contents: Record<string, string>;
 

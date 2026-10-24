@@ -54,7 +54,6 @@ export async function receiveGitWebhook(
     const signature =
         headers.get("x-hub-signature-256")?.replace(/^sha256=/u, "") ??
         headers.get("x-forgejo-signature") ??
-        headers.get("x-gitea-signature") ??
         "";
 
     const expected = createHmac("sha256", gitWebhookSecret(connectionId)).update(body).digest();

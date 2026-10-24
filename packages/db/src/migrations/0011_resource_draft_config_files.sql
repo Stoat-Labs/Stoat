@@ -1,0 +1,1 @@
+ALTER TABLE "resources" ADD COLUMN "draft_config_files" jsonb;

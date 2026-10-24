@@ -90,6 +90,7 @@ export async function loadGitCompose(
 
     return {
         draftSpec: file.content,
+        draftConfigFiles: null,
         gitConnectionId: source.connectionId,
         gitSource: {
             repositoryUrl: repo.url,
@@ -111,9 +112,12 @@ export function unpushedGitSource(resource: typeof resources.$inferSelect) {
 
     if (!connectionId || !source || content === null) return null;
 
-    if (gitBlobId(content, source.revision) === source.blob) return null;
+    const files = resource.draftConfigFiles ?? {};
 
-    return { connectionId, source, content };
+    if (gitBlobId(content, source.revision) === source.blob && Object.keys(files).length === 0)
+        return null;
+
+    return { connectionId, source, content, files };
 }
 
 // Lock the row during network operations so a concurrent draft edit cannot be lost.
@@ -214,6 +218,7 @@ export const resourceGitRouter = {
                     .update(resources)
                     .set({
                         draftSpec: file.content,
+                        draftConfigFiles: null,
                         gitSource: {
                             ...resource.gitSource,
                             revision: file.revision,
@@ -237,7 +242,7 @@ export const resourceGitRouter = {
 
                 const [updated] = await tx
                     .update(resources)
-                    .set({ gitConnectionId: null, gitSource: null })
+                    .set({ gitConnectionId: null, gitSource: null, draftConfigFiles: null })
                     .where(eq(resources.id, input.resourceId))
                     .returning();
 

@@ -1,4 +1,4 @@
-<!-- Connects an existing volume to a service. -->
+<!-- Connects an existing volume or config to a service. -->
 <script lang="ts">
     import {
         Alert,
@@ -28,6 +28,7 @@
     let {
         targets,
         volume,
+        placeholder = "/data",
         pending,
         error,
         onsubmit,
@@ -36,6 +37,7 @@
         /** Services the volume can be mounted into. */
         targets: VolumeTarget[];
         volume: string;
+        placeholder?: string;
         pending: boolean;
         error: string;
         onsubmit: (target: VolumeTarget, path: string) => void;
@@ -135,7 +137,7 @@
                     <Input
                         id="canvas-volume-path"
                         bind:value={path}
-                        placeholder="/data"
+                        {placeholder}
                         autocomplete="off"
                         spellcheck={false}
                         class="font-mono"

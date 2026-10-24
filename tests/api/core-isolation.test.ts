@@ -903,6 +903,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 compose: { live: spec, next: draftSpec },
                 // Never deployed through a recorded deploy, so nothing is live to compare with.
                 env: { live: "", next: "NEXT=1\n" },
+                configFiles: [],
                 prefix: { live: null, next: expect.any(String) },
             });
             await expect(

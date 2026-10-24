@@ -2621,6 +2621,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 {
                     path: "deploy/compose.yaml",
                     content: draftSpec,
+                    files: [],
                     expectedRevision: revision,
                     message: "Deploy Compose from Stoat",
                     author: { name: "admin", email: "admin@example.test" },
@@ -2729,6 +2730,86 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     "conf/nginx.conf": "contents of deploy/conf/nginx.conf",
                 },
             });
+        });
+
+        it("commits and ships an edited config file, then clears the edit", async () => {
+            await db
+                .update(resources)
+                .set({
+                    draftSpec: configSpec,
+                    draftConfigFiles: { "./site.css": "body { color: red; }\n" },
+                    gitSource: {
+                        ...(await storedResource()).gitSource!,
+                        blob: gitBlobId(configSpec, revision),
+                    },
+                })
+                .where(eq(resources.id, resourceId));
+
+            const result = await call(
+                resourcesRouter.deploy,
+                { projectId, resourceId },
+                { context: adminContext },
+            );
+
+            expect(push).toHaveBeenCalledExactlyOnceWith(
+                expect.anything(),
+                expect.objectContaining({
+                    path: "deploy/compose.yaml",
+                    content: configSpec,
+                    files: [{ path: "deploy/site.css", content: "body { color: red; }\n" }],
+                }),
+            );
+            expect(await deploymentInput(result.id)).toMatchObject({
+                configFiles: {
+                    "./site.css": "body { color: red; }\n",
+                    "conf/nginx.conf": "contents of deploy/conf/nginx.conf",
+                },
+            });
+            expect((await storedResource()).draftConfigFiles).toBeNull();
+        });
+
+        it("stages config file edits, dropping one that matches the branch or is reverted", async () => {
+            await db
+                .update(resources)
+                .set({ draftSpec: configSpec })
+                .where(eq(resources.id, resourceId));
+
+            const file = { projectId, resourceId, file: "./site.css" };
+
+            const save = (content: string | null) =>
+                call(
+                    resourcesRouter.updateConfigFile,
+                    { ...file, content },
+                    { context: memberContext },
+                );
+
+            const staged = async () => (await storedResource()).draftConfigFiles;
+
+            await save("edited\n");
+            expect(await staged()).toEqual({ "./site.css": "edited\n" });
+            expect(
+                await call(resourcesRouter.readConfigFile, file, { context: memberContext }),
+            ).toEqual({
+                content: "edited\n",
+                original: "contents of deploy/site.css",
+                edited: true,
+            });
+
+            // Back to what the branch has, so nothing is left to commit.
+            await save("contents of deploy/site.css");
+            expect(await staged()).toBeNull();
+
+            await save("edited\n");
+            await save(null);
+            expect(await staged()).toBeNull();
+
+            await expect(
+                call(
+                    resourcesRouter.updateConfigFile,
+                    { ...file, file: "./unknown.css", content: "x" },
+                    { context: memberContext },
+                ),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
         });
 
         it("rejects config files outside the repository or missing from Git", async () => {
@@ -2935,6 +3016,27 @@ describe("Git connections/resources (PostgreSQL)", () => {
             await db
                 .update(resources)
                 .set({ draftSpec: edited })
+                .where(eq(resources.id, resourceId));
+            const before = await storedResource();
+            head.mockResolvedValue(nextRevision);
+            read.mockResolvedValue({
+                revision: nextRevision,
+                message: "Update Compose",
+                path: "deploy/compose.yaml",
+                content: draftSpec,
+                blob: gitBlobId(draftSpec, nextRevision),
+                tree: "d".repeat(40),
+            });
+            await watch();
+
+            expect(await storedResource()).toEqual(before);
+            expect(await resourceDeployments()).toEqual([]);
+        });
+
+        it("never ships the branch's config file over a staged edit of it", async () => {
+            await db
+                .update(resources)
+                .set({ draftConfigFiles: { "./site.css": "edited\n" } })
                 .where(eq(resources.id, resourceId));
             const before = await storedResource();
             head.mockResolvedValue(nextRevision);
