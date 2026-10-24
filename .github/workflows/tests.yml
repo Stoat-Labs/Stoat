@@ -12,6 +12,12 @@ concurrency:
     group: tests-${{ github.ref }}
     cancel-in-progress: true
 
+# Placeholders so varlock validation passes in `svelte-kit sync` (postinstall); tests set their own values.
+env:
+    APP_SECRET: ci-secret-that-is-at-least-32-characters-long
+    APP_URL: http://localhost:3000
+    DATABASE_URL: postgresql://build:build@localhost:5432/build
+
 jobs:
     unit:
         name: Unit Tests
