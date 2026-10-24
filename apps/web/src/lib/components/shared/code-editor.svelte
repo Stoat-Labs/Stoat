@@ -26,13 +26,17 @@
         label = "Docker Compose YAML",
         hideEnvValues = false,
         readOnly = false,
+        fill = false,
         view = $bindable(),
     }: {
         value?: string;
-        language?: "yaml" | "env";
+        // "text" is plain: config files of any format.
+        language?: "yaml" | "env" | "text";
         label?: string;
         hideEnvValues?: boolean;
         readOnly?: boolean;
+        // Stretch to the parent's height instead of the default 22-32rem scroll area.
+        fill?: boolean;
         // Exposed so callers can attach editor extensions (see env references).
         view?: EditorView;
     } = $props();
@@ -146,7 +150,7 @@
                 minimalSetup,
                 editability.of(editabilityExtensions(readOnly)),
                 lineNumbers(),
-                language === "yaml" ? yaml() : envValues,
+                { yaml: yaml(), env: envValues, text: [] }[language],
                 syntaxHighlighting(
                     HighlightStyle.define([
                         {
@@ -193,14 +197,15 @@
                     "&": {
                         backgroundColor: "transparent",
                         color: "var(--code-foreground)",
+                        height: fill ? "100%" : "auto",
                     },
                     "&.cm-focused": { outline: "none" },
                     ".cm-scroller": {
                         fontFamily: "var(--font-mono)",
                         fontSize: "13px",
                         lineHeight: "24px",
-                        minHeight: "22rem",
-                        maxHeight: "32rem",
+                        minHeight: fill ? "0" : "22rem",
+                        maxHeight: fill ? "none" : "32rem",
                         overflow: "auto",
                     },
                     ".cm-content": {
@@ -252,6 +257,7 @@
 
 <div
     bind:this={container}
+    class:h-full={fill}
     class:hide-env-values={language === "env" && hideEnvValues}
 ></div>
 

@@ -171,6 +171,12 @@
                                 true,
                             )}
                         {/if}
+                        {#each data.configFiles as { file, live, next } (file)}
+                            {@render diffBlock(
+                                file,
+                                lineDiff(live, next),
+                            )}
+                        {/each}
                         {#if data.prefix.live !== null && data.prefix.live !== data.prefix.next}
                             <p class="text-sm text-muted-foreground">
                                 Name prefix changes from

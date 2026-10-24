@@ -1,5 +1,6 @@
+import { setEnvVariable } from "@stoat/workflows/env-lines";
 import * as v from "valibot";
-import YAML from "yaml";
+import YAML, { isMap, isScalar, isSeq } from "yaml";
 
 export {
     composeConfigFiles,
@@ -131,4 +132,61 @@ export function enablePostgresPort(compose: string, occupied: Set<number>): stri
     );
 
     return document.toString();
+}
+
+/**
+ * A resource's only service gets its Variables as container environment at deploy, so its literal
+ * `environment` entries move into Variables, where they are edited like any other. Compose's value
+ * wins at deploy, so it replaces a same-named Variable. Pass-through keys, anchors and values with
+ * `$` stay put: `FOO=${FOO}` would refer to itself, and `.env` expands in file order.
+ */
+export function moveComposeEnvironment(compose: string, env: string) {
+    const document = YAML.parseDocument(compose);
+    const services = document.get("services", true);
+    const service =
+        isMap(services) && services.items.length === 1 ? services.items[0]?.value : null;
+    const environment = isMap(service) ? service.get("environment", true) : null;
+
+    if (document.errors.length || !isMap(service) || !(isSeq(environment) || isMap(environment)))
+        return { compose, env };
+
+    let next = env;
+
+    // False when the value stays in Compose: interpolated, or unwritable to `.env` (mixed quotes).
+    const move = (key: string, value: string) => {
+        if (value.includes("$")) return false;
+
+        try {
+            next = setEnvVariable(next, key, value);
+
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const before = environment.items.length;
+
+    if (isSeq(environment))
+        environment.items = environment.items.filter((item) => {
+            const line = isScalar(item) ? String(item.value) : "";
+            const split = line.indexOf("=");
+
+            return split <= 0 || !move(line.slice(0, split), line.slice(split + 1));
+        });
+    else
+        environment.items = environment.items.filter(
+            ({ key, value }) =>
+                !isScalar(key) ||
+                key.value === "<<" ||
+                !isScalar(value) ||
+                value.value === null ||
+                !move(String(key.value), String(value.value)),
+        );
+
+    if (environment.items.length === before) return { compose, env };
+
+    if (!environment.items.length) service.delete("environment");
+
+    return { compose: document.toString(), env: next };
 }

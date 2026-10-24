@@ -468,8 +468,8 @@ export async function ensureGitWebhook(
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
-            // GitHub requires "web"; "gitea" works on both Forgejo and Gitea servers.
-            ...(input.provider === "github" ? { name: "web" } : { type: "gitea" }),
+            // GitHub requires "web"; Forgejo names its own hook type.
+            ...(input.provider === "github" ? { name: "web" } : { type: "forgejo" }),
             config: { url: hookUrl, content_type: "json", secret },
             events: ["push"],
             active: true,

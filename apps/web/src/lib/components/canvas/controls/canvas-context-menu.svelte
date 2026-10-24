@@ -39,6 +39,7 @@
     import Database from "@lucide/svelte/icons/database";
     import ExternalLink from "@lucide/svelte/icons/external-link";
     import GitBranch from "@lucide/svelte/icons/git-branch";
+    import FileCog from "@lucide/svelte/icons/file-cog";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Layers from "@lucide/svelte/icons/layers";
     import RotateCw from "@lucide/svelte/icons/rotate-cw";
@@ -70,7 +71,7 @@
         groups: { id: string; name: string }[];
         /** False on internal projects, which take no new resources. */
         canAdd: boolean;
-        /** Whether any service can take a volume. */
+        /** Whether any service can take a volume or config. */
         canAddVolume: boolean;
         children: Snippet;
         onaddpage: (page: AddPage) => void;
@@ -86,6 +87,12 @@
     );
 
     const actions = getCanvasActions();
+
+    const configNodeId = $derived(
+        target?.kind === "node" && target.nodeId.includes("#")
+            ? target.nodeId
+            : undefined,
+    );
 
     // A volume no service mounts is a card of its own; it has no deployments, logs or settings.
     const volumeNodeId = $derived(
@@ -129,7 +136,32 @@
         {@render children()}
     </ContextMenuTrigger>
     <ContextMenuPopup class="min-w-56">
-        {#if volumeNodeId}
+        {#if configNodeId}
+            {@const nodeId = configNodeId}
+            {#if actions.isConfigMounted(nodeId)}
+                <ContextMenuItem
+                    onclick={() => actions.disconnectConfig(nodeId)}
+                >
+                    <FileCog aria-hidden="true" />
+                    Disconnect config
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+            {/if}
+            <ContextMenuItem
+                onclick={() => onopen(nodeId, "settings")}
+            >
+                <Settings aria-hidden="true" />
+                View Settings
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+                variant="destructive"
+                onclick={() => actions.removeConfig(nodeId)}
+            >
+                <Trash2 aria-hidden="true" />
+                Delete config
+            </ContextMenuItem>
+        {:else if volumeNodeId}
             {@const nodeId = volumeNodeId}
             <!-- Railway's volume menu: disconnect, its two tabs, then delete. -->
             {#if actions.isVolumeMounted(nodeId)}
@@ -337,6 +369,12 @@
                     >
                         <HardDrive aria-hidden="true" />
                         Volume
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                        onclick={() => onaddpage("config")}
+                    >
+                        <FileCog aria-hidden="true" />
+                        Config
                     </ContextMenuItem>
                 {/if}
                 {#if page.data.isOrganizationAdmin}

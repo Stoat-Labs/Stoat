@@ -53,26 +53,61 @@ export function subscribeToStream<T>(
     };
 }
 
-/** One warning toast per live stream: kept up to date while it retries, closed once events flow again. */
+/** One warning toast per live stream: kept up to date while it retries, closed once it reconnects. */
 export function streamErrorToast() {
     let id: string | undefined;
 
+    let pending: ReturnType<typeof setTimeout> | undefined;
+
+    let latest: Error | undefined;
+
+    function open(error: Error, reconnecting: boolean) {
+        const toast = {
+            type: "warning",
+            title: reconnecting ? "Live updates lost. Reconnecting..." : "Live updates stopped",
+            description: reconnecting
+                ? error.message
+                : `${error.message} Reload the page to reconnect.`,
+            timeout: 0,
+        };
+
+        if (id) toastManager.update(id, toast);
+        else id = toastManager.add({ ...toast, onClose: () => (id = undefined) });
+    }
+
+    function clear() {
+        clearTimeout(pending);
+        pending = undefined;
+
+        if (id) toastManager.close(id);
+    }
+
     return {
         show(error: Error, reconnecting: boolean) {
-            const toast = {
-                type: "warning",
-                title: reconnecting ? "Live updates lost. Reconnecting..." : "Live updates stopped",
-                description: reconnecting
-                    ? error.message
-                    : `${error.message} Reload the page to reconnect.`,
-                timeout: 0,
-            };
+            latest = error;
 
-            if (id) toastManager.update(id, toast);
-            else id = toastManager.add({ ...toast, onClose: () => (id = undefined) });
+            // A dropped socket usually comes back on the first retry, so only a lasting outage warns.
+            if (reconnecting && !id) {
+                pending ??= setTimeout(() => {
+                    pending = undefined;
+
+                    if (latest) open(latest, true);
+                }, 5000);
+
+                return;
+            }
+
+            clearTimeout(pending);
+            pending = undefined;
+            open(error, reconnecting);
         },
-        clear() {
-            if (id) toastManager.close(id);
+        clear,
+        /** Wraps a stream's connect so the toast closes once it is back, not on its next event. */
+        async connected<T>(stream: Promise<T>) {
+            const result = await stream;
+            clear();
+
+            return result;
         },
     };
 }

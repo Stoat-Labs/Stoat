@@ -26,9 +26,9 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/volume"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/psviderski/uncloud/pkg/api"
 )
 
@@ -231,10 +231,9 @@ func New(backend Backend, cfg Config) (*Server, error) {
 		serviceClient:  serviceClient,
 	}
 	s.app = fiber.New(fiber.Config{
-		DisableStartupMessage: true,
-		BodyLimit:             maxRequestBodyBytes,
-		ReadTimeout:           readTimeout,
-		IdleTimeout:           idleTimeout,
+		BodyLimit:   maxRequestBodyBytes,
+		ReadTimeout: readTimeout,
+		IdleTimeout: idleTimeout,
 		// WriteTimeout is deliberately unset: it is a connection-wide deadline in
 		// fasthttp and would terminate healthy long-lived event streams.
 		ErrorHandler: errorHandler,
@@ -242,8 +241,8 @@ func New(backend Backend, cfg Config) (*Server, error) {
 	s.app.Use(recover.New(recover.Config{EnableStackTrace: false}))
 	if cfg.AllowedOrigins != "" {
 		s.app.Use(cors.New(cors.Config{
-			AllowOrigins: cfg.AllowedOrigins,
-			AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+			AllowOrigins: strings.Split(cfg.AllowedOrigins, ","),
+			AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		}))
 	}
 	s.app.Use(s.requireBearerToken)
@@ -292,7 +291,7 @@ func newServiceHTTPClient() *http.Client {
 
 // requireBearerToken rejects every request that does not carry the configured
 // bearer token. Only the routes listed by isPublicPath are exempt.
-func (s *Server) requireBearerToken(c *fiber.Ctx) error {
+func (s *Server) requireBearerToken(c fiber.Ctx) error {
 	if isPublicPath(c.Path()) {
 		return c.Next()
 	}
@@ -343,17 +342,17 @@ func bearerToken(header string) (string, bool) {
 // withRequestDeadline binds handlers to a deadline. Handlers that must outlive
 // it (event streams and command execution) detach explicitly through
 // streamContext and execContext.
-func (s *Server) withRequestDeadline(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(c.UserContext(), s.requestTimeout)
+func (s *Server) withRequestDeadline(c fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(c.Context(), s.requestTimeout)
 	defer cancel()
 
-	c.SetUserContext(ctx)
+	c.SetContext(ctx)
 	return c.Next()
 }
 
 // errorHandler answers errors raised by Fiber itself, such as unknown routes
 // and oversized bodies. Operation errors are shaped by newError instead.
-func errorHandler(c *fiber.Ctx, err error) error {
+func errorHandler(c fiber.Ctx, err error) error {
 	statusCode := fiber.StatusInternalServerError
 	var fiberErr *fiber.Error
 	if errors.As(err, &fiberErr) {
@@ -787,17 +786,17 @@ func (s *Server) deployCaddy(ctx context.Context, input *bodyInput[DeployCaddyRe
 	return eventStream(cancel, events, encodeDeployEvent), nil
 }
 
-func (s *Server) openapi(c *fiber.Ctx) error {
+func (s *Server) openapi(c fiber.Ctx) error {
 	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	return c.Send(s.openapiJSON)
 }
 
-func (s *Server) openapiYAMLDocument(c *fiber.Ctx) error {
+func (s *Server) openapiYAMLDocument(c fiber.Ctx) error {
 	c.Set(fiber.HeaderContentType, "application/yaml; charset=utf-8")
 	return c.Send(s.openapiYAML)
 }
 
-func (s *Server) scalar(c *fiber.Ctx) error {
+func (s *Server) scalar(c fiber.Ctx) error {
 	c.Set(fiber.HeaderContentType, fiber.MIMETextHTML+"; charset=utf-8")
 	return c.SendString(s.scalarHTML)
 }
@@ -1253,7 +1252,7 @@ func eventStream[T any](
 	encode func(T) (sseEvent, error),
 ) *huma.StreamResponse {
 	return &huma.StreamResponse{Body: func(ctx huma.Context) {
-		streamSSE(humafiber.UnwrapV2(ctx), cancel, events, encode)
+		streamSSE(humafiber.Unwrap(ctx), cancel, events, encode)
 	}}
 }
 
@@ -1267,7 +1266,7 @@ func eventStream[T any](
 // goroutine, the event channel, and the upstream cluster stream until process
 // exit.
 func streamSSE[T any](
-	c *fiber.Ctx,
+	c fiber.Ctx,
 	cancel context.CancelFunc,
 	events <-chan T,
 	encode func(T) (sseEvent, error),
@@ -1277,8 +1276,8 @@ func streamSSE[T any](
 	c.Set(fiber.HeaderConnection, "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	serverDone := c.Context().Done()
-	c.Context().SetBodyStreamWriter(func(writer *bufio.Writer) {
+	serverDone := c.RequestCtx().Done()
+	c.RequestCtx().SetBodyStreamWriter(func(writer *bufio.Writer) {
 		defer cancel()
 
 		heartbeat := time.NewTicker(sseHeartbeatInterval)

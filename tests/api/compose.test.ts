@@ -4,6 +4,7 @@ import YAML from "yaml";
 
 import {
     formatComposeFile,
+    moveComposeEnvironment,
     resourceComposePrefix,
     rewriteComposeHostname,
     unformatComposeFile,
@@ -2291,5 +2292,47 @@ configs:
 
     it("leaves files without contents untouched", () => {
         expect(inlineComposeConfigs(compose, {})).toBe(compose);
+    });
+});
+
+describe("moveComposeEnvironment", () => {
+    it("moves a single service's literal environment into Variables", () => {
+        const compose = [
+            "services:",
+            "  db:",
+            "    image: postgres",
+            "    environment:",
+            "      - TZ=Europe/Bucharest",
+            "      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}",
+            "      - PASSTHROUGH",
+            "      - PGDATA=/data",
+            "",
+        ].join("\n");
+
+        const moved = moveComposeEnvironment(compose, "PGDATA=/old\nPOSTGRES_PASSWORD=secret\n");
+
+        expect(moved.env).toBe("PGDATA=/data\nPOSTGRES_PASSWORD=secret\nTZ=Europe/Bucharest\n");
+        expect(YAML.parse(moved.compose).services.db.environment).toEqual([
+            "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}",
+            "PASSTHROUGH",
+        ]);
+    });
+
+    it("drops an emptied map environment", () => {
+        const moved = moveComposeEnvironment(
+            "services:\n  app:\n    image: nginx\n    environment:\n      PORT: 3000\n",
+            "",
+        );
+
+        expect(moved).toEqual({
+            compose: "services:\n  app:\n    image: nginx\n",
+            env: "PORT=3000\n",
+        });
+    });
+
+    it("leaves several services alone", () => {
+        const compose = "services:\n  a:\n    environment:\n      - A=1\n  b:\n    image: nginx\n";
+
+        expect(moveComposeEnvironment(compose, "")).toEqual({ compose, env: "" });
     });
 });

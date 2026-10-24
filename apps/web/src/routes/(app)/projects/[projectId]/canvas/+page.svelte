@@ -74,9 +74,11 @@
         // A finished deployment can change both status and the deployed Compose services.
         const stop = subscribeToStream(
             (signal) =>
-                client.cluster.watchDeployments(undefined, {
-                    signal,
-                }),
+                watchToast.connected(
+                    client.cluster.watchDeployments(undefined, {
+                        signal,
+                    }),
+                ),
             () => {
                 watchToast.clear();
                 void queryClient.invalidateQueries({

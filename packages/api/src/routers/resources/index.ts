@@ -48,6 +48,7 @@ import {
     enablePostgresPort,
     formatComposeFile,
     internalHostname,
+    moveComposeEnvironment,
     postgresService,
     publishedPortNumbers,
     resourceComposePrefix,
@@ -77,6 +78,7 @@ import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
 import { removeResources } from "../../resource-removal";
 import {
+    configFilePath,
     deploymentSource,
     insertResourceDeployment,
     readComposeConfigFiles,
@@ -93,6 +95,16 @@ import {
     remountVolume,
     removeVolume,
 } from "../../compose-volumes";
+import {
+    addConfig,
+    attachConfig,
+    ComposeConfigError,
+    detachConfig,
+    nextConfigName,
+    removeConfig,
+    setConfigContent,
+    updateConfigMount,
+} from "../../compose-configs";
 import {
     ComposeMoveError,
     moveComposeService,
@@ -118,6 +130,19 @@ const volumeMountInput = {
     target: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
 };
 
+const configInput = {
+    projectId: v.pipe(v.string(), v.uuid()),
+    resourceId: v.pipe(v.string(), v.uuid()),
+    config: v.pipe(v.string(), v.minLength(1), v.maxLength(63)),
+};
+
+// A Git config file, by its `configs.*.file` path as written in Compose.
+const configFileInput = {
+    projectId: v.pipe(v.string(), v.uuid()),
+    resourceId: v.pipe(v.string(), v.uuid()),
+    file: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)),
+};
+
 /** Rewrites a resource's Compose draft under a row lock, the way the other canvas edits do. */
 function editComposeDraft(
     db: Pick<Database, "transaction">,
@@ -135,7 +160,7 @@ function editComposeDraft(
 
         if (!resource || !compose?.trim())
             throw new ORPCError("BAD_REQUEST", {
-                message: "Only Compose resources have volumes.",
+                message: "Only Compose resources have volumes and configs.",
             });
 
         try {
@@ -144,7 +169,7 @@ function editComposeDraft(
                 .set({ draftSpec: edit(compose) })
                 .where(eq(resources.id, resourceId));
         } catch (error) {
-            if (error instanceof ComposeVolumeError)
+            if (error instanceof ComposeVolumeError || error instanceof ComposeConfigError)
                 throw new ORPCError("BAD_REQUEST", { message: error.message });
 
             throw error;
@@ -152,6 +177,35 @@ function editComposeDraft(
 
         return { id: resourceId };
     });
+}
+
+/** A `configs.*.file` of a Git-backed resource's draft, read from the branch head. */
+async function readGitConfigFile(
+    db: Database,
+    organizationId: string,
+    resource: typeof resources.$inferSelect,
+    file: string,
+) {
+    const { gitSource: source, gitConnectionId: connectionId } = resource;
+    const compose = resource.draftSpec ?? resource.spec ?? "";
+
+    if (!source || !connectionId)
+        throw new ORPCError("BAD_REQUEST", { message: "This resource has no Git source." });
+
+    if (!composeConfigFiles(compose).includes(file))
+        throw new ORPCError("NOT_FOUND", { message: `No config reads ${file}.` });
+
+    const repo = await getBoundGitRepository(
+        db,
+        organizationId,
+        connectionId,
+        source.repositoryUrl,
+        source.branch,
+    );
+
+    const contents = await readComposeConfigFiles(repo, source.path, compose);
+
+    return contents[file] ?? "";
 }
 
 // A deployable resource of the organization, with the cluster its project runs on.
@@ -302,7 +356,8 @@ export const resourcesRouter = {
                                   : undefined,
                           }
                         : { source: "docker", trigger: "manual" },
-                    configFiles,
+                    // Edited files ship as edited; the push below commits them.
+                    { ...configFiles, ...resource.draftConfigFiles },
                 );
 
                 const unpushed = unpushedGitSource(resource);
@@ -327,6 +382,10 @@ export const resourcesRouter = {
                 const pushed = await pushGitFile(repo, {
                     path: source.path,
                     content: unpushed.content,
+                    files: Object.entries(unpushed.files).map(([file, content]) => ({
+                        path: configFilePath(source.path, file),
+                        content,
+                    })),
                     expectedRevision: forcedRevision ?? source.revision,
                     message: input.message ?? `Deploy ${resource.name} from Stoat`,
                     author: { name: session.user.name, email: session.user.email },
@@ -336,7 +395,7 @@ export const resourcesRouter = {
 
                 await tx
                     .update(resources)
-                    .set({ gitSource: { ...source, ...pushed } })
+                    .set({ gitSource: { ...source, ...pushed }, draftConfigFiles: null })
                     .where(eq(resources.id, resource.id));
 
                 // The deployment ships the commit just pushed, not the one the draft started from.
@@ -642,11 +701,19 @@ export const resourcesRouter = {
         .use(resourceMiddleware)
         .handler(async ({ context: { db }, input }) =>
             db.transaction(async (tx) => {
-                await lockedComposeResource(tx, input);
+                const locked = await lockedComposeResource(tx, input);
+
+                // A Git source would put them back on the next sync, so its file stays as written.
+                const { compose, env } = locked.gitSource
+                    ? { compose: input.spec, env: resourceEnv(locked) }
+                    : moveComposeEnvironment(input.spec, resourceEnv(locked));
 
                 const [resource] = await tx
                     .update(resources)
-                    .set({ draftSpec: input.spec })
+                    .set({
+                        draftSpec: compose,
+                        settings: sql`coalesce(${resources.settings}, '{}'::jsonb) || jsonb_build_object('env', ${env}::text)`,
+                    })
                     .where(eq(resources.id, input.resourceId))
                     .returning();
 
@@ -712,6 +779,134 @@ export const resourcesRouter = {
                 removeVolume(compose, input.volume),
             ),
         ),
+
+    // Configs stage in the draft like volumes; new ones are inline `content:`, even with Git.
+    addConfig: organizationProcedure
+        .input(
+            v.object({
+                ...configInput,
+                // Left out, the config is named after the file it mounts as.
+                config: v.optional(configInput.config),
+                ...volumeMountInput,
+            }),
+        )
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db }, input }) => {
+            let config = input.config ?? "";
+
+            await editComposeDraft(db, input.resourceId, (compose) => {
+                config ||= nextConfigName(compose, input.target);
+
+                return addConfig(compose, config, input.service, input.target);
+            });
+
+            return { id: input.resourceId, config };
+        }),
+
+    attachConfig: organizationProcedure
+        .input(v.object({ ...configInput, ...volumeMountInput }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                attachConfig(compose, input.config, input.service, input.target),
+            ),
+        ),
+
+    updateConfigMount: organizationProcedure
+        .input(
+            v.object({
+                ...configInput,
+                ...volumeMountInput,
+                // Octal, like 0444; empty leaves the container's default.
+                mode: v.pipe(v.string(), v.maxLength(4)),
+            }),
+        )
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                updateConfigMount(compose, input.config, input.service, input.target, input.mode),
+            ),
+        ),
+
+    detachConfig: organizationProcedure
+        .input(v.object({ ...configInput, service: v.pipe(v.string(), v.minLength(1)) }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                detachConfig(compose, input.config, input.service),
+            ),
+        ),
+
+    deleteConfig: organizationProcedure
+        .input(v.object(configInput))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                removeConfig(compose, input.config),
+            ),
+        ),
+
+    updateConfigContent: organizationProcedure
+        .input(v.object({ ...configInput, content: v.pipe(v.string(), v.maxLength(1024 * 1024)) }))
+        .use(resourceMiddleware)
+        .handler(({ context: { db }, input }) =>
+            editComposeDraft(db, input.resourceId, (compose) =>
+                setConfigContent(compose, input.config, input.content),
+            ),
+        ),
+
+    // A Git config file: its staged edit if there is one, and what the branch has.
+    readConfigFile: organizationProcedure
+        .input(v.object(configFileInput))
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db, organizationId, resource }, input }) => {
+            const original = await readGitConfigFile(db, organizationId, resource, input.file);
+            const draft = resource.draftConfigFiles?.[input.file];
+
+            return { content: draft ?? original, original, edited: draft !== undefined };
+        }),
+
+    // Stages an edit of a Git config file; the next deploy commits it with the Compose draft.
+    // Content matching the branch, or null, drops the edit.
+    updateConfigFile: organizationProcedure
+        .input(
+            v.object({
+                ...configFileInput,
+                content: v.nullable(v.pipe(v.string(), v.maxLength(1024 * 1024))),
+            }),
+        )
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db, organizationId, resource }, input }) => {
+            // Read before the row lock: it fetches the branch.
+            const original = await readGitConfigFile(db, organizationId, resource, input.file);
+
+            return db.transaction(async (tx) => {
+                const [locked] = await tx
+                    .select()
+                    .from(resources)
+                    .where(eq(resources.id, resource.id))
+                    .for("update");
+
+                if (!locked?.gitSource)
+                    throw new ORPCError("CONFLICT", {
+                        message: "The Git source changed. Reload the resource.",
+                    });
+
+                const { [input.file]: _previous, ...rest } = locked.draftConfigFiles ?? {};
+
+                const files =
+                    input.content === null || input.content === original
+                        ? rest
+                        : { ...rest, [input.file]: input.content };
+
+                await tx
+                    .update(resources)
+                    .set({ draftConfigFiles: Object.keys(files).length ? files : null })
+                    .where(eq(resources.id, resource.id));
+
+                return { id: resource.id };
+            });
+        }),
 
     updateVariables: organizationProcedure
         .input(
@@ -962,6 +1157,7 @@ export const resourcesRouter = {
                     projectId: resources.projectId,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
+                    draftConfigFiles: resources.draftConfigFiles,
                     pendingDelete: resources.pendingDelete,
                     settings: resources.settings,
                     deployedEnv: lastDeploy.env,
@@ -1020,7 +1216,26 @@ export const resourcesRouter = {
             }),
         )
         .use(resourceReadMiddleware)
-        .handler(async ({ context: { db, resource } }) => {
+        .handler(async ({ context: { db, organizationId, resource } }) => {
+            const edited = resource.draftConfigFiles ?? {};
+            const { gitSource, gitConnectionId } = resource;
+
+            // What the branch has for each edited Git config file, in one fetch.
+            const committed =
+                Object.keys(edited).length && gitSource && gitConnectionId
+                    ? await readComposeConfigFiles(
+                          await getBoundGitRepository(
+                              db,
+                              organizationId,
+                              gitConnectionId,
+                              gitSource.repositoryUrl,
+                              gitSource.branch,
+                          ),
+                          gitSource.path,
+                          resource.draftSpec ?? "",
+                      )
+                    : {};
+
             const [live] = await db
                 .select({
                     env: resourceDeploymentInputs.env,
@@ -1059,6 +1274,11 @@ export const resourcesRouter = {
                     next: resource.draftSpec ?? resource.spec ?? "",
                 },
                 env: { live: live?.env ?? "", next: env },
+                configFiles: Object.entries(edited).map(([file, next]) => ({
+                    file,
+                    live: committed[file] ?? "",
+                    next,
+                })),
                 prefix: {
                     live: live?.prefix ?? null,
                     next: resourceComposePrefix(resource) ?? "",
@@ -1283,6 +1503,7 @@ export const resourcesRouter = {
 
             const description = input.description?.trim() ? input.description.trim() : null;
             const source = input.git ? await loadGitCompose(db, organizationId, input.git) : {};
+            const pasted = input.compose ? moveComposeEnvironment(input.compose, "") : undefined;
 
             const icon =
                 !template && input.logoImage ? await fetchDockerHubLogo(input.logoImage) : null;
@@ -1328,7 +1549,7 @@ export const resourcesRouter = {
                 .values([
                     {
                         ...source,
-                        ...(input.compose && { draftSpec: input.compose }),
+                        ...(pasted && { draftSpec: pasted.compose, settings: { env: pasted.env } }),
                         id: randomUUID(),
                         name: input.name.trim(),
                         slug: resourceSlug(input.name),

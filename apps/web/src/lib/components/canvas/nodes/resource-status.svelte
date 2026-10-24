@@ -1,10 +1,13 @@
 <script lang="ts">
+    import { orpc } from "$lib/api/orpc";
     import { isActiveDeploymentStatus } from "$lib/deployments/status";
     import { ago } from "$lib/format";
+    import { containerInfo } from "$lib/resources/container-info";
     import CircleCheck from "@lucide/svelte/icons/circle-check";
     import CircleX from "@lucide/svelte/icons/circle-x";
     import LoaderCircle from "@lucide/svelte/icons/loader-circle";
-    import { getCanvasClock } from "../context";
+    import { createQuery } from "@tanstack/svelte-query";
+    import { getCanvasClock, getCanvasCluster } from "../context";
     import type { CanvasResource } from "../graph";
 
     let {
@@ -18,6 +21,33 @@
     const clock = getCanvasClock();
 
     const status = $derived(resource.deploymentStatus);
+
+    const cluster = getCanvasCluster();
+
+    // A finished deploy only says the rollout worked; the containers say whether it still runs.
+    // Same query as the deployments panel, so opening the panel reuses this cache.
+    const containersQuery = createQuery(() =>
+        orpc.resources.getContainers.queryOptions({
+            input: {
+                clusterId: cluster.id,
+                projectId: resource.projectId,
+                resourceId: resource.id,
+            },
+            enabled:
+                cluster.id.length > 0 &&
+                status === "ready" &&
+                !resource.bucketStatus,
+            refetchInterval: 30_000,
+        }),
+    );
+
+    const unhealthy = $derived(
+        containersQuery.data?.some(({ container }) => {
+            const info = containerInfo(container);
+
+            return info.health === "unhealthy" || info.status === "exited";
+        }) ?? false,
+    );
 
     const finishedAt = $derived(
         resource.deploymentFinishedAt ?? resource.deploymentCreatedAt,
@@ -50,6 +80,8 @@
         if (isActiveDeploymentStatus(status)) return "deploying";
 
         if (status === "failed") return "failed";
+
+        if (unhealthy) return "unhealthy";
 
         return finishedAt &&
             clock.now - new Date(finishedAt).getTime() <
@@ -120,7 +152,9 @@
                 aria-hidden="true"
             />
             <span class="truncate text-destructive-foreground">
-                Failed {finishedAt ? ago(finishedAt, clock.now) : ""}
+                {state === "unhealthy"
+                    ? "Unhealthy"
+                    : `Failed ${finishedAt ? ago(finishedAt, clock.now) : ""}`}
             </span>
         {/if}
     </span>

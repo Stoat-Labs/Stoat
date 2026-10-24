@@ -114,7 +114,12 @@ export const resourceDiscardRouter = {
 
                     await tx
                         .update(resources)
-                        .set({ draftSpec: row.spec, settings, pendingDelete: false })
+                        .set({
+                            draftSpec: row.spec,
+                            draftConfigFiles: null,
+                            settings,
+                            pendingDelete: false,
+                        })
                         .where(eq(resources.id, row.id));
                 }
 

@@ -11,6 +11,10 @@
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Kbd } from "$lib/components/ui/kbd";
+    import {
+        ToggleGroup,
+        ToggleGroupItem,
+    } from "$lib/components/ui/toggle-group";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { Switch } from "$lib/components/ui/switch";
     import { bytes } from "$lib/observability";
@@ -41,6 +45,10 @@
         type HttpIngress,
         type IngressEntry,
     } from "@stoat/workflows/ingress";
+    import {
+        serviceUpdateOrder,
+        setServiceUpdateOrder,
+    } from "@stoat/workflows/update-order";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
@@ -234,19 +242,19 @@
 
     let ingressRemoval = $state<IngressEntry | null>(null);
 
-    let savingIngress = $state(false);
+    let savingDraft = $state(false);
 
     let ingressError = $state("");
 
     const canEditIngress = $derived(
-        !isInternal && ingress !== null && !savingIngress,
+        !isInternal && ingress !== null && !savingDraft,
     );
 
-    /** Saves the draft with new ingress; resolves to the error message, or null once saved. */
-    async function saveIngress(compose: string) {
+    /** Saves the Compose draft; resolves to the error message, or null once saved. */
+    async function saveDraft(compose: string) {
         if (!details) return "The resource is still loading.";
 
-        savingIngress = true;
+        savingDraft = true;
         ingressError = "";
 
         try {
@@ -271,14 +279,14 @@
                 ? cause.message
                 : "Unable to update the Compose file.";
         } finally {
-            savingIngress = false;
+            savingDraft = false;
         }
     }
 
     async function removeIngress(entry: IngressEntry) {
         try {
             ingressError =
-                (await saveIngress(
+                (await saveDraft(
                     entry.kind === "caddy"
                         ? removeServiceCaddy(
                               draftCompose,
@@ -292,6 +300,36 @@
                 )) ?? "";
         } catch (cause) {
             ingressError =
+                cause instanceof Error
+                    ? cause.message
+                    : "Unable to update the Compose file.";
+        }
+    }
+
+    // Undefined when the draft can't be read, which hides the control.
+    const updateOrder = $derived.by(() => {
+        try {
+            return serviceUpdateOrder(draftCompose);
+        } catch {
+            return undefined;
+        }
+    });
+
+    let updateOrderError = $state("");
+
+    async function setUpdateOrder(value: string | null) {
+        const order =
+            value === "start-first" || value === "stop-first"
+                ? value
+                : null;
+
+        try {
+            updateOrderError =
+                (await saveDraft(
+                    setServiceUpdateOrder(draftCompose, order),
+                )) ?? "";
+        } catch (cause) {
+            updateOrderError =
                 cause instanceof Error
                     ? cause.message
                     : "Unable to update the Compose file.";
@@ -388,7 +426,14 @@
             icon: Rocket,
             visible:
                 !isBucket &&
-                shows("deploy", "prefix names", "compose"),
+                shows(
+                    "deploy",
+                    "prefix names",
+                    "compose",
+                    "update order",
+                    "stop first",
+                    "start first",
+                ),
         },
         {
             id: "general",
@@ -967,7 +1012,7 @@
     <div>
         {@render title(
             "Prefix Names",
-            "Prefix service, network and volume names with this project's and resource's IDs, so they stay unique across the cluster. Changing it renames everything on the next deploy: services are replaced, and volumes start empty under their new names. The old volumes stay on the machines.",
+            "Changing it replaces services and starts volumes empty.",
         )}
         {@render toggleRow(
             "Prefix names",
@@ -978,6 +1023,45 @@
         {#if prefixError}
             <Alert variant="error" class="mt-3">
                 <AlertDescription>{prefixError}</AlertDescription>
+            </Alert>
+        {/if}
+    </div>
+    <div>
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                {@render title(
+                    "Update Order",
+                    "Use stop-first for databases.",
+                )}
+            </div>
+            {#if updateOrder !== undefined}
+                <!-- auto leaves it unset: Uncloud starts first, or stops first for port conflicts and single-replica volumes. -->
+                <ToggleGroup
+                    variant="outline"
+                    size="sm"
+                    aria-label="Update order"
+                    value={[updateOrder ?? "auto"]}
+                    onValueChange={(next) => {
+                        // Pressing the active button would clear the group; keep the current order then.
+                        if (next[0]) void setUpdateOrder(next[0]);
+                    }}
+                >
+                    {#each ["auto", "start-first", "stop-first"] as order (order)}
+                        <ToggleGroupItem
+                            value={order}
+                            disabled={savingDraft || isInternal}
+                        >
+                            {order}
+                        </ToggleGroupItem>
+                    {/each}
+                </ToggleGroup>
+            {/if}
+        </div>
+        {#if updateOrderError}
+            <Alert variant="error" class="mt-3">
+                <AlertDescription>
+                    {updateOrderError}
+                </AlertDescription>
             </Alert>
         {/if}
     </div>
@@ -1151,8 +1235,13 @@
                     )}
                 placeholder="Filter settings..."
                 aria-label="Filter settings"
+                class="[&_input]:pr-9"
             />
-            <Kbd>/</Kbd>
+            <Kbd
+                class="absolute top-1/2 right-2 z-10 -translate-y-1/2"
+            >
+                /
+            </Kbd>
         </div>
     </div>
 
@@ -1283,8 +1372,8 @@
         entries={ingressEntries}
         services={ingress?.services ?? []}
         compose={draftCompose}
-        busy={savingIngress}
-        onsubmit={saveIngress}
+        busy={savingDraft}
+        onsubmit={saveDraft}
         onclose={() => (ingressDialog = null)}
     />
 {/if}

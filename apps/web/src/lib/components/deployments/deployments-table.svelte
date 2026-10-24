@@ -182,9 +182,11 @@
 
         const stop = subscribeToStream(
             (signal) =>
-                client.cluster.watchDeployments(undefined, {
-                    signal,
-                }),
+                watchToast.connected(
+                    client.cluster.watchDeployments(undefined, {
+                        signal,
+                    }),
+                ),
             () => {
                 watchToast.clear();
                 onDeploymentChange?.();

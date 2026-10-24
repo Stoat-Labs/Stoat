@@ -37,6 +37,7 @@
     import {
         setCanvasActions,
         setCanvasClock,
+        setCanvasCluster,
         type GroupAction,
     } from "./context";
     import AddPalette, {
@@ -71,6 +72,7 @@
         slotBelow,
         volumeNodeId,
         volumeTargets,
+        configNodeId,
         type CanvasGraph,
         type CanvasLogos,
         type CanvasNode,
@@ -82,6 +84,7 @@
     import StackNode from "./nodes/stack-node.svelte";
     import CanvasPanel from "./panel/canvas-panel.svelte";
     import CanvasVolumePanel from "./panel/canvas-volume-panel.svelte";
+    import CanvasConfigPanel from "./panel/canvas-config-panel.svelte";
 
     let {
         projectId,
@@ -189,9 +192,34 @@
         void selected.set(nodeId);
     }
 
+    let pendingSelect: ReturnType<typeof setTimeout> | undefined;
+
+    // A click on a card's name may be the first half of a double-click rename. Opening the panel
+    // right away would slide it over the card and eat the second click, so it waits briefly.
+    function clickNode(
+        nodeId: string,
+        event: MouseEvent | TouchEvent,
+    ) {
+        clearTimeout(pendingSelect);
+
+        const onName =
+            event.target instanceof Element &&
+            event.target.closest("[data-renamable]");
+
+        if (!onName) select(nodeId);
+        else if (event instanceof MouseEvent && event.detail === 1)
+            pendingSelect = setTimeout(() => select(nodeId), 300);
+    }
+
     const clock = $state({ now: Date.now() });
 
     setCanvasClock(clock);
+
+    setCanvasCluster({
+        get id() {
+            return clusterId;
+        },
+    });
 
     onMount(() => {
         const timer = setInterval(
@@ -232,6 +260,7 @@
     setCanvasActions({
         edit: (action, resourceId) =>
             void edit.set(`${action}:${resourceId}`),
+        rename,
         toggleCollapsed: (resourceId) => {
             const next = new Set(collapsed);
 
@@ -275,8 +304,157 @@
                     ) ?? false
             );
         },
+        selectConfig: (resourceId, config) =>
+            select(configNodeId(resourceId, config)),
+        removeConfig: (nodeId) => askRemoveConfig(nodeId),
+        disconnectConfig: (nodeId) => void disconnectConfig(nodeId),
+        isConfigMounted: (nodeId) => {
+            const { resourceId, config } = parseNodeId(nodeId);
+
+            return (
+                graph
+                    .find((entry) => entry.id === resourceId)
+                    ?.configs.some(
+                        (item) =>
+                            item.name === config &&
+                            item.services.length > 0,
+                    ) ?? false
+            );
+        },
         ungroup: (resourceId) => void ungroup(resourceId),
     });
+
+    async function refreshGraph() {
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listResources.key(),
+            }),
+        ]);
+    }
+
+    // A config leaves the Compose draft; confirmed in an alert dialog first, like a volume.
+    let pendingConfigDelete = $state<{
+        resource: CanvasResource;
+        config: string;
+    }>();
+
+    let deletingConfig = $state(false);
+
+    let configDeleteError = $state("");
+
+    function askRemoveConfig(nodeId: string) {
+        const { resourceId, config } = parseNodeId(nodeId);
+
+        const resource = resources.find(
+            (item) => item.id === resourceId,
+        );
+
+        if (!resource || !config) return;
+
+        pendingConfigDelete = { resource, config };
+        configDeleteError = "";
+    }
+
+    async function disconnectConfig(nodeId: string) {
+        const { resourceId, config = "" } = parseNodeId(nodeId);
+
+        const services =
+            graph
+                .find((entry) => entry.id === resourceId)
+                ?.configs.find((item) => item.name === config)
+                ?.services ?? [];
+
+        try {
+            for (const service of services)
+                await client.resources.detachConfig({
+                    projectId,
+                    resourceId,
+                    config,
+                    service,
+                });
+        } catch (error) {
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The config could not be disconnected.",
+                warnings: [],
+            };
+        }
+
+        await refreshGraph();
+    }
+
+    async function deleteConfig() {
+        if (!pendingConfigDelete) return;
+
+        const { resource, config } = pendingConfigDelete;
+
+        deletingConfig = true;
+        configDeleteError = "";
+
+        try {
+            await client.resources.deleteConfig({
+                projectId,
+                resourceId: resource.id,
+                config,
+            });
+
+            if (
+                selected.current === configNodeId(resource.id, config)
+            )
+                select(null);
+
+            pendingConfigDelete = undefined;
+            await refreshGraph();
+        } catch (error) {
+            configDeleteError =
+                error instanceof Error
+                    ? error.message
+                    : "The config could not be deleted.";
+        } finally {
+            deletingConfig = false;
+        }
+    }
+
+    // updateDetails replaces every field, so the ones not being renamed are sent unchanged.
+    async function rename(resourceId: string, name: string) {
+        const resource = resources.find(
+            (item) => item.id === resourceId,
+        );
+
+        if (!resource || name === resource.name) return;
+
+        try {
+            await client.resources.updateDetails({
+                projectId,
+                resourceId,
+                name,
+                description: resource.description ?? undefined,
+                icon: resource.icon ?? undefined,
+            });
+        } catch (error) {
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The resource could not be renamed.",
+                warnings: [],
+            };
+        }
+
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listResources.key(),
+            }),
+        ]);
+    }
 
     // Railway's "Delete Service": staged like any other change and applied from the bar.
     async function setPendingDelete(
@@ -637,6 +815,14 @@
             ? undefined
             : selectedGraph?.volumes.find(
                   (volume) => volume.name === selectedNode.volume,
+              ),
+    );
+
+    const selectedConfig = $derived(
+        selectedNode?.config === undefined
+            ? undefined
+            : selectedGraph?.configs.find(
+                  (config) => config.name === selectedNode.config,
               ),
     );
 
@@ -1154,7 +1340,11 @@
 
 {#snippet headerActions()}
     <div class="flex items-center gap-2">
-        <Button size="sm" variant="ghost" href="/projects/{projectId}">
+        <Button
+            size="sm"
+            variant="ghost"
+            href="/projects/{projectId}"
+        >
             <LayoutList class="size-4" aria-hidden="true" />
             List view
         </Button>
@@ -1264,26 +1454,31 @@
                 type: "smoothstep",
                 selectable: false,
             }}
-            onnodeclick={({ node }) => select(node.id)}
-            onpaneclick={() => select(null)}
+            onnodeclick={({ node, event }) =>
+                clickNode(node.id, event)}
+            onpaneclick={() => {
+                clearTimeout(pendingSelect);
+                select(null);
+            }}
             onnodecontextmenu={({ node, event }) => {
-                // A volume in a service's tray has its own menu, like Railway's.
-                const volume =
+                // A volume or config in a service's tray has its own menu, like Railway's.
+                const tray =
                     event.target instanceof Element
                         ? event.target.closest<HTMLElement>(
-                              "[data-volume]",
-                          )?.dataset.volume
+                              "[data-volume], [data-config]",
+                          )?.dataset
                         : undefined;
+
+                const resourceId =
+                    node.type === "card" ? node.data.resource.id : "";
 
                 menuTarget = {
                     kind: "node",
-                    nodeId:
-                        volume && node.type === "card"
-                            ? volumeNodeId(
-                                  node.data.resource.id,
-                                  volume,
-                              )
-                            : node.id,
+                    nodeId: tray?.config
+                        ? configNodeId(resourceId, tray.config)
+                        : tray?.volume
+                          ? volumeNodeId(resourceId, tray.volume)
+                          : node.id,
                 };
             }}
             onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
@@ -1431,7 +1626,20 @@
         </div>
     {/if}
 
-    {#if selectedResource && selectedVolume}
+    {#if selectedResource && selectedConfig}
+        {#key selected.current}
+            <CanvasConfigPanel
+                resource={selectedResource}
+                config={selectedConfig}
+                services={selectedGraph?.services ?? []}
+                width={panelWidth}
+                inset={narrow}
+                onclose={() => select(null)}
+                onremove={() =>
+                    askRemoveConfig(selected.current ?? "")}
+            />
+        {/key}
+    {:else if selectedResource && selectedVolume}
         {#key selected.current}
             <CanvasVolumePanel
                 resource={selectedResource}
@@ -1484,6 +1692,24 @@
         pending={deletingVolume}
         error={volumeDeleteError}
         onconfirm={() => void deleteVolume()}
+    />
+{/if}
+
+{#if pendingConfigDelete}
+    <ConfirmDialog
+        bind:open={
+            () => pendingConfigDelete !== undefined,
+            (open) => {
+                if (!open && !deletingConfig)
+                    pendingConfigDelete = undefined;
+            }
+        }
+        title={`Delete ${pendingConfigDelete.config}?`}
+        description="It is unmounted from its services and leaves the Compose file on the next deploy."
+        confirmLabel="Delete config"
+        pending={deletingConfig}
+        error={configDeleteError}
+        onconfirm={() => void deleteConfig()}
     />
 {/if}
 

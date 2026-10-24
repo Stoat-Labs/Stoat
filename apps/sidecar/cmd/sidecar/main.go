@@ -12,6 +12,7 @@ import (
 	"git.irazz.lol/stoat/sidecar/internal/cluster"
 	"git.irazz.lol/stoat/sidecar/internal/geoip"
 	"git.irazz.lol/stoat/sidecar/internal/httpapi"
+	"github.com/gofiber/fiber/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -134,7 +135,7 @@ func run(ctx context.Context, opts options) error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		listenErr <- server.App().Listen(opts.listen)
+		listenErr <- server.App().Listen(opts.listen, fiber.ListenConfig{DisableStartupMessage: true})
 	}()
 
 	select {

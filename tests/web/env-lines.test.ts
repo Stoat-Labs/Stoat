@@ -2,12 +2,13 @@ import { parseEnv } from "node:util";
 
 import { describe, expect, it } from "vite-plus/test";
 
+import { composeEnvironment } from "../../apps/web/src/lib/components/canvas/panel/compose-environment";
 import {
     formatEnvValue,
     parseEnvLines,
     removeEnvVariable,
     setEnvVariable,
-} from "../../apps/web/src/lib/components/canvas/panel/env-lines";
+} from "../../packages/workflows/src/env-lines";
 
 const sample = [
     "# Database",
@@ -85,5 +86,34 @@ describe("formatEnvValue", () => {
 
     it.each(["a\"b'c`d", "a\\nb'c`d"])("rejects %j, which no quoting keeps", (value) => {
         expect(() => formatEnvValue(value)).toThrow();
+    });
+});
+
+describe("composeEnvironment", () => {
+    it("reads list and map environments per service, skipping pass-through keys", () => {
+        const compose = [
+            "services:",
+            "  db:",
+            "    environment:",
+            "      - TZ=Europe/Bucharest",
+            "      - URL=a=b",
+            "      - PASSTHROUGH",
+            "  app:",
+            "    environment:",
+            "      PORT: 3000",
+            "      EMPTY:",
+            "  bare:",
+            "    image: nginx",
+        ].join("\n");
+
+        expect(composeEnvironment(compose)).toEqual([
+            { service: "db", key: "TZ", value: "Europe/Bucharest" },
+            { service: "db", key: "URL", value: "a=b" },
+            { service: "app", key: "PORT", value: "3000" },
+        ]);
+    });
+
+    it("returns nothing for an unparsable draft", () => {
+        expect(composeEnvironment("services: [")).toEqual([]);
     });
 });

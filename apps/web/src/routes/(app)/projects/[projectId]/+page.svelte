@@ -91,9 +91,11 @@
         // Deployment row changes (not log lines) refresh every resource status on the page.
         const stop = subscribeToStream(
             (signal) =>
-                client.cluster.watchDeployments(undefined, {
-                    signal,
-                }),
+                watchToast.connected(
+                    client.cluster.watchDeployments(undefined, {
+                        signal,
+                    }),
+                ),
             () => {
                 watchToast.clear();
                 void queryClient.invalidateQueries({

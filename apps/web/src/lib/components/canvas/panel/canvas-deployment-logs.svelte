@@ -528,6 +528,7 @@
                 <CodeEditor
                     value={deployment?.spec ?? ""}
                     label="Deployment spec"
+                    fill
                     readOnly
                 />
             </div>
