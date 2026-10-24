@@ -20,9 +20,9 @@ const bare = `services:
 
 describe("setServiceUpdateOrder", () => {
     it("adds the order under deploy.update_config, keeping comments and siblings", () => {
-        const next = setServiceUpdateOrder(compose, "stop-first");
+        const next = setServiceUpdateOrder(compose, "db", "stop-first");
 
-        expect(serviceUpdateOrder(next)).toBe("stop-first");
+        expect(serviceUpdateOrder(next, "db")).toBe("stop-first");
         expect(next).toContain("# keep one replica");
         expect(next).toContain(
             "    deploy:\n      replicas: 1\n      update_config:\n        order: stop-first\n",
@@ -30,19 +30,31 @@ describe("setServiceUpdateOrder", () => {
     });
 
     it("drops update_config and deploy once clearing leaves them empty", () => {
-        const set = setServiceUpdateOrder(bare, "start-first");
+        const set = setServiceUpdateOrder(bare, "cache", "start-first");
 
-        expect(setServiceUpdateOrder(set, null)).toBe(bare);
-        expect(serviceUpdateOrder(bare)).toBeNull();
+        expect(setServiceUpdateOrder(set, "cache", null)).toBe(bare);
+        expect(serviceUpdateOrder(bare, "cache")).toBeNull();
     });
 
     it("keeps deploy when it holds other keys", () => {
-        const set = setServiceUpdateOrder(compose, "stop-first");
+        const set = setServiceUpdateOrder(compose, "db", "stop-first");
 
-        expect(setServiceUpdateOrder(set, null)).toBe(compose);
+        expect(setServiceUpdateOrder(set, "db", null)).toBe(compose);
     });
 
     it("rejects a Compose file without a service", () => {
-        expect(() => setServiceUpdateOrder("services: {}\n", "stop-first")).toThrow(/no service/u);
+        expect(() => setServiceUpdateOrder("services: {}\n", "db", "stop-first")).toThrow(
+            /no service/u,
+        );
+    });
+});
+
+describe("serviceUpdateOrder with several services", () => {
+    it("reads and writes only the named service", () => {
+        const grouped = `${bare.trimEnd()}\n  db:\n    image: postgres\n`;
+        const next = setServiceUpdateOrder(grouped, "db", "stop-first");
+
+        expect(serviceUpdateOrder(next, "db")).toBe("stop-first");
+        expect(serviceUpdateOrder(next, "cache")).toBeNull();
     });
 });

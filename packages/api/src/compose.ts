@@ -137,8 +137,9 @@ export function enablePostgresPort(compose: string, occupied: Set<number>): stri
 /**
  * A resource's only service gets its Variables as container environment at deploy, so its literal
  * `environment` entries move into Variables, where they are edited like any other. Compose's value
- * wins at deploy, so it replaces a same-named Variable. Pass-through keys, anchors and values with
- * `$` stay put: `FOO=${FOO}` would refer to itself, and `.env` expands in file order.
+ * wins at deploy, so it replaces a same-named Variable. Pass-through keys, anchors, values with
+ * `$` and keys the file interpolates stay put: `FOO=${FOO}` would refer to itself, `.env` expands
+ * in file order, and Variables feed every `${...}`.
  */
 export function moveComposeEnvironment(compose: string, env: string) {
     const document = YAML.parseDocument(compose);
@@ -152,9 +153,13 @@ export function moveComposeEnvironment(compose: string, env: string) {
 
     let next = env;
 
-    // False when the value stays in Compose: interpolated, or unwritable to `.env` (mixed quotes).
+    // False when the value stays in Compose: interpolated, unwritable to `.env` (mixed quotes), or a
+    // key some `${...}` reads, which would then resolve to it instead of its default or Variable.
     const move = (key: string, value: string) => {
         if (value.includes("$")) return false;
+
+        if (/^\w+$/u.test(key) && new RegExp(`\\$\\{?${key}(?!\\w)`, "u").test(compose))
+            return false;
 
         try {
             next = setEnvVariable(next, key, value);

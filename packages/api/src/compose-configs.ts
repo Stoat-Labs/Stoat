@@ -54,6 +54,20 @@ function ownMounts(doc: Document, service: YAMLMap, create: boolean) {
     return copy;
 }
 
+/**
+ * Drops a service's emptied `configs` list. It stays, empty, while it overrides an inherited one
+ * (or the inherited mounts come back) or is anchored (or the aliases of it would dangle).
+ */
+function pruneMounts(doc: Document, service: YAMLMap, mounts: YAMLSeq<Node | null>) {
+    if (mounts.items.length > 0 || mounts.anchor) return;
+
+    service.delete("configs");
+
+    const inherited: unknown = service.toJS(doc).configs;
+
+    if (inherited !== undefined) service.set("configs", mounts);
+}
+
 function mountSource(item: Node | null) {
     if (isScalar(item)) return String(item.value);
 
@@ -128,8 +142,7 @@ export function detachConfig(compose: string, config: string, service: string) {
         throw new ComposeConfigError(`"${service}" does not mount "${config}".`);
 
     mounts.items = mounts.items.filter((item) => mountSource(item) !== config);
-
-    if (mounts.items.length === 0) node.delete("configs");
+    pruneMounts(doc, node, mounts);
 
     return String(doc);
 }
@@ -205,8 +218,7 @@ export function removeConfig(compose: string, config: string) {
         if (!isMap(value) || !mounts) continue;
 
         mounts.items = mounts.items.filter((item) => mountSource(item) !== config);
-
-        if (mounts.items.length === 0) value.delete("configs");
+        pruneMounts(doc, value, mounts);
     }
 
     configs.delete(config);

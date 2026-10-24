@@ -141,6 +141,27 @@ describe("attach and detach through a merged anchor", () => {
         ]);
     });
 
+    it("keeps an empty list over an inherited one when its only mount detaches", () => {
+        const inherited = `x-base: &base
+  configs: [app]
+services:
+  web:
+    <<: *base
+    image: nginx
+configs:
+  app:
+    content: ""
+`;
+
+        expect(mountedBy(detachConfig(inherited, "app", "web"))).toEqual([
+            { name: "app", services: [] },
+        ]);
+
+        const removed = removeConfig(inherited, "app");
+
+        expect(YAML.parse(removed, { merge: true }).services.web.configs).toEqual([]);
+    });
+
     it("keeps the config declared after its last service detaches", () => {
         const added = addConfig(compose, "app", "web", "/app.conf");
 

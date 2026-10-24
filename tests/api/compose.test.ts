@@ -2330,6 +2330,13 @@ describe("moveComposeEnvironment", () => {
         });
     });
 
+    it("keeps keys the file interpolates", () => {
+        const compose =
+            "services:\n  db:\n    image: postgres:${TAG:-16}\n    environment:\n      TAG: 17\n";
+
+        expect(moveComposeEnvironment(compose, "TAG=18\n")).toEqual({ compose, env: "TAG=18\n" });
+    });
+
     it("leaves several services alone", () => {
         const compose = "services:\n  a:\n    environment:\n      - A=1\n  b:\n    image: nginx\n";
 

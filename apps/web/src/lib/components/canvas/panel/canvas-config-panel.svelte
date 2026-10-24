@@ -58,6 +58,19 @@
         config.content !== null && content !== config.content,
     );
 
+    // When the saved content changes under the editor (a discard, another tab), follow it unless
+    // there is unsaved typing.
+    let seen = untrack(() => config.content ?? "");
+
+    $effect(() => {
+        const saved = config.content ?? "";
+
+        untrack(() => {
+            if (content === seen) content = saved;
+            seen = saved;
+        });
+    });
+
     // Edited mount fields by `<service>:target` and `<service>:mode`; each shows what is saved until typed in.
     let typed = $state<Record<string, string>>({});
 
@@ -282,8 +295,8 @@
                     <AlertDescription>
                         {#if config.file}
                             Reads <code>{config.file}</code>
-                            . Stoat deploys relative config files only
-                            from a Git source.
+                            . Stoat deploys relative config files only from
+                            a Git source.
                         {:else}
                             Set from an environment variable; edit it
                             in the Compose file.

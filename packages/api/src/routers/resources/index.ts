@@ -31,7 +31,7 @@ import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { parseEnv } from "node:util";
+import { isDeepStrictEqual, parseEnv } from "node:util";
 import * as v from "valibot";
 
 import {
@@ -887,7 +887,13 @@ export const resourcesRouter = {
                     .where(eq(resources.id, resource.id))
                     .for("update");
 
-                if (!locked?.gitSource)
+                // `original` was read from the source and Compose before the lock; both must still hold.
+                if (
+                    !locked?.gitSource ||
+                    locked.gitConnectionId !== resource.gitConnectionId ||
+                    !isDeepStrictEqual(locked.gitSource, resource.gitSource) ||
+                    !composeConfigFiles(locked.draftSpec ?? locked.spec ?? "").includes(input.file)
+                )
                     throw new ORPCError("CONFLICT", {
                         message: "The Git source changed. Reload the resource.",
                     });

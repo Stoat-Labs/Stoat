@@ -48,6 +48,7 @@
     import {
         serviceUpdateOrder,
         setServiceUpdateOrder,
+        type UpdateOrder,
     } from "@stoat/workflows/update-order";
     import { createQuery } from "@tanstack/svelte-query";
     import {
@@ -306,18 +307,29 @@
         }
     }
 
-    // Undefined when the draft can't be read, which hides the control.
-    const updateOrder = $derived.by(() => {
-        try {
-            return serviceUpdateOrder(draftCompose);
-        } catch {
-            return undefined;
-        }
-    });
+    // Per service; undefined when the draft can't be read, which hides its control.
+    const updateOrders = $derived(
+        services.map((service) => {
+            try {
+                return {
+                    service: service.name,
+                    order: serviceUpdateOrder(
+                        draftCompose,
+                        service.name,
+                    ),
+                };
+            } catch {
+                return { service: service.name, order: undefined };
+            }
+        }),
+    );
 
     let updateOrderError = $state("");
 
-    async function setUpdateOrder(value: string | null) {
+    async function setUpdateOrder(
+        service: string,
+        value: string | null,
+    ) {
         const order =
             value === "start-first" || value === "stop-first"
                 ? value
@@ -326,7 +338,11 @@
         try {
             updateOrderError =
                 (await saveDraft(
-                    setServiceUpdateOrder(draftCompose, order),
+                    setServiceUpdateOrder(
+                        draftCompose,
+                        service,
+                        order,
+                    ),
                 )) ?? "";
         } catch (cause) {
             updateOrderError =
@@ -1008,6 +1024,36 @@
     {/if}
 {/snippet}
 
+{#snippet updateOrderToggle(
+    service: string,
+    current: UpdateOrder | null | undefined,
+)}
+    {#if current !== undefined}
+        <!-- auto leaves it unset: Uncloud starts first, or stops first for port conflicts and single-replica volumes. -->
+        <ToggleGroup
+            variant="outline"
+            size="sm"
+            aria-label={services.length === 1
+                ? "Update order"
+                : `Update order of ${service}`}
+            value={[current ?? "auto"]}
+            onValueChange={(next) => {
+                // Pressing the active button would clear the group; keep the current order then.
+                if (next[0]) void setUpdateOrder(service, next[0]);
+            }}
+        >
+            {#each ["auto", "start-first", "stop-first"] as order (order)}
+                <ToggleGroupItem
+                    value={order}
+                    disabled={savingDraft || isInternal}
+                >
+                    {order}
+                </ToggleGroupItem>
+            {/each}
+        </ToggleGroup>
+    {/if}
+{/snippet}
+
 {#snippet deploySection()}
     <div>
         {@render title(
@@ -1027,36 +1073,40 @@
         {/if}
     </div>
     <div>
-        <div class="flex items-center justify-between gap-4">
-            <div>
-                {@render title(
-                    "Update Order",
-                    "Use stop-first for databases.",
-                )}
+        {#if services.length === 1}
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    {@render title(
+                        "Update Order",
+                        "Use stop-first for databases.",
+                    )}
+                </div>
+                {#each updateOrders as entry (entry.service)}
+                    {@render updateOrderToggle(
+                        entry.service,
+                        entry.order,
+                    )}
+                {/each}
             </div>
-            {#if updateOrder !== undefined}
-                <!-- auto leaves it unset: Uncloud starts first, or stops first for port conflicts and single-replica volumes. -->
-                <ToggleGroup
-                    variant="outline"
-                    size="sm"
-                    aria-label="Update order"
-                    value={[updateOrder ?? "auto"]}
-                    onValueChange={(next) => {
-                        // Pressing the active button would clear the group; keep the current order then.
-                        if (next[0]) void setUpdateOrder(next[0]);
-                    }}
+        {:else}
+            {@render title(
+                "Update Order",
+                "Use stop-first for databases.",
+            )}
+            {#each updateOrders as entry (entry.service)}
+                <div
+                    class="mt-3 flex items-center justify-between gap-4"
                 >
-                    {#each ["auto", "start-first", "stop-first"] as order (order)}
-                        <ToggleGroupItem
-                            value={order}
-                            disabled={savingDraft || isInternal}
-                        >
-                            {order}
-                        </ToggleGroupItem>
-                    {/each}
-                </ToggleGroup>
-            {/if}
-        </div>
+                    <span class="truncate text-sm">
+                        {entry.service}
+                    </span>
+                    {@render updateOrderToggle(
+                        entry.service,
+                        entry.order,
+                    )}
+                </div>
+            {/each}
+        {/if}
         {#if updateOrderError}
             <Alert variant="error" class="mt-3">
                 <AlertDescription>
