@@ -754,6 +754,52 @@ describe("Git plumbing and transport isolation", () => {
         }
     });
 
+    it("commits config files with the Compose file in one commit", async () => {
+        const result = await pushGitFile(repo, {
+            path: "compose.yaml",
+            content: "services:\n  web:\n    image: caddy\n",
+            files: [{ path: "conf/app.conf", content: "listen 80\n" }],
+            expectedRevision: initial,
+            message: "Deploy",
+            author,
+        });
+
+        expect(fixtureGit(["show", "-s", "--format=%P", result.revision])).toBe(initial);
+        expect(fixtureGit(["show", `${result.revision}:compose.yaml`])).toContain("image: caddy");
+        expect(fixtureGit(["show", `${result.revision}:conf/app.conf`])).toBe("listen 80");
+        // The source's blob stays the Compose file's.
+        expect(result.blob).toBe(fixtureGit(["rev-parse", `${result.revision}:compose.yaml`]));
+
+        await expect(
+            pushGitFile(repo, {
+                path: "compose.yaml",
+                content: "x\n",
+                files: [{ path: "compose.yaml", content: "y\n" }],
+                expectedRevision: result.revision,
+                message: "Twice",
+                author,
+            }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("rejects a newer head when a config file is outside the watched directory", async () => {
+        const expectedTree = fixtureGit(["rev-parse", `${initial}:bin`]);
+        addFixture("compose.yaml", "unrelated\n");
+        commitFixture(initial);
+
+        await expect(
+            pushGitFile(repo, {
+                path: "bin/run.sh",
+                content: "ours\n",
+                files: [{ path: "conf/app.conf", content: "ours\n" }],
+                expectedRevision: initial,
+                expectedTree,
+                message: "Ours",
+                author,
+            }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+    });
+
     it("rejects stale revisions before any blob/index/commit writes or push", async () => {
         await expect(
             pushGitFile(repo, {

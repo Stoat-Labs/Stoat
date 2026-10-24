@@ -240,6 +240,7 @@
             <ResourceMetricsView
                 projectId={resource.projectId}
                 resourceId={resource.id}
+                embedded
             />
         {:else if active === "logs"}
             <CanvasResourceLogs

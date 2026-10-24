@@ -7,6 +7,7 @@
         "docker",
         "bucket",
         "volume",
+        "config",
     ] as const;
 
     export type AddPage = (typeof addPages)[number];
@@ -38,6 +39,7 @@
     import Container from "@lucide/svelte/icons/container";
     import Database from "@lucide/svelte/icons/database";
     import GitBranch from "@lucide/svelte/icons/git-branch";
+    import FileCog from "@lucide/svelte/icons/file-cog";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Info from "@lucide/svelte/icons/info";
     import KeyRound from "@lucide/svelte/icons/key-round";
@@ -69,7 +71,11 @@
         imageServiceName,
         isImageReference,
     } from "./docker-image";
-    import { volumeNodeId, type VolumeTarget } from "../graph";
+    import {
+        configNodeId,
+        volumeNodeId,
+        type VolumeTarget,
+    } from "../graph";
 
     let {
         projectId,
@@ -260,6 +266,15 @@
                       icon: HardDrive,
                       provider: undefined,
                       target: { page: "volume" },
+                  } satisfies Entry,
+                  {
+                      id: "config",
+                      label: "Config",
+                      description: undefined,
+                      logo: null,
+                      icon: FileCog,
+                      provider: undefined,
+                      target: { page: "config" },
                   } satisfies Entry,
               ]
             : []),
@@ -506,7 +521,9 @@
     // Railway never opens a second dialog: the last questions are asked in the palette's own input.
     const step = $derived(
         volumeTarget
-            ? "volume"
+            ? current === "config"
+                ? "config"
+                : "volume"
             : configuredConnection
               ? "bucket"
               : configuredTemplate
@@ -523,7 +540,7 @@
                 ? dockerEntries
                 : current === "bucket"
                   ? bucketEntries
-                  : current === "volume"
+                  : current === "volume" || current === "config"
                     ? volumeTarget
                         ? []
                         : volumeEntries
@@ -540,6 +557,7 @@
         docker: "Docker Image",
         bucket: "Bucket",
         volume: "Volume",
+        config: "Config",
     };
 
     const placeholders: Record<AddPage, string> = {
@@ -550,10 +568,14 @@
         docker: "traefik/whoami",
         bucket: "Choose an S3 connection...",
         volume: "Service to attach volume to",
+        config: "Service to attach config to",
     };
 
     const placeholder = $derived.by(() => {
         if (step === "volume") return "Mount path of the volume";
+
+        if (step === "config")
+            return "Mount path of the file, like /etc/app.conf";
 
         if (step === "bucket") return "Bucket name";
 
@@ -567,7 +589,8 @@
         current && current !== "root"
             ? [
                   titles[current],
-                  ...(step === "volume" && volumeTarget
+                  ...((step === "volume" || step === "config") &&
+                  volumeTarget
                       ? [volumeTarget.label]
                       : step === "bucket" && configuredConnection
                         ? [configuredConnection.name]
@@ -608,15 +631,18 @@
         void add.set(next);
     }
 
-    // Enter in a step: the volume and bucket steps create, the template one moves to the next variable.
+    // Enter in a step: the volume, config and bucket steps create, the template one moves to the next variable.
     function submitStep() {
         const value = query.trim();
 
         createError = "";
 
-        if (step === "volume" && volumeTarget) {
+        if (
+            (step === "volume" || step === "config") &&
+            volumeTarget
+        ) {
             if (value.startsWith("/"))
-                void createVolume(volumeTarget, value);
+                void createMount(volumeTarget, value);
             else createError = "The mount path must start with /.";
         } else if (step === "bucket" && configuredConnection) {
             if (/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u.test(value))
@@ -768,28 +794,40 @@
         }
     }
 
-    async function createVolume(target: VolumeTarget, path: string) {
+    async function createMount(target: VolumeTarget, path: string) {
         if (creating) return;
 
         creating = true;
         createError = "";
 
         try {
-            const created = await client.resources.addVolume({
+            const input = {
                 projectId,
                 resourceId: target.resourceId,
                 service: target.service,
                 target: path,
-            });
+            };
 
-            await showCreated(
-                volumeNodeId(created.id, created.volume),
-            );
+            if (step === "config") {
+                const created =
+                    await client.resources.addConfig(input);
+
+                await showCreated(
+                    configNodeId(created.id, created.config),
+                );
+            } else {
+                const created =
+                    await client.resources.addVolume(input);
+
+                await showCreated(
+                    volumeNodeId(created.id, created.volume),
+                );
+            }
         } catch (cause) {
             createError =
                 cause instanceof Error
                     ? cause.message
-                    : "Unable to create the volume.";
+                    : `Unable to create the ${step}.`;
         } finally {
             creating = false;
         }

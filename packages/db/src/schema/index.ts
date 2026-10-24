@@ -198,6 +198,9 @@ export const resources = t.pgTable(
         // Last successfully deployed source; edits are saved separately.
         spec: t.text("spec"),
         draftSpec: t.text("draft_spec"),
+        // Edited Git config files (`configs.*.file`, as written in Compose) not committed yet;
+        // the next deploy commits them with the draft.
+        draftConfigFiles: t.jsonb("draft_config_files").$type<Record<string, string>>(),
         // Staged for deletion: removed when the staged changes are applied, cleared by discard.
         pendingDelete: t.boolean("pending_delete").notNull().default(false),
         settings: t.jsonb("settings"),
@@ -292,7 +295,10 @@ export const deployments = t.pgTable(
         // Latest deployment per resource (status badges, history, removal checks).
         t.index("deployments_resource_idx").on(table.resourceId, table.createdAt.desc()),
         // The outbox sweep reads queued rows every few seconds.
-        t.index("deployments_queued_idx").on(table.name).where(sql`${table.status} = 'queued'`),
+        t
+            .index("deployments_queued_idx")
+            .on(table.name)
+            .where(sql`${table.status} = 'queued'`),
     ],
 );
 
@@ -445,5 +451,12 @@ export const s3Buckets = t.pgTable(
         ),
     ],
 );
+
+export const configs = t.pgTable("configs", {
+    resourceId: t
+        .uuid("resource_id")
+        .primaryKey()
+        .references(() => resources.id, { onDelete: "cascade" }),
+});
 
 export * from "./auth";

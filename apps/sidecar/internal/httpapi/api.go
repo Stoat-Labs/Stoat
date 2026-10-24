@@ -12,7 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/psviderski/uncloud/pkg/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -163,7 +163,7 @@ func newAPI(app *fiber.App) huma.API {
 		config.Components.Schemas.RegisterTypeAlias(passthrough, opaque)
 	}
 
-	return humafiber.NewV2(app, config)
+	return humafiber.New(app, config)
 }
 
 // register adds an operation with the defaults every route shares.

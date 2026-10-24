@@ -17,6 +17,8 @@ export type CanvasService = CanvasGraph[number]["services"][number];
 
 export type CanvasVolume = CanvasGraph[number]["volumes"][number];
 
+export type CanvasConfig = CanvasGraph[number]["configs"][number];
+
 export type CardData = {
     resource: CanvasResource;
     /** Absent for buckets and resources without a readable Compose spec. */
@@ -28,6 +30,8 @@ export type CardData = {
     grouped: boolean;
     /** Set on a volume no service mounts: it stands alone on the canvas instead of in a tray. */
     volume: CanvasVolume | undefined;
+    /** Set on a config no service mounts, like `volume`. */
+    config?: CanvasConfig;
 };
 
 export type GroupData = {
@@ -90,19 +94,44 @@ export function volumeNodeId(resourceId: string, volume: string) {
     return `${resourceId}/${volume}`;
 }
 
+/** `<resourceId>#<config>`, apart from volumes, which may share a config's name. */
+export function configNodeId(resourceId: string, config: string) {
+    return `${resourceId}#${config}`;
+}
+
 /** Takes a node id apart, whichever kind of node it names. */
 export function parseNodeId(nodeId: string) {
+    const split = nodeId.indexOf("#");
+
+    if (split >= 0)
+        return {
+            resourceId: nodeId.slice(0, split),
+            service: undefined,
+            volume: undefined,
+            config: nodeId.slice(split + 1),
+        };
+
     const [resourceId = "", volume] = nodeId.split("/");
 
-    if (volume !== undefined) return { resourceId, service: undefined, volume };
+    if (volume !== undefined) return { resourceId, service: undefined, volume, config: undefined };
 
     const [id = "", ...service] = nodeId.split(":");
 
-    return { resourceId: id, service: service.length ? service.join(":") : undefined, volume };
+    return {
+        resourceId: id,
+        service: service.length ? service.join(":") : undefined,
+        volume,
+        config: undefined,
+    };
+}
+
+/** Volume trays, then config trays, each tucked under the one above. */
+export function trayCount(service: CanvasService | undefined) {
+    return (service?.volumes.length ?? 0) + (service?.configs.length ?? 0);
 }
 
 function cardHeight(service: CanvasService | undefined) {
-    return CARD_HEIGHT + (service?.volumes.length ?? 0) * (VOLUME_TRAY - VOLUME_OVERLAP);
+    return CARD_HEIGHT + trayCount(service) * (VOLUME_TRAY - VOLUME_OVERLAP);
 }
 
 /**
@@ -370,9 +399,10 @@ export function refitFrames(nodes: CanvasNode[]) {
 }
 
 type Block = {
-    /** The resource id, or the volume's node id for a volume that stands alone. */
+    /** The resource id, or the node id of a volume or config that stands alone. */
     id: string;
     volume?: CanvasVolume;
+    config?: CanvasConfig;
     resource: CanvasResource;
     entry: CanvasGraph[number] | undefined;
     width: number;
@@ -520,6 +550,21 @@ export function buildCanvas(
                       },
                   ],
         ),
+        ...(byId.get(resource.id)?.configs ?? []).flatMap((config): Block[] =>
+            config.services.length
+                ? []
+                : [
+                      {
+                          id: configNodeId(resource.id, config.name),
+                          config,
+                          resource,
+                          entry: byId.get(resource.id),
+                          width: CARD_WIDTH,
+                          height: VOLUME_CARD_HEIGHT,
+                          cards: [],
+                      },
+                  ],
+        ),
     ]);
 
     const auto = autoLayout(blocks, columns(graph));
@@ -531,7 +576,7 @@ export function buildCanvas(
         const draftOnly = entry?.draftOnly ?? false;
         const origin = auto.get(item.id) ?? { x: 0, y: 0 };
 
-        if (item.volume) {
+        if (item.volume || item.config) {
             cards.push({
                 id: item.id,
                 type: "card",
@@ -547,6 +592,7 @@ export function buildCanvas(
                     parseError: false,
                     grouped: false,
                     volume: item.volume,
+                    config: item.config,
                 },
             });
             continue;

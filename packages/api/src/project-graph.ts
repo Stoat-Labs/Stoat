@@ -4,6 +4,7 @@ import * as v from "valibot";
 import YAML from "yaml";
 
 import { internalHostname, resourceComposePrefix, resourceEnv } from "./compose";
+import { composeConfigs, type GraphConfig } from "./compose-configs";
 import { NAMED_VOLUME, volumeMounts } from "./compose-volumes";
 import type { Template } from "./templates";
 
@@ -72,6 +73,7 @@ export type GraphService = {
     internalHostname: string | null;
     dependsOn: string[];
     volumes: string[];
+    configs: string[];
 };
 
 export type GraphResourceInput = {
@@ -80,6 +82,8 @@ export type GraphResourceInput = {
     projectId: string;
     spec: string | null;
     draftSpec: string | null;
+    /** Edited Git config files by `configs.*.file`, not committed yet. */
+    draftConfigFiles?: Record<string, string> | null;
     /** Staged for deletion: the next apply removes the whole resource. */
     pendingDelete?: boolean;
     settings: unknown;
@@ -194,6 +198,15 @@ function safeEnv(row: GraphResourceInput) {
     }
 }
 
+// Configs it can't read are left off the canvas rather than failing the whole resource.
+function safeConfigs(compose: string) {
+    try {
+        return composeConfigs(compose);
+    } catch {
+        return [];
+    }
+}
+
 function deployedServiceNames(spec: string | null) {
     if (!spec?.trim()) return undefined;
 
@@ -204,7 +217,7 @@ function deployedServiceNames(spec: string | null) {
     }
 }
 
-/** Hostnames each service publishes; `.env` fills in `${VAR}` hostnames. */
+/** Hostnames each service publishes via `x-ports` or `x-caddy`; `.env` fills in `${VAR}` hostnames. */
 function serviceDomains(compose: string, row: GraphResourceInput) {
     const domains = new Map<string, string[]>();
     let env = "";
@@ -215,11 +228,19 @@ function serviceDomains(compose: string, row: GraphResourceInput) {
         // Without the `.env`, variable hostnames simply stay unresolved.
     }
 
-    for (const entry of parseIngressCompose(compose, env).entries) {
-        if (entry.kind !== "http" || !entry.hostname) continue;
+    const { entries, caddyRoutes } = parseIngressCompose(compose, env);
+    const add = (service: string, host: string) => {
+        const hosts = domains.get(service) ?? [];
 
-        domains.set(entry.service, [...(domains.get(entry.service) ?? []), entry.hostname]);
+        if (!hosts.includes(host)) domains.set(service, [...hosts, host]);
+    };
+
+    for (const entry of entries) {
+        if (entry.kind === "http" && entry.hostname) add(entry.service, entry.hostname);
     }
+
+    // Site addresses of `x-caddy` blocks, already resolved through the `.env`.
+    for (const route of caddyRoutes) add(route.serviceName, route.host);
 
     return domains;
 }
@@ -240,14 +261,19 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
         const deployed = deployedServiceNames(row.spec);
         let services: GraphService[] = [];
         let volumes: GraphVolume[] = [];
+        let configs: GraphConfig[] = [];
         let parseError = false;
 
         if (compose) {
             try {
                 const domains = serviceDomains(compose, row);
 
+                configs = safeConfigs(compose);
                 services = composeServices(compose).map((service) => ({
                     ...service,
+                    configs: configs.flatMap((config) =>
+                        config.services.includes(service.name) ? [config.name] : [],
+                    ),
                     isNew: deployed !== undefined && !deployed.has(service.name),
                     template: images.get(imageRepository(service.image) ?? ""),
                     domains: domains.get(service.name) ?? [],
@@ -287,8 +313,19 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
 
         const kept = new Set(services.map((service) => service.name));
 
+        // A deploy never removes a service another resource runs (a moved one), like `staleServices`.
+        const ownedElsewhere = new Set(
+            rows.flatMap((other) =>
+                other.id !== row.id && other.deployed?.prefix === row.deployed?.prefix
+                    ? [...(deployedServiceNames(other.spec) ?? [])]
+                    : [],
+            ),
+        );
+
         const removed = [...(deployed ?? [])].filter(
-            (name) => row.pendingDelete || prefixChanged || !kept.has(name),
+            (name) =>
+                row.pendingDelete ||
+                (!ownedElsewhere.has(name) && (prefixChanged || !kept.has(name))),
         );
 
         // Like Railway, deploying commits staged changes: a queued, running or failed deploy
@@ -297,6 +334,8 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
         // running (a moved service next to its new copy), so those stay staged until one succeeds.
         const changed =
             row.pendingDelete ||
+            // Edited Git config files are committed and shipped by the next deploy.
+            Object.keys(row.draftConfigFiles ?? {}).length > 0 ||
             (row.attempted
                 ? row.draftSpec !== row.attempted.spec ||
                   safeEnv(row) !== row.attempted.env ||
@@ -321,6 +360,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
             parseError,
             services,
             volumes,
+            configs,
             references,
         };
     });

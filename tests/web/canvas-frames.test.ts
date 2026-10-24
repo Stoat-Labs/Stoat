@@ -164,11 +164,12 @@ describe("settle", () => {
 
 describe("buildCanvas", () => {
     it("sizes each stack card to itself, so a card beside a volume tray keeps its edges on its border", () => {
-        const service = (name: string, volumes: string[]) => ({
+        const service = (name: string, volumes: string[], configs: string[] = []) => ({
             name,
             image: null,
             dependsOn: [],
             volumes,
+            configs,
             isNew: false,
             domains: [],
             internalHostname: null,
@@ -189,7 +190,7 @@ describe("buildCanvas", () => {
                     service("worker", ["storage"]),
                     service("db", ["data"]),
                     service("metrics", []),
-                    service("redis", ["cache"]),
+                    service("redis", ["cache"], ["redis.conf"]),
                 ],
             },
         ] as never;
@@ -199,5 +200,7 @@ describe("buildCanvas", () => {
 
         expect(height("sure:db")).toBe(192);
         expect(height("sure:metrics")).toBe(144);
+        // Config trays stack under the volume trays.
+        expect(height("sure:redis")).toBe(240);
     });
 });

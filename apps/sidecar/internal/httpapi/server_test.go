@@ -20,7 +20,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/goccy/go-yaml"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/psviderski/uncloud/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -501,7 +501,7 @@ func TestBearerTokenAcceptsCaseInsensitiveScheme(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/machines", nil)
 	request.Header.Set("Authorization", "bearer "+testAuthToken)
-	response, err := server.App().Test(request, -1)
+	response, err := server.App().Test(request, fiber.TestConfig{Timeout: 0})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 }
@@ -1315,7 +1315,7 @@ func doRequestWithToken(
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	response, err := server.App().Test(request, -1)
+	response, err := server.App().Test(request, fiber.TestConfig{Timeout: 0})
 	require.NoError(t, err)
 	return response
 }

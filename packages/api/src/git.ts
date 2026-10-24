@@ -795,6 +795,8 @@ export async function pushGitFile(
     input: {
         path: string;
         content: string;
+        // More files for the same commit, such as the Compose file's configs.
+        files?: { path: string; content: string }[];
         expectedRevision: string;
         message: string;
         author: { name: string; email: string };
@@ -808,12 +810,25 @@ export async function pushGitFile(
     const path = validateGitPath(input.path);
     const watchPath = input.watchPath ?? posix.dirname(path);
 
-    if (!v.is(v.string(), input.content) || !input.content.isWellFormed())
-        invalid("Git file must be UTF-8 text");
+    const files = [{ path, content: input.content }, ...(input.files ?? [])].map((file) => {
+        if (!v.is(v.string(), file.content) || !file.content.isWellFormed())
+            invalid("Git file must be UTF-8 text");
 
-    if (Buffer.byteLength(input.content) > maxTextBytes) invalid("Git files must be at most 1 MiB");
-    const content = Buffer.from(input.content);
-    text(content);
+        if (Buffer.byteLength(file.content) > maxTextBytes)
+            invalid("Git files must be at most 1 MiB");
+        const content = Buffer.from(file.content);
+        text(content);
+
+        return { path: validateGitPath(file.path), text: file.content, content };
+    });
+
+    if (new Set(files.map((file) => file.path)).size !== files.length)
+        invalid("Git files must have distinct paths");
+
+    // The watched tree only vouches for the config files inside it; the main file keeps its old rule.
+    const outsideWatch = files
+        .slice(1)
+        .some((file) => watchPath !== "." && !file.path.startsWith(`${watchPath}/`));
 
     if (!oidPattern.test(input.expectedRevision)) invalid("Invalid expected Git revision");
 
@@ -841,6 +856,7 @@ export async function pushGitFile(
         if (
             current !== input.expectedRevision &&
             (!input.expectedTree ||
+                outsideWatch ||
                 // A deleted watched directory is a change too.
                 (await directoryTree(run, current, watchPath).catch(() => undefined)) !==
                     input.expectedTree)
@@ -849,40 +865,60 @@ export async function pushGitFile(
                 message: "Git branch changed; reload before saving",
             });
         const tree = await entries(run, current);
-        const existing = tree.find((entry) => entry.path === path);
 
-        if (existing && existing.mode !== "100644" && existing.mode !== "100755")
-            invalid("Only regular Git files are supported");
+        const changes = files.map((file) => ({
+            ...file,
+            existing: tree.find((entry) => entry.path === file.path),
+        }));
+
+        for (const { existing } of changes)
+            if (existing && existing.mode !== "100644" && existing.mode !== "100755")
+                invalid("Only regular Git files are supported");
+
+        const [main] = changes;
 
         // Identical content would only add an empty commit.
-        if (existing?.oid === gitBlobId(input.content, current))
+        if (changes.every((file) => file.existing?.oid === gitBlobId(file.text, current)))
             return {
                 revision: current,
                 message: await commitMessage(run, current),
-                blob: existing.oid,
+                blob: main?.existing?.oid ?? "",
                 tree: await directoryTree(run, current, watchPath),
             };
 
-        if (tree.some((entry) => path.startsWith(`${entry.path}/`) && entry.mode !== "040000"))
-            invalid("Git file parent is not a directory");
+        for (const file of changes)
+            if (
+                tree.some(
+                    (entry) => file.path.startsWith(`${entry.path}/`) && entry.mode !== "040000",
+                )
+            )
+                invalid("Git file parent is not a directory");
 
         if (
-            !existing &&
-            tree.filter((entry) => entry.mode === "100644" || entry.mode === "100755").length >=
-                maxFiles
+            tree.filter((entry) => entry.mode === "100644" || entry.mode === "100755").length +
+                changes.filter((file) => !file.existing).length >
+            maxFiles
         )
             invalid("Git file list exceeds operation limits");
         await run(["read-tree", current]);
 
-        const blob = (await run(["hash-object", "-w", "--stdin", "--no-filters"], content))
-            .toString("utf8")
-            .trim();
+        let blob = "";
 
-        if (!oidPattern.test(blob)) throw new Error();
-        await run(
-            ["update-index", "-z", "--index-info"],
-            `${existing?.mode ?? "100644"} ${blob}\t${path}\0`,
-        );
+        for (const file of changes) {
+            const id = (await run(["hash-object", "-w", "--stdin", "--no-filters"], file.content))
+                .toString("utf8")
+                .trim();
+
+            if (!oidPattern.test(id)) throw new Error();
+            await run(
+                ["update-index", "-z", "--index-info"],
+                `${file.existing?.mode ?? "100644"} ${id}\t${file.path}\0`,
+            );
+
+            // The Compose file's blob, recorded as the source's `blob`.
+            blob ||= id;
+        }
+
         const treeId = (await run(["write-tree"])).toString("utf8").trim();
 
         if (!oidPattern.test(treeId)) throw new Error();

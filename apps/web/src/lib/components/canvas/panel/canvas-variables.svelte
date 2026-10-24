@@ -50,7 +50,8 @@
         parseEnvLines,
         removeEnvVariable,
         setEnvVariable,
-    } from "./env-lines";
+    } from "@stoat/workflows/env-lines";
+    import { composeEnvironment } from "./compose-environment";
     import type { CanvasResource } from "../graph";
 
     let { resource }: { resource: CanvasResource } = $props();
@@ -114,6 +115,26 @@
         variables.filter((variable) =>
             variable.key.toLowerCase().includes(needle),
         ),
+    );
+
+    // Read-only: they live in the Compose file, so they are edited there.
+    const composeVariables = $derived(
+        composeEnvironment(
+            resourceQuery.data?.draftSpec ?? "",
+        ).filter((variable) =>
+            variable.key.toLowerCase().includes(needle),
+        ),
+    );
+
+    const composeServices = $derived(
+        new Set(composeVariables.map((variable) => variable.service)),
+    );
+
+    const composeOpen = useQueryState(
+        "composeVariables",
+        parseAsBoolean
+            .withDefault(true)
+            .withOptions({ shallow: true, scroll: false }),
     );
 
     const systemQuery = createQuery(() =>
@@ -565,6 +586,57 @@
                 </li>
             {/each}
         </ul>
+    {/if}
+
+    {#if composeVariables.length}
+        <div class="border-t"></div>
+        <section>
+            <button
+                type="button"
+                class="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground"
+                aria-expanded={composeOpen.current}
+                onclick={() =>
+                    void composeOpen.set(!composeOpen.current)}
+            >
+                <ChevronRight
+                    class={[
+                        "size-4 transition-transform",
+                        composeOpen.current && "rotate-90",
+                    ]}
+                    aria-hidden="true"
+                />
+                {composeVariables.length}
+                {composeVariables.length === 1
+                    ? "variable"
+                    : "variables"}
+                set in Compose
+            </button>
+
+            {#if composeOpen.current}
+                <ul class="mt-3">
+                    {#each composeVariables as variable (`${variable.service}/${variable.key}`)}
+                        {@const id = `compose:${variable.service}/${variable.key}`}
+                        <VariableRow
+                            name={variable.key}
+                            description={composeServices.size > 1
+                                ? variable.service
+                                : undefined}
+                        >
+                            <VariableValue
+                                name={variable.key}
+                                value={variable.value}
+                                visible={revealed.has(id)}
+                                ontoggle={() => toggle(id)}
+                                oncopy={() =>
+                                    void navigator.clipboard.writeText(
+                                        variable.value,
+                                    )}
+                            />
+                        </VariableRow>
+                    {/each}
+                </ul>
+            {/if}
+        </section>
     {/if}
 
     {#if systemVariables.length}

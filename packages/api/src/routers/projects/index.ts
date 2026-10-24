@@ -5,8 +5,10 @@ import {
     projectFavorites,
     projects,
     resources,
+    s3Buckets,
     type CanvasLayout,
     type DeploymentStatus,
+    type S3BucketStatus,
 } from "@stoat/db/schema/index";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -26,6 +28,14 @@ function firstImage(compose: string | null) {
         return null;
     }
 }
+
+/** A bucket's reconcile state, as the deployment state the project card counts. */
+const bucketDeploymentStatus: Record<S3BucketStatus, DeploymentStatus> = {
+    provisioning: "running",
+    deleting: "running",
+    ready: "ready",
+    failed: "failed",
+};
 
 export const projectsRouter = {
     listProjects: organizationProcedure.handler(({ context: { db, organizationId } }) =>
@@ -207,9 +217,12 @@ export const projectsRouter = {
                     updatedAt: resources.updatedAt,
                     status: latest.status,
                     deployedAt: latest.createdAt,
+                    bucketStatus: s3Buckets.status,
                 })
                 .from(resources)
                 .leftJoin(latest, eq(latest.resourceId, resources.id))
+                // Buckets are reconciled, not deployed, so their state lives here.
+                .leftJoin(s3Buckets, eq(s3Buckets.resourceId, resources.id))
                 .where(inArray(resources.projectId, projectIds))
                 .orderBy(asc(resources.createdAt));
 
@@ -254,9 +267,11 @@ export const projectsRouter = {
                             image,
                             // Logos are large, so the client looks this app id up in the template list.
                             template: templateFor(image),
-                            // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
-                            // column; the subquery alias only widens its type to string.
-                            status: (item.status ?? null) as DeploymentStatus | null,
+                            status: item.bucketStatus
+                                ? bucketDeploymentStatus[item.bucketStatus]
+                                : // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
+                                  // column; the subquery alias only widens its type to string.
+                                  ((item.status ?? null) as DeploymentStatus | null),
                         };
                     }),
                 };
