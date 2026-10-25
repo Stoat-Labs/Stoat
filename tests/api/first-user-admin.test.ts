@@ -5,6 +5,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { createDb } from "@stoat/db";
 import { setSignupsEnabled } from "@stoat/db/settings";
 import { createAuth } from "../../packages/auth/src";
+import { dropTestDatabase } from "../database";
 
 describe("first account (PostgreSQL)", () => {
     const databaseName = `stoat_first_user_${randomUUID().replaceAll("-", "")}`;
@@ -38,7 +39,7 @@ describe("first account (PostgreSQL)", () => {
 
     afterAll(async () => {
         await db?.$client.end();
-        await admin?.$client.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+        if (admin) await dropTestDatabase(admin, databaseName);
         await admin?.$client.end();
     });
 

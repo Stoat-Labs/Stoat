@@ -38,6 +38,7 @@ import {
     pollInitializationOutbox,
     queueResourceDeployment,
 } from "../../packages/workflows/src/runtime";
+import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
 describe("resource deployment worker", () => {
@@ -224,7 +225,7 @@ describe("resource deployment worker", () => {
         await db?.$client.end();
 
         if (admin) {
-            await admin.$client.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+            await dropTestDatabase(admin, databaseName);
             await admin.$client.end();
         }
 
