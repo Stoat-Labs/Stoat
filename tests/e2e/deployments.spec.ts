@@ -185,7 +185,8 @@ test.describe("deleting", () => {
 
         await deleteResource(page, target.path);
 
-        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}$`, "u"));
+        // Canvas mode is the default, so a delete returns to the canvas.
+        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}/canvas$`, "u"));
         expect(await runsServiceOf(target.slug)).toBe(false);
         expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toEqual([]);
         expect(await sql("SELECT id FROM deployments WHERE resource_id = $1", [target.id])).toEqual(
@@ -197,7 +198,8 @@ test.describe("deleting", () => {
         const target = await resource(page);
         await deleteResource(page, target.path);
 
-        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}$`, "u"));
+        // Canvas mode is the default, so a delete returns to the canvas.
+        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}/canvas$`, "u"));
         expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toEqual([]);
     });
 

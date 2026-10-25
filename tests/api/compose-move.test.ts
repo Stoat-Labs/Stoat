@@ -6,6 +6,7 @@ import YAML from "yaml";
 import {
     ComposeMoveError,
     moveComposeService,
+    serviceConfigFiles,
     unpinVolumeNames,
 } from "../../packages/api/src/compose-move";
 
@@ -210,13 +211,72 @@ volumes:
             volumes: { cfg_hazel: { name: "party-cfg_hazel" } },
         });
         expect(result.warnings).toContain(
-            'Config "party_config" reads a file; make sure the target can reach it.',
+            'Config "party_config" reads ./party.conf; make sure the target can reach it.',
         );
         // Luna still merges the anchor and still needs the config.
         expect(result.source).toContain("<<: *party");
         expect(YAML.parse(result.source, { merge: true }).configs).toEqual({
             party_config: { file: "./party.conf" },
         });
+    });
+
+    it("inlines a Git config file into the target and leaves the source's file alone", () => {
+        const result = moveComposeService({
+            service: "hazel",
+            source: anchored,
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: "party",
+            sourceEnv: "",
+            targetEnv: "",
+            configFiles: { "./party.conf": "[global]\n  e2dsa\n  name: $host\n" },
+        });
+
+        // `$$` survives deploy-time interpolation as a literal `$`.
+        expect(YAML.parse(result.target).configs).toEqual({
+            party_config: { content: "[global]\n  e2dsa\n  name: $$host\n" },
+        });
+        expect(result.warnings.join("\n")).not.toContain("party_config");
+        expect(YAML.parse(result.source, { merge: true }).configs).toEqual({
+            party_config: { file: "./party.conf" },
+        });
+    });
+
+    it("lists only the Git config files the moved service uses", () => {
+        const compose = `x-party: &party
+  configs: [party_config, etc_config]
+services:
+  hazel:
+    <<: *party
+  luna:
+    configs: [luna_config]
+  plain:
+    image: nginx
+configs:
+  party_config:
+    file: ./party.conf
+  etc_config:
+    file: /etc/party.conf
+  luna_config:
+    file: ./missing.conf
+`;
+
+        expect(serviceConfigFiles(compose, "hazel")).toEqual(["./party.conf"]);
+        expect(serviceConfigFiles(compose, "plain")).toEqual([]);
+        expect(serviceConfigFiles(compose, "nobody")).toEqual([]);
+
+        const inherited = `services:
+  app:
+    configs: [app]
+configs:
+  base: &base
+    file: ./app.conf
+  app:
+    <<: *base
+`;
+
+        expect(serviceConfigFiles(inherited, "app")).toEqual(["./app.conf"]);
     });
 
     // Both files must stay readable, whatever anchors they use.

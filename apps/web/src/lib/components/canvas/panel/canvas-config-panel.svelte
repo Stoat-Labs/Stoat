@@ -343,9 +343,19 @@
                 <Alert variant="warning">
                     <AlertDescription>
                         {#if config.file}
-                            Reads <code>{config.file}</code>
-                            . Stoat deploys relative config files only from
-                            a Git source.
+                            <!-- One paragraph, or the description's flex column splits the code onto its own line. -->
+                            <p>
+                                This config reads <code>
+                                    {config.file}
+                                </code>
+                                , but this resource has no Git source
+                                to read it from. Connect a Git source,
+                                or replace
+                                <code>file</code>
+                                with
+                                <code>content</code>
+                                 in the Compose file.
+                            </p>
                         {:else}
                             Set from an environment variable; edit it
                             in the Compose file.

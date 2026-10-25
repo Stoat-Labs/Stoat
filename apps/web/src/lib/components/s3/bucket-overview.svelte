@@ -23,6 +23,10 @@
     import { Spinner } from "$lib/components/ui/spinner";
     import { orpc, queryClient } from "$lib/api/orpc";
     import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
+    import {
         bucketJobPollInterval,
         s3BucketStatusVariant,
     } from "$lib/s3";
@@ -38,6 +42,8 @@
         name,
     }: { projectId: string; resourceId: string; name: string } =
         $props();
+
+    const canvasModeQuery = createCanvasModeQuery();
 
     const input = $derived({ projectId, resourceId });
 
@@ -82,7 +88,14 @@
                         input: { projectId },
                     }),
                 })
-                .then(() => goto(`/projects/${projectId}`));
+                .then(() =>
+                    goto(
+                        projectHref(
+                            projectId,
+                            canvasModeQuery.data.canvasMode,
+                        ),
+                    ),
+                );
     });
 
     function refresh() {

@@ -5,6 +5,10 @@
     import { Button } from "$lib/components/ui/button";
     import { Card, CardPanel } from "$lib/components/ui/card";
     import { orpc, queryClient } from "$lib/api/orpc";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { createMutation } from "@tanstack/svelte-query";
 
     let {
@@ -13,6 +17,8 @@
         name,
     }: { projectId: string; resourceId: string; name: string } =
         $props();
+
+    const canvasModeQuery = createCanvasModeQuery();
 
     let deleteOpen = $state(false);
 
@@ -31,7 +37,12 @@
                         queryKey: orpc.projects.key(),
                     }),
                 ]);
-                await goto(`/projects/${projectId}`);
+                await goto(
+                    projectHref(
+                        projectId,
+                        canvasModeQuery.data.canvasMode,
+                    ),
+                );
             },
         }),
     );

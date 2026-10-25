@@ -1,6 +1,7 @@
 import { parseEnv } from "node:util";
 import {
     CADDY_UPSTREAMS_SERVICE,
+    composeConfigFiles,
     loadsResourceEnv,
     rewriteComposeHostname,
     serviceVariable,
@@ -542,6 +543,28 @@ function unusedLinks(services: YAMLMap[], envText: string) {
     );
 }
 
+/** The relative `configs.*.file` paths `service` uses, as written. Empty when it can't tell. */
+export function serviceConfigFiles(compose: string, name: string): string[] {
+    const doc = YAML.parseDocument(compose, { merge: true });
+    const services = doc.get("services", true);
+    const node = isMap(services) ? services.get(name, true) : undefined;
+    const configs = doc.get("configs", true);
+
+    if (doc.errors.length || !isMap(node) || !isMap(configs)) return [];
+
+    const used = new Set(
+        sectionKeys(resolved(doc, node), "configs").map((key) => {
+            const entry = configs.get(key, true);
+            const definition = isAlias(entry) ? entry.resolve(doc) : entry;
+
+            // Expanded like the move does, so `<<: *base` can supply the file.
+            return isMap(definition) ? String(resolved(doc, definition).get("file")) : "";
+        }),
+    );
+
+    return composeConfigFiles(compose).filter((file) => used.has(file));
+}
+
 /**
  * Moves one service from the source Compose file into the target, editing YAML nodes so
  * comments elsewhere survive. Named volumes keep their data by pinning the real Docker volume
@@ -557,6 +580,8 @@ export function moveComposeService(options: {
     sourcePrefix: string | undefined;
     sourceEnv: string;
     targetEnv: string;
+    /** Contents of the source's relative `configs.*.file` paths from Git, keyed as written. */
+    configFiles?: Record<string, string>;
 }): ComposeMove {
     const { service: name, sourceId, targetId, sourcePrefix } = options;
     const sourceDoc = YAML.parseDocument(options.source, { merge: true });
@@ -633,8 +658,20 @@ export function moveComposeService(options: {
 
             if (!stillUsed && isMap(sourceEntries)) unused.push([sourceEntries, key]);
 
-            if (section === "configs" && isMap(definition) && definition.has("file"))
-                warnings.push(`Config "${key}" reads a file; make sure the target can reach it.`);
+            if (section !== "configs" || !isMap(copied) || !copied.has("file")) continue;
+
+            const file = String(copied.get("file"));
+
+            // The target can't read the source's repository, so a Git file travels inline.
+            if (options.configFiles && Object.hasOwn(options.configFiles, file)) {
+                copied.delete("file");
+                // `$$` keeps it literal through deploy-time interpolation, like inlineComposeConfigs.
+                copied.set(
+                    "content",
+                    (options.configFiles[file] ?? "").replaceAll("$", () => "$$"),
+                );
+            } else
+                warnings.push(`Config "${key}" reads ${file}; make sure the target can reach it.`);
         }
     }
 

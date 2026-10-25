@@ -109,6 +109,7 @@ import {
     ComposeMoveError,
     moveComposeService,
     retargetServiceReferences,
+    serviceConfigFiles,
     type ComposeMove,
 } from "../../compose-move";
 
@@ -520,6 +521,33 @@ export const resourcesRouter = {
             if (input.fromResourceId === input.toResourceId)
                 throw new ORPCError("BAD_REQUEST", { message: "The service is already there." });
 
+            // Read before the row lock, like deploy: a Git source's config files move inline.
+            const [preview] = await deployTarget(db, organizationId, {
+                projectId: input.projectId,
+                resourceId: input.fromResourceId,
+            });
+
+            const { gitSource = null, gitConnectionId = null } = preview?.resource ?? {};
+            const draft = preview?.resource.draftSpec ?? preview?.resource.spec;
+            // Only the moved service's files, so another service's broken path can't block it.
+            const files = draft ? serviceConfigFiles(draft, input.service) : [];
+
+            const gitFiles =
+                gitSource && gitConnectionId && draft && files.length > 0
+                    ? await readComposeConfigFiles(
+                          await getBoundGitRepository(
+                              db,
+                              organizationId,
+                              gitConnectionId,
+                              gitSource.repositoryUrl,
+                              gitSource.branch,
+                          ),
+                          gitSource.path,
+                          draft,
+                          files,
+                      )
+                    : undefined;
+
             return db.transaction(async (tx) => {
                 const rows = await tx
                     .select({ resource: resources, clusterId: projects.clusterId })
@@ -574,6 +602,22 @@ export const resourcesRouter = {
                         message: "Services can only move between Compose resources.",
                     });
 
+                // Git was read before the lock; a source or reference change since then would inline stale files.
+                if (
+                    from.resource.gitConnectionId !== gitConnectionId ||
+                    !isDeepStrictEqual(from.resource.gitSource, gitSource) ||
+                    !isDeepStrictEqual(serviceConfigFiles(fromSpec, input.service), files)
+                )
+                    throw new ORPCError("CONFLICT", {
+                        message: "The resource changed while moving the service. Try again.",
+                    });
+
+                // Edits not committed yet win, as they do at deploy. Read under the lock so none are lost.
+                const configFiles = gitFiles && {
+                    ...gitFiles,
+                    ...from.resource.draftConfigFiles,
+                };
+
                 let moved: ComposeMove;
 
                 try {
@@ -586,6 +630,7 @@ export const resourcesRouter = {
                         sourcePrefix: resourceComposePrefix(from.resource),
                         sourceEnv: resourceEnv(from.resource),
                         targetEnv: existing ? resourceEnv(to) : "",
+                        configFiles,
                     });
                 } catch (error) {
                     if (error instanceof ComposeMoveError)
