@@ -520,6 +520,34 @@ export const resourcesRouter = {
             if (input.fromResourceId === input.toResourceId)
                 throw new ORPCError("BAD_REQUEST", { message: "The service is already there." });
 
+            // Read before the row lock, like deploy: a Git source's config files move inline.
+            const [preview] = await deployTarget(db, organizationId, {
+                projectId: input.projectId,
+                resourceId: input.fromResourceId,
+            });
+
+            const { gitSource, gitConnectionId } = preview?.resource ?? {};
+            const draft = preview?.resource.draftSpec ?? preview?.resource.spec;
+
+            const configFiles =
+                gitSource && gitConnectionId && draft && composeConfigFiles(draft).length > 0
+                    ? {
+                          ...(await readComposeConfigFiles(
+                              await getBoundGitRepository(
+                                  db,
+                                  organizationId,
+                                  gitConnectionId,
+                                  gitSource.repositoryUrl,
+                                  gitSource.branch,
+                              ),
+                              gitSource.path,
+                              draft,
+                          )),
+                          // Edits not committed yet win, as they do at deploy.
+                          ...preview?.resource.draftConfigFiles,
+                      }
+                    : undefined;
+
             return db.transaction(async (tx) => {
                 const rows = await tx
                     .select({ resource: resources, clusterId: projects.clusterId })
@@ -586,6 +614,7 @@ export const resourcesRouter = {
                         sourcePrefix: resourceComposePrefix(from.resource),
                         sourceEnv: resourceEnv(from.resource),
                         targetEnv: existing ? resourceEnv(to) : "",
+                        configFiles,
                     });
                 } catch (error) {
                     if (error instanceof ComposeMoveError)

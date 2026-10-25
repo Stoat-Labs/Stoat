@@ -826,6 +826,24 @@
               ),
     );
 
+    // A tray volume or config isn't a flow node, so the camera focuses the first card showing it.
+    const focusNodeId = $derived(
+        nodes.find(
+            (node) =>
+                node.id === selected.current ||
+                (node.type === "card" &&
+                    node.data.resource.id === selectedResourceId &&
+                    ((selectedNode?.volume !== undefined &&
+                        node.data.service?.volumes.includes(
+                            selectedNode.volume,
+                        )) ||
+                        (selectedNode?.config !== undefined &&
+                            node.data.service?.configs.includes(
+                                selectedNode.config,
+                            )))),
+        )?.id,
+    );
+
     const selectedIcon = $derived(
         nodes.find((node) => node.id === selectedResourceId)?.data
             .icon ?? null,
@@ -1559,9 +1577,7 @@
                 </Panel>
             {/if}
             <CanvasFocus
-                nodeId={selectedResource
-                    ? (selected.current ?? undefined)
-                    : undefined}
+                nodeId={selectedResource ? focusNodeId : undefined}
                 coveredWidth={narrow ? 0 : panelWidth}
             />
         </SvelteFlow>

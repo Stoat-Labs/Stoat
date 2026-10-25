@@ -557,6 +557,8 @@ export function moveComposeService(options: {
     sourcePrefix: string | undefined;
     sourceEnv: string;
     targetEnv: string;
+    /** Contents of the source's relative `configs.*.file` paths from Git, keyed as written. */
+    configFiles?: Record<string, string>;
 }): ComposeMove {
     const { service: name, sourceId, targetId, sourcePrefix } = options;
     const sourceDoc = YAML.parseDocument(options.source, { merge: true });
@@ -633,8 +635,20 @@ export function moveComposeService(options: {
 
             if (!stillUsed && isMap(sourceEntries)) unused.push([sourceEntries, key]);
 
-            if (section === "configs" && isMap(definition) && definition.has("file"))
-                warnings.push(`Config "${key}" reads a file; make sure the target can reach it.`);
+            if (section !== "configs" || !isMap(copied) || !copied.has("file")) continue;
+
+            const file = String(copied.get("file"));
+
+            // The target can't read the source's repository, so a Git file travels inline.
+            if (options.configFiles && Object.hasOwn(options.configFiles, file)) {
+                copied.delete("file");
+                // `$$` keeps it literal through deploy-time interpolation, like inlineComposeConfigs.
+                copied.set(
+                    "content",
+                    (options.configFiles[file] ?? "").replaceAll("$", () => "$$"),
+                );
+            } else
+                warnings.push(`Config "${key}" reads ${file}; make sure the target can reach it.`);
         }
     }
 
