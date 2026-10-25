@@ -267,6 +267,8 @@ test.describe("resources", () => {
         await expect(page).not.toHaveURL(/node=/u);
         await page.locator(`.svelte-flow__node[data-id="${second.id}"]`).click();
         await expect(panel(second.name)).toBeVisible();
+        // The panel shows the queued value before the throttled write lands, and Back drops queued writes.
+        await expect(page).toHaveURL(new RegExp(`node=${second.id}`, "u"));
 
         await page.goBack();
         await expect(panel(second.name)).toBeHidden();
