@@ -306,7 +306,7 @@
             : "overflow-visible border"}
     >
         <header
-            class="sticky top-0 z-40 flex minh-12 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
+            class="sticky top-0 z-40 flex min-h-12 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
         >
             <div class="flex min-w-0 max-w-full items-center gap-2">
                 <SidebarTrigger disabled={!ready} />
