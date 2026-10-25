@@ -477,7 +477,7 @@
 
 {#snippet toolbar()}
     <div
-        class="flex w-full flex-wrap items-center justify-end gap-2 -mt-4 sm:w-auto"
+        class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
     >
         <Popover>
             <PopoverTrigger
