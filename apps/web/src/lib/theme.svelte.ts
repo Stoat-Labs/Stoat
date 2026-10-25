@@ -35,7 +35,7 @@ export const accents = [
     { value: "lime", label: "Lime", color: "oklch(0.86 0.2 128)" },
     { value: "teal", label: "Teal", color: "oklch(0.7 0.12 180)" },
     { value: "sky", label: "Sky", color: "oklch(0.68 0.14 240)" },
-    { value: "violet", label: "Violet", color: "oklch(0.6 0.19 305)" },
+    { value: "violet", label: "Violet", color: "oklch(0.52 0.19 305)" },
     { value: "pink", label: "Pink", color: "oklch(0.7 0.18 350)" },
     { value: "orange", label: "Orange", color: "oklch(0.68 0.19 45)" },
     { value: "mono", label: "Monochrome", color: "oklch(0.97 0 0)" },

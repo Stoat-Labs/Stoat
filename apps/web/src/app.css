@@ -36,7 +36,7 @@ html.dark {
 }
 :root[data-accent="violet"] {
     --brand-h: 305;
-    --brand-l: 0.6;
+    --brand-l: 0.52;
     --brand-c: 0.19;
     --brand-foreground: oklch(0.99 0 0);
 }
@@ -44,7 +44,7 @@ html.dark {
     --brand-h: 240;
     --brand-l: 0.68;
     --brand-c: 0.14;
-    --brand-foreground: oklch(0.99 0 0);
+    --brand-foreground: oklch(0.2 0.04 240);
 }
 :root[data-accent="teal"] {
     --brand-h: 180;
@@ -56,13 +56,13 @@ html.dark {
     --brand-h: 45;
     --brand-l: 0.68;
     --brand-c: 0.19;
-    --brand-foreground: oklch(0.99 0 0);
+    --brand-foreground: oklch(0.2 0.04 45);
 }
 :root[data-accent="pink"] {
     --brand-h: 350;
     --brand-l: 0.7;
     --brand-c: 0.18;
-    --brand-foreground: oklch(0.99 0 0);
+    --brand-foreground: oklch(0.2 0.04 350);
 }
 /* The original black-and-white look: untinted neutrals, primary follows the text color. */
 :root[data-accent="mono"] {
