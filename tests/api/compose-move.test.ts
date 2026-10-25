@@ -265,6 +265,18 @@ configs:
         expect(serviceConfigFiles(compose, "hazel")).toEqual(["./party.conf"]);
         expect(serviceConfigFiles(compose, "plain")).toEqual([]);
         expect(serviceConfigFiles(compose, "nobody")).toEqual([]);
+
+        const inherited = `services:
+  app:
+    configs: [app]
+configs:
+  base: &base
+    file: ./app.conf
+  app:
+    <<: *base
+`;
+
+        expect(serviceConfigFiles(inherited, "app")).toEqual(["./app.conf"]);
     });
 
     // Both files must stay readable, whatever anchors they use.

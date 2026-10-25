@@ -557,7 +557,8 @@ export function serviceConfigFiles(compose: string, name: string): string[] {
             const entry = configs.get(key, true);
             const definition = isAlias(entry) ? entry.resolve(doc) : entry;
 
-            return isMap(definition) ? String(definition.get("file")) : "";
+            // Expanded like the move does, so `<<: *base` can supply the file.
+            return isMap(definition) ? String(resolved(doc, definition).get("file")) : "";
         }),
     );
 
