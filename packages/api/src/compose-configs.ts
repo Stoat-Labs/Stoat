@@ -184,15 +184,17 @@ export function updateConfigMount(
     return String(doc);
 }
 
-/** Replaces a config's inline content, as a literal block. */
+/** Replaces a config's inline content, as a literal block. A `file` config becomes inline. */
 export function setConfigContent(compose: string, config: string, content: string) {
     const doc = parse(compose);
     const node = declared(doc)?.get(config, true);
 
     if (!isMap(node)) throw new ComposeConfigError(`There is no config named "${config}".`);
 
-    if (node.has("file") || node.has("environment"))
-        throw new ComposeConfigError(`"${config}" is not an inline config.`);
+    if (node.has("environment"))
+        throw new ComposeConfigError(`"${config}" is set from an environment variable.`);
+
+    node.delete("file");
 
     const scalar = doc.createNode(content);
 

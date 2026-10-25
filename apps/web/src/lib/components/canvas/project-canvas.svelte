@@ -1,6 +1,7 @@
 <script lang="ts">
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertAction,
@@ -8,7 +9,6 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
-    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import LayoutList from "@lucide/svelte/icons/layout-list";
     import Plus from "@lucide/svelte/icons/plus";
     import {
@@ -57,6 +57,7 @@
         buildCanvas,
         buildEdges,
         COLUMN_GAP,
+        configNodeId,
         frameRect,
         freeSlot,
         loadCollapsed,
@@ -72,7 +73,6 @@
         slotBelow,
         volumeNodeId,
         volumeTargets,
-        configNodeId,
         type CanvasGraph,
         type CanvasLogos,
         type CanvasNode,
@@ -82,9 +82,9 @@
     } from "./graph";
     import CardNode from "./nodes/card-node.svelte";
     import StackNode from "./nodes/stack-node.svelte";
+    import CanvasConfigPanel from "./panel/canvas-config-panel.svelte";
     import CanvasPanel from "./panel/canvas-panel.svelte";
     import CanvasVolumePanel from "./panel/canvas-volume-panel.svelte";
-    import CanvasConfigPanel from "./panel/canvas-config-panel.svelte";
 
     let {
         projectId,
@@ -1555,7 +1555,7 @@
             <Background
                 variant={BackgroundVariant.Dots}
                 gap={24}
-                size={0.6}
+                size={0.4}
             />
             <CanvasApi bind:toFlow />
             <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->

@@ -1,22 +1,22 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import { orpc } from "$lib/api/orpc";
+    import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
+    import { Button } from "$lib/components/ui/button";
     import { Separator } from "$lib/components/ui/separator";
     import {
         SidebarInset,
         SidebarProvider,
         SidebarTrigger,
     } from "$lib/components/ui/sidebar";
-    import { orpc } from "$lib/api/orpc";
     import {
         observabilityHref,
         observabilityView,
     } from "$lib/observability/navigation";
-    import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
-    import { Button } from "$lib/components/ui/button";
     import Pencil from "@lucide/svelte/icons/pencil";
     import { createQuery } from "@tanstack/svelte-query";
-    import { onMount } from "svelte";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
+    import { onMount } from "svelte";
     import BreadcrumbTrail, {
         type Crumb,
     } from "./breadcrumb-trail.svelte";
@@ -306,7 +306,7 @@
             : "overflow-visible border"}
     >
         <header
-            class="sticky top-0 z-40 flex min-h-16 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
+            class="sticky top-0 z-40 flex minh-12 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
         >
             <div class="flex min-w-0 max-w-full items-center gap-2">
                 <SidebarTrigger disabled={!ready} />

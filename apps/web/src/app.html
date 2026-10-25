@@ -21,6 +21,10 @@
                 };
                 apply();
                 query.addEventListener("change", apply);
+
+                // Same for the accent color; no cookie keeps the default lime.
+                const accent = document.cookie.match(/(?:^|; )accent=(\w+)/)?.[1];
+                if (accent) document.documentElement.dataset.accent = accent;
             })();
         </script>
         %sveltekit.head%

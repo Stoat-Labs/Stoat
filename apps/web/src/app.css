@@ -14,6 +14,66 @@ html.dark {
     color-scheme: dark;
 }
 
+/* The accent color: it sets the primary, and its hue faintly tints every neutral below.
+   Picked per device in Preferences; keep the names in sync with $lib/theme.svelte.ts. */
+:root {
+    --brand-h: 128;
+    --brand-l: 0.86;
+    --brand-c: 0.2;
+    --brand-foreground: oklch(0.2 0.04 128);
+    --tint: 0.008;
+    --color-neutral-50: oklch(0.985 calc(var(--tint) / 2) var(--brand-h));
+    --color-neutral-100: oklch(0.97 calc(var(--tint) / 2) var(--brand-h));
+    --color-neutral-200: oklch(0.922 var(--tint) var(--brand-h));
+    --color-neutral-300: oklch(0.87 var(--tint) var(--brand-h));
+    --color-neutral-400: oklch(0.708 var(--tint) var(--brand-h));
+    --color-neutral-500: oklch(0.556 var(--tint) var(--brand-h));
+    --color-neutral-600: oklch(0.439 var(--tint) var(--brand-h));
+    --color-neutral-700: oklch(0.371 var(--tint) var(--brand-h));
+    --color-neutral-800: oklch(0.269 var(--tint) var(--brand-h));
+    --color-neutral-900: oklch(0.205 var(--tint) var(--brand-h));
+    --color-neutral-950: oklch(0.145 var(--tint) var(--brand-h));
+}
+:root[data-accent="violet"] {
+    --brand-h: 305;
+    --brand-l: 0.6;
+    --brand-c: 0.19;
+    --brand-foreground: oklch(0.99 0 0);
+}
+:root[data-accent="sky"] {
+    --brand-h: 240;
+    --brand-l: 0.68;
+    --brand-c: 0.14;
+    --brand-foreground: oklch(0.99 0 0);
+}
+:root[data-accent="teal"] {
+    --brand-h: 180;
+    --brand-l: 0.7;
+    --brand-c: 0.12;
+    --brand-foreground: oklch(0.2 0.03 180);
+}
+:root[data-accent="orange"] {
+    --brand-h: 45;
+    --brand-l: 0.68;
+    --brand-c: 0.19;
+    --brand-foreground: oklch(0.99 0 0);
+}
+:root[data-accent="pink"] {
+    --brand-h: 350;
+    --brand-l: 0.7;
+    --brand-c: 0.18;
+    --brand-foreground: oklch(0.99 0 0);
+}
+/* The original black-and-white look: untinted neutrals, primary follows the text color. */
+:root[data-accent="mono"] {
+    --tint: 0;
+    --primary: var(--foreground);
+    --primary-foreground: var(--background);
+    --ring: var(--color-neutral-400);
+    --sidebar-primary: var(--foreground);
+    --sidebar-primary-foreground: var(--background);
+}
+
 :root {
     --radius: 0.625rem;
     --background: var(--color-white);
@@ -22,8 +82,8 @@ html.dark {
     --card-foreground: var(--color-neutral-800);
     --popover: var(--color-white);
     --popover-foreground: var(--color-neutral-800);
-    --primary: var(--color-neutral-800);
-    --primary-foreground: var(--color-neutral-50);
+    --primary: oklch(var(--brand-l) var(--brand-c) var(--brand-h));
+    --primary-foreground: var(--brand-foreground);
     --secondary: --alpha(var(--color-black) / 4%);
     --secondary-foreground: var(--color-neutral-800);
     --muted: --alpha(var(--color-black) / 4%);
@@ -33,7 +93,7 @@ html.dark {
     --destructive: var(--color-red-500);
     --border: --alpha(var(--color-black) / 8%);
     --input: --alpha(var(--color-black) / 10%);
-    --ring: var(--color-neutral-400);
+    --ring: oklch(var(--brand-l) var(--brand-c) var(--brand-h) / 60%);
     --chart-1: var(--color-orange-600);
     --chart-2: var(--color-teal-600);
     --chart-3: var(--color-cyan-900);
@@ -44,8 +104,8 @@ html.dark {
     --series-chroma: 0.17;
     --sidebar: var(--color-neutral-50);
     --sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
-    --sidebar-primary: var(--color-neutral-800);
-    --sidebar-primary-foreground: var(--color-neutral-50);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
     --sidebar-accent: --alpha(var(--color-black) / 4%);
     --sidebar-accent-foreground: var(--color-neutral-800);
     --sidebar-border: --alpha(var(--color-black) / 6%);
@@ -89,14 +149,12 @@ html.dark {
 }
 
 .dark {
-    --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+    --background: color-mix(in srgb, var(--color-neutral-950) 98%, var(--color-white));
     --foreground: var(--color-neutral-100);
     --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
     --card-foreground: var(--color-neutral-100);
     --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
     --popover-foreground: var(--color-neutral-100);
-    --primary: var(--color-neutral-100);
-    --primary-foreground: var(--color-neutral-800);
     --secondary: --alpha(var(--color-white) / 4%);
     --secondary-foreground: var(--color-neutral-100);
     --muted: --alpha(var(--color-white) / 4%);
@@ -106,7 +164,6 @@ html.dark {
     --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
     --border: --alpha(var(--color-white) / 6%);
     --input: --alpha(var(--color-white) / 8%);
-    --ring: var(--color-neutral-500);
     --chart-1: var(--color-blue-700);
     --chart-2: var(--color-emerald-500);
     --chart-3: var(--color-amber-500);
@@ -114,10 +171,8 @@ html.dark {
     --chart-5: var(--color-rose-500);
     --series-lightness: 0.7;
     --series-chroma: 0.17;
-    --sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+    --sidebar: var(--color-neutral-950);
     --sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
-    --sidebar-primary: var(--color-neutral-100);
-    --sidebar-primary-foreground: var(--color-neutral-800);
     --sidebar-accent: --alpha(var(--color-white) / 4%);
     --sidebar-accent-foreground: var(--color-neutral-100);
     --sidebar-border: --alpha(var(--color-white) / 5%);

@@ -71,9 +71,7 @@
     // The panel is keyed by the selection, so this starts from the saved content of this config.
     let content = $state(untrack(() => config.content ?? ""));
 
-    const dirty = $derived(
-        config.content !== null && content !== config.content,
-    );
+    const dirty = $derived(content !== (config.content ?? ""));
 
     // When the saved content changes under the editor (a discard, another tab), follow it unless
     // there is unsaved typing.
@@ -305,18 +303,27 @@
         role="tabpanel"
         hidden={active !== "content"}
     >
-        {#if config.content !== null}
+        {#if resource.gitBranch && config.file}
+            <CanvasConfigFile {resource} file={config.file} />
+        {:else if config.content !== null || config.file}
             <div
                 class="flex h-10 shrink-0 items-center gap-3 border-b pr-2 pl-6 text-xs font-medium"
             >
                 <p
                     class="min-w-0 flex-1 truncate text-muted-foreground"
                 >
-                    <code>${"{VAR}"}</code>
-                    reads Variables,
-                    <code>$$</code>
-                    is a literal
-                    <code>$</code>
+                    {#if config.content === null}
+                        <!-- No Git source to read the file from, so saving inlines it. -->
+                        Saving replaces
+                        <code>{config.file}</code>
+                        with inline content
+                    {:else}
+                        <code>${"{VAR}"}</code>
+                        reads Variables,
+                        <code>$$</code>
+                        is a literal
+                        <code>$</code>
+                    {/if}
                 </p>
                 <Button
                     size="xs"
@@ -336,30 +343,12 @@
                     fill
                 />
             </div>
-        {:else if resource.gitBranch && config.file}
-            <CanvasConfigFile {resource} file={config.file} />
         {:else}
             <div class="px-12 pt-8">
                 <Alert variant="warning">
                     <AlertDescription>
-                        {#if config.file}
-                            <!-- One paragraph, or the description's flex column splits the code onto its own line. -->
-                            <p>
-                                This config reads <code>
-                                    {config.file}
-                                </code>
-                                , but this resource has no Git source
-                                to read it from. Connect a Git source,
-                                or replace
-                                <code>file</code>
-                                with
-                                <code>content</code>
-                                 in the Compose file.
-                            </p>
-                        {:else}
-                            Set from an environment variable; edit it
-                            in the Compose file.
-                        {/if}
+                        Set from an environment variable; edit it in the
+                        Compose file.
                     </AlertDescription>
                 </Alert>
             </div>
