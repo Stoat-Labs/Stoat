@@ -6,6 +6,7 @@ import YAML from "yaml";
 import {
     ComposeMoveError,
     moveComposeService,
+    serviceConfigFiles,
     unpinVolumeNames,
 } from "../../packages/api/src/compose-move";
 
@@ -240,6 +241,30 @@ volumes:
         expect(YAML.parse(result.source, { merge: true }).configs).toEqual({
             party_config: { file: "./party.conf" },
         });
+    });
+
+    it("lists only the Git config files the moved service uses", () => {
+        const compose = `x-party: &party
+  configs: [party_config, etc_config]
+services:
+  hazel:
+    <<: *party
+  luna:
+    configs: [luna_config]
+  plain:
+    image: nginx
+configs:
+  party_config:
+    file: ./party.conf
+  etc_config:
+    file: /etc/party.conf
+  luna_config:
+    file: ./missing.conf
+`;
+
+        expect(serviceConfigFiles(compose, "hazel")).toEqual(["./party.conf"]);
+        expect(serviceConfigFiles(compose, "plain")).toEqual([]);
+        expect(serviceConfigFiles(compose, "nobody")).toEqual([]);
     });
 
     // Both files must stay readable, whatever anchors they use.

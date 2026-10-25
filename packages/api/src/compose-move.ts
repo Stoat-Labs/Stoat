@@ -1,6 +1,7 @@
 import { parseEnv } from "node:util";
 import {
     CADDY_UPSTREAMS_SERVICE,
+    composeConfigFiles,
     loadsResourceEnv,
     rewriteComposeHostname,
     serviceVariable,
@@ -540,6 +541,27 @@ function unusedLinks(services: YAMLMap[], envText: string) {
     return new Set(
         Object.keys(values).filter((key) => !used.has(key) && linkedService(values[key])),
     );
+}
+
+/** The relative `configs.*.file` paths `service` uses, as written. Empty when it can't tell. */
+export function serviceConfigFiles(compose: string, name: string): string[] {
+    const doc = YAML.parseDocument(compose, { merge: true });
+    const services = doc.get("services", true);
+    const node = isMap(services) ? services.get(name, true) : undefined;
+    const configs = doc.get("configs", true);
+
+    if (doc.errors.length || !isMap(node) || !isMap(configs)) return [];
+
+    const used = new Set(
+        sectionKeys(resolved(doc, node), "configs").map((key) => {
+            const entry = configs.get(key, true);
+            const definition = isAlias(entry) ? entry.resolve(doc) : entry;
+
+            return isMap(definition) ? String(definition.get("file")) : "";
+        }),
+    );
+
+    return composeConfigFiles(compose).filter((file) => used.has(file));
 }
 
 /**

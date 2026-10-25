@@ -32,16 +32,15 @@ export function configFilePath(composePath: string, file: string) {
 }
 
 /**
- * Reads the relative `configs.*.file` paths of `compose` from Git, resolved against the
- * Compose file's directory. Call before locking the resource row: it fetches the branch.
+ * Reads the relative `configs.*.file` paths of `compose` (or just `files`) from Git, resolved
+ * against the Compose file's directory. Call before locking the resource row: it fetches the branch.
  */
 export async function readComposeConfigFiles(
     repo: GitRepository,
     composePath: string,
     compose: string,
+    files = composeConfigFiles(compose),
 ): Promise<Record<string, string>> {
-    const files = composeConfigFiles(compose);
-
     if (files.length === 0) return {};
 
     const paths = new Map(files.map((file) => [file, configFilePath(composePath, file)]));

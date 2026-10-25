@@ -109,6 +109,7 @@ import {
     ComposeMoveError,
     moveComposeService,
     retargetServiceReferences,
+    serviceConfigFiles,
     type ComposeMove,
 } from "../../compose-move";
 
@@ -526,26 +527,25 @@ export const resourcesRouter = {
                 resourceId: input.fromResourceId,
             });
 
-            const { gitSource, gitConnectionId } = preview?.resource ?? {};
+            const { gitSource = null, gitConnectionId = null } = preview?.resource ?? {};
             const draft = preview?.resource.draftSpec ?? preview?.resource.spec;
+            // Only the moved service's files, so another service's broken path can't block it.
+            const files = draft ? serviceConfigFiles(draft, input.service) : [];
 
-            const configFiles =
-                gitSource && gitConnectionId && draft && composeConfigFiles(draft).length > 0
-                    ? {
-                          ...(await readComposeConfigFiles(
-                              await getBoundGitRepository(
-                                  db,
-                                  organizationId,
-                                  gitConnectionId,
-                                  gitSource.repositoryUrl,
-                                  gitSource.branch,
-                              ),
-                              gitSource.path,
-                              draft,
-                          )),
-                          // Edits not committed yet win, as they do at deploy.
-                          ...preview?.resource.draftConfigFiles,
-                      }
+            const gitFiles =
+                gitSource && gitConnectionId && draft && files.length > 0
+                    ? await readComposeConfigFiles(
+                          await getBoundGitRepository(
+                              db,
+                              organizationId,
+                              gitConnectionId,
+                              gitSource.repositoryUrl,
+                              gitSource.branch,
+                          ),
+                          gitSource.path,
+                          draft,
+                          files,
+                      )
                     : undefined;
 
             return db.transaction(async (tx) => {
@@ -601,6 +601,22 @@ export const resourcesRouter = {
                     throw new ORPCError("BAD_REQUEST", {
                         message: "Services can only move between Compose resources.",
                     });
+
+                // Git was read before the lock; a source or reference change since then would inline stale files.
+                if (
+                    from.resource.gitConnectionId !== gitConnectionId ||
+                    !isDeepStrictEqual(from.resource.gitSource, gitSource) ||
+                    !isDeepStrictEqual(serviceConfigFiles(fromSpec, input.service), files)
+                )
+                    throw new ORPCError("CONFLICT", {
+                        message: "The resource changed while moving the service. Try again.",
+                    });
+
+                // Edits not committed yet win, as they do at deploy. Read under the lock so none are lost.
+                const configFiles = gitFiles && {
+                    ...gitFiles,
+                    ...from.resource.draftConfigFiles,
+                };
 
                 let moved: ComposeMove;
 
