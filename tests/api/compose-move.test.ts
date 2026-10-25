@@ -159,6 +159,252 @@ describe("moveComposeService", () => {
     });
 });
 
+describe("services sharing a YAML anchor", () => {
+    const anchored = `x-party: &party
+  image: copyparty/ac
+  configs:
+    - source: party_config
+      target: /cfg/party.conf
+services:
+  luna:
+    <<: *party
+    volumes:
+      - cfg_luna:/cfg
+  hazel:
+    <<: *party
+    volumes:
+      - cfg_hazel:/cfg
+configs:
+  party_config:
+    file: ./party.conf
+volumes:
+  cfg_luna:
+  cfg_hazel:
+`;
+
+    function split(service: string, source = anchored) {
+        return moveComposeService({
+            service,
+            source,
+            target: "",
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: "party",
+            sourceEnv: "",
+            targetEnv: "",
+        });
+    }
+
+    it("moves the service expanded, with the configs it merges in, and leaves the anchor alone", () => {
+        const result = split("hazel");
+
+        expect(YAML.parse(result.target)).toEqual({
+            services: {
+                hazel: {
+                    image: "copyparty/ac",
+                    configs: [{ source: "party_config", target: "/cfg/party.conf" }],
+                    volumes: ["cfg_hazel:/cfg"],
+                },
+            },
+            configs: { party_config: { file: "./party.conf" } },
+            volumes: { cfg_hazel: { name: "party-cfg_hazel" } },
+        });
+        expect(result.warnings).toContain(
+            'Config "party_config" reads a file; make sure the target can reach it.',
+        );
+        // Luna still merges the anchor and still needs the config.
+        expect(result.source).toContain("<<: *party");
+        expect(YAML.parse(result.source, { merge: true }).configs).toEqual({
+            party_config: { file: "./party.conf" },
+        });
+    });
+
+    // Both files must stay readable, whatever anchors they use.
+    function expectValid(result: { source: string; target: string }) {
+        for (const text of [result.source, result.target]) {
+            const doc = YAML.parseDocument(text, { merge: true });
+
+            expect(doc.errors).toEqual([]);
+            expect(doc.warnings).toEqual([]);
+        }
+    }
+
+    it("leaves both files valid after the copyparty split", () => {
+        expectValid(split("hazel"));
+        expectValid(split("luna"));
+    });
+
+    it("expands merge lists, with the service's own keys winning", () => {
+        const result = split(
+            "hazel",
+            `x-a: &a
+  image: a
+  user: "1"
+x-b: &b
+  image: b
+  restart: always
+services:
+  luna:
+    <<: [*a, *b]
+  hazel:
+    <<: [*a, *b]
+    user: "2"
+`,
+        );
+
+        expectValid(result);
+        expect(YAML.parse(result.target).services.hazel).toEqual({
+            image: "a",
+            user: "2",
+            restart: "always",
+        });
+    });
+
+    it("expands plain aliases without inventing anchors in the target", () => {
+        const result = split(
+            "hazel",
+            `x-env: &env
+  TZ: UTC
+services:
+  luna:
+    image: a
+    environment: *env
+  hazel:
+    image: a
+    environment: *env
+    labels: *env
+`,
+        );
+
+        expectValid(result);
+        expect(result.target).not.toMatch(/[&*]/u);
+        expect(YAML.parse(result.target).services.hazel.labels).toEqual({ TZ: "UTC" });
+        expect(result.source).toContain("environment: *env");
+    });
+
+    it("copies definitions that are aliases as their values", () => {
+        const result = split(
+            "hazel",
+            `x-cfg: &cfg
+  content: hello
+services:
+  luna:
+    image: a
+  hazel:
+    image: a
+    configs: [shared]
+configs:
+  shared: *cfg
+`,
+        );
+
+        expectValid(result);
+        expect(YAML.parse(result.target).configs).toEqual({ shared: { content: "hello" } });
+    });
+
+    it("copies a definition aliasing another one it also moves", () => {
+        const result = split(
+            "hazel",
+            `services:
+  luna:
+    image: a
+  hazel:
+    image: a
+    configs: [a, b]
+configs:
+  a: &cfg
+    content: hello
+  b: *cfg
+`,
+        );
+
+        expectValid(result);
+        expect(YAML.parse(result.target).configs).toEqual({
+            a: { content: "hello" },
+            b: { content: "hello" },
+        });
+    });
+
+    it("refuses when what stays names the service through an anchor", () => {
+        const source = `x-env: &env
+  DB_HOST: hazel
+services:
+  luna:
+    image: a
+    environment: *env
+  hazel:
+    image: a
+`;
+
+        expect(() => split("hazel", source)).toThrow(ComposeMoveError);
+    });
+
+    it("moves into a target with its own anchors without touching them", () => {
+        const result = moveComposeService({
+            service: "hazel",
+            source: anchored,
+            target: `x-base: &base
+  image: alpine
+services:
+  worker:
+    <<: *base
+`,
+            sourceId: SOURCE_ID,
+            targetId: TARGET_ID,
+            sourcePrefix: "party",
+            sourceEnv: "",
+            targetEnv: "",
+        });
+
+        expectValid(result);
+        expect(result.target).toContain("<<: *base");
+        expect(YAML.parse(result.target, { merge: true }).services.worker.image).toBe("alpine");
+    });
+
+    it("refuses to move a service whose anchor others still use", () => {
+        const source = `services:
+  luna: &party
+    image: copyparty/ac
+  hazel:
+    <<: *party
+`;
+
+        expect(() => split("luna", source)).toThrow(ComposeMoveError);
+        expectValid(split("hazel", source));
+    });
+
+    it("refuses to drop a definition whose anchor another definition uses", () => {
+        const source = `services:
+  luna:
+    image: a
+    configs: [b]
+  hazel:
+    image: a
+    configs: [a]
+configs:
+  a: &cfg
+    content: hi
+  b: *cfg
+`;
+
+        expect(() => split("hazel", source)).toThrow(ComposeMoveError);
+    });
+
+    it("refuses when what stays waits for the service through an anchor", () => {
+        const source = `x-deps: &deps
+  depends_on: [hazel]
+services:
+  luna:
+    image: a
+    <<: *deps
+  hazel:
+    image: a
+`;
+
+        expect(() => split("hazel", source)).toThrow(ComposeMoveError);
+    });
+});
+
 describe("variables a moved service takes along", () => {
     it("stops at variables the target already sets, warning about ones its services share", () => {
         const result = move("db", {

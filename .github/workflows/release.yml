@@ -174,6 +174,8 @@ jobs:
                   labels: ${{ steps.meta.outputs.labels }}
                   tags: ${{ matrix.package.image }}
                   outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+                  build-args: |
+                      APP_VERSION=${{ needs.prepare.outputs.version }}
 
             - name: Export Digest
               run: |

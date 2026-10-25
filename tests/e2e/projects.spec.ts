@@ -263,6 +263,8 @@ test.describe("resources", () => {
 
         // The open panel covers the other card, so close it first.
         await panel(first.name).getByRole("button", { name: "Close details" }).click();
+        // URL writes are throttled; selecting before the close lands would merge both into one entry.
+        await expect(page).not.toHaveURL(/node=/u);
         await page.locator(`.svelte-flow__node[data-id="${second.id}"]`).click();
         await expect(panel(second.name)).toBeVisible();
 

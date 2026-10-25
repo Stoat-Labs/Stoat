@@ -45,7 +45,10 @@
         containersQuery.data?.some(({ container }) => {
             const info = containerInfo(container);
 
-            return info.health === "unhealthy" || info.status === "exited";
+            return (
+                info.health === "unhealthy" ||
+                info.status === "exited"
+            );
         }) ?? false,
     );
 

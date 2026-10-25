@@ -6,6 +6,10 @@ import type { RequestLogger } from "evlog";
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
+    /** Injected by vite.config.ts at build time. */
+    const __APP_VERSION__: string;
+    const __GIT_COMMIT__: string | null;
+
     var $client: AppRouterClient | undefined;
 
     /** The /rpc WebSocket server for oRPC. Set by $lib/server/rpc-socket.ts. */

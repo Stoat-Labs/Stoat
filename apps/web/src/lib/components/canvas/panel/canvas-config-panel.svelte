@@ -11,6 +11,7 @@
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import Unplug from "@lucide/svelte/icons/unplug";
     import X from "@lucide/svelte/icons/x";
+    import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { cubicOut, expoOut } from "svelte/easing";
     import { prefersReducedMotion } from "svelte/motion";
@@ -44,6 +45,22 @@
         /** Asks to delete the config; the canvas confirms it first. */
         onremove: () => void;
     } = $props();
+
+    const tabs = ["content", "settings"] as const;
+
+    const labels = { content: "Content", settings: "Settings" };
+
+    // Matches project-canvas, so Back steps through tabs.
+    const tab = useQueryState(
+        "tab",
+        parseAsStringLiteral(tabs).withOptions({
+            history: "push",
+            shallow: true,
+            scroll: false,
+        }),
+    );
+
+    const active = $derived(tab.current ?? tabs[0]);
 
     let connecting = $state(false);
 
@@ -249,48 +266,80 @@
         </Button>
     </header>
 
+    <!-- Railway's tabs, as in the resource and volume panels. -->
     <div
-        class="min-h-0 flex-1 space-y-10 overflow-y-auto border-t border-border px-12 pt-8 pb-12"
+        class="flex shrink-0 gap-8 border-b border-border px-12"
+        role="tablist"
+        aria-label="{config.name} sections"
     >
-        {#if error}
-            <Alert variant="error">
-                <AlertDescription>{error}</AlertDescription>
-            </Alert>
-        {/if}
-        <section class="space-y-4">
-            {#if config.content !== null}
-                <div class="flex items-center justify-between gap-4">
-                    <h3 class="text-xl text-muted-foreground">
-                        Content
-                    </h3>
-                    <Button
-                        disabled={!dirty || pending}
-                        loading={pending && dirty}
-                        onclick={save}
-                    >
-                        Save
-                    </Button>
-                </div>
-                <p class="text-sm text-muted-foreground">
+        {#each tabs as name (name)}
+            <button
+                type="button"
+                role="tab"
+                aria-selected={active === name}
+                class={[
+                    "relative shrink-0 pb-3 text-base transition-colors",
+                    active === name
+                        ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                ]}
+                onclick={() => void tab.set(name)}
+            >
+                {labels[name]}
+            </button>
+        {/each}
+    </div>
+
+    {#if error}
+        <Alert
+            variant="error"
+            class="rounded-none border-x-0 border-t-0"
+        >
+            <AlertDescription>{error}</AlertDescription>
+        </Alert>
+    {/if}
+
+    <!-- Hidden rather than unmounted, so switching tabs keeps unsaved typing. -->
+    <div
+        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+        role="tabpanel"
+        hidden={active !== "content"}
+    >
+        {#if config.content !== null}
+            <div
+                class="flex h-10 shrink-0 items-center gap-3 border-b pr-2 pl-6 text-xs font-medium"
+            >
+                <p
+                    class="min-w-0 flex-1 truncate text-muted-foreground"
+                >
                     <code>${"{VAR}"}</code>
-                    reads Variables; write
+                    reads Variables,
                     <code>$$</code>
-                    for a literal
+                    is a literal
                     <code>$</code>
-                    .
                 </p>
-                <div class="overflow-hidden rounded-lg border">
-                    <CodeEditor
-                        bind:value={content}
-                        language="text"
-                        label="{config.name} content"
-                        readOnly={pending}
-                    />
-                </div>
-            {:else if resource.gitBranch && config.file}
-                <CanvasConfigFile {resource} file={config.file} />
-            {:else}
-                <h3 class="text-xl text-muted-foreground">Content</h3>
+                <Button
+                    size="xs"
+                    disabled={!dirty || pending}
+                    loading={pending && dirty}
+                    onclick={save}
+                >
+                    Save
+                </Button>
+            </div>
+            <div class="min-h-0 flex-1">
+                <CodeEditor
+                    bind:value={content}
+                    language="text"
+                    label="{config.name} content"
+                    readOnly={pending}
+                    fill
+                />
+            </div>
+        {:else if resource.gitBranch && config.file}
+            <CanvasConfigFile {resource} file={config.file} />
+        {:else}
+            <div class="px-12 pt-8">
                 <Alert variant="warning">
                     <AlertDescription>
                         {#if config.file}
@@ -303,10 +352,15 @@
                         {/if}
                     </AlertDescription>
                 </Alert>
-            {/if}
-        </section>
-        <section class="space-y-4">
-            <h3 class="text-xl text-muted-foreground">Connection</h3>
+            </div>
+        {/if}
+    </div>
+
+    {#if active === "settings"}
+        <div
+            class="min-h-0 flex-1 space-y-8 overflow-y-auto px-12 pt-8 pb-12"
+            role="tabpanel"
+        >
             {#each config.mounts as mount (mount.service)}
                 {@const target = field(
                     `${mount.service}:target`,
@@ -316,9 +370,9 @@
                     `${mount.service}:mode`,
                     mount.mode ?? "",
                 )}
-                <div class="space-y-2">
-                    <p class="text-sm font-semibold">
-                        Mount Path
+                <div>
+                    <h4 class="text-sm font-semibold">
+                        Mount path
                         {#if services.length > 1}
                             <span
                                 class="font-normal text-muted-foreground"
@@ -326,8 +380,8 @@
                                 · {mount.service}
                             </span>
                         {/if}
-                    </p>
-                    <div class="flex gap-2">
+                    </h4>
+                    <div class="mt-3 flex gap-2">
                         <Input
                             class="font-mono"
                             aria-label="Mount path in {mount.service}"
@@ -367,6 +421,12 @@
                         </Button>
                     </div>
                 </div>
+            {:else}
+                <p
+                    class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+                >
+                    Not connected to a service.
+                </p>
             {/each}
             {#if targets.length > 0}
                 <Button
@@ -380,21 +440,24 @@
                     Connect to service
                 </Button>
             {/if}
-        </section>
-        <section class="space-y-4">
-            <h3 class="text-xl text-destructive-foreground">
-                Delete Config
-            </h3>
-            <Button
-                variant="destructive"
-                disabled={pending}
-                onclick={onremove}
-            >
-                <Trash2 class="size-4" aria-hidden="true" />
-                Delete Config
-            </Button>
-        </section>
-    </div>
+            <div>
+                <h4
+                    class="text-sm font-medium text-destructive-foreground"
+                >
+                    Delete config
+                </h4>
+                <Button
+                    variant="destructive"
+                    class="mt-4"
+                    disabled={pending}
+                    onclick={onremove}
+                >
+                    <Trash2 class="size-4" aria-hidden="true" />
+                    Delete config
+                </Button>
+            </div>
+        </div>
+    {/if}
 </aside>
 
 {#if connecting}
