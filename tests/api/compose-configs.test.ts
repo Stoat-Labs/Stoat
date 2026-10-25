@@ -213,10 +213,10 @@ describe("setConfigContent and removeConfig", () => {
         expect(resolved.configs.app.content).toBe("proxy_set_header Host $$host;\nport 8080\n");
     });
 
-    it("refuses to set content on a file config", () => {
-        expect(() => setConfigContent(copyparty, "preparty_script", "x")).toThrow(
-            ComposeConfigError,
-        );
+    it("turns a file config into inline content", () => {
+        const next = YAML.parse(setConfigContent(copyparty, "preparty_script", "echo hi\n"));
+
+        expect(next.configs.preparty_script).toEqual({ content: "echo hi\n" });
     });
 
     it("unmounts a config from every service before deleting it", () => {

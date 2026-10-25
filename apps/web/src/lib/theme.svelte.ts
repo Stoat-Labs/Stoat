@@ -29,3 +29,32 @@ export function setTheme(value: Theme) {
             (value === "system" && matchMedia("(prefers-color-scheme: dark)").matches),
     );
 }
+
+// Swatch colors match the `[data-accent]` blocks in app.css. Lime has no block: it is the default.
+export const accents = [
+    { value: "lime", label: "Lime", color: "oklch(0.86 0.2 128)" },
+    { value: "teal", label: "Teal", color: "oklch(0.7 0.12 180)" },
+    { value: "sky", label: "Sky", color: "oklch(0.68 0.14 240)" },
+    { value: "violet", label: "Violet", color: "oklch(0.52 0.19 305)" },
+    { value: "pink", label: "Pink", color: "oklch(0.7 0.18 350)" },
+    { value: "orange", label: "Orange", color: "oklch(0.68 0.19 45)" },
+    { value: "mono", label: "Monochrome", color: "oklch(0.97 0 0)" },
+] as const;
+
+export type Accent = (typeof accents)[number]["value"];
+
+function readAccent(): Accent {
+    if (!browser) return "lime";
+    const value = document.cookie.match(/(?:^|; )accent=(\w+)/)?.[1];
+
+    return accents.find((accent) => accent.value === value)?.value ?? "lime";
+}
+
+// Per device like the theme, so app.html can apply it before first paint.
+export const accent = $state({ current: readAccent() });
+
+export function setAccent(value: Accent) {
+    accent.current = value;
+    document.cookie = `accent=${value}; path=/; max-age=31536000; samesite=lax`;
+    document.documentElement.dataset.accent = value;
+}
