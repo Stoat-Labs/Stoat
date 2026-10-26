@@ -15,3 +15,10 @@ export function createCanvasModeQuery() {
 export function projectHref(projectId: string, canvasMode: boolean) {
     return canvasMode ? `/projects/${projectId}/canvas` : `/projects/${projectId}`;
 }
+
+// In canvas mode a resource opens as the selected card instead of its list-view page.
+export function resourceHref(projectId: string, resourceId: string, canvasMode: boolean) {
+    return canvasMode
+        ? `/projects/${projectId}/canvas?node=${resourceId}`
+        : `/projects/${projectId}/${resourceId}`;
+}

@@ -1,5 +1,10 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+        resourceHref,
+    } from "$lib/api/canvas-mode.svelte";
     import ProviderIcon from "$lib/components/s3/provider-icon.svelte";
     import { page } from "$app/state";
     import {
@@ -49,7 +54,14 @@
 
     const projectId = $derived(page.params.projectId ?? "");
 
-    const backHref = $derived(`/projects/${projectId}/create`);
+    const canvasModeQuery = createCanvasModeQuery();
+
+    // The canvas only lands here from its Add palette, so Back returns to the canvas.
+    const backHref = $derived(
+        canvasModeQuery.data.canvasMode
+            ? projectHref(projectId, true)
+            : `/projects/${projectId}/create`,
+    );
 
     const projectQuery = createQuery(() =>
         orpc.projects.getProject.queryOptions({
@@ -97,7 +109,13 @@
                         input: { projectId },
                     }),
                 });
-                await goto(`/projects/${projectId}/${resource.id}`);
+                await goto(
+                    resourceHref(
+                        projectId,
+                        resource.id,
+                        canvasModeQuery.data.canvasMode,
+                    ),
+                );
             },
         }),
     );
