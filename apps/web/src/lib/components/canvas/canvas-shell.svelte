@@ -121,7 +121,7 @@
                 </MenuPopup>
             </Menu>
             {#if headerActions.content}
-                <div class="ms-auto flex min-w-0 items-center gap-1">
+                <div class="ms-auto flex shrink-0 items-center gap-1">
                     {@render headerActions.content()}
                 </div>
             {/if}

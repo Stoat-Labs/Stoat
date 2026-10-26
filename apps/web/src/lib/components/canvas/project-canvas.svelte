@@ -1362,18 +1362,20 @@
             size="sm"
             variant="ghost"
             href="/projects/{projectId}"
+            aria-label="List view"
         >
             <LayoutList class="size-4" aria-hidden="true" />
-            List view
+            <span class="max-sm:hidden">List view</span>
         </Button>
         {#if !empty && !isInternal}
             <Button
                 size="sm"
                 variant="outline"
                 onclick={() => void add.set("root")}
+                aria-label="Add"
             >
                 <Plus class="size-4" aria-hidden="true" />
-                Add
+                <span class="max-sm:hidden">Add</span>
                 <KbdGroup class="hidden sm:inline-flex">
                     <Kbd>Ctrl</Kbd>
                     <Kbd>K</Kbd>
