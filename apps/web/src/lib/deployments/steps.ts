@@ -15,6 +15,8 @@ export type DeploymentStep = {
     detail?: string;
     /** Settled states, oldest first; an in-progress state is replaced by its successor. */
     history: string[];
+    /** The container this one replaced on the same machine, shown as the "-" side of the diff. */
+    replaces?: Pick<DeploymentStep, "title" | "history" | "state" | "detail">;
     ops: { title: string; detail: string }[];
     monitor?: { since: number; seconds: number };
     pull?: { percent: number; current: number; total: number };
@@ -256,5 +258,43 @@ export function deploymentSteps(lines: DeploymentLine[], running: boolean) {
         if (!running && step.state === "active") step.state = "stopped";
     }
 
-    return steps;
+    return pairReplacements(steps);
+}
+
+const stateRank: StepState[] = ["done", "stopped", "active", "error"];
+
+// Folds each replaced container ("web/2e2437") into its successor ("web-7vtu") on the same machine.
+function pairReplacements(steps: DeploymentStep[]) {
+    for (const [index, old] of steps.entries()) {
+        const service =
+            old.kind === "resource" && !old.label && old.title.match(/^(.+)\/[0-9a-f]+$/u)?.[1];
+
+        if (!service) continue;
+
+        const next = steps.find(
+            (step) =>
+                step.kind === "resource" &&
+                !step.label &&
+                !step.replaces &&
+                step.machine === old.machine &&
+                step.title.slice(0, step.title.lastIndexOf("-")) === service,
+        );
+
+        if (!next) continue;
+
+        next.replaces = {
+            title: old.title,
+            history: old.history,
+            state: old.state,
+            detail: old.detail,
+        };
+        next.time = Math.max(next.time, old.time);
+        next.state =
+            stateRank[Math.max(stateRank.indexOf(next.state), stateRank.indexOf(old.state))]!;
+        next.detail ??= old.detail;
+        // The pair takes the old container's slot so the row appears as soon as the swap starts.
+        steps[index] = next;
+    }
+
+    return steps.filter((step, index) => steps.indexOf(step) === index);
 }

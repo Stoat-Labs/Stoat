@@ -1,4 +1,6 @@
 @import "@fontsource-variable/outfit";
+@import "@fontsource/maple-mono/400.css";
+@import "@fontsource/maple-mono/500.css";
 @import "shadcn-svelte/tailwind.css";
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -113,7 +115,7 @@ html.dark {
     --destructive-foreground: var(--color-red-700);
     --font-sans: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
     --font-serif: Georgia, serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-mono: "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --shadow-color: hsl(0 0% 0%);
     --shadow-opacity: 0.18;
     --shadow-blur: 2px;
@@ -181,7 +183,7 @@ html.dark {
     --radius: 0.5rem;
     --font-sans: "Outfit Variable", ui-sans-serif, system-ui, sans-serif;
     --font-serif: Georgia, serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-mono: "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --shadow-color: hsl(0 0% 0%);
     --shadow-opacity: 0.18;
     --shadow-blur: 2px;
@@ -253,6 +255,7 @@ html.dark {
     --color-sidebar-ring: var(--sidebar-ring);
     --font-sans: var(--font-sans);
     --font-mono: var(--font-mono);
+    --font-mono--font-feature-settings: "calt", "cv33", "cv34", "cv35", "cv36", "cv61", "cv62", "cv66", "ss03", "ss05", "ss07", "ss08", "ss09", "ss10", "ss11";
     --font-serif: Georgia, serif;
     --radius: 0.5rem;
     --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
@@ -324,6 +327,7 @@ html.dark {
     samp,
     pre {
         font-family: var(--font-mono);
+        font-feature-settings: var(--font-mono--font-feature-settings);
     }
     html {
         @apply font-sans;

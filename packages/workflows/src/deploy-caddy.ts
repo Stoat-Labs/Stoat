@@ -24,8 +24,8 @@ export class CaddyDeploymentInProgressError extends Error {
 
 /**
  * Caddy pushes its metrics over OTLP to Alloy, which remote-writes them to GreptimeDB like every
- * other metric. `nearest.` resolves to the Alloy on Caddy's own machine first, so the machine_id
- * label Alloy adds stays correct.
+ * other metric. `nearest.` prefers the Alloy on Caddy's own machine, and Alloy labels each series
+ * with the sending Caddy's address, so two Caddys never share a series.
  */
 export const CADDY_METRICS_ENV = {
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `http://nearest.${ALLOY_SERVICE}.internal:4318/v1/metrics`,
