@@ -4,9 +4,13 @@
         ProgressIndicator,
         ProgressTrack,
     } from "$lib/components/ui/progress";
-    import type { DeploymentStep } from "$lib/deployments/steps";
+    import type {
+        DeploymentStep,
+        StepState,
+    } from "$lib/deployments/steps";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import CornerDownRight from "@lucide/svelte/icons/corner-down-right";
+    import Minus from "@lucide/svelte/icons/minus";
     import Plus from "@lucide/svelte/icons/plus";
     import Server from "@lucide/svelte/icons/server";
     import StepNode from "./step-node.svelte";
@@ -61,16 +65,60 @@
                 : "Done:",
     );
 
-    const tone = $derived(
-        step.state === "error"
-            ? "text-destructive-foreground"
-            : step.state === "active"
-              ? "text-info-foreground"
-              : step.state === "stopped"
-                ? "text-muted-foreground"
-                : "text-foreground",
-    );
+    const tones: Record<StepState, string> = {
+        error: "text-destructive-foreground",
+        active: "text-info-foreground",
+        stopped: "text-muted-foreground",
+        done: "text-foreground",
+    };
 </script>
+
+{#snippet history(entries: string[], state: StepState)}
+    <span class="inline-flex flex-wrap items-center gap-1">
+        {#each entries as entry, entryIndex (entryIndex)}
+            {#if entryIndex}<ChevronRight
+                    class="size-3 text-muted-foreground/60"
+                    aria-hidden="true"
+                />{/if}
+            <span
+                class="whitespace-nowrap {entryIndex ===
+                entries.length - 1
+                    ? tones[state]
+                    : 'text-muted-foreground'}"
+            >
+                {entry}
+            </span>
+        {/each}
+    </span>
+{/snippet}
+
+{#snippet diff(
+    sign: "-" | "+",
+    title: string,
+    entries: string[],
+    state: StepState,
+)}
+    <p class="flex flex-wrap items-center gap-x-1.5">
+        {#if sign === "-"}
+            <Minus
+                class="size-3 shrink-0 text-destructive-foreground"
+                aria-label="Removed"
+            />
+            <span
+                class="text-muted-foreground line-through decoration-muted-foreground/50"
+            >
+                {title}
+            </span>
+        {:else}
+            <Plus
+                class="size-3 shrink-0 text-success-foreground"
+                aria-label="Added"
+            />
+            <span>{title}</span>
+        {/if}
+        <span class="ml-1">{@render history(entries, state)}</span>
+    </p>
+{/snippet}
 
 {#snippet machine(name: string)}
     <span
@@ -169,33 +217,34 @@
                         </span>{/if}
                 </div>
             {/if}
-        {:else}
+        {:else if step.label}
             <p class="flex flex-wrap items-center gap-x-1.5">
-                {#if step.label}<span class="text-muted-foreground">
-                        {step.label}
-                    </span>{/if}
+                <span class="text-muted-foreground">
+                    {step.label}
+                </span>
                 <span>{step.title}</span>
                 {#if step.machine}{@render machine(step.machine)}{/if}
-                <span
-                    class="inline-flex flex-wrap items-center gap-1"
-                >
-                    {#each step.history as entry, entryIndex (entryIndex)}
-                        {@const current =
-                            entryIndex === step.history.length - 1}
-                        {#if entryIndex}<ChevronRight
-                                class="size-3 text-muted-foreground/60"
-                                aria-hidden="true"
-                            />{/if}
-                        <span
-                            class="whitespace-nowrap {current
-                                ? tone
-                                : 'text-muted-foreground'}"
-                        >
-                            {entry}
-                        </span>
-                    {/each}
-                </span>
+                {@render history(step.history, step.state)}
             </p>
+        {:else}
+            <!-- Containers read as a diff: the replaced one (-) above its successor (+). -->
+            {#if step.machine}<p>
+                    {@render machine(step.machine)}
+                </p>{/if}
+            {#if step.replaces}
+                {@render diff(
+                    "-",
+                    step.replaces.title,
+                    step.replaces.history,
+                    step.replaces.state,
+                )}
+            {/if}
+            {@render diff(
+                step.title.includes("/") ? "-" : "+",
+                step.title,
+                step.history,
+                step.state,
+            )}
             {#if monitoring && step.monitor}
                 <div class="flex items-center gap-2">
                     {@render meter(

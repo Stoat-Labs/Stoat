@@ -40,9 +40,12 @@ it("collapses a replace deployment into a short step list", () => {
     ).toEqual([
         ["note", "Resource deployment queued", "done", ""],
         ["plan", "Plan", "done", ""],
-        ["resource", "trilium/2e2437", "done", "stopped → removed"],
         ["resource", "trilium-7vtu", "done", "created → started → healthy"],
     ]);
+    expect(steps[2]?.replaces).toMatchObject({
+        title: "trilium/2e2437",
+        history: ["stopped", "removed"],
+    });
     expect(steps[0]?.detail).toBe("Saved Compose snapshot captured");
     expect(steps[1]?.ops).toEqual([
         {
@@ -50,7 +53,7 @@ it("collapses a replace deployment into a short step list", () => {
             detail: "triliumnext/trilium:latest · 2e2437 · luna · stop-first",
         },
     ]);
-    expect(steps[3]?.machine).toBe("luna");
+    expect(steps[2]?.machine).toBe("luna");
 });
 
 it("shows live monitoring as the active step", () => {
@@ -167,9 +170,28 @@ it("groups logs stored without event tags", () => {
     expect(steps.map((step) => [step.kind, step.title, step.history.join(" → ")])).toEqual([
         ["note", "Deploying Alloy collectors", ""],
         ["plan", "Plan", ""],
-        ["resource", "alloy/691d7b", "stopped"],
         ["resource", "alloy-ojnq", "running"],
         ["note", "Waiting for Alloy collectors on 2 machine(s)", ""],
     ]);
     expect(steps[1]?.ops).toHaveLength(2);
+});
+
+it("pairs replaced containers only with their own service on the same machine", () => {
+    const steps = deploymentSteps(
+        lines([
+            [0, "Container web/aaaaaaaaaaaa on luna | Stopped", "progress"],
+            [1, "Container web-api-x1y2 on luna | Running", "progress"],
+            [2, "Container web-k3z9 on hazel | Running", "progress"],
+            [3, "Container web-q7r8 on luna | Running", "progress"],
+            [4, "Container cache/bbbbbbbbbbbb on luna | Removed", "progress"],
+        ]),
+        false,
+    );
+
+    expect(steps.map((step) => [step.title, step.replaces?.title])).toEqual([
+        ["web-q7r8", "web/aaaaaa"],
+        ["web-api-x1y2", undefined],
+        ["web-k3z9", undefined],
+        ["cache/bbbbbb", undefined],
+    ]);
 });

@@ -75,6 +75,8 @@ services:
             GREPTIME_PASSWORD: "${GREPTIME_PASSWORD:?rendered by InitializeCluster}"
             SIDECAR_TOKEN: "${SIDECAR_TOKEN:?rendered by InitializeCluster}"
             RETENTION_DAYS: "${RETENTION_DAYS:-14}"
+            # The systemd and logind collectors talk to the host's D-Bus through the rootfs mount.
+            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/rootfs/run/dbus/system_bus_socket"
 
         volumes:
             # InitializeCluster may change this long mount to type: bind with an absolute source.
@@ -165,15 +167,29 @@ configs:
               sysfs_path     = "/sys"
               udev_data_path = "/rootfs/run/udev/data"
 
-              // /proc/net resolves through /proc/self, i.e. Alloy's container namespace.
-              disable_collectors = ["netdev"]
+              // /proc/net resolves through /proc/self, i.e. Alloy's container namespace, so the
+              // collectors that read it run in host_network instead.
+              disable_collectors = ["netdev", "netstat", "sockstat", "arp", "softnet", "udp_queues"]
+
+              enable_collectors = [
+                "buddyinfo",
+                "interrupts",
+                "ksmd",
+                "logind",
+                "meminfo_numa",
+                "mountstats",
+                "processes",
+                "softirqs",
+                "systemd",
+                "zoneinfo",
+              ]
             }
 
-            // Uncloud has no host networking, so read interface counters from host
-            // PID 1's network namespace instead of Alloy's own container interfaces.
+            // Uncloud has no host networking, so read /proc/net from host PID 1's network
+            // namespace instead of Alloy's own container interfaces.
             prometheus.exporter.unix "host_network" {
               procfs_path    = "/rootfs/proc/1"
-              set_collectors = ["netdev"]
+              set_collectors = ["netdev", "netstat", "sockstat", "arp", "softnet", "udp_queues", "lnstat"]
             }
 
             prometheus.scrape "host" {
@@ -204,6 +220,12 @@ configs:
               // Avoid automatically converting every Docker label into a Prometheus label,
               // but retain the labels Uncloud uses to identify a service instance.
               store_container_labels = false
+
+              // Every metric kind except those that need extra host setup (perf_event needs a
+              // perf config, resctrl needs Intel RDT) or rewrite every process's page
+              // reference bits (referenced_memory). "disk" walks each container's writable
+              // layer, so the kernel's inode cache charged to Alloy grows with container files.
+              disabled_metrics = ["perf_event", "resctrl", "referenced_memory"]
 
               allowlisted_container_labels = [
                 "com.docker.compose.project",
@@ -288,15 +310,71 @@ configs:
 
 
             // ----------------------------------------------------
+            // Probes and Alloy's own metrics
+            // ----------------------------------------------------
+
+            // From each machine: does Uncloud's DNS answer through Docker's resolver, and is
+            // GreptimeDB reachable over the mesh. Both failed while a machine hung.
+            prometheus.exporter.blackbox "probes" {
+              config = "{ modules: { internal_dns: { prober: dns, timeout: 5s, dns: { query_name: stoat-monitoring-greptimedb.internal, query_type: A, valid_rcodes: [NOERROR] } }, http_2xx: { prober: http, timeout: 5s } } }"
+
+              target {
+                name    = "uncloud_dns"
+                address = "127.0.0.11:53"
+                module  = "internal_dns"
+              }
+
+              target {
+                name    = "greptimedb"
+                address = "http://stoat-monitoring-greptimedb.internal:4000/health"
+                module  = "http_2xx"
+              }
+            }
+
+            prometheus.exporter.self "alloy" {}
+
+            prometheus.scrape "probes" {
+              targets         = array.concat(
+                prometheus.exporter.blackbox.probes.targets,
+                prometheus.exporter.self.alloy.targets,
+              )
+              scrape_interval = "15s"
+
+              forward_to = [
+                prometheus.remote_write.greptime.receiver,
+              ]
+            }
+
+
+            // ----------------------------------------------------
             // Caddy HTTP metrics (pushed over OTLP)
             // ----------------------------------------------------
 
             // Stoat deploys Caddy with `metrics { per_host otlp }` and points it at
-            // nearest.stoat-monitoring-alloy.internal, which resolves to this machine's Alloy
-            // first, so the machine_id external label matches the Caddy that sent them.
+            // nearest.stoat-monitoring-alloy.internal. That usually is this machine's Alloy, but
+            // a Caddy that started before it fell back to another machine's and kept that
+            // connection. Caddy's resource attributes don't say which machine sent the series.
             otelcol.receiver.otlp "caddy" {
               http {
-                endpoint = "0.0.0.0:4318"
+                endpoint         = "0.0.0.0:4318"
+                include_metadata = true
+              }
+
+              output {
+                metrics = [otelcol.processor.attributes.caddy.input]
+              }
+            }
+
+            // Two Caddys pushing to one Alloy would otherwise share label sets, and rate() reads
+            // their interleaved counters as constant resets. The sender's address keeps each
+            // Caddy its own series.
+            // shortcut: machine_id still names the receiving Alloy's machine, so per-machine
+            // HTTP charts would need a sender-to-machine mapping.
+            otelcol.processor.attributes "caddy" {
+              action {
+                key          = "caddy_address"
+                from_context = "client.address"
+                action       = "insert"
               }
 
               output {
@@ -547,6 +625,62 @@ configs:
               forward_to = [
                 prometheus.remote_write.greptime.receiver,
               ]
+            }
+
+
+            // ----------------------------------------------------
+            // Host journal (kernel, dockerd, sshd, uncloud, ...)
+            // ----------------------------------------------------
+
+            // Hosts without a persistent journal only have the volatile one in /run.
+            loki.source.journal "persistent" {
+              path          = "/rootfs/var/log/journal"
+              relabel_rules = loki.relabel.journal.rules
+              forward_to    = [loki.write.journal.receiver]
+            }
+
+            loki.source.journal "volatile" {
+              path          = "/rootfs/run/log/journal"
+              relabel_rules = loki.relabel.journal.rules
+              forward_to    = [loki.write.journal.receiver]
+            }
+
+            loki.relabel "journal" {
+              rule {
+                source_labels = ["__journal__systemd_unit"]
+                target_label  = "unit"
+              }
+
+              rule {
+                source_labels = ["__journal_priority_keyword"]
+                target_label  = "priority"
+              }
+
+              forward_to = []
+            }
+
+            // Its own table, so host lines never show up in a service's container logs.
+            loki.write "journal" {
+              external_labels = {
+                machine_id  = sys.env("UNCLOUD_MACHINE_ID"),
+                customer_id = sys.env("CUSTOMER_ID"),
+              }
+
+              endpoint {
+                url = sys.env("GREPTIME_URL") +
+                      "/v1/loki/api/v1/push"
+
+                headers = {
+                  "X-Greptime-DB-Name"        = sys.env("GREPTIME_DB"),
+                  "X-Greptime-Log-Table-Name" = "journal_logs",
+                  "x-greptime-hints"          = "ttl=" + sys.env("RETENTION_DAYS") + "d",
+                }
+
+                basic_auth {
+                  username = sys.env("GREPTIME_USERNAME")
+                  password = sys.env("GREPTIME_PASSWORD")
+                }
+              }
             }
 
 

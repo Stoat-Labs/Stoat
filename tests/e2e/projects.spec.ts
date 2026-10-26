@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { memberStorageState, rpc, sql } from "./fixtures";
+import { memberStorageState, openCreatedResource, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 
@@ -118,9 +118,9 @@ test.describe("resources", () => {
             .click();
         await page.getByLabel("Name").fill(name);
         await page.getByRole("button", { name: "Create resource" }).click();
+        const resourceId = await openCreatedResource(page, projectId);
 
         await expect(breadcrumb(page)).toContainText(name);
-        const resourceId = new URL(page.url()).pathname.split("/").at(-1)!;
 
         await replaceCompose(page, nginx);
         await expect(page.getByText("Unsaved changes")).toBeVisible();
@@ -184,6 +184,7 @@ test.describe("resources", () => {
         await page.getByRole("link", { name: /ntfy/iu }).first().click();
         await page.getByLabel("Name").fill(name);
         await page.getByRole("button", { name: "Create resource" }).click();
+        await openCreatedResource(page, projectId);
 
         await expect(breadcrumb(page)).toContainText(name);
         await expect(editor(page)).toContainText("ntfy");
@@ -201,6 +202,7 @@ test.describe("resources", () => {
             .click();
         await page.getByLabel("Name").fill(name);
         await page.getByRole("button", { name: "Create resource" }).click();
+        await openCreatedResource(page, projectId);
 
         await expect(breadcrumb(page)).toContainText(name);
         await expect(page.getByRole("region", { name: /connection/iu })).toBeVisible();

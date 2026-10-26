@@ -327,6 +327,7 @@
             <Button
                 variant="outline"
                 size="icon"
+                class="backdrop-blur-md"
                 aria-label="Scroll to oldest"
                 disabled={atTop}
                 onclick={jumpToTop}
@@ -336,6 +337,7 @@
             <Button
                 variant="outline"
                 size="icon"
+                class="backdrop-blur-md"
                 aria-label="Scroll to latest"
                 disabled={following}
                 onclick={jumpToLatest}

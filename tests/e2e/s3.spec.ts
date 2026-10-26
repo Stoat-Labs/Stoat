@@ -7,7 +7,15 @@ import {
     S3Client,
 } from "@aws-sdk/client-s3";
 import { expect, test, type Page } from "@playwright/test";
-import { ids, memberStorageState, rpc, rustfsCaFile, rustfsRoot, sql } from "./fixtures";
+import {
+    ids,
+    memberStorageState,
+    openCreatedResource,
+    rpc,
+    rustfsCaFile,
+    rustfsRoot,
+    sql,
+} from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 
@@ -206,8 +214,7 @@ test.describe("buckets", () => {
         await page.getByLabel("Bucket name").fill(bucket);
         await page.getByRole("button", { name: "Create bucket" }).click();
 
-        await expect(page).toHaveURL(new RegExp(`/projects/${ids.shop}/[\\w-]+$`, "u"));
-        const resourceId = new URL(page.url()).pathname.split("/").at(-1)!;
+        const resourceId = await openCreatedResource(page, ids.shop);
         await expect.poll(() => bucketStatus(resourceId)).toBe("ready");
         expect(await bucketExists(bucket)).toBe(true);
     });

@@ -60,6 +60,15 @@ export const postgresEnv = [
 export const variablesPath = (projectId: string, resourceId: string) =>
     `/projects/${projectId}/${resourceId}/variables`;
 
+// Canvas mode is the default, so a create page returns to the canvas with the new card selected.
+export async function openCreatedResource(page: Page, projectId: string) {
+    await page.waitForURL(new RegExp(`/projects/${projectId}/canvas\\?node=[\\w-]+$`, "u"));
+    const resourceId = new URL(page.url()).searchParams.get("node")!;
+    await page.goto(`/projects/${projectId}/${resourceId}`);
+
+    return resourceId;
+}
+
 export const ref = (id: string, key: string) => `{{ ${id}.${key} }}`;
 
 let db: ReturnType<typeof createDb> | undefined;

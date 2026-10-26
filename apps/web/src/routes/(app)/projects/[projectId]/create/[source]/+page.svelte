@@ -40,6 +40,11 @@
         segmentedControlRootClassName,
     } from "$lib/components/ui/tabs/segmented-control";
     import { Textarea } from "$lib/components/ui/textarea";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+        resourceHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -72,7 +77,14 @@
         source !== "compose" && source !== "git",
     );
 
-    const backHref = $derived(`/projects/${projectId}/create`);
+    const canvasModeQuery = createCanvasModeQuery();
+
+    // The canvas only lands here from its Add palette, so Back returns to the canvas.
+    const backHref = $derived(
+        canvasModeQuery.data.canvasMode
+            ? projectHref(projectId, true)
+            : `/projects/${projectId}/create`,
+    );
 
     const projectQuery = createQuery(() =>
         orpc.projects.getProject.queryOptions({
@@ -166,7 +178,11 @@
                     page.url.pathname === submittedFrom
                 )
                     await goto(
-                        `/projects/${input.projectId}/${resource.id}`,
+                        resourceHref(
+                            input.projectId,
+                            resource.id,
+                            canvasModeQuery.data.canvasMode,
+                        ),
                     );
             },
         }),

@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { commitOnServer, committedFile, gitServer, initialCompose } from "./git-server";
-import { clientHeaders, memberStorageState, rpc, sql, storageState } from "./fixtures";
+import {
+    clientHeaders,
+    memberStorageState,
+    openCreatedResource,
+    rpc,
+    sql,
+    storageState,
+} from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 
@@ -164,6 +171,7 @@ test("a resource is created from a repository's Compose file", async ({ page }) 
     await page.getByLabel("Branch").fill("main");
     await page.getByLabel("Compose file or directory").fill("compose.yaml");
     await page.getByRole("button", { name: "Create resource" }).click();
+    await openCreatedResource(page, project.id);
 
     await expect(page.getByRole("navigation", { name: "breadcrumb" })).toContainText(name);
     await expect(editor(page)).toContainText("image: nginx:alpine");

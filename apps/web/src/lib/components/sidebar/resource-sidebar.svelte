@@ -13,6 +13,10 @@
         SidebarSeparator,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { orpc } from "$lib/api/orpc";
     import Activity from "@lucide/svelte/icons/activity";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -59,7 +63,11 @@
 
     const resourceId = $derived(page.params.resourceId);
 
-    const projectBase = $derived(`/projects/${projectId}`);
+    const canvasModeQuery = createCanvasModeQuery();
+
+    const projectBase = $derived(
+        projectHref(projectId ?? "", canvasModeQuery.data.canvasMode),
+    );
 
     const resourceBase = $derived(
         `/projects/${projectId}/${resourceId}`,
