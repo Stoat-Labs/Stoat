@@ -131,6 +131,7 @@
                 step.detail,
                 ...step.history,
                 step.replaces?.title,
+                ...(step.replaces?.history ?? []),
                 ...step.ops.flatMap((op) => [op.title, op.detail]),
             ]
                 .join(" ")
