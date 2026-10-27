@@ -59,12 +59,20 @@
 
         if (!value?.startsWith("/")) return "/";
 
-        // Browsers read "/\evil.com" as "//evil.com", so compare the resolved origin instead.
-        const target = new URL(value, page.url.origin);
+        // Browsers read "/\evil.com" as "//evil.com", so resolve the value first. Dot segments
+        // can also normalise to a "//host" path, which is off-site again once used on its own.
+        try {
+            const target = new URL(value, page.url.origin);
 
-        return target.origin === page.url.origin
-            ? `${target.pathname}${target.search}${target.hash}`
-            : "/";
+            const path = `${target.pathname}${target.search}${target.hash}`;
+
+            return target.origin === page.url.origin &&
+                !path.startsWith("//")
+                ? path
+                : "/";
+        } catch {
+            return "/";
+        }
     });
 
     let name = $state("");

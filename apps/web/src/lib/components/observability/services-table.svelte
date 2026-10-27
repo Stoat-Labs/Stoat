@@ -67,24 +67,47 @@
         "networkOut",
     ] as const;
 
-    // "cpu.desc" in the URL, so a reload or shared link keeps the order.
+    const serializeSort = (state: SortingState) =>
+        state.length
+            ? state
+                  .map(
+                      ({ id, desc }) =>
+                          `${id}.${desc ? "desc" : "asc"}`,
+                  )
+                  .join(",")
+            : "none";
+
+    // "cpu.desc,memory.asc" in the URL, so a reload or shared link keeps every sorted column;
+    // "none" keeps a cleared sort from snapping back to the default.
     const sortParam = useQueryState(
         "servicesSort",
         createParser<SortingState>({
             parse(value) {
-                const [id, direction] = value.split(".");
+                if (value === "none") return [];
 
-                return sortColumns.some((column) => column === id) &&
-                    (direction === "asc" || direction === "desc")
-                    ? [{ id: id!, desc: direction === "desc" }]
-                    : null;
+                const state: SortingState = [];
+
+                for (const part of value.split(",")) {
+                    const [id, direction] = part.split(".");
+
+                    if (
+                        !sortColumns.some(
+                            (column) => column === id,
+                        ) ||
+                        (direction !== "asc" && direction !== "desc")
+                    )
+                        return null;
+
+                    state.push({
+                        id: id!,
+                        desc: direction === "desc",
+                    });
+                }
+
+                return state;
             },
-            serialize: (state) =>
-                state[0]
-                    ? `${state[0].id}.${state[0].desc ? "desc" : "asc"}`
-                    : "",
-            eq: (a, b) =>
-                a[0]?.id === b[0]?.id && a[0]?.desc === b[0]?.desc,
+            serialize: serializeSort,
+            eq: (a, b) => serializeSort(a) === serializeSort(b),
         })
             .withDefault([{ id: "cpu", desc: true }])
             .withOptions({ shallow: true, scroll: false }),
