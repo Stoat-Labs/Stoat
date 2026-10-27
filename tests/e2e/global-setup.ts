@@ -128,6 +128,9 @@ function buildWeb() {
  * mid-test. Returns the teardown.
  */
 export default async function globalSetup() {
+    // Sidecar tokens are encrypted with APP_SECRET, so rows seeded here and by the specs (whose
+    // workers inherit this env) must use the server's secret.
+    process.env.APP_SECRET = APP_SECRET;
     buildWeb();
     const postgres = await new PostgreSqlContainer("postgres:18-alpine").start();
     const databaseUrl = postgres.getConnectionUri();
