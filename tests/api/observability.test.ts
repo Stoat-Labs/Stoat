@@ -83,6 +83,8 @@ beforeAll(async () => {
         [organizationId],
     );
     context = { db, session: null, apiKey: { id: "test-key", organizationId } };
+    // The sidecar token is encrypted with APP_SECRET, so write it with the secret the test reads with.
+    vi.stubEnv("APP_SECRET", secret);
     await db.insert(clusters).values({
         id: clusterId,
         organizationId,

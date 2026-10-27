@@ -1036,7 +1036,6 @@ describe("resource logs backend", () => {
     );
 
     it("multiplexes idle connected statuses and nanosecond logs without Greptime; return aborts pending reads", async () => {
-        vi.stubEnv("APP_SECRET", "");
         const stream = await openBoth();
 
         try {
