@@ -39,6 +39,7 @@ describe("first account (PostgreSQL)", () => {
 
     afterAll(async () => {
         await db?.$client.end();
+
         if (admin) await dropTestDatabase(admin, databaseName);
         await admin?.$client.end();
     });

@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import { clusterMonitoring, clusters } from "@stoat/db/schema/index";
 import { ucClient } from "@stoat/uncloud";
@@ -71,7 +72,7 @@ export const metricsRouter = {
                 try {
                     const password = decryptMonitoringPassword(
                         cluster.encryptedPassword,
-                        process.env.APP_SECRET ?? "",
+                        appSecret(),
                         cluster.id,
                     );
 

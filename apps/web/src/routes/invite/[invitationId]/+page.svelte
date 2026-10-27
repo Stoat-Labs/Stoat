@@ -17,6 +17,20 @@
 
     let { data } = $props();
 
+    let switching = $state(false);
+
+    async function switchAccount() {
+        switching = true;
+
+        try {
+            await authClient.signOut();
+        } finally {
+            window.location.assign(
+                `/login?next=${encodeURIComponent(`/invite/${data.invitationId}`)}`,
+            );
+        }
+    }
+
     const invitation = createQuery(() => ({
         queryKey: ["invitation", data.invitationId],
         queryFn: async () => {
@@ -28,12 +42,19 @@
             if (result.error)
                 throw new Error(
                     result.error.message ?? "Invitation not found.",
+                    { cause: result.error.code },
                 );
 
             return result.data;
         },
         retry: false,
     }));
+
+    // Better Auth only shows an invitation to the account with the invited email.
+    const wrongAccount = $derived(
+        invitation.error?.cause ===
+            "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
+    );
 
     let pending = $state(false);
 
@@ -90,6 +111,21 @@
                 <Skeleton loading loading-label="Loading invitation">
                     <Button class="w-full">Accept invitation</Button>
                 </Skeleton>
+            {:else if wrongAccount}
+                <Alert variant="error">
+                    <AlertDescription>
+                        This invitation was sent to another email.
+                        You're signed in as {data.email}.
+                    </AlertDescription>
+                </Alert>
+                <Button
+                    class="w-full"
+                    loading={switching}
+                    onclick={switchAccount}
+                >
+                    Sign in with another account
+                </Button>
+                <Button variant="outline" href="/">Go home</Button>
             {:else if invitation.error}
                 <Alert variant="error">
                     <AlertDescription>

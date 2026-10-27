@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import { createDeployment } from "@stoat/db/deployments";
 import { clusterMonitoring, clusters, resources } from "@stoat/db/schema/index";
@@ -309,20 +310,16 @@ export const initializationRouter = {
             if (cluster.configuration.retentionDays === input.retentionDays)
                 return { retentionDays: input.retentionDays };
 
-            const secret = process.env.APP_SECRET;
-
             let password: string | null = null;
 
-            if (secret) {
-                try {
-                    password = decryptMonitoringPassword(
-                        monitoring.encryptedPassword,
-                        secret,
-                        cluster.id,
-                    );
-                } catch {
-                    password = null;
-                }
+            try {
+                password = decryptMonitoringPassword(
+                    monitoring.encryptedPassword,
+                    appSecret(),
+                    cluster.id,
+                );
+            } catch {
+                password = null;
             }
 
             if (!password)
@@ -417,18 +414,14 @@ export const monitoringRouter = {
             let password: string | null = null;
 
             if (isAdmin) {
-                const secret = process.env.APP_SECRET;
-
-                if (secret) {
-                    try {
-                        password = decryptMonitoringPassword(
-                            monitoring.encryptedPassword,
-                            secret,
-                            cluster.id,
-                        );
-                    } catch {
-                        password = null;
-                    }
+                try {
+                    password = decryptMonitoringPassword(
+                        monitoring.encryptedPassword,
+                        appSecret(),
+                        cluster.id,
+                    );
+                } catch {
+                    password = null;
                 }
             }
 

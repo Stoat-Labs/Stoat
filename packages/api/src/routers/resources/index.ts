@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
 import {
@@ -238,7 +239,7 @@ async function assertProjectVisible(
     projectId: string,
 ) {
     const [project] = await db
-        .select({ id: projects.id })
+        .select({ id: projects.id, clusterId: projects.clusterId })
         .from(projects)
         .innerJoin(clusters, eq(projects.clusterId, clusters.id))
         .where(
@@ -254,6 +255,84 @@ async function assertProjectVisible(
 
     if (!project) {
         throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+    }
+
+    return project;
+}
+
+/** The project, as a subquery, when it belongs to the organization and is not system-managed. */
+function editableProject(db: Pick<Database, "select">, organizationId: string, projectId: string) {
+    return db
+        .select({ id: projects.id })
+        .from(projects)
+        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+        .where(
+            and(
+                eq(projects.id, projectId),
+                sql`${projects.isInternal} is not true`,
+                eq(clusters.organizationId, organizationId),
+            ),
+        );
+}
+
+type Resource = typeof resources.$inferSelect;
+
+type DeployedSnapshot = { spec: string | null; prefix: string | null };
+
+/** The latest successful deploy of each resource, which says what actually runs. */
+async function deployedSnapshots(db: Database, resourceIds: string[]) {
+    const rows = await db
+        .selectDistinctOn([deployments.resourceId], {
+            resourceId: deployments.resourceId,
+            spec: deployments.spec,
+            prefix: resourceDeploymentInputs.prefix,
+        })
+        .from(deployments)
+        .leftJoin(
+            resourceDeploymentInputs,
+            eq(resourceDeploymentInputs.deploymentId, deployments.id),
+        )
+        .where(
+            and(
+                inArray(deployments.resourceId, resourceIds),
+                eq(deployments.name, "DeployResource"),
+                eq(deployments.status, "ready"),
+            ),
+        )
+        .orderBy(deployments.resourceId, desc(deployments.finishedAt), desc(deployments.createdAt));
+
+    return new Map<string, DeployedSnapshot>(
+        rows.map(({ resourceId, ...row }) => [resourceId!, row]),
+    );
+}
+
+/** The Uncloud service names a resource runs as. Throws for a deployed spec that no longer parses. */
+function serviceNamesFor(
+    resource: Resource,
+    snapshot: DeployedSnapshot | undefined,
+    monitoring: boolean,
+) {
+    if (monitoring) return [GREPTIME_SERVICE, ALLOY_SERVICE];
+
+    if (!resource.spec && !resource.draftSpec) {
+        throw new ORPCError("NOT_FOUND", { message: "Resource has no compose spec." });
+    }
+
+    const deployed = snapshot?.spec ?? (resource.spec?.trim() ? resource.spec : null);
+
+    try {
+        return formatComposeFile(
+            deployed ?? resource.draftSpec!,
+            snapshot?.prefix ?? resourceComposePrefix(resource),
+        ).serviceNames;
+    } catch (error) {
+        // Before the first deploy the draft is only a guess at what runs, and an
+        // unfinished one is not an error worth showing next to the editor.
+        if (!deployed) return [];
+
+        throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Invalid compose spec.",
+        });
     }
 }
 
@@ -968,18 +1047,6 @@ export const resourcesRouter = {
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
-            const authorizedProjects = db
-                .select({ id: projects.id })
-                .from(projects)
-                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                .where(
-                    and(
-                        eq(projects.id, input.projectId),
-                        sql`${projects.isInternal} is not true`,
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                );
-
             const [resource] = await db
                 .update(resources)
                 .set({
@@ -990,7 +1057,7 @@ export const resourcesRouter = {
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
                         inArray(resources.type, composeResourceTypes),
-                        sql`${resources.projectId} in (${authorizedProjects})`,
+                        sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
                     ),
                 )
                 .returning();
@@ -1011,18 +1078,6 @@ export const resourcesRouter = {
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
-            const authorizedProjects = db
-                .select({ id: projects.id })
-                .from(projects)
-                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                .where(
-                    and(
-                        eq(projects.id, input.projectId),
-                        sql`${projects.isInternal} is not true`,
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                );
-
             const [resource] = await db
                 .update(resources)
                 .set({
@@ -1033,7 +1088,7 @@ export const resourcesRouter = {
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
                         inArray(resources.type, composeResourceTypes),
-                        sql`${resources.projectId} in (${authorizedProjects})`,
+                        sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
                     ),
                 )
                 .returning();
@@ -1056,18 +1111,6 @@ export const resourcesRouter = {
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
-            const authorizedProjects = db
-                .select({ id: projects.id })
-                .from(projects)
-                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-                .where(
-                    and(
-                        eq(projects.id, input.projectId),
-                        sql`${projects.isInternal} is not true`,
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                );
-
             const description = input.description?.trim() ? input.description.trim() : null;
             const icon = input.icon?.trim() ? input.icon.trim() : null;
 
@@ -1083,7 +1126,7 @@ export const resourcesRouter = {
                         eq(resources.id, input.resourceId),
                         eq(resources.projectId, input.projectId),
                         inArray(resources.type, composeResourceTypes),
-                        sql`${resources.projectId} in (${authorizedProjects})`,
+                        sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
                     ),
                 )
                 .returning();
@@ -1879,7 +1922,7 @@ export const resourcesRouter = {
             try {
                 password = decryptMonitoringPassword(
                     monitoring.encryptedPassword,
-                    process.env.APP_SECRET ?? "",
+                    appSecret(),
                     monitoring.clusterId,
                 );
             } catch {
@@ -1929,52 +1972,13 @@ export const resourcesRouter = {
         .use(uncloudMiddleware)
         .use(resourceReadMiddleware)
         .handler(async ({ context: { db, resource, uc } }) => {
-            let serviceNames: string[] = [GREPTIME_SERVICE, ALLOY_SERVICE];
+            const monitoring = await isMonitoringResource(db, resource.id);
 
-            if (!(await isMonitoringResource(db, resource.id))) {
-                if (!resource.spec && !resource.draftSpec) {
-                    throw new ORPCError("NOT_FOUND", {
-                        message: "Resource has no compose spec.",
-                    });
-                }
+            const snapshot = monitoring
+                ? undefined
+                : (await deployedSnapshots(db, [resource.id])).get(resource.id);
 
-                const [snapshot] = await db
-                    .select({
-                        spec: deployments.spec,
-                        prefix: resourceDeploymentInputs.prefix,
-                    })
-                    .from(deployments)
-                    .leftJoin(
-                        resourceDeploymentInputs,
-                        eq(resourceDeploymentInputs.deploymentId, deployments.id),
-                    )
-                    .where(
-                        and(
-                            eq(deployments.resourceId, resource.id),
-                            eq(deployments.name, "DeployResource"),
-                            eq(deployments.status, "ready"),
-                        ),
-                    )
-                    .orderBy(desc(deployments.finishedAt), desc(deployments.createdAt))
-                    .limit(1);
-
-                const deployed = snapshot?.spec ?? (resource.spec?.trim() ? resource.spec : null);
-
-                try {
-                    serviceNames = formatComposeFile(
-                        deployed ?? resource.draftSpec!,
-                        snapshot?.prefix ?? resourceComposePrefix(resource),
-                    ).serviceNames;
-                } catch (error) {
-                    // Before the first deploy the draft is only a guess at what runs, and an
-                    // unfinished one is not an error worth showing next to the editor.
-                    if (!deployed) return [];
-
-                    throw new ORPCError("BAD_REQUEST", {
-                        message: error instanceof Error ? error.message : "Invalid compose spec.",
-                    });
-                }
-            }
+            const serviceNames = serviceNamesFor(resource, snapshot, monitoring);
 
             const containers = await Promise.all(
                 serviceNames.map(async (id) => {
@@ -1992,6 +1996,76 @@ export const resourcesRouter = {
 
             return containers.flat();
         }),
+
+    // Containers of every resource in a project from one sidecar call, so the canvas polls once
+    // instead of once per card. Keyed by resource id; a resource that does not parse has none.
+    getProjectContainers: organizationProcedure
+        .input(
+            v.object({
+                clusterId: v.pipe(v.string(), v.uuid()),
+                projectId: v.pipe(v.string(), v.uuid()),
+            }),
+        )
+        .use(uncloudMiddleware)
+        .handler(async ({ context: { db, organizationId, organizationRole, uc }, input }) => {
+            const project = await assertProjectVisible(
+                db,
+                organizationId,
+                organizationRole,
+                input.projectId,
+            );
+
+            if (project.clusterId !== input.clusterId)
+                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+
+            const list = await db
+                .select()
+                .from(resources)
+                .where(
+                    and(
+                        eq(resources.projectId, input.projectId),
+                        inArray(resources.type, composeResourceTypes),
+                    ),
+                );
+
+            if (list.length === 0) return {};
+
+            const ids = list.map((resource) => resource.id);
+
+            const [snapshots, monitoringRows, services] = await Promise.all([
+                deployedSnapshots(db, ids),
+                db
+                    .select({ id: clusterMonitoring.resourceId })
+                    .from(clusterMonitoring)
+                    .where(inArray(clusterMonitoring.resourceId, ids)),
+                unwrap(uc.GET("/api/v1/services")),
+            ]);
+
+            const monitoring = new Set(monitoringRows.map((row) => row.id));
+            const byName = new Map(services.items.map((service) => [service.name, service]));
+
+            return Object.fromEntries(
+                list.map((resource) => {
+                    let names: string[];
+
+                    try {
+                        names = serviceNamesFor(
+                            resource,
+                            snapshots.get(resource.id),
+                            monitoring.has(resource.id),
+                        );
+                    } catch {
+                        names = [];
+                    }
+
+                    return [
+                        resource.id,
+                        names.flatMap((name) => byName.get(name)?.containers ?? []),
+                    ];
+                }),
+            );
+        }),
+
     getFormattedCompose: organizationProcedure
         .input(
             v.object({

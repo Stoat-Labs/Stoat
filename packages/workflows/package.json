@@ -18,6 +18,7 @@
     },
     "dependencies": {
         "@effect/sql-pg": "4.0.0-rc.116",
+        "@stoat/config": "workspace:*",
         "@stoat/db": "workspace:*",
         "@stoat/s3": "workspace:*",
         "@stoat/uncloud": "workspace:*",
@@ -27,7 +28,6 @@
         "yaml": "^2.8.1"
     },
     "devDependencies": {
-        "@stoat/config": "workspace:*",
         "typescript": "catalog:"
     }
 }

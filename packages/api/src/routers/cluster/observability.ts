@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import { currentWindow, swr } from "@stoat/cache";
 import { clusterMonitoring, clusters, projects, resources } from "@stoat/db/schema/index";
@@ -127,7 +128,7 @@ function ucServices(cluster: MonitoringCluster, uc: UcClient) {
 }
 
 function monitoringPassword(cluster: MonitoringCluster) {
-    return decryptMonitoringPassword(cluster.password, process.env.APP_SECRET ?? "", cluster.id);
+    return decryptMonitoringPassword(cluster.password, appSecret(), cluster.id);
 }
 
 function queryText(

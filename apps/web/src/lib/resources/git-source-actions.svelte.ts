@@ -171,6 +171,11 @@ export class GitSourceActions {
             void queryClient.invalidateQueries({
                 queryKey: orpc.resources.getContainers.key({ input }),
             });
+            void queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectContainers.key({
+                    input: { projectId: input.projectId },
+                }),
+            });
             this.status = statusMessages[action];
 
             return true;

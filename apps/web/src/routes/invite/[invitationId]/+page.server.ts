@@ -4,5 +4,5 @@ export const load = async ({ locals, params }) => {
     if (!locals.session)
         redirect(303, `/login?next=${encodeURIComponent(`/invite/${params.invitationId}`)}`);
 
-    return { invitationId: params.invitationId };
+    return { invitationId: params.invitationId, email: locals.session.user.email };
 };

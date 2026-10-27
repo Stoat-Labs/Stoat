@@ -144,8 +144,10 @@ export function enablePostgresPort(compose: string, occupied: Set<number>): stri
 export function moveComposeEnvironment(compose: string, env: string) {
     const document = YAML.parseDocument(compose);
     const services = document.get("services", true);
+
     const service =
         isMap(services) && services.items.length === 1 ? services.items[0]?.value : null;
+
     const environment = isMap(service) ? service.get("environment", true) : null;
 
     if (document.errors.length || !isMap(service) || !(isSeq(environment) || isMap(environment)))

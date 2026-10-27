@@ -57,8 +57,13 @@
         if (mode === "setup") return "/setup";
         const value = page.url.searchParams.get("next");
 
-        return value?.startsWith("/") && !value.startsWith("//")
-            ? value
+        if (!value?.startsWith("/")) return "/";
+
+        // Browsers read "/\evil.com" as "//evil.com", so compare the resolved origin instead.
+        const target = new URL(value, page.url.origin);
+
+        return target.origin === page.url.origin
+            ? `${target.pathname}${target.search}${target.hash}`
             : "/";
     });
 

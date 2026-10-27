@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
@@ -13,7 +14,6 @@
         AlertDialogHeader,
         AlertDialogTitle,
     } from "$lib/components/ui/alert-dialog";
-    import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
     import { DataTable } from "$lib/components/ui/data-table";
     import {
@@ -79,6 +79,7 @@
                 q: debounced.current || undefined,
                 limit,
                 offset: (list.page.current - 1) * limit,
+                includeDiagnostics: false,
             },
             enabled: !searchPending,
         }),
@@ -255,19 +256,9 @@
                 {#each items as cluster (cluster.id)}
                     <TableRow class="group">
                         <TableCell class="text-center">
-                            {#if cluster.diagnostics?.status === "healthy"}
-                                <Badge variant="success">
-                                    Healthy
-                                </Badge>
-                            {:else if cluster.diagnostics?.status === "degraded"}
-                                <Badge variant="warning">
-                                    Degraded
-                                </Badge>
-                            {:else}
-                                <Badge variant="secondary">
-                                    Unknown
-                                </Badge>
-                            {/if}
+                            <ClusterHealthBadge
+                                clusterId={cluster.id}
+                            />
                         </TableCell>
                         <TableCell>
                             <a

@@ -5,7 +5,6 @@ allowBuilds:
     cpu-features: false
     esbuild: true
     protobufjs: false
-    sharp: true
     ssh2: false
 catalog:
     typescript: ^6.0.3
@@ -19,11 +18,9 @@ catalog:
     yaml: ^2.9.0
     better-auth: 1.7.3
     "@better-auth/api-key": 1.7.3
-    "@orpc/experimental-effect": "beta"
-    effect: "beta"
     vite: npm:@voidzero-dev/vite-plus-core@0.3.1
     vite-plus: 0.3.1
-    ofetch: latest
+    ofetch: ^1.5.1
 minimumReleaseAgeExclude:
     - "@effect/sql-pg@4.0.0-rc.116"
     - effect@4.0.0-rc.116

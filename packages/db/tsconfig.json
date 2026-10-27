@@ -8,5 +8,9 @@
         "outDir": "dist"
     },
     "include": ["src/**/*.ts"],
-    "references": []
+    "references": [
+        {
+            "path": "../config"
+        }
+    ]
 }

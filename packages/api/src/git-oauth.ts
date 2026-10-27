@@ -1,3 +1,4 @@
+import { appSecret, appUrl } from "@stoat/config/env";
 import {
     createCipheriv,
     createDecipheriv,
@@ -176,7 +177,7 @@ export async function createOrganizationGitOAuthProvider(
 
 export function getGitOAuthCallbackUrl(): string {
     try {
-        const raw = process.env.APP_URL;
+        const raw = appUrl();
 
         if (!raw || raw.length > 2048) throw new Error();
         const url = new URL(raw);
@@ -391,9 +392,11 @@ function fingerprint(provider: GitOAuthProvider): string {
 }
 
 function stateKey(salt: Buffer, identity: GitOAuthIdentity) {
-    const secret = process.env.APP_SECRET;
+    let secret: string;
 
-    if (!secret || Buffer.byteLength(secret) < 32) {
+    try {
+        secret = appSecret();
+    } catch {
         throw new GitOAuthError(
             "configuration",
             "Set APP_SECRET to at least 32 bytes for encrypted Git OAuth state.",

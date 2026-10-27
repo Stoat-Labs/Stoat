@@ -8,5 +8,18 @@
     },
     "include": ["src/**/*.ts"],
     "exclude": ["src/**/*.test.ts"],
-    "references": [{ "path": "../db" }, { "path": "../s3" }, { "path": "../uncloud" }]
+    "references": [
+        {
+            "path": "../config"
+        },
+        {
+            "path": "../db"
+        },
+        {
+            "path": "../s3"
+        },
+        {
+            "path": "../uncloud"
+        }
+    ]
 }

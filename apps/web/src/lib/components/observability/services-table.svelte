@@ -38,6 +38,7 @@
         type SortingState,
     } from "@tanstack/table-core";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
+    import { createParser, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
 
@@ -55,7 +56,41 @@
 
     const canvasModeQuery = createCanvasModeQuery();
 
-    let sorting = $state<SortingState>([{ id: "cpu", desc: true }]);
+    const sortColumns = [
+        "name",
+        "clusterName",
+        "machines",
+        "running",
+        "cpu",
+        "memory",
+        "networkIn",
+        "networkOut",
+    ] as const;
+
+    // "cpu.desc" in the URL, so a reload or shared link keeps the order.
+    const sortParam = useQueryState(
+        "servicesSort",
+        createParser<SortingState>({
+            parse(value) {
+                const [id, direction] = value.split(".");
+
+                return sortColumns.some((column) => column === id) &&
+                    (direction === "asc" || direction === "desc")
+                    ? [{ id: id!, desc: direction === "desc" }]
+                    : null;
+            },
+            serialize: (state) =>
+                state[0]
+                    ? `${state[0].id}.${state[0].desc ? "desc" : "asc"}`
+                    : "",
+            eq: (a, b) =>
+                a[0]?.id === b[0]?.id && a[0]?.desc === b[0]?.desc,
+        })
+            .withDefault([{ id: "cpu", desc: true }])
+            .withOptions({ shallow: true, scroll: false }),
+    );
+
+    const sorting = $derived(sortParam.current);
 
     let viewport = $state<HTMLDivElement>();
 
@@ -109,7 +144,7 @@
             onStateChange: () => {},
             renderFallbackValue: "—",
             onSortingChange: (update) => {
-                sorting = functionalUpdate(update, sorting);
+                void sortParam.set(functionalUpdate(update, sorting));
                 viewport?.scrollTo({ top: 0 });
             },
             getCoreRowModel: getCoreRowModel(),

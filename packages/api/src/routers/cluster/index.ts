@@ -80,16 +80,8 @@ export const clusterRouter = {
                 .from(clusters)
                 .leftJoin(projects, eq(projects.clusterId, clusters.id))
                 .where(conditions)
-                .groupBy(
-                    clusters.id,
-                    clusters.name,
-                    clusters.organizationId,
-                    clusters.initializedAt,
-                    clusters.createdAt,
-                    clusters.updatedAt,
-                    clusters.sidecarUrl,
-                    clusters.sidecarToken,
-                )
+                // The primary key determines every other cluster column.
+                .groupBy(clusters.id)
                 .orderBy(asc(clusters.createdAt))
                 .limit(limit)
                 .offset(offset);
@@ -144,17 +136,8 @@ export const clusterRouter = {
                         eq(clusters.organizationId, organizationId),
                     ),
                 )
-                .groupBy(
-                    clusters.id,
-                    clusters.name,
-                    clusters.organizationId,
-                    clusters.initializedAt,
-                    clusters.initializationConfiguration,
-                    clusters.createdAt,
-                    clusters.updatedAt,
-                    clusters.sidecarUrl,
-                    clusters.sidecarToken,
-                )
+                // The primary key determines every other cluster column.
+                .groupBy(clusters.id)
                 .limit(1);
 
             if (!cluster) {

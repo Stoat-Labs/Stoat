@@ -55,11 +55,7 @@ export const organizationProcedure = publicProcedure.use(async ({ context, next 
 });
 
 export const organizationAdminProcedure = organizationProcedure.use(async ({ context, next }) => {
-    if (
-        !context.organizationRole
-            .split(",")
-            .some((role) => role.trim() === "owner" || role.trim() === "admin")
-    ) {
+    if (!isOrganizationAdmin(context.organizationRole)) {
         throw new ORPCError("FORBIDDEN", {
             message: "This action requires an organization owner or admin.",
         });

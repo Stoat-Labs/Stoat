@@ -1,17 +1,11 @@
 import { startWorker } from "@stoat/workflows/lifecycle";
 import { watchGitSources } from "@stoat/api/git-watch";
+import { appSecret, databaseUrl } from "@stoat/config/env";
+import { encryptLegacySidecarTokens } from "@stoat/db/clusters";
 import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
 import { JobStoreLive } from "@stoat/workflows/store";
 import { Effect, Layer } from "effect";
 import { getDb } from "../../services";
-
-function requireEnv(name: string) {
-    const value = process.env[name];
-
-    if (!value) throw new Error(`[worker] ${name} is required for cluster initialization.`);
-
-    return value;
-}
 
 /**
  * Run the cluster-monitoring worker inside the web server process.
@@ -25,12 +19,12 @@ function requireEnv(name: string) {
  * serverless adapter means moving this back out into a dedicated process.
  */
 export function startMonitoringWorker() {
-    requireEnv("DATABASE_URL");
-    const secret = requireEnv("APP_SECRET");
+    databaseUrl();
+    appSecret();
 
-    if (secret.length < 32) {
-        throw new Error("[worker] APP_SECRET must contain at least 32 characters.");
-    }
+    encryptLegacySidecarTokens(getDb()).catch((error: Error) =>
+        console.error("[worker] Could not encrypt legacy sidecar tokens:", error.message),
+    );
 
     startWorker(
         Layer.launch(monitoringWorkerLive(watchGitSources)),

@@ -1,3 +1,4 @@
+import { appSecret, databaseUrl } from "@stoat/config/env";
 import { createDb, type Database } from "@stoat/db";
 import {
     appendDeploymentLog,
@@ -24,23 +25,11 @@ import {
 import { reconcileBucket } from "./reconcile-bucket";
 import { JobStoreLive, PgLive } from "./store";
 
-function requireEnv(name: string) {
-    const value = process.env[name];
-
-    if (!value) throw new Error(`${name} is required for cluster initialization.`);
-
-    return value;
-}
-
 // One pool for the whole worker; it ends when the worker layer is released.
 const WorkerDb = Effect.acquireRelease(
-    Effect.sync(() => createDb({ DATABASE_URL: requireEnv("DATABASE_URL") })),
+    Effect.sync(() => createDb({ DATABASE_URL: databaseUrl() })),
     (db) => Effect.promise(() => db.$client.end()).pipe(Effect.ignore),
 );
-
-function encryptionSecret() {
-    return requireEnv("APP_SECRET");
-}
 
 const TERMINAL_FAILURE_MESSAGE =
     "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.";
@@ -68,7 +57,7 @@ async function runAttemptAsync(
 
     const handler = createInitializeClusterHandler(
         db,
-        encryptionSecret(),
+        appSecret(),
         deployment ? { deploymentId: deployment.id } : undefined,
     );
 
@@ -99,15 +88,10 @@ async function runAttemptAsync(
 }
 
 function runAttempt(db: Database, clusterId: string, requestId: string) {
-    return Effect.callback<void>((resume, signal) => {
-        const attempt = runAttemptAsync(db, clusterId, requestId, signal).then(
-            () => resume(Effect.void),
-            () => resume(Effect.die(new Error(TERMINAL_FAILURE_MESSAGE))),
-        );
-
-        // Drain pending writes before the timeout/failure hook publishes terminal status.
-        return Effect.promise(() => attempt);
-    });
+    return attempt(
+        (signal) => runAttemptAsync(db, clusterId, requestId, signal),
+        () => new Error(TERMINAL_FAILURE_MESSAGE),
+    );
 }
 
 // Runs one attempt on the worker's pool. Interruption aborts the signal, then the returned effect
