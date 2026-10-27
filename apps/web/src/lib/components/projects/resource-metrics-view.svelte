@@ -123,8 +123,8 @@
     const resourceServices = $derived(
         (services.data ?? []).filter(
             (service) =>
-                service.href ===
-                `/projects/${projectId}/${resourceId}`,
+                service.resource?.projectId === projectId &&
+                service.resource.resourceId === resourceId,
         ),
     );
 

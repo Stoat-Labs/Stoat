@@ -1,4 +1,8 @@
 <script lang="ts">
+    import {
+        createCanvasModeQuery,
+        resourceHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
     import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
@@ -68,6 +72,17 @@
         },
         { shallow: true, scroll: false },
     );
+
+    const canvasModeQuery = createCanvasModeQuery();
+
+    function deploymentsHref(projectId: string, resourceId: string) {
+        const canvasMode = canvasModeQuery.data.canvasMode;
+        const href = resourceHref(projectId, resourceId, canvasMode);
+
+        return canvasMode
+            ? `${href}&tab=deployments`
+            : `${href}/deployments`;
+    }
 
     const projectsQuery = createQuery(() =>
         orpc.projects.listProjectOverviews.queryOptions(),
@@ -268,9 +283,10 @@
                             <Button
                                 size="sm"
                                 variant="ghost"
-                                href="/projects/{item.project
-                                    .id}/{item.resource
-                                    .id}/deployments"
+                                href={deploymentsHref(
+                                    item.project.id,
+                                    item.resource.id,
+                                )}
                             >
                                 View deployments <ArrowRight
                                     class="size-4"

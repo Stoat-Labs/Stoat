@@ -414,7 +414,7 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
     expect(result.services).toMatchObject([
         {
             id: "web-id",
-            href: `/projects/${projectId}/${resourceId}`,
+            resource: { projectId, resourceId },
             containers: [
                 {
                     id: "abc",

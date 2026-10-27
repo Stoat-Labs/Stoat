@@ -347,9 +347,6 @@
                         key: `${cluster.id}:${service.serviceId}`,
                         cluster,
                         name: serviceName(service.serviceId),
-                        href:
-                            serviceInfo.get(service.serviceId)
-                                ?.href ?? null,
                         color: serviceColor(service.serviceId),
                     }),
                 ),

@@ -242,7 +242,7 @@ export type ObservabilityContainer = {
 export type ObservabilityService = {
     id: string;
     name: string;
-    href: string | null;
+    resource: { projectId: string; resourceId: string } | null;
     containers: ObservabilityContainer[];
 };
 

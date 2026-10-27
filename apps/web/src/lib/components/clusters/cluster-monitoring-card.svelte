@@ -13,6 +13,10 @@
         CardPanel,
         CardTitle,
     } from "$lib/components/ui/card";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { formatDate } from "$lib/format";
     import CircleAlert from "@lucide/svelte/icons/circle-alert";
     import type { AppRouterClient } from "@stoat/api/routers/index";
@@ -38,6 +42,8 @@
             dialog: "monitoring" | "retention" | "reinitialize",
         ) => void;
     } = $props();
+
+    const canvasModeQuery = createCanvasModeQuery();
 
     const initializationStatus = $derived(
         cluster.initializationStatus ?? "uninitialized",
@@ -118,7 +124,10 @@
                         variant="outline"
                         size="sm"
                         class="max-w-full"
-                        href={`/projects/${cluster.internalProjectId}`}
+                        href={projectHref(
+                            cluster.internalProjectId,
+                            canvasModeQuery.data.canvasMode,
+                        )}
                     >
                         <span class="truncate">
                             Open {cluster.name}-internal

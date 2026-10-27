@@ -600,7 +600,7 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                 {
                     id: service.id,
                     name: service.name,
-                    href: service.href,
+                    resource: service.resource,
                     key: `${cluster.id}:${service.id}`,
                     color: colors.get(service.name) ?? seriesColor(service.name),
                     clusterId: cluster.id,

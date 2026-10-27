@@ -1,4 +1,8 @@
 <script lang="ts">
+    import {
+        createCanvasModeQuery,
+        resourceHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { ago } from "$lib/format";
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
@@ -48,6 +52,8 @@
         expandAll?: boolean;
         hovered?: string;
     } = $props();
+
+    const canvasModeQuery = createCanvasModeQuery();
 
     let sorting = $state<SortingState>([{ id: "cpu", desc: true }]);
 
@@ -448,9 +454,17 @@
                                             class="truncate"
                                             title={row.name}
                                         >
-                                            {#if row.href}<a
+                                            {#if row.resource}<a
                                                     class="underline-offset-4 hover:underline focus-visible:underline"
-                                                    href={row.href}
+                                                    href={resourceHref(
+                                                        row.resource
+                                                            .projectId,
+                                                        row.resource
+                                                            .resourceId,
+                                                        canvasModeQuery
+                                                            .data
+                                                            .canvasMode,
+                                                    )}
                                                     onclick={(
                                                         event,
                                                     ) =>

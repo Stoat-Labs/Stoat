@@ -90,7 +90,7 @@
     const serviceIds = $derived([
         ...new Set(
             (services.data ?? []).flatMap((service) =>
-                service.href?.startsWith(`/projects/${projectId}/`)
+                service.resource?.projectId === projectId
                     ? [service.id]
                     : [],
             ),

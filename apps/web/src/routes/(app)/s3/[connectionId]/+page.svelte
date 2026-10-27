@@ -22,6 +22,10 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Skeleton } from "$lib/components/ui/skeleton";
+    import {
+        createCanvasModeQuery,
+        resourceHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import {
         s3BucketStatusVariant,
@@ -38,6 +42,8 @@
     import { watch } from "runed";
 
     const connectionId = $derived(page.params.connectionId ?? "");
+
+    const canvasModeQuery = createCanvasModeQuery();
 
     const connectionQuery = createQuery(() =>
         orpc.s3.get.queryOptions({
@@ -398,7 +404,11 @@
                 <FramePanel class="divide-y divide-border p-0">
                     {#each connection.buckets as bucket (bucket.resourceId)}
                         <a
-                            href={`/projects/${bucket.projectId}/${bucket.resourceId}`}
+                            href={resourceHref(
+                                bucket.projectId,
+                                bucket.resourceId,
+                                canvasModeQuery.data.canvasMode,
+                            )}
                             class="flex items-center gap-3 p-4 outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50"
                         >
                             <span class="min-w-0 flex-1">

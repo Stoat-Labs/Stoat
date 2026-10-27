@@ -615,7 +615,7 @@ export const observabilityRouter = {
                             ),
                     ]);
 
-                    const links = new Map<string, string | null>();
+                    const links = new Map<string, ObservabilityService["resource"]>();
 
                     for (const resource of resourceList) {
                         if (!resource.spec) continue;
@@ -629,7 +629,10 @@ export const observabilityRouter = {
                                     name,
                                     links.has(name)
                                         ? null
-                                        : `/projects/${resource.projectId}/${resource.id}`,
+                                        : {
+                                              projectId: resource.projectId,
+                                              resourceId: resource.id,
+                                          },
                                 );
                         } catch {
                             /* An invalid imported Compose file cannot identify its services. */
@@ -642,16 +645,16 @@ export const observabilityRouter = {
                         cluster.monitoringProject
                     )
                         for (const name of [GREPTIME_SERVICE, ALLOY_SERVICE])
-                            links.set(
-                                name,
-                                `/projects/${cluster.monitoringProject}/${cluster.monitoringResource}`,
-                            );
+                            links.set(name, {
+                                projectId: cluster.monitoringProject,
+                                resourceId: cluster.monitoringResource,
+                            });
 
                     return services.items
                         .map((service) => ({
                             id: service.id,
                             name: service.name,
-                            href: links.get(service.name) ?? null,
+                            resource: links.get(service.name) ?? null,
                             containers: service.containers
                                 .map((item) =>
                                     toContainer(

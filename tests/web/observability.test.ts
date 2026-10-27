@@ -49,7 +49,7 @@ it("detects Postgres metrics from a Postgres server and postgres-exporter in any
         images.map((image, index) => ({
             id: `s${index}`,
             name: `service-${index}`,
-            href: null,
+            resource: null,
             containers: [container({ image })],
         }));
 
@@ -146,7 +146,7 @@ it("keeps machine and service identities cluster-scoped and CPU above 100%, with
         step: 15,
         unavailable: [],
         machines: [{ id: "node", name: "Node", state: "Up" }],
-        services: [{ id: "web", name: "Web", href: null, containers: [container({})] }],
+        services: [{ id: "web", name: "Web", resource: null, containers: [container({})] }],
         metrics: {
             serviceCpu: [
                 {
@@ -238,7 +238,7 @@ it("combines a service's containers across machines and keeps each container's o
             {
                 id: "web",
                 name: "Web",
-                href: null,
+                resource: null,
                 containers: [
                     container({ restarts: 2, memoryLimit: 1000 }),
                     container({
