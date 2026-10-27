@@ -1,24 +1,11 @@
 <script lang="ts" module>
-    export const addPages = [
-        "root",
-        "git",
-        "database",
-        "template",
-        "docker",
-        "bucket",
-        "volume",
-        "config",
-    ] as const;
-
-    export type AddPage = (typeof addPages)[number];
+    export { addPages, type AddPage } from "./add-palette-entries";
 </script>
 
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
-    import { s3ProviderIcons } from "$lib/components/s3/provider-icon.svelte";
     import {
         Alert,
         AlertDescription,
@@ -30,29 +17,13 @@
         CommandDialogPopup,
         CommandEmpty,
         CommandInput,
-        CommandItem,
         CommandList,
     } from "$lib/components/ui/command";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Box from "@lucide/svelte/icons/box";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import Container from "@lucide/svelte/icons/container";
-    import Database from "@lucide/svelte/icons/database";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import FileCog from "@lucide/svelte/icons/file-cog";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Info from "@lucide/svelte/icons/info";
     import KeyRound from "@lucide/svelte/icons/key-round";
-    import Layers from "@lucide/svelte/icons/layers";
     import Search from "@lucide/svelte/icons/search";
-    import Settings from "@lucide/svelte/icons/settings";
-    import SquareTerminal from "@lucide/svelte/icons/square-terminal";
     import { ORPCError } from "@orpc/client";
-    import {
-        dockerHubLogoUrl,
-        dockerHubRepository,
-    } from "@stoat/api/docker-hub";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
     import { s3Providers } from "@stoat/s3/providers";
     import {
         createQueries,
@@ -65,12 +36,24 @@
         useQueryState,
     } from "nuqs-svelte";
     import { Debounced } from "runed";
-    import type { Component } from "svelte";
     import {
-        imageCompose,
-        imageServiceName,
-        isImageReference,
-    } from "./docker-image";
+        addPages,
+        bucketEntries,
+        dockerEntries,
+        dockerHubSearchTerm,
+        gitEntries,
+        pagePlaceholders,
+        pageTitles,
+        rootEntries,
+        templateEntries,
+        templateInput,
+        volumeEntries,
+        volumeTargetKey,
+        type AddPage,
+        type CreateInput,
+        type Entry,
+    } from "./add-palette-entries";
+    import AddPaletteItem from "./add-palette-item.svelte";
     import {
         configNodeId,
         volumeNodeId,
@@ -91,33 +74,6 @@
         /** Runs with the new resource's id once it is on the canvas. */
         oncreated: (resourceId: string) => void;
     } = $props();
-
-    type CreateInput = Omit<
-        Parameters<AppRouterClient["resources"]["createResource"]>[0],
-        "projectId"
-    >;
-
-    type Template = Awaited<
-        ReturnType<AppRouterClient["resources"]["listTemplates"]>
-    >[number];
-
-    type Entry = {
-        id: string;
-        label: string;
-        description: string | undefined;
-        logo: string | null;
-        icon: Component;
-        /** A Git provider's logo instead of `icon`. */
-        provider: string | undefined;
-        /** A palette sub-page, a page to open, or a resource to add to the canvas. */
-        target:
-            | { page: AddPage }
-            | { href: string }
-            | { create: CreateInput }
-            | { template: Template }
-            | { bucket: { connectionId: string } }
-            | { volumeService: VolumeTarget };
-    };
 
     // Which palette page is open; `null` closes it. Kept in the URL like the canvas selection.
     const add = useQueryState(
@@ -147,12 +103,9 @@
         parseAsString.withOptions({ shallow: true, scroll: false }),
     );
 
-    const keyOf = (target: VolumeTarget) =>
-        `${target.resourceId}:${target.service}`;
-
     const volumeTarget = $derived(
         volumeTargets.find(
-            (target) => keyOf(target) === volumeKey.current,
+            (target) => volumeTargetKey(target) === volumeKey.current,
         ),
     );
 
@@ -219,159 +172,47 @@
         ),
     );
 
-    const rootEntries = $derived<Entry[]>([
-        {
-            id: "git",
-            label: "Git Repository",
-            description: undefined,
-            logo: null,
-            icon: GitBranch,
-            provider: undefined,
-            target: { page: "git" },
-        },
-        {
-            id: "database",
-            label: "Database",
-            description: undefined,
-            logo: null,
-            icon: Database,
-            provider: undefined,
-            target: { page: "database" },
-        },
-        {
-            id: "template",
-            label: "Template",
-            description: undefined,
-            logo: null,
-            icon: Layers,
-            provider: undefined,
-            target: { page: "template" },
-        },
-        {
-            id: "docker",
-            label: "Docker Image",
-            description: undefined,
-            logo: null,
-            icon: Container,
-            provider: undefined,
-            target: { page: "docker" },
-        },
-        ...(volumeTargets.length
-            ? [
-                  {
-                      id: "volume",
-                      label: "Volume",
-                      description: undefined,
-                      logo: null,
-                      icon: HardDrive,
-                      provider: undefined,
-                      target: { page: "volume" },
-                  } satisfies Entry,
-                  {
-                      id: "config",
-                      label: "Config",
-                      description: undefined,
-                      logo: null,
-                      icon: FileCog,
-                      provider: undefined,
-                      target: { page: "config" },
-                  } satisfies Entry,
-              ]
-            : []),
-        ...(page.data.isOrganizationAdmin
-            ? [
-                  {
-                      id: "bucket",
-                      label: "Bucket",
-                      description: undefined,
-                      logo: null,
-                      icon: HardDrive,
-                      provider: undefined,
-                      target: { page: "bucket" },
-                  } satisfies Entry,
-              ]
-            : []),
-        {
-            id: "empty",
-            label: "Empty Service",
-            description: undefined,
-            logo: null,
-            icon: SquareTerminal,
-            provider: undefined,
-            target: { create: { name: "Empty Service" } },
-        },
-    ]);
+    const items = $derived.by((): Entry[] => {
+        if (step) return [];
 
-    const templateEntries = $derived(
-        (templatesQuery.data ?? []).flatMap((template): Entry[] =>
-            (template.type === "database") ===
-            (current === "database")
-                ? [
-                      {
-                          id: template.appId,
-                          label: template.name,
-                          description:
-                              current === "database"
-                                  ? undefined
-                                  : template.description,
-                          logo: template.logo,
-                          icon: Box,
-                          provider: undefined,
-                          target: { template },
-                      },
-                  ]
-                : [],
-        ),
-    );
+        if (current === "git")
+            return gitEntries(
+                create,
+                connections.map((connection, index) => ({
+                    connection,
+                    repositories:
+                        repositoryQueries[index]?.data
+                            ?.repositories ?? [],
+                })),
+            );
 
-    const gitEntries = $derived<Entry[]>([
-        {
-            id: "configure",
-            label: "Configure Git Connections",
-            description: undefined,
-            logo: null,
-            icon: Settings,
-            provider: undefined,
-            target: { href: "/git" },
-        },
-        ...connections.flatMap((connection, index) =>
-            (repositoryQueries[index]?.data?.repositories ?? []).map(
-                (repository): Entry => ({
-                    id: `${connection.id}/${repository.url}`,
-                    label: repository.name,
-                    description: connection.name,
-                    logo: null,
-                    icon: GitBranch,
-                    provider: connection.provider,
-                    // Without a known default branch, the create page asks for one. Quick creation
-                    // reads the root; without a Compose file there, it falls back to that page too.
-                    target: repository.defaultBranch
-                        ? {
-                              create: {
-                                  name:
-                                      repository.name
-                                          .split("/")
-                                          .at(-1) ?? repository.name,
-                                  git: {
-                                      connectionId: connection.id,
-                                      repositoryUrl: repository.url,
-                                      branch: repository.defaultBranch,
-                                      path: ".",
-                                  },
-                              },
-                          }
-                        : {
-                              href: `${create}/git?${new URLSearchParams(
-                                  {
-                                      connectionId: connection.id,
-                                      repositoryUrl: repository.url,
-                                  },
-                              )}`,
-                          },
-                }),
-            ),
-        ),
-    ]);
+        if (current === "docker")
+            return dockerEntries(
+                image,
+                hubRepository ? (hubQuery.data ?? []) : [],
+            );
+
+        // Nothing is listed until the connections load, so the highlight starts on the first one
+        // instead of sticking to "Configure S3 Connections", which would otherwise be alone at first.
+        if (current === "bucket")
+            return s3ConnectionsQuery.isSuccess
+                ? bucketEntries(s3Connections)
+                : [];
+
+        if (current === "volume" || current === "config")
+            return volumeTarget ? [] : volumeEntries(volumeTargets);
+
+        if (current === "template" || current === "database")
+            return templateEntries(
+                templatesQuery.data ?? [],
+                current === "database",
+            );
+
+        return rootEntries(
+            volumeTargets.length > 0,
+            page.data.isOrganizationAdmin === true,
+        );
+    });
 
     const s3Connections = $derived(s3ConnectionsQuery.data ?? []);
 
@@ -382,60 +223,9 @@
         ),
     );
 
-    // Nothing is listed until the connections load, so the highlight starts on the first one
-    // instead of sticking to "Configure S3 Connections", which would otherwise be alone at first.
-    const bucketEntries = $derived<Entry[]>(
-        s3ConnectionsQuery.isSuccess
-            ? [
-                  ...s3Connections.map((connection): Entry => ({
-                      id: connection.id,
-                      label: connection.name,
-                      description:
-                          s3Providers[connection.provider].name,
-                      logo: s3ProviderIcons[connection.provider],
-                      icon: HardDrive,
-                      provider: undefined,
-                      target: {
-                          bucket: { connectionId: connection.id },
-                      },
-                  })),
-                  {
-                      id: "configure",
-                      label: "Configure S3 Connections",
-                      description: undefined,
-                      logo: null,
-                      icon: Settings,
-                      provider: undefined,
-                      // Without a connection there is nothing to pick, so go straight to adding one.
-                      target: {
-                          href:
-                              s3Connections.length === 0
-                                  ? "/s3?dialog=create-connection"
-                                  : "/s3",
-                      },
-                  },
-              ]
-            : [],
-    );
-
-    const volumeEntries = $derived<Entry[]>(
-        volumeTargets.map((target) => ({
-            id: keyOf(target),
-            label: target.label,
-            description: undefined,
-            logo: target.icon,
-            icon: Box,
-            provider: undefined,
-            target: { volumeService: target },
-        })),
-    );
-
     const image = $derived(query.trim());
 
-    // Docker Hub's `library/postgres` is searched as `postgres`; other registries aren't searched.
-    const hubRepository = $derived(
-        isImageReference(image) ? dockerHubRepository(image) : null,
-    );
+    const hubRepository = $derived(dockerHubSearchTerm(image));
 
     const hubSearch = new Debounced(
         () => hubRepository?.replace(/^library\//u, "") ?? "",
@@ -450,61 +240,6 @@
             staleTime: 5 * 60_000,
         }),
     );
-
-    function imageEntry(
-        reference: string,
-        description: string | undefined,
-        logo: string | null,
-    ): Entry {
-        return {
-            id: `image:${reference}`,
-            label: reference,
-            description,
-            logo,
-            icon: Container,
-            provider: undefined,
-            target: {
-                create: {
-                    name: imageServiceName(reference),
-                    compose: imageCompose(reference),
-                    logoImage: reference,
-                },
-            },
-        };
-    }
-
-    // What was typed comes first, then Docker Hub's other matches.
-    const dockerEntries = $derived<Entry[]>(
-        isImageReference(image)
-            ? [
-                  imageEntry(
-                      image,
-                      undefined,
-                      hubRepository
-                          ? dockerHubLogoUrl(hubRepository)
-                          : null,
-                  ),
-                  ...(hubRepository
-                      ? (hubQuery.data ?? [])
-                      : []
-                  ).flatMap((result) =>
-                      dockerHubRepository(result.image) ===
-                      hubRepository
-                          ? []
-                          : [
-                                imageEntry(
-                                    result.image,
-                                    result.description ?? undefined,
-                                    result.logo,
-                                ),
-                            ],
-                  ),
-              ]
-            : [],
-    );
-
-    // Docker Hub logos 404 for repositories without one; those rows show `icon` instead.
-    let brokenLogos = $state(new Set<string>());
 
     // Values typed for the template's required variables. They may be secrets, so they stay out of
     // the URL; the template step asks for one variable at a time.
@@ -531,46 +266,6 @@
                 : null,
     );
 
-    const items = $derived(
-        step
-            ? []
-            : current === "git"
-              ? gitEntries
-              : current === "docker"
-                ? dockerEntries
-                : current === "bucket"
-                  ? bucketEntries
-                  : current === "volume" || current === "config"
-                    ? volumeTarget
-                        ? []
-                        : volumeEntries
-                    : current === "template" || current === "database"
-                      ? templateEntries
-                      : rootEntries,
-    );
-
-    const titles: Record<AddPage, string> = {
-        root: "",
-        git: "Git Repository",
-        database: "Database",
-        template: "Template",
-        docker: "Docker Image",
-        bucket: "Bucket",
-        volume: "Volume",
-        config: "Config",
-    };
-
-    const placeholders: Record<AddPage, string> = {
-        root: "What would you like to create?",
-        git: "Search repositories...",
-        database: "Choose a database...",
-        template: "Search templates...",
-        docker: "traefik/whoami",
-        bucket: "Choose an S3 connection...",
-        volume: "Service to attach volume to",
-        config: "Service to attach config to",
-    };
-
     const placeholder = $derived.by(() => {
         if (step === "volume") return "Mount path of the volume";
 
@@ -581,14 +276,14 @@
 
         if (step === "template") return `Value for ${templateKey}`;
 
-        return placeholders[current ?? "root"];
+        return pagePlaceholders[current ?? "root"];
     });
 
     // The chips above the palette: the page, then what the step is about.
     const breadcrumbs = $derived(
         current && current !== "root"
             ? [
-                  titles[current],
+                  pageTitles[current],
                   ...((step === "volume" || step === "config") &&
                   volumeTarget
                       ? [volumeTarget.label]
@@ -833,20 +528,6 @@
         }
     }
 
-    function templateInput(
-        template: Template,
-        variables: Record<string, string>,
-    ): CreateInput {
-        return {
-            name: template.name,
-            template: {
-                appId: template.appId,
-                version: template.versions[0]?.version ?? "",
-                variables,
-            },
-        };
-    }
-
     function choose(entry: Entry) {
         if (creating) return;
 
@@ -858,7 +539,7 @@
             void createResource(target.create);
         else if ("volumeService" in target) {
             query = "";
-            void volumeKey.set(keyOf(target.volumeService));
+            void volumeKey.set(volumeTargetKey(target.volumeService));
         } else if ("bucket" in target) {
             query = "";
             void configuringBucket.set(target.bucket.connectionId);
@@ -1062,55 +743,11 @@
             >
                 <CommandCollection>
                     {#snippet children(entry: Entry)}
-                        <CommandItem
-                            value={entry}
-                            disabled={creating}
-                            class="min-h-11 gap-3 rounded-lg px-3 py-3 text-muted-foreground data-highlighted:text-foreground sm:min-h-11"
-                            onclick={() => choose(entry)}
-                        >
-                            {#if entry.provider}
-                                <ProviderIcon
-                                    provider={entry.provider}
-                                />
-                            {:else if entry.logo && !brokenLogos.has(entry.logo)}
-                                {@const logo = entry.logo}
-                                <img
-                                    src={logo}
-                                    alt=""
-                                    aria-hidden="true"
-                                    class="size-4 shrink-0 object-contain"
-                                    onerror={() =>
-                                        (brokenLogos = new Set(
-                                            brokenLogos,
-                                        ).add(logo))}
-                                />
-                            {:else}
-                                <entry.icon
-                                    class="size-4 shrink-0"
-                                    aria-hidden="true"
-                                />
-                            {/if}
-                            <span class="min-w-0 flex-1">
-                                <span class="block truncate">
-                                    {entry.label}
-                                </span>
-                                {#if entry.description}
-                                    <span
-                                        class="block truncate text-xs text-muted-foreground"
-                                    >
-                                        {entry.description}
-                                    </span>
-                                {/if}
-                            </span>
-                            {#if "page" in entry.target}
-                                <ChevronRight
-                                    class="size-4 shrink-0"
-                                    aria-hidden="true"
-                                />
-                            {:else if creating}
-                                <span class="text-xs">Adding...</span>
-                            {/if}
-                        </CommandItem>
+                        <AddPaletteItem
+                            {entry}
+                            {creating}
+                            onchoose={choose}
+                        />
                     {/snippet}
                 </CommandCollection>
             </CommandList>

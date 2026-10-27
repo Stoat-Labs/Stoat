@@ -101,7 +101,7 @@
                     {invitation.data.inviterEmail} invited you to join
                     {invitation.data.organizationName} as {invitation
                         .data.role}.
-                {:else}
+                {:else if invitation.isPending}
                     Checking your invitation.
                 {/if}
             </CardDescription>
