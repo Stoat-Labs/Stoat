@@ -1,0 +1,29 @@
+# Backing services for local development. The app itself runs on the host with `pnpm dev`.
+name: stoat-dev
+
+services:
+    postgres:
+        image: postgres:18
+        environment:
+            POSTGRES_DB: stoat
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+        ports:
+            - "5435:5432"
+        volumes:
+            - postgres_data:/var/lib/postgresql
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    cache:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+        ports:
+            - "6380:6379"
+        volumes:
+            - cache_data:/data
+
+volumes:
+    postgres_data:
+    cache_data:
