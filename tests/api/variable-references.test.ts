@@ -17,6 +17,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-
 import { resourceEnv } from "../../packages/api/src/compose";
 import type { Context } from "../../packages/api/src/context";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
+import { templates } from "../../packages/api/src/templates";
 import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
@@ -421,6 +422,9 @@ describe("variable references API (PostgreSQL)", () => {
             expect(created).toHaveLength(1);
             expect(database).toMatchObject({ type: "database", projectId });
             expect(database?.settings).toMatchObject({ engine: "postgresql" });
+            expect(database?.icon).toBe(
+                templates.find((entry) => entry.appId === "postgresql")?.logo,
+            );
 
             const [row] = await db.select().from(resources).where(eq(resources.id, app!.id));
             const env = parseEnv(resourceEnv({ settings: row?.settings }));

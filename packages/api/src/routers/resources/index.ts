@@ -1623,6 +1623,14 @@ export const resourcesRouter = {
                                   name: `${input.name.trim()} ${name}`.slice(0, 100),
                                   slug: resourceSlug(`${input.name} ${name}`),
                                   type: engine ? ("database" as const) : ("compose" as const),
+                                  // A database companion wears the bundled template's logo for its engine.
+                                  icon: engine
+                                      ? (templates.find(
+                                            (entry) =>
+                                                entry.type === "database" &&
+                                                entry.engine === engine,
+                                        )?.logo ?? null)
+                                      : null,
                                   projectId: project.id,
                                   draftSpec: expandSecrets(files.compose, domain),
                                   settings: {
