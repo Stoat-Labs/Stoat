@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { parse } from "yaml";
+import { isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 
 const scalar = v.pipe(v.union([v.string(), v.number(), v.boolean()]), v.transform(String));
 
@@ -41,4 +41,33 @@ export function composeEnvironment(compose: string) {
 
         return entries.map(([key = "", value = ""]) => ({ service, key, value }));
     });
+}
+
+/** Sets one service's `environment` value in place, or removes the entry when `value` is undefined. */
+export function setComposeEnvironment(
+    compose: string,
+    service: string,
+    key: string,
+    value: string | undefined,
+) {
+    const document = parseDocument(compose);
+    const environment = document.getIn(["services", service, "environment"], true);
+
+    if (isSeq(environment)) {
+        const index = environment.items.findIndex(
+            (item) => isScalar(item) && String(item.value).startsWith(`${key}=`),
+        );
+
+        const item = environment.items[index];
+
+        if (value === undefined) environment.delete(index);
+        else if (isScalar(item)) item.value = `${key}=${value}`;
+    } else if (isMap(environment)) {
+        const node = environment.get(key, true);
+
+        if (value === undefined) environment.delete(key);
+        else if (isScalar(node)) node.value = value;
+    }
+
+    return document.toString();
 }

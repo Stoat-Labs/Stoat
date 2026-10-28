@@ -1,13 +1,13 @@
 <script lang="ts">
+    import { client, orpc, queryClient } from "$lib/api/orpc";
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { Skeleton } from "$lib/components/ui/skeleton";
     import { Checkbox } from "$lib/components/ui/checkbox";
-    import { client, orpc, queryClient } from "$lib/api/orpc";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
     import type { CanvasResource } from "../graph";
@@ -116,7 +116,7 @@
         class="flex h-10 shrink-0 items-center gap-3 border-b pr-2 pl-6 text-xs font-medium"
     >
         <p class="min-w-0 flex-1 truncate">
-            {details?.gitSource?.path ?? "docker-compose.yml"}
+            {details?.gitSource?.path ?? "compose.yaml"}
         </p>
         <label class="flex cursor-pointer items-center gap-2">
             <Checkbox

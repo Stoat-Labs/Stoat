@@ -642,6 +642,10 @@
 
     const panelWidth = $derived(panelTween.current);
 
+    const panelFull = $derived(
+        !narrow && chosenPanelWidth === "full",
+    );
+
     function startPanelResize(
         event: PointerEvent & { currentTarget: HTMLDivElement },
     ) {
@@ -1459,6 +1463,7 @@
                 services={selectedGraph?.services ?? []}
                 width={panelWidth}
                 inset={narrow}
+                full={panelFull}
                 onclose={() => select(null)}
                 onremove={() =>
                     dialogs?.askRemoveConfig(selected.current ?? "")}
@@ -1472,6 +1477,7 @@
                 services={selectedGraph?.services ?? []}
                 width={panelWidth}
                 inset={narrow}
+                full={panelFull}
                 onclose={() => select(null)}
                 onremove={() =>
                     dialogs?.askRemoveVolume(selected.current ?? "")}
@@ -1488,6 +1494,7 @@
                 changed={selectedGraph?.changed ?? false}
                 width={panelWidth}
                 inset={narrow}
+                full={panelFull}
                 onclose={() => select(null)}
             />
         {/key}
@@ -1496,7 +1503,10 @@
     {#if selectedResource && !narrow}
         <!-- Like the sidebar rail: drag the panel's left edge to resize it, to the far left to fill the canvas, past the minimum to close it. -->
         <div
-            class="group absolute top-6 bottom-0 z-30 w-3 cursor-col-resize touch-none"
+            class={[
+                "group absolute bottom-0 z-30 w-3 cursor-col-resize touch-none transition-[top] duration-300",
+                panelFull ? "top-0" : "top-6",
+            ]}
             style:right="{Math.min(
                 panelWidth - 6,
                 canvasWidth - 12,

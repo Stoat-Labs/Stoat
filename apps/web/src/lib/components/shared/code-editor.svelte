@@ -1,5 +1,9 @@
 <script lang="ts">
-    import { minimalSetup } from "codemirror";
+    import { yaml } from "@codemirror/lang-yaml";
+    import {
+        HighlightStyle,
+        syntaxHighlighting,
+    } from "@codemirror/language";
     import {
         Compartment,
         EditorState,
@@ -11,12 +15,8 @@
         EditorView,
         lineNumbers,
     } from "@codemirror/view";
-    import { yaml } from "@codemirror/lang-yaml";
-    import {
-        HighlightStyle,
-        syntaxHighlighting,
-    } from "@codemirror/language";
     import { tags } from "@lezer/highlight";
+    import { minimalSetup } from "codemirror";
     import { onMount } from "svelte";
     import { parseDocument } from "yaml";
 
@@ -212,6 +212,12 @@
                         padding: "16px 0",
                         caretColor: "var(--primary)",
                     },
+                    ".cm-gutter": {
+                        backgroundColor:
+                            "color-mix(in oklab, var(--card) 80%, transparent)",
+                        backdropFilter: "blur(12px)",
+                        WebkitBackdropFilter: "blur(12px)",
+                    },
                     ".cm-gutters": {
                         backgroundColor: "transparent",
                         color: "var(--muted-foreground)",
@@ -225,6 +231,11 @@
                             backgroundColor:
                                 "color-mix(in srgb, var(--primary) 25%, transparent)",
                         },
+                    ".cm-lineNumbers .cm-gutterElement": {
+                        textAlign: "center",
+                        padding: "0 8px",
+                        minWidth: "32px",
+                    },
                 }),
             ],
         });

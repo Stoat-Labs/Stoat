@@ -29,6 +29,7 @@
     import Check from "@lucide/svelte/icons/check";
     import ChevronRight from "@lucide/svelte/icons/chevron-right";
     import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
+    import FileCode from "@lucide/svelte/icons/file-code";
     import Link2 from "@lucide/svelte/icons/link-2";
     import Plus from "@lucide/svelte/icons/plus";
     import X from "@lucide/svelte/icons/x";
@@ -51,7 +52,10 @@
         removeEnvVariable,
         setEnvVariable,
     } from "@stoat/workflows/env-lines";
-    import { composeEnvironment } from "./compose-environment";
+    import {
+        composeEnvironment,
+        setComposeEnvironment,
+    } from "./compose-environment";
     import type { CanvasResource } from "../graph";
 
     let { resource }: { resource: CanvasResource } = $props();
@@ -111,30 +115,38 @@
         search.current?.trim().toLowerCase() ?? "",
     );
 
-    const shown = $derived(
-        variables.filter((variable) =>
-            variable.key.toLowerCase().includes(needle),
-        ),
-    );
-
-    // Read-only: they live in the Compose file, so they are edited there.
+    // Compose `environment` wins over Variables at deploy, so these are edited in the Compose file itself.
     const composeVariables = $derived(
-        composeEnvironment(
-            resourceQuery.data?.draftSpec ?? "",
-        ).filter((variable) =>
-            variable.key.toLowerCase().includes(needle),
-        ),
+        composeEnvironment(resourceQuery.data?.draftSpec ?? ""),
     );
 
     const composeServices = $derived(
         new Set(composeVariables.map((variable) => variable.service)),
     );
 
-    const composeOpen = useQueryState(
-        "composeVariables",
-        parseAsBoolean
-            .withDefault(true)
-            .withOptions({ shallow: true, scroll: false }),
+    type Row = {
+        id: string;
+        key: string;
+        value: string;
+        service?: string;
+    };
+
+    const rows = $derived<Row[]>([
+        ...variables.map(({ key, value }) => ({
+            id: key,
+            key,
+            value,
+        })),
+        ...composeVariables.map(({ service, key, value }) => ({
+            id: `compose:${service}/${key}`,
+            key,
+            value,
+            service,
+        })),
+    ]);
+
+    const shown = $derived(
+        rows.filter((row) => row.key.toLowerCase().includes(needle)),
     );
 
     const systemQuery = createQuery(() =>
@@ -203,11 +215,11 @@
     );
 
     // The row whose value is being edited in place.
-    let editing = $state<string>();
+    let editing = $state<Row>();
 
     let editValue = $state("");
 
-    let removing = $state<string>();
+    let removing = $state<Row>();
 
     let rawOpen = $state(false);
 
@@ -257,6 +269,73 @@
         }
     }
 
+    // A Compose row's change rewrites its entry in the freshest saved Compose file.
+    async function saveCompose(
+        service: string,
+        key: string,
+        value?: string,
+    ) {
+        saving = true;
+        error = "";
+
+        try {
+            const current = await queryClient.fetchQuery(
+                orpc.resources.getResource.queryOptions({
+                    input,
+                    staleTime: 0,
+                }),
+            );
+
+            const updated = await client.resources.updateComposeSpec({
+                ...input,
+                spec: setComposeEnvironment(
+                    current.draftSpec ?? "",
+                    service,
+                    key,
+                    value,
+                ),
+                expectedSpec: current.draftSpec,
+                expectedSource:
+                    current.gitConnectionId && current.gitSource
+                        ? {
+                              connectionId: current.gitConnectionId,
+                              ...current.gitSource,
+                          }
+                        : null,
+            });
+
+            queryClient.setQueryData(
+                orpc.resources.getResource.queryKey({ input }),
+                updated,
+            );
+            void queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectGraph.key(),
+            });
+
+            return true;
+        } catch (cause) {
+            error =
+                cause instanceof Error
+                    ? cause.message
+                    : "Unable to update the Compose file.";
+
+            return false;
+        } finally {
+            saving = false;
+        }
+    }
+
+    function saveRow(row: Row, value?: string) {
+        if (row.service !== undefined)
+            return saveCompose(row.service, row.key, value);
+
+        return save((current) =>
+            value === undefined
+                ? removeEnvVariable(current, row.key)
+                : setEnvVariable(current, row.key, value),
+        );
+    }
+
     function startAdding() {
         newKey = "";
         newValue = "";
@@ -280,26 +359,17 @@
             adding = false;
     }
 
-    function startEditing(key: string, value: string) {
+    function startEditing(row: Row) {
         error = "";
         adding = false;
-        editValue = value;
-        editing = key;
+        editValue = row.value;
+        editing = row;
     }
 
     async function update() {
         if (!editing || saving) return;
 
-        const key = editing;
-
-        const value = editValue;
-
-        if (
-            await save((current) =>
-                setEnvVariable(current, key, value),
-            )
-        )
-            editing = undefined;
+        if (await saveRow(editing, editValue)) editing = undefined;
     }
 
     function escapeTo(close: () => void) {
@@ -368,7 +438,7 @@
         {/if}
     {:else}
         <VariableHeader
-            count={variables.length}
+            count={rows.length}
             search={search.current}
             onsearch={(value) => void search.set(value)}
         >
@@ -421,7 +491,7 @@
                     .message}
             </AlertDescription>
         </Alert>
-    {:else if !variables.length}
+    {:else if !rows.length}
         <p
             class="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
         >
@@ -430,12 +500,27 @@
         </p>
     {:else}
         <ul>
-            {#each shown as variable (variable.key)}
+            {#each shown as variable (variable.id)}
                 {@const isReference = hasReference(variable.value)}
-                {@const visible = revealed.has(variable.key)}
-                <VariableRow name={variable.key}>
+                {@const visible = revealed.has(variable.id)}
+                <VariableRow
+                    name={variable.key}
+                    description={composeServices.size > 1
+                        ? variable.service
+                        : undefined}
+                >
                     {#snippet icon()}
-                        {#if isReference}
+                        {#if variable.service !== undefined}
+                            <span
+                                class="flex"
+                                title="Set in Compose ({variable.service})"
+                            >
+                                <FileCode
+                                    class="size-4 text-muted-foreground"
+                                    aria-label="Set in Compose"
+                                />
+                            </span>
+                        {:else if isReference}
                             <Link2
                                 class="size-4 text-muted-foreground"
                                 aria-label="References another resource"
@@ -447,7 +532,7 @@
                             />
                         {/if}
                     {/snippet}
-                    {#if editing === variable.key}
+                    {#if editing?.id === variable.id}
                         <form
                             class="col-span-2 flex items-center gap-1 py-1"
                             onsubmit={(event) => {
@@ -496,7 +581,7 @@
                             name={variable.key}
                             value={display(variable.value)}
                             {visible}
-                            ontoggle={() => toggle(variable.key)}
+                            ontoggle={() => toggle(variable.id)}
                             oncopy={() =>
                                 void navigator.clipboard.writeText(
                                     variable.value,
@@ -504,7 +589,7 @@
                         />
                     {/if}
                     {#snippet menu()}
-                        {#if editing !== variable.key}
+                        {#if editing?.id !== variable.id}
                             <Menu>
                                 <MenuTrigger
                                     class="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -532,8 +617,7 @@
                                         <MenuItem
                                             onclick={() =>
                                                 startEditing(
-                                                    variable.key,
-                                                    variable.value,
+                                                    variable,
                                                 )}
                                         >
                                             Edit
@@ -542,8 +626,7 @@
                                             variant="destructive"
                                             onclick={() => {
                                                 error = "";
-                                                removing =
-                                                    variable.key;
+                                                removing = variable;
                                             }}
                                         >
                                             Delete
@@ -560,57 +643,6 @@
                 </li>
             {/each}
         </ul>
-    {/if}
-
-    {#if composeVariables.length}
-        <div class="border-t"></div>
-        <section>
-            <button
-                type="button"
-                class="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground aria-expanded:text-foreground"
-                aria-expanded={composeOpen.current}
-                onclick={() =>
-                    void composeOpen.set(!composeOpen.current)}
-            >
-                <ChevronRight
-                    class={[
-                        "size-4 transition-transform",
-                        composeOpen.current && "rotate-90",
-                    ]}
-                    aria-hidden="true"
-                />
-                {composeVariables.length}
-                {composeVariables.length === 1
-                    ? "variable"
-                    : "variables"}
-                set in Compose
-            </button>
-
-            {#if composeOpen.current}
-                <ul class="mt-3">
-                    {#each composeVariables as variable (`${variable.service}/${variable.key}`)}
-                        {@const id = `compose:${variable.service}/${variable.key}`}
-                        <VariableRow
-                            name={variable.key}
-                            description={composeServices.size > 1
-                                ? variable.service
-                                : undefined}
-                        >
-                            <VariableValue
-                                name={variable.key}
-                                value={variable.value}
-                                visible={revealed.has(id)}
-                                ontoggle={() => toggle(id)}
-                                oncopy={() =>
-                                    void navigator.clipboard.writeText(
-                                        variable.value,
-                                    )}
-                            />
-                        </VariableRow>
-                    {/each}
-                </ul>
-            {/if}
-        </section>
     {/if}
 
     {#if systemVariables.length}
@@ -686,7 +718,7 @@
 </div>
 
 {#if removing}
-    {@const key = removing}
+    {@const row = removing}
     <ConfirmDialog
         bind:open={
             () => removing !== undefined,
@@ -694,18 +726,15 @@
                 if (!open) removing = undefined;
             }
         }
-        title="Delete {key}?"
-        description="It is removed from the draft. Deploy the resource to apply it."
+        title="Delete {row.key}?"
+        description={row.service === undefined
+            ? "It is removed from the draft. Deploy the resource to apply it."
+            : "It is removed from the Compose file's draft. Deploy the resource to apply it."}
         confirmLabel="Delete"
         pending={saving}
         {error}
         onconfirm={async () => {
-            if (
-                await save((current) =>
-                    removeEnvVariable(current, key),
-                )
-            )
-                removing = undefined;
+            if (await saveRow(row)) removing = undefined;
         }}
     />
 {/if}

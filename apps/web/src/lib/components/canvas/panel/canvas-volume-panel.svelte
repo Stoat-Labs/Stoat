@@ -29,6 +29,7 @@
         services,
         width,
         inset,
+        full,
         onclose,
         onremove,
     }: {
@@ -39,6 +40,8 @@
         width: number;
         /** Narrow canvases hide the graph: the panel floats over all of it, inset from the sides. */
         inset: boolean;
+        /** The panel fills the canvas, so it rises to the top edge. */
+        full: boolean;
         onclose: () => void;
         /** Asks to delete the volume; the canvas confirms it first. */
         onremove: () => void;
@@ -185,7 +188,8 @@
 
 <aside
     class={[
-        "absolute top-6 bottom-0 z-10 flex flex-col overflow-hidden border-border bg-card shadow-md/10",
+        "absolute bottom-0 z-10 flex flex-col overflow-hidden border-border bg-card shadow-md/10 transition-[top] duration-300",
+        full ? "top-0" : "top-6",
         edge,
     ]}
     style:width="{width}px"

@@ -33,6 +33,7 @@
         changed,
         width,
         inset,
+        full,
         onclose,
     }: {
         clusterId: string;
@@ -46,6 +47,8 @@
         width: number;
         /** Narrow canvases hide the graph: the panel floats over all of it, inset from the sides. */
         inset: boolean;
+        /** The panel fills the canvas, so it rises to the top edge. */
+        full: boolean;
         onclose: () => void;
     } = $props();
 
@@ -155,7 +158,13 @@
 <aside
     class={[
         "absolute bottom-0 z-10 flex flex-col overflow-hidden border-border bg-card shadow-md/10 transition-[top] duration-300",
-        stacked ? "top-12" : "top-6",
+        full
+            ? stacked
+                ? "top-6"
+                : "top-0"
+            : stacked
+              ? "top-12"
+              : "top-6",
         edge,
     ]}
     style:width="{width}px"
@@ -271,7 +280,11 @@
 {#if deployment.current}
     <!-- Sits higher and 24px narrower than the resource panel, which drops down behind it so its left and top edges stay visible, like Railway. -->
     <aside
-        class="absolute top-6 bottom-0 z-20 flex flex-col overflow-hidden border-border bg-card shadow-xl/15 {edge}"
+        class={[
+            "absolute bottom-0 z-20 flex flex-col overflow-hidden border-border bg-card shadow-xl/15 transition-[top] duration-300",
+            full ? "top-0" : "top-6",
+            edge,
+        ]}
         style:width="{width - 24}px"
         aria-label="Deployment logs"
         in:fly|global={enter}
