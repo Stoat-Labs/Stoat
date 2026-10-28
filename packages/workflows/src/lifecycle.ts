@@ -9,7 +9,7 @@ export function startWorker(
     worker: Effect.Effect<never, unknown>,
     pollOutbox: Effect.Effect<unknown, unknown>,
 ) {
-    if (globalThis.__stoatWorker) return false;
+    if (globalThis.__stoatWorker) return;
 
     const controller = new AbortController();
 
@@ -61,8 +61,6 @@ export function startWorker(
 
             if (globalThis.__stoatWorker === running) globalThis.__stoatWorker = undefined;
         });
-
-    return true;
 }
 
 export async function stopWorker() {

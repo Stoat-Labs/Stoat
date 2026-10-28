@@ -70,28 +70,33 @@ export async function prepareMonitoring(
     });
 }
 
-/** The monitoring template last deployed successfully, if any. */
-export async function getMonitoringSpec(db: Database, clusterId: string) {
+/** The monitoring template version last deployed successfully; 0 when none is recorded. */
+export async function getMonitoringVersion(db: Database, clusterId: string) {
     const [row] = await db
-        .select({ spec: resources.spec })
+        .select({ version: clusterMonitoring.templateVersion })
         .from(clusterMonitoring)
-        .innerJoin(resources, eq(resources.id, clusterMonitoring.resourceId))
         .where(eq(clusterMonitoring.clusterId, clusterId));
 
-    return row?.spec ?? null;
+    return row?.version ?? 0;
 }
 
-/** Initialized clusters whose monitoring was last deployed from a different template. */
-export function listOutdatedMonitoring(db: Database, template: string) {
+export async function setMonitoringVersion(db: Database, clusterId: string, version: number) {
+    await db
+        .update(clusterMonitoring)
+        .set({ templateVersion: version })
+        .where(eq(clusterMonitoring.clusterId, clusterId));
+}
+
+/** Initialized clusters whose monitoring is older than `version`. Never lists newer ones. */
+export function listOutdatedMonitoring(db: Database, version: number) {
     return db
         .select({ clusterId: clusters.id })
         .from(clusters)
         .innerJoin(clusterMonitoring, eq(clusterMonitoring.clusterId, clusters.id))
-        .innerJoin(resources, eq(resources.id, clusterMonitoring.resourceId))
         .where(
             and(
                 isNotNull(clusters.initializedAt),
-                sql`${resources.spec} is distinct from ${template}`,
+                sql`coalesce(${clusterMonitoring.templateVersion}, 0) < ${version}`,
             ),
         );
 }

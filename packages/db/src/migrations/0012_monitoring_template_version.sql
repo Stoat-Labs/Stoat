@@ -1,0 +1,1 @@
+ALTER TABLE "cluster_monitoring" ADD COLUMN "template_version" integer;

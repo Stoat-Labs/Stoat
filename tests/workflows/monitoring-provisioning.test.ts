@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createDb } from "@stoat/db";
 import {
-    getMonitoringSpec,
+    getMonitoringVersion,
     listOutdatedMonitoring,
     prepareMonitoring,
     setInitializationStatus,
+    setMonitoringVersion,
 } from "@stoat/db/initialization";
 import {
     clusterMonitoring,
@@ -251,9 +252,9 @@ describe("monitoring provisioning (PostgreSQL)", () => {
         },
     );
 
-    it("lists only initialized clusters whose deployed template differs from the bundled one", async () => {
-        const { resourceId } = await prepareMonitoring(db, clusterId, "encrypted", template);
-        const outdated = () => listOutdatedMonitoring(db, template);
+    it("lists only initialized clusters on an older monitoring version", async () => {
+        await prepareMonitoring(db, clusterId, "encrypted", template);
+        const outdated = () => listOutdatedMonitoring(db, 2);
 
         // Not initialized yet: first-time init owns it.
         expect(await outdated()).toEqual([]);
@@ -262,14 +263,17 @@ describe("monitoring provisioning (PostgreSQL)", () => {
             .update(clusters)
             .set({ initializedAt: new Date() })
             .where(eq(clusters.id, clusterId));
-        await db
-            .update(resources)
-            .set({ spec: "old template" })
-            .where(eq(resources.id, resourceId));
+        // No recorded version predates versioning and counts as 0.
+        expect(await getMonitoringVersion(db, clusterId)).toBe(0);
         expect(await outdated()).toEqual([{ clusterId }]);
-        expect(await getMonitoringSpec(db, clusterId)).toBe("old template");
 
-        await db.update(resources).set({ spec: template }).where(eq(resources.id, resourceId));
+        await setMonitoringVersion(db, clusterId, 1);
+        expect(await outdated()).toEqual([{ clusterId }]);
+
+        // Current or newer: an older worker never rolls it back.
+        await setMonitoringVersion(db, clusterId, 2);
+        expect(await outdated()).toEqual([]);
+        await setMonitoringVersion(db, clusterId, 3);
         expect(await outdated()).toEqual([]);
     });
 });

@@ -1,4 +1,5 @@
 import template from "../../internal/monitoring/compose.yaml?raw";
+import { createHash } from "node:crypto";
 import type { ClusterInitializationConfiguration } from "@stoat/db/schema/index";
 import { describe, expect, it } from "vite-plus/test";
 import { parse, stringify } from "yaml";
@@ -6,6 +7,7 @@ import { readSqlRows } from "../../packages/workflows/src/initialize-cluster";
 import {
     ALLOY_SERVICE,
     GREPTIME_SERVICE,
+    MONITORING_VERSION,
     renderMonitoringCompose,
 } from "../../packages/workflows/src/monitoring-compose";
 
@@ -15,6 +17,16 @@ const config: ClusterInitializationConfiguration = {
     alloyStorage: { type: "bind", source: "/srv/alloy" },
     retentionDays: 14,
 };
+
+// Workers only roll out a higher MONITORING_VERSION, so a template edit without a bump would never
+// reach existing clusters. Changed the template? Bump MONITORING_VERSION and pin the new hash here.
+it("pins the monitoring template to its MONITORING_VERSION", () => {
+    const versions: Record<number, string> = {
+        1: "17e27cf7c8be042d2b70b2ee270ca80b25ef25d3f07a3b427d8e49b48ae8d4f2",
+    };
+
+    expect(createHash("sha256").update(template).digest("hex")).toBe(versions[MONITORING_VERSION]);
+});
 
 it("returns SQL rows from all result sets in order, including nullable cells", () => {
     expect(
