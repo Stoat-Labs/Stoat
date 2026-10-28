@@ -1,3 +1,4 @@
+import { databaseUrl } from "@stoat/config/env";
 import { DrizzleJobStore } from "effect-mq/drizzle-postgres";
 import type { JobStore } from "effect-mq";
 import { PgClient } from "@effect/sql-pg";
@@ -12,14 +13,6 @@ import {
     jobs,
     jobSchedules,
 } from "./schema";
-
-function databaseUrl() {
-    const url = process.env.DATABASE_URL;
-
-    if (!url) throw new Error("DATABASE_URL is required for the workflow queue.");
-
-    return url;
-}
 
 export const PgLive = Layer.suspend(() => PgClient.layer({ url: Redacted.make(databaseUrl()) }));
 

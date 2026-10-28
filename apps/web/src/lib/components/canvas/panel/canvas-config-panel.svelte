@@ -347,8 +347,8 @@
             <div class="px-12 pt-8">
                 <Alert variant="warning">
                     <AlertDescription>
-                        Set from an environment variable; edit it in the
-                        Compose file.
+                        Set from an environment variable; edit it in
+                        the Compose file.
                     </AlertDescription>
                 </Alert>
             </div>

@@ -1,3 +1,4 @@
+import { appSecret, appUrl } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
 import { gitConnections } from "@stoat/db/schema/index";
@@ -8,21 +9,16 @@ import * as v from "valibot";
 
 // Derived from APP_SECRET, so there is nothing to store. Rotating APP_SECRET rotates every one.
 export function gitWebhookSecret(connectionId: string): string {
-    const secret = process.env.APP_SECRET;
-
-    if (!secret || Buffer.byteLength(secret) < 32)
-        throw new Error("APP_SECRET must contain at least 32 bytes");
-
-    const key = hkdfSync("sha256", secret, "", `stoat/git-webhook/v1/${connectionId}`, 32);
+    const key = hkdfSync("sha256", appSecret(), "", `stoat/git-webhook/v1/${connectionId}`, 32);
 
     return Buffer.from(key).toString("hex");
 }
 
 // Relative to APP_URL, which may include a base path.
 export function gitWebhookUrl(connectionId: string): string {
-    const base = process.env.APP_URL;
+    const base = appUrl();
 
-    if (!base || !URL.canParse(base))
+    if (!base)
         throw new ORPCError("PRECONDITION_FAILED", {
             message: "Set APP_URL to Stoat's public URL to receive Git webhooks.",
         });

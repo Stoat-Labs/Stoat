@@ -33,6 +33,8 @@
     } from "nuqs-svelte";
     import { onMount, untrack } from "svelte";
     import CanvasApi from "./canvas-api.svelte";
+    import { CanvasLayout } from "./canvas-layout.svelte";
+    import CanvasResourceDialogs from "./canvas-resource-dialogs.svelte";
     import CanvasFocus from "./canvas-focus.svelte";
     import {
         setCanvasActions,
@@ -68,7 +70,6 @@
         refitFrames,
         repairOverlaps,
         saveCollapsed,
-        savePositions,
         settle,
         slotBelow,
         volumeNodeId,
@@ -230,7 +231,9 @@
         return () => clearInterval(timer);
     });
 
-    let positions = $state.raw<Positions>({});
+    const canvasLayout = new CanvasLayout(() => projectId);
+
+    let dialogs = $state<CanvasResourceDialogs>();
 
     let collapsed = $state.raw<ReadonlySet<string>>(new Set());
 
@@ -277,20 +280,16 @@
         isPendingDelete: (resourceId) =>
             graph.find((item) => item.id === resourceId)
                 ?.pendingDelete ?? false,
-        redeploy: (resourceId) => {
-            pendingRedeploy = resources.find(
-                (resource) => resource.id === resourceId,
-            );
-            redeployError = "";
-        },
+        redeploy: (resourceId) => dialogs?.askRedeploy(resourceId),
         canRedeploy: (resourceId) =>
             !graph.find((item) => item.id === resourceId)?.changed,
         regroup: (nodeId, toResourceId) =>
             void regroup(nodeId, toResourceId),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
-        removeVolume: (nodeId) => askRemoveVolume(nodeId),
-        disconnectVolume: (nodeId) => void disconnectVolume(nodeId),
+        removeVolume: (nodeId) => dialogs?.askRemoveVolume(nodeId),
+        disconnectVolume: (nodeId) =>
+            void dialogs?.disconnectVolume(nodeId),
         isVolumeMounted: (nodeId) => {
             const { resourceId, volume } = parseNodeId(nodeId);
 
@@ -306,8 +305,9 @@
         },
         selectConfig: (resourceId, config) =>
             select(configNodeId(resourceId, config)),
-        removeConfig: (nodeId) => askRemoveConfig(nodeId),
-        disconnectConfig: (nodeId) => void disconnectConfig(nodeId),
+        removeConfig: (nodeId) => dialogs?.askRemoveConfig(nodeId),
+        disconnectConfig: (nodeId) =>
+            void dialogs?.disconnectConfig(nodeId),
         isConfigMounted: (nodeId) => {
             const { resourceId, config } = parseNodeId(nodeId);
 
@@ -333,91 +333,6 @@
                 queryKey: orpc.resources.listResources.key(),
             }),
         ]);
-    }
-
-    // A config leaves the Compose draft; confirmed in an alert dialog first, like a volume.
-    let pendingConfigDelete = $state<{
-        resource: CanvasResource;
-        config: string;
-    }>();
-
-    let deletingConfig = $state(false);
-
-    let configDeleteError = $state("");
-
-    function askRemoveConfig(nodeId: string) {
-        const { resourceId, config } = parseNodeId(nodeId);
-
-        const resource = resources.find(
-            (item) => item.id === resourceId,
-        );
-
-        if (!resource || !config) return;
-
-        pendingConfigDelete = { resource, config };
-        configDeleteError = "";
-    }
-
-    async function disconnectConfig(nodeId: string) {
-        const { resourceId, config = "" } = parseNodeId(nodeId);
-
-        const services =
-            graph
-                .find((entry) => entry.id === resourceId)
-                ?.configs.find((item) => item.name === config)
-                ?.services ?? [];
-
-        try {
-            for (const service of services)
-                await client.resources.detachConfig({
-                    projectId,
-                    resourceId,
-                    config,
-                    service,
-                });
-        } catch (error) {
-            moveNotice = {
-                message:
-                    error instanceof Error
-                        ? error.message
-                        : "The config could not be disconnected.",
-                warnings: [],
-            };
-        }
-
-        await refreshGraph();
-    }
-
-    async function deleteConfig() {
-        if (!pendingConfigDelete) return;
-
-        const { resource, config } = pendingConfigDelete;
-
-        deletingConfig = true;
-        configDeleteError = "";
-
-        try {
-            await client.resources.deleteConfig({
-                projectId,
-                resourceId: resource.id,
-                config,
-            });
-
-            if (
-                selected.current === configNodeId(resource.id, config)
-            )
-                select(null);
-
-            pendingConfigDelete = undefined;
-            await refreshGraph();
-        } catch (error) {
-            configDeleteError =
-                error instanceof Error
-                    ? error.message
-                    : "The config could not be deleted.";
-        } finally {
-            deletingConfig = false;
-        }
     }
 
     // updateDetails replaces every field, so the ones not being renamed are sent unchanged.
@@ -446,14 +361,7 @@
             };
         }
 
-        await Promise.all([
-            queryClient.invalidateQueries({
-                queryKey: orpc.resources.getProjectGraph.key(),
-            }),
-            queryClient.invalidateQueries({
-                queryKey: orpc.resources.listResources.key(),
-            }),
-        ]);
+        await refreshGraph();
     }
 
     // Railway's "Delete Service": staged like any other change and applied from the bar.
@@ -482,233 +390,14 @@
         });
     }
 
-    // A volume nobody mounts leaves the Compose draft; confirmed in an alert dialog first.
-    let pendingVolumeDelete = $state<{
-        resource: CanvasResource;
-        volume: string;
-    }>();
-
-    let deletingVolume = $state(false);
-
-    let volumeDeleteError = $state("");
-
-    function askRemoveVolume(nodeId: string) {
-        const { resourceId, volume } = parseNodeId(nodeId);
-
-        const resource = resources.find(
-            (item) => item.id === resourceId,
-        );
-
-        if (!resource || !volume) return;
-
-        pendingVolumeDelete = { resource, volume };
-        volumeDeleteError = "";
-    }
-
-    async function disconnectVolume(nodeId: string) {
-        const { resourceId, volume } = parseNodeId(nodeId);
-
-        const services =
-            graph
-                .find((entry) => entry.id === resourceId)
-                ?.volumes.find((item) => item.name === volume)
-                ?.services ?? [];
-
-        try {
-            for (const service of services)
-                await client.resources.detachVolume({
-                    projectId,
-                    resourceId,
-                    volume: volume ?? "",
-                    service,
-                });
-        } catch (error) {
-            moveNotice = {
-                message:
-                    error instanceof Error
-                        ? error.message
-                        : "The volume could not be disconnected.",
-                warnings: [],
-            };
-        }
-
-        await Promise.all([
-            queryClient.invalidateQueries({
-                queryKey: orpc.resources.getProjectGraph.key(),
-            }),
-            queryClient.invalidateQueries({
-                queryKey: orpc.resources.listResources.key(),
-            }),
-        ]);
-    }
-
-    async function deleteVolume() {
-        if (!pendingVolumeDelete) return;
-
-        const { resource, volume } = pendingVolumeDelete;
-
-        deletingVolume = true;
-        volumeDeleteError = "";
-
-        try {
-            await client.resources.deleteVolume({
-                projectId,
-                resourceId: resource.id,
-                volume,
-            });
-
-            if (
-                selected.current === volumeNodeId(resource.id, volume)
-            )
-                select(null);
-
-            pendingVolumeDelete = undefined;
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-            ]);
-        } catch (error) {
-            volumeDeleteError =
-                error instanceof Error
-                    ? error.message
-                    : "The volume could not be deleted.";
-        } finally {
-            deletingVolume = false;
-        }
-    }
-
-    // Railway's "Redeploy": recreates the containers from the live config, even when nothing changed.
-    let pendingRedeploy = $state<CanvasResource>();
-
-    let redeploying = $state(false);
-
-    let redeployError = $state("");
-
-    async function redeployResource() {
-        if (!pendingRedeploy) return;
-
-        const resourceId = pendingRedeploy.id;
-
-        redeploying = true;
-        redeployError = "";
-
-        try {
-            await client.resources.deploy({
-                projectId,
-                resourceId,
-                recreate: true,
-            });
-
-            pendingRedeploy = undefined;
-            openPanel(resourceId, "deployments");
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.cluster.listAllDeployments.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-            ]);
-        } catch (error) {
-            redeployError =
-                error instanceof Error
-                    ? error.message
-                    : "The resource could not be redeployed.";
-        } finally {
-            redeploying = false;
-        }
-    }
-
-    // The layout is shared by the project, so it is saved to the server; a burst of drags and
-    // undos collapses into one write of the latest snapshot.
-    let pendingLayout: Positions | undefined;
-
-    let layoutTimer: ReturnType<typeof setTimeout> | undefined;
-
-    function persistLayout(next: Positions) {
-        savePositions(projectId, next);
-        pendingLayout = next;
-        clearTimeout(layoutTimer);
-        layoutTimer = setTimeout(flushLayout, 500);
-    }
-
-    function flushLayout() {
-        clearTimeout(layoutTimer);
-
-        if (!pendingLayout) return;
-
-        const saved = pendingLayout;
-        const savedFor = projectId;
-
-        pendingLayout = undefined;
-
-        client.projects
-            .setCanvasLayout({ projectId: savedFor, layout: saved })
-            .then(() => {
-                // A later visit must not paint the older layout from the cache.
-                queryClient.setQueryData(
-                    orpc.projects.getProject.queryKey({
-                        input: { projectId: savedFor },
-                    }),
-                    (project) =>
-                        project && {
-                            ...project,
-                            canvasLayout: saved,
-                        },
-                );
-            })
-            .catch(() => {
-                // An unsaved layout only resets on the next visit.
-            });
-    }
-
-    onMount(() => flushLayout);
-
-    // Railway's undo/redo, for layout: each entry is a whole snapshot of card positions.
-    let past = $state.raw<Positions[]>([]);
-
-    let future = $state.raw<Positions[]>([]);
-
-    function commit(next: Positions) {
-        past = [...past.slice(-49), positions];
-        future = [];
-        positions = next;
-        persistLayout(next);
-    }
-
-    function undo() {
-        const previous = past.at(-1);
-
-        if (!previous) return;
-
-        past = past.slice(0, -1);
-        future = [positions, ...future];
-        positions = previous;
-        persistLayout(previous);
-    }
-
-    function redo() {
-        const [next, ...rest] = future;
-
-        if (!next) return;
-
-        future = rest;
-        past = [...past, positions];
-        positions = next;
-        persistLayout(next);
-    }
+    onMount(() => () => canvasLayout.flush());
 
     // Runs before the build effect, so the first render already uses the saved layout.
     $effect.pre(() => {
         // Only a project switch reloads; refetches must not clobber local drags.
-        positions = loadPositions(projectId) ?? untrack(() => layout);
+        canvasLayout.load(
+            loadPositions(projectId) ?? untrack(() => layout),
+        );
         collapsed = loadCollapsed(projectId);
     });
 
@@ -733,7 +422,7 @@
             resources,
             graph,
             logos,
-            positions,
+            canvasLayout.positions,
             collapsed,
         );
 
@@ -1014,10 +703,9 @@
     type Restore = { id: string; position: { x: number; y: number } };
 
     function restore({ id, position }: Restore) {
-        const next = { ...positions, [id]: position };
+        const next = { ...canvasLayout.positions, [id]: position };
 
-        positions = next;
-        persistLayout(next);
+        canvasLayout.place(next);
     }
 
     let moveNotice = $state<{
@@ -1031,12 +719,12 @@
 
     // Saves where every card is now: a shift-selection moves several at once.
     function persistCards() {
-        const next = { ...positions };
+        const next = { ...canvasLayout.positions };
 
         for (const node of nodes)
             if (node.type === "card") next[node.id] = node.position;
 
-        commit(next);
+        canvasLayout.commit(next);
     }
 
     function withPositions(list: CanvasNode[], moved: Positions) {
@@ -1153,12 +841,11 @@
 
             // The card keeps the spot it was dropped on under its new id.
             const next = {
-                ...positions,
+                ...canvasLayout.positions,
                 [`${to.id}:${service}`]: droppedAt,
             };
 
-            positions = next;
-            persistLayout(next);
+            canvasLayout.place(next);
             pendingMerge = undefined;
             moveNotice = {
                 message: result.removedResourceId
@@ -1166,14 +853,7 @@
                     : `Moved ${service} into ${to.name}. Deploy both to apply it.`,
                 warnings: result.warnings,
             };
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-            ]);
+            await refreshGraph();
         } catch (error) {
             moveError =
                 error instanceof Error
@@ -1279,7 +959,7 @@
 
         const placed: Rect[] = [];
 
-        const next = { ...positions };
+        const next = { ...canvasLayout.positions };
 
         const names: string[] = [];
 
@@ -1331,26 +1011,21 @@
                 warnings,
             };
         } finally {
-            positions = next;
-            persistLayout(next);
+            canvasLayout.place(next);
             moving = false;
-            await Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.getProjectGraph.key(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.resources.listResources.key(),
-                }),
-            ]);
+            await refreshGraph();
         }
     }
 
     function resetLayout() {
-        commit({});
+        canvasLayout.commit({});
     }
 
     function repairLayout() {
-        commit({ ...positions, ...repairOverlaps(nodes) });
+        canvasLayout.commit({
+            ...canvasLayout.positions,
+            ...repairOverlaps(nodes),
+        });
     }
 
     useHeaderActions(headerActions);
@@ -1401,8 +1076,9 @@
             if (key === "z" || key === "y") {
                 event.preventDefault();
 
-                if (key === "y" || event.shiftKey) redo();
-                else undo();
+                if (key === "y" || event.shiftKey)
+                    canvasLayout.redo();
+                else canvasLayout.undo();
 
                 return;
             }
@@ -1565,16 +1241,16 @@
                 <Panel position="bottom-left" class="m-4!">
                     <CanvasControls
                         hidden={hidden.current}
-                        canUndo={past.length > 0}
-                        canRedo={future.length > 0}
+                        canUndo={canvasLayout.canUndo}
+                        canRedo={canvasLayout.canRedo}
                         onlayers={(next) =>
                             void hidden.set(
                                 next.length ? next : null,
                             )}
                         onautolayout={resetLayout}
                         onrepair={repairLayout}
-                        onundo={undo}
-                        onredo={redo}
+                        onundo={() => canvasLayout.undo()}
+                        onredo={() => canvasLayout.redo()}
                     />
                 </Panel>
             {/if}
@@ -1654,7 +1330,7 @@
                 inset={narrow}
                 onclose={() => select(null)}
                 onremove={() =>
-                    askRemoveConfig(selected.current ?? "")}
+                    dialogs?.askRemoveConfig(selected.current ?? "")}
             />
         {/key}
     {:else if selectedResource && selectedVolume}
@@ -1667,7 +1343,7 @@
                 inset={narrow}
                 onclose={() => select(null)}
                 onremove={() =>
-                    askRemoveVolume(selected.current ?? "")}
+                    dialogs?.askRemoveVolume(selected.current ?? "")}
             />
         {/key}
     {:else if selectedResource}
@@ -1695,59 +1371,16 @@
     />
 {/if}
 
-{#if pendingVolumeDelete}
-    <ConfirmDialog
-        bind:open={
-            () => pendingVolumeDelete !== undefined,
-            (open) => {
-                if (!open && !deletingVolume)
-                    pendingVolumeDelete = undefined;
-            }
-        }
-        title={`Delete ${pendingVolumeDelete.volume}?`}
-        description="It is unmounted from its services and leaves the Compose file on the next deploy. The data stays on the machines."
-        confirmLabel="Delete volume"
-        pending={deletingVolume}
-        error={volumeDeleteError}
-        onconfirm={() => void deleteVolume()}
-    />
-{/if}
-
-{#if pendingConfigDelete}
-    <ConfirmDialog
-        bind:open={
-            () => pendingConfigDelete !== undefined,
-            (open) => {
-                if (!open && !deletingConfig)
-                    pendingConfigDelete = undefined;
-            }
-        }
-        title={`Delete ${pendingConfigDelete.config}?`}
-        description="It is unmounted from its services and leaves the Compose file on the next deploy."
-        confirmLabel="Delete config"
-        pending={deletingConfig}
-        error={configDeleteError}
-        onconfirm={() => void deleteConfig()}
-    />
-{/if}
-
-{#if pendingRedeploy}
-    <ConfirmDialog
-        bind:open={
-            () => pendingRedeploy !== undefined,
-            (open) => {
-                if (!open && !redeploying)
-                    pendingRedeploy = undefined;
-            }
-        }
-        title={`Redeploy ${pendingRedeploy.name}?`}
-        description="Its containers are recreated from the live configuration, even if nothing changed. Services may be briefly unavailable while they restart."
-        confirmLabel="Redeploy"
-        pending={redeploying}
-        error={redeployError}
-        onconfirm={() => void redeployResource()}
-    />
-{/if}
+<CanvasResourceDialogs
+    bind:this={dialogs}
+    {projectId}
+    {resources}
+    {graph}
+    selected={selected.current}
+    onclose={() => select(null)}
+    onopen={openPanel}
+    onerror={(message) => (moveNotice = { message, warnings: [] })}
+/>
 
 <GroupDialogs
     {projectId}

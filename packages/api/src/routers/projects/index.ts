@@ -19,14 +19,35 @@ import { templates } from "../../templates";
 import { removeResources } from "../../resource-removal";
 
 /** The first service's image, or null for an empty or unreadable spec. */
+/** Served by apps/web/src/routes/resource-icons; the version changes with the icon. */
+function resourceIconUrl(resourceId: string, version: string) {
+    return `/resource-icons/${resourceId}?v=${version}`;
+}
+
+// Overviews refetch every minute per open tab and specs rarely change, so parse each one once.
+const firstImages = new Map<string, string | null>();
+
 function firstImage(compose: string | null) {
     if (!compose?.trim()) return null;
 
+    const cached = firstImages.get(compose);
+
+    if (cached !== undefined) return cached;
+
+    let image: string | null;
+
     try {
-        return composeServices(compose)[0]?.image ?? null;
+        image = composeServices(compose)[0]?.image ?? null;
     } catch {
-        return null;
+        image = null;
     }
+
+    // Bounded: drop the oldest entry once full, which keeps the hot specs in practice.
+    if (firstImages.size >= 1000) firstImages.delete(firstImages.keys().next().value!);
+
+    firstImages.set(compose, image);
+
+    return image;
 }
 
 /** A bucket's reconcile state, as the deployment state the project card counts. */
@@ -156,7 +177,7 @@ export const projectsRouter = {
         }),
 
     listProjectOverviews: organizationProcedure.handler(
-        async ({ context: { db, organizationId, session } }) => {
+        async ({ context: { apiKey, db, organizationId, session } }) => {
             const rows = await db
                 .select({
                     id: projects.id,
@@ -210,7 +231,16 @@ export const projectsRouter = {
                     id: resources.id,
                     name: resources.name,
                     projectId: resources.projectId,
-                    icon: resources.icon,
+                    // Uploaded icons are data URLs of up to a megabyte each. Browsers load them
+                    // from a cacheable URL instead; API keys keep the inline value.
+                    icon: apiKey
+                        ? resources.icon
+                        : sql<
+                              string | null
+                          >`case when ${resources.icon} like 'data:%' then null else ${resources.icon} end`,
+                    iconVersion: sql<
+                        string | null
+                    >`case when ${resources.icon} like 'data:%' then left(md5(${resources.icon}), 12) end`,
                     type: resources.type,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
@@ -262,7 +292,11 @@ export const projectsRouter = {
                         return {
                             id: item.id,
                             name: item.name,
-                            icon: item.icon,
+                            icon:
+                                item.icon ??
+                                (item.iconVersion
+                                    ? resourceIconUrl(item.id, item.iconVersion)
+                                    : null),
                             type: item.type,
                             image,
                             // Logos are large, so the client looks this app id up in the template list.

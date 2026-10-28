@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import * as t from "drizzle-orm/pg-core";
+import { encryptedText } from "../secret-column";
 import { resourceSlug } from "../slug";
 import { organization, user } from "./auth";
 
@@ -37,7 +38,7 @@ export const clusters = t.pgTable(
         id: t.uuid("id").primaryKey(),
         name: t.text("name").notNull(),
         sidecarUrl: t.text("sidecar_url").notNull(),
-        sidecarToken: t.text("sidecar_token").notNull(),
+        sidecarToken: encryptedText("sidecar_token", "sidecar-token").notNull(),
         greptimeUrl: t.text("greptime_url"),
         organizationId: t
             .text("organization_id")

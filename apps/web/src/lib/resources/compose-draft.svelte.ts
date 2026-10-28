@@ -80,6 +80,11 @@ export class ComposeDraft {
                     }),
                 });
                 void queryClient.invalidateQueries({
+                    queryKey: orpc.resources.getProjectContainers.key({
+                        input: { projectId: input.projectId },
+                    }),
+                });
+                void queryClient.invalidateQueries({
                     queryKey: orpc.resources.listResources.queryKey({
                         input: { projectId: input.projectId },
                     }),

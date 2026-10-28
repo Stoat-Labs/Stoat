@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 
 // Every secret is bound to where it is stored, so a ciphertext copied to another row fails to open.
@@ -16,12 +17,10 @@ function context(scope: S3SecretScope) {
 }
 
 function key(scope: S3SecretScope, salt: Buffer) {
-    const secret = process.env.APP_SECRET;
-
-    if (!secret || Buffer.byteLength(secret) < 32)
-        throw new Error("APP_SECRET must contain at least 32 bytes");
-
-    return { key: hkdfSync("sha256", secret, salt, context(scope), 32), context: context(scope) };
+    return {
+        key: hkdfSync("sha256", appSecret(), salt, context(scope), 32),
+        context: context(scope),
+    };
 }
 
 export function encryptS3Secret(plaintext: string, scope: S3SecretScope) {

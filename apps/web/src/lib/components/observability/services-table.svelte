@@ -38,6 +38,7 @@
         type SortingState,
     } from "@tanstack/table-core";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
+    import { createParser, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
 
@@ -55,7 +56,64 @@
 
     const canvasModeQuery = createCanvasModeQuery();
 
-    let sorting = $state<SortingState>([{ id: "cpu", desc: true }]);
+    const sortColumns = [
+        "name",
+        "clusterName",
+        "machines",
+        "running",
+        "cpu",
+        "memory",
+        "networkIn",
+        "networkOut",
+    ] as const;
+
+    const serializeSort = (state: SortingState) =>
+        state.length
+            ? state
+                  .map(
+                      ({ id, desc }) =>
+                          `${id}.${desc ? "desc" : "asc"}`,
+                  )
+                  .join(",")
+            : "none";
+
+    // "cpu.desc,memory.asc" in the URL, so a reload or shared link keeps every sorted column;
+    // "none" keeps a cleared sort from snapping back to the default.
+    const sortParam = useQueryState(
+        "servicesSort",
+        createParser<SortingState>({
+            parse(value) {
+                if (value === "none") return [];
+
+                const state: SortingState = [];
+
+                for (const part of value.split(",")) {
+                    const [id, direction] = part.split(".");
+
+                    if (
+                        !sortColumns.some(
+                            (column) => column === id,
+                        ) ||
+                        (direction !== "asc" && direction !== "desc")
+                    )
+                        return null;
+
+                    state.push({
+                        id: id!,
+                        desc: direction === "desc",
+                    });
+                }
+
+                return state;
+            },
+            serialize: serializeSort,
+            eq: (a, b) => serializeSort(a) === serializeSort(b),
+        })
+            .withDefault([{ id: "cpu", desc: true }])
+            .withOptions({ shallow: true, scroll: false }),
+    );
+
+    const sorting = $derived(sortParam.current);
 
     let viewport = $state<HTMLDivElement>();
 
@@ -109,7 +167,7 @@
             onStateChange: () => {},
             renderFallbackValue: "—",
             onSortingChange: (update) => {
-                sorting = functionalUpdate(update, sorting);
+                void sortParam.set(functionalUpdate(update, sorting));
                 viewport?.scrollTo({ top: 0 });
             },
             getCoreRowModel: getCoreRowModel(),

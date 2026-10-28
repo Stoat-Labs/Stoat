@@ -1,3 +1,4 @@
+import { appSecret } from "@stoat/config/env";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
 import {
@@ -1077,7 +1078,7 @@ export const resourceLogsRouter = {
 
                 const password = decryptMonitoringPassword(
                     monitoring.encryptedPassword,
-                    process.env.APP_SECRET ?? "",
+                    appSecret(),
                     logCluster.id,
                 );
 

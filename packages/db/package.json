@@ -20,11 +20,11 @@
         "db:migrate": "drizzle-kit migrate"
     },
     "dependencies": {
+        "@stoat/config": "workspace:*",
         "drizzle-orm": "^0.45.2",
         "pg": "^8.23.0"
     },
     "devDependencies": {
-        "@stoat/config": "workspace:*",
         "@types/pg": "^8.23.1",
         "drizzle-kit": "^0.31.10",
         "typescript": "catalog:",

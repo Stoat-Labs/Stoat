@@ -10,6 +10,7 @@
 
     // One legend row is a text-sm line (20px) plus the space-y-2.5 gap.
     const rowHeight = 20;
+
     const rowGap = 10;
 
     let {

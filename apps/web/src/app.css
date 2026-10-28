@@ -255,7 +255,9 @@ html.dark {
     --color-sidebar-ring: var(--sidebar-ring);
     --font-sans: var(--font-sans);
     --font-mono: var(--font-mono);
-    --font-mono--font-feature-settings: "calt", "cv33", "cv34", "cv35", "cv36", "cv61", "cv62", "cv66", "ss03", "ss05", "ss07", "ss08", "ss09", "ss10", "ss11";
+    --font-mono--font-feature-settings:
+        "calt", "cv33", "cv34", "cv35", "cv36", "cv61", "cv62", "cv66", "ss03", "ss05", "ss07",
+        "ss08", "ss09", "ss10", "ss11";
     --font-serif: Georgia, serif;
     --radius: 0.5rem;
     --tracking-tighter: calc(var(--tracking-normal) - 0.05em);

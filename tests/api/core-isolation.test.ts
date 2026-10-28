@@ -1081,7 +1081,8 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         });
 
         it("derives monitoring variables without storing them", async () => {
-            const secret = "monitoring-env-test-secret-at-least-32-bytes";
+            // Keep any secret already set: the cluster's sidecar token was encrypted with it.
+            const secret = process.env.APP_SECRET || "monitoring-env-test-secret-at-least-32-bytes";
             vi.stubEnv("APP_SECRET", secret);
             await db.insert(clusterMonitoring).values({
                 clusterId,
@@ -1615,5 +1616,33 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             client.getContainers({ clusterId, projectId, resourceId: row.id }),
         ).rejects.toMatchObject({ code });
         expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("lists every resource's containers from one sidecar call", async () => {
+        const web = await resource({
+            spec: "services:\n  web:\n    image: nginx\n",
+            settings: { prefixNames: false },
+        });
+
+        const broken = await resource({ spec: "services: [broken" });
+
+        fetch.mockImplementation(async () =>
+            Response.json({
+                items: [
+                    { name: "web", containers: [{ id: "web-1" }] },
+                    { name: "unrelated", containers: [{ id: "other-1" }] },
+                ],
+            }),
+        );
+
+        const containers = await client.getProjectContainers({ clusterId, projectId });
+
+        expect(containers[web.id]).toEqual([{ id: "web-1" }]);
+        // A spec that no longer parses shows no containers instead of failing the whole canvas.
+        expect(containers[broken.id]).toEqual([]);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        await expect(
+            client.getProjectContainers({ clusterId, projectId: foreignProjectId }),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 });

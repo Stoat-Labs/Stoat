@@ -24,47 +24,18 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
         if (!request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded"))
             throw new GitOAuthError("invalid_request");
-        // Ordinary browser forms are urlencoded; bound the stream before parsing it.
-        const reader = request.body?.getReader();
 
-        if (!reader) throw new GitOAuthError("invalid_request");
-        const chunks: Uint8Array[] = [];
-        let size = 0;
+        // SvelteKit's BODY_SIZE_LIMIT already bounds the body.
+        const form = new URLSearchParams(await request.text());
+        const fields = ["organizationId", "providerId", "name", "connectionId"];
 
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-
-                if (done) break;
-                size += value.byteLength;
-
-                if (size > 8192) {
-                    await reader.cancel();
-                    throw new GitOAuthError("invalid_request");
-                }
-
-                chunks.push(value);
-            }
-        } finally {
-            reader.releaseLock();
-        }
-
-        const form = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
-
-        if (
-            [...form.keys()].some(
-                (key) =>
-                    !["organizationId", "providerId", "name", "connectionId"].includes(key) ||
-                    form.getAll(key).length !== 1,
-            )
-        )
-            throw new GitOAuthError("invalid_request");
-        const organizationId = form.get("organizationId");
-
-        if (!organizationId || organizationId.length > 256)
+        if ([...form.keys()].some((key) => !fields.includes(key) || form.getAll(key).length !== 1))
             throw new GitOAuthError("invalid_request");
 
-        if (organizationId !== identity.organizationId) throw new GitOAuthError("forbidden");
+        if (!form.get("organizationId")) throw new GitOAuthError("invalid_request");
+
+        if (form.get("organizationId") !== identity.organizationId)
+            throw new GitOAuthError("forbidden");
         const providers = await getOrganizationGitOAuthProviders(db, identity.organizationId);
         const provider = providers.find((entry) => entry.id === form.get("providerId"));
 

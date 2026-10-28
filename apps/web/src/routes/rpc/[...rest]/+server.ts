@@ -21,6 +21,13 @@ const apiHandler = new OpenAPIHandler(appRouter, {
 });
 
 const handle: RequestHandler = async (event) => {
+    // Browsers attach session cookies to cross-site requests, and SvelteKit's own CSRF check only
+    // covers form content types. API keys are not ambient, so only cookie callers are checked.
+    const origin = event.request.headers.get("origin");
+
+    if (!event.request.headers.has("x-api-key") && origin && origin !== event.url.origin)
+        return new Response("Cross-origin requests need an API key.", { status: 403 });
+
     const context = await createContext(event);
 
     const { response } = await apiHandler.handle(event.request, {

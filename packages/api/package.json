@@ -19,6 +19,7 @@
         "@orpc/server": "catalog:",
         "@stoat/auth": "workspace:*",
         "@stoat/cache": "workspace:*",
+        "@stoat/config": "workspace:*",
         "@stoat/db": "workspace:*",
         "@stoat/s3": "workspace:*",
         "@stoat/uncloud": "workspace:*",
@@ -31,7 +32,6 @@
         "yaml": "catalog:"
     },
     "devDependencies": {
-        "@stoat/config": "workspace:*",
         "typescript": "catalog:"
     }
 }

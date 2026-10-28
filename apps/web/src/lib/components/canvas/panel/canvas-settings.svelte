@@ -1,69 +1,31 @@
 <script lang="ts">
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
-    import BucketLimitDialog from "$lib/components/s3/bucket-limit-dialog.svelte";
-    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Kbd } from "$lib/components/ui/kbd";
-    import {
-        ToggleGroup,
-        ToggleGroupItem,
-    } from "$lib/components/ui/toggle-group";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import { Switch } from "$lib/components/ui/switch";
-    import { bytes } from "$lib/observability";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
-    import { bucketJobPollInterval } from "$lib/s3";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
-    import Cable from "@lucide/svelte/icons/cable";
-    import CircleCheck from "@lucide/svelte/icons/circle-check";
     import Code from "@lucide/svelte/icons/code";
-    import Copy from "@lucide/svelte/icons/copy";
-    import FileCode2 from "@lucide/svelte/icons/file-code-2";
     import Flame from "@lucide/svelte/icons/flame";
-    import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import Globe from "@lucide/svelte/icons/globe";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Network from "@lucide/svelte/icons/network";
-    import Pencil from "@lucide/svelte/icons/pencil";
-    import Plus from "@lucide/svelte/icons/plus";
     import Rocket from "@lucide/svelte/icons/rocket";
     import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import {
-        parseIngressCompose,
-        removeIngressFromCompose,
-        removeServiceCaddy,
-        type HostIngress,
-        type HttpIngress,
-        type IngressEntry,
-    } from "@stoat/workflows/ingress";
-    import {
-        serviceUpdateOrder,
-        setServiceUpdateOrder,
-        type UpdateOrder,
-    } from "@stoat/workflows/update-order";
     import { createQuery } from "@tanstack/svelte-query";
-    import {
-        parseAsBoolean,
-        parseAsString,
-        useQueryState,
-    } from "nuqs-svelte";
-    import type { Component, Snippet } from "svelte";
+    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import type { Component } from "svelte";
     import * as v from "valibot";
-    import { getCanvasActions } from "../context";
     import type { CanvasResource, CanvasService } from "../graph";
-    import CanvasIngressDialog, {
-        type IngressMode,
-    } from "./canvas-ingress-dialog.svelte";
-    import CanvasSourceDialog from "./canvas-source-dialog.svelte";
+    import SettingsDanger from "./settings/settings-danger.svelte";
+    import SettingsDeploy from "./settings/settings-deploy.svelte";
+    import SettingsGeneral from "./settings/settings-general.svelte";
+    import SettingsNetworking from "./settings/settings-networking.svelte";
+    import SettingsSource from "./settings/settings-source.svelte";
+    import SettingsStorage from "./settings/settings-storage.svelte";
 
     let {
         resource,
@@ -72,8 +34,6 @@
         resource: CanvasResource;
         services: CanvasService[];
     } = $props();
-
-    const actions = getCanvasActions();
 
     const input = $derived({
         projectId: resource.projectId,
@@ -90,35 +50,9 @@
         }),
     );
 
-    const connectionsQuery = createQuery(() =>
-        orpc.connections.list.queryOptions(),
-    );
-
     const details = $derived(resourceQuery.data);
 
     const isBucket = $derived(resource.type === "bucket");
-
-    const bucketQuery = createQuery(() =>
-        orpc.buckets.get.queryOptions({
-            input: {
-                projectId: resource.projectId,
-                resourceId: resource.id,
-            },
-            enabled: isBucket,
-            refetchInterval: (query) =>
-                bucketJobPollInterval(query.state.data?.status),
-            retry: false,
-        }),
-    );
-
-    const bucket = $derived(bucketQuery.data);
-
-    const limitDialog = useQueryState(
-        "limitDialog",
-        parseAsBoolean
-            .withDefault(false)
-            .withOptions({ shallow: true, scroll: false }),
-    );
 
     const isAdmin = $derived(page.data.isOrganizationAdmin === true);
 
@@ -135,135 +69,32 @@
         () => details,
     );
 
-    const source = $derived(git.savedSource);
-
-    const connection = $derived(
-        connectionsQuery.data?.connections.find(
-            (candidate) => candidate.id === source?.connectionId,
-        ),
-    );
-
-    const repositoryName = $derived(
-        source?.repositoryUrl
-            .replace(/^[a-z]+:\/\/[^/]+\//u, "")
-            .replace(/^[^@]+@[^:]+:/u, "")
-            .replace(/\.git$/u, "") ?? "",
-    );
-
-    // SSH remotes have no page to open; HTTPS ones drop the `.git` suffix.
-    const repositoryHref = $derived(
-        source?.repositoryUrl.startsWith("https://")
-            ? source.repositoryUrl.replace(/\.git$/u, "")
-            : undefined,
-    );
-
-    let sourceDialogOpen = $state(false);
-
-    // The panel's tab, so Compose can be opened from here; pushed like the panel's own tabs.
-    const tab = useQueryState(
-        "tab",
-        parseAsString.withOptions({
-            history: "push",
-            shallow: true,
-            scroll: false,
-        }),
-    );
-
-    // Follows the saved value until edited; saving or a refetch resets it.
-    let watchPath = $derived(source?.watchPath ?? ".");
-
-    let commitMessage = $state("");
-
-    const settingsSchema = v.fallback(
-        v.object({ prefixNames: v.fallback(v.boolean(), true) }),
-        { prefixNames: true },
-    );
-
-    const prefixNames = $derived(
-        v.parse(settingsSchema, details?.settings).prefixNames,
-    );
-
-    let savingPrefix = $state(false);
-
-    let prefixError = $state("");
-
-    async function setPrefixNames(checked: boolean) {
-        savingPrefix = true;
-        prefixError = "";
-
-        try {
-            const updated = await client.resources.updateSettings({
-                ...input,
-                prefixNames: checked,
-            });
-
-            queryClient.setQueryData(
-                orpc.resources.getResource.queryKey({ input }),
-                updated,
-            );
-            // The Apply bar reads pending changes from the graph, which this setting changes.
-            void queryClient.invalidateQueries({
-                queryKey: orpc.resources.getProjectGraph.key(),
-            });
-        } catch (cause) {
-            prefixError =
-                cause instanceof Error
-                    ? cause.message
-                    : "Could not save.";
-        } finally {
-            savingPrefix = false;
-        }
-    }
-
     const envSchema = v.fallback(
         v.object({ env: v.fallback(v.string(), "") }),
         { env: "" },
     );
 
-    // Ingress is edited in the draft, like the Ingress page; the next deploy publishes it.
+    // Networking and Deploy both edit the Compose draft; the next deploy publishes it.
     const draftCompose = $derived(details?.draftSpec ?? "");
 
-    const ingress = $derived.by(() => {
-        try {
-            return parseIngressCompose(
-                draftCompose,
-                v.parse(envSchema, details?.settings).env,
-            );
-        } catch {
-            return null;
-        }
-    });
-
-    const ingressEntries = $derived(ingress?.entries ?? []);
-
-    let ingressDialog = $state<{
-        mode: IngressMode;
-        entry: HttpIngress | HostIngress | null;
-    } | null>(null);
-
-    let ingressRemoval = $state<IngressEntry | null>(null);
+    const env = $derived(v.parse(envSchema, details?.settings).env);
 
     let savingDraft = $state(false);
-
-    let ingressError = $state("");
-
-    const canEditIngress = $derived(
-        !isInternal && ingress !== null && !savingDraft,
-    );
 
     /** Saves the Compose draft; resolves to the error message, or null once saved. */
     async function saveDraft(compose: string) {
         if (!details) return "The resource is still loading.";
 
         savingDraft = true;
-        ingressError = "";
 
         try {
             const updated = await client.resources.updateComposeSpec({
                 ...input,
                 spec: compose,
                 expectedSpec: details.draftSpec,
-                expectedSource: source ? { ...source } : null,
+                expectedSource: git.savedSource
+                    ? { ...git.savedSource }
+                    : null,
             });
 
             queryClient.setQueryData(
@@ -283,97 +114,6 @@
             savingDraft = false;
         }
     }
-
-    async function removeIngress(entry: IngressEntry) {
-        try {
-            ingressError =
-                (await saveDraft(
-                    entry.kind === "caddy"
-                        ? removeServiceCaddy(
-                              draftCompose,
-                              entry.service,
-                          )
-                        : removeIngressFromCompose(
-                              draftCompose,
-                              entry.service,
-                              entry.raw,
-                          ),
-                )) ?? "";
-        } catch (cause) {
-            ingressError =
-                cause instanceof Error
-                    ? cause.message
-                    : "Unable to update the Compose file.";
-        }
-    }
-
-    // Per service; undefined when the draft can't be read, which hides its control.
-    const updateOrders = $derived(
-        services.map((service) => {
-            try {
-                return {
-                    service: service.name,
-                    order: serviceUpdateOrder(
-                        draftCompose,
-                        service.name,
-                    ),
-                };
-            } catch {
-                return { service: service.name, order: undefined };
-            }
-        }),
-    );
-
-    let updateOrderError = $state("");
-
-    async function setUpdateOrder(
-        service: string,
-        value: string | null,
-    ) {
-        const order =
-            value === "start-first" || value === "stop-first"
-                ? value
-                : null;
-
-        try {
-            updateOrderError =
-                (await saveDraft(
-                    setServiceUpdateOrder(
-                        draftCompose,
-                        service,
-                        order,
-                    ),
-                )) ?? "";
-        } catch (cause) {
-            updateOrderError =
-                cause instanceof Error
-                    ? cause.message
-                    : "Unable to update the Compose file.";
-        }
-    }
-
-    function ingressLabel(entry: IngressEntry) {
-        if (entry.kind === "http")
-            return entry.hostname ?? "Cluster default domain";
-
-        if (entry.kind === "host")
-            return `${entry.bind ?? "*"}:${entry.hostPort}`;
-
-        return "Custom Caddy";
-    }
-
-    const privateHosts = $derived(
-        services.flatMap((service) =>
-            service.internalHostname
-                ? [
-                      {
-                          hostname: service.internalHostname,
-                          service: service.name,
-                      },
-                  ]
-                : [],
-        ),
-    );
 
     // Railway's settings search; kept in the URL like the open tab.
     const filter = useQueryState(
@@ -510,763 +250,36 @@
     }}
 />
 
-{#snippet title(text: string, description?: string)}
-    <h4 class="text-sm font-semibold">{text}</h4>
-    {#if description}
-        <p class="mt-1 text-sm text-muted-foreground">
-            {description}
-        </p>
-    {/if}
-{/snippet}
-
-<!-- A Railway toggle row: a tinted bar holding the switch and its label. -->
-{#snippet toggleRow(
-    label: string,
-    checked: boolean,
-    disabled: boolean,
-    onchange: (checked: boolean) => void,
-)}
-    <label
-        class="mt-3 flex cursor-pointer items-center gap-4 rounded-md bg-muted/60 px-4 py-3"
-    >
-        <Switch
-            {checked}
-            {disabled}
-            onCheckedChange={(next) => onchange(next)}
-        />
-        <span class="text-base">{label}</span>
-    </label>
-{/snippet}
-
-{#snippet sourceSection()}
-    {#if source}
-        {#if shows("source", "repo", "git")}
-            <div>
-                {@render title("Source Repo")}
-                <div
-                    class="mt-3 flex items-center gap-4 rounded-md bg-muted/60 px-4 py-3"
-                >
-                    {#if connection}
-                        <ProviderIcon
-                            provider={connection.provider}
-                        />
-                    {:else}
-                        <FolderGit2
-                            class="size-4 shrink-0"
-                            aria-hidden="true"
-                        />
-                    {/if}
-                    <div class="min-w-0 flex-1">
-                        {#if repositoryHref}
-                            <a
-                                href={repositoryHref}
-                                target="_blank"
-                                rel="noreferrer"
-                                class="block truncate text-base hover:underline"
-                            >
-                                {repositoryName}
-                            </a>
-                        {:else}
-                            <p class="truncate text-base">
-                                {repositoryName}
-                            </p>
-                        {/if}
-                        <p
-                            class="truncate text-xs text-muted-foreground"
-                        >
-                            {connection?.name ?? "Git"} · at
-                            <span
-                                class="font-mono"
-                                title={source.revision}
-                            >
-                                {source.revision.slice(0, 7)}
-                            </span>
-                        </p>
-                    </div>
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Change source"
-                        disabled={git.pending}
-                        onclick={() => (sourceDialogOpen = true)}
-                    >
-                        <Pencil class="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={git.pending}
-                        onclick={() => void git.run("detach")}
-                    >
-                        Disconnect
-                    </Button>
-                </div>
-            </div>
-        {/if}
-
-        {#if shows("branch", "source")}
-            <div>
-                {@render title(
-                    "Branch",
-                    "Pushes to this branch are what auto deploy picks up.",
-                )}
-                <div
-                    class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
-                >
-                    <GitBranch
-                        class="size-4 shrink-0"
-                        aria-hidden="true"
-                    />
-                    <span
-                        class="min-w-0 flex-1 truncate font-mono text-sm"
-                    >
-                        {source.branch}
-                    </span>
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Change branch"
-                        disabled={git.pending}
-                        onclick={() => (sourceDialogOpen = true)}
-                    >
-                        <Pencil class="size-4" aria-hidden="true" />
-                    </Button>
-                </div>
-            </div>
-        {/if}
-
-        {#if shows("compose file", "config", "source")}
-            <div>
-                {@render title(
-                    "Compose File",
-                    "The Compose file deployed from the repository. Relative config files it references are read from Git too; build contexts are not.",
-                )}
-                <div
-                    class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
-                >
-                    <FileCode2
-                        class="size-4 shrink-0"
-                        aria-hidden="true"
-                    />
-                    <span
-                        class="min-w-0 flex-1 truncate font-mono text-sm"
-                    >
-                        {source.path}
-                    </span>
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        onclick={() => void tab.set("compose")}
-                    >
-                        Edit
-                    </Button>
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Change Compose file"
-                        disabled={git.pending}
-                        onclick={() => (sourceDialogOpen = true)}
-                    >
-                        <Pencil class="size-4" aria-hidden="true" />
-                    </Button>
-                </div>
-            </div>
-        {/if}
-
-        {#if isAdmin && shows("watch directory", "auto deploy", "deploy")}
-            <form
-                onsubmit={(event) => {
-                    event.preventDefault();
-                    void git.run("watch", undefined, undefined, {
-                        autoDeploy: source.autoDeploy,
-                        watchPath: watchPath.trim(),
-                    });
-                }}
-            >
-                {@render title(
-                    "Watch Directory",
-                    "Only pushes that change files in this directory start a new deployment.",
-                )}
-                <div class="mt-3 flex gap-2">
-                    <Input
-                        bind:value={watchPath}
-                        placeholder="."
-                        aria-label="Watch directory"
-                        class="font-mono"
-                        disabled={git.pending}
-                    />
-                    <Button
-                        type="submit"
-                        variant="outline"
-                        disabled={git.pending ||
-                            watchPath.trim() === source.watchPath}
-                    >
-                        Save
-                    </Button>
-                </div>
-            </form>
-
-            <div>
-                {@render title(
-                    "Auto Deploy",
-                    `Pull and deploy when ${source.branch} changes. Right away with the Git connection's push webhook, otherwise within a minute. Paused while the draft has changes that are not in Git.`,
-                )}
-                {@render toggleRow(
-                    "Deploy on push",
-                    source.autoDeploy,
-                    git.pending,
-                    (checked) =>
-                        void git.run("watch", undefined, undefined, {
-                            autoDeploy: checked,
-                            watchPath: source.watchPath,
-                        }),
-                )}
-            </div>
-        {/if}
-
-        {#if shows("pull", "push", "commit", "sync")}
-            <div>
-                {@render title(
-                    "Sync",
-                    `Pull replaces the saved draft with ${source.branch}. Deploying commits draft changes to ${source.branch} first.`,
-                )}
-                <div class="mt-3 flex flex-wrap gap-2">
-                    <Button
-                        variant="outline"
-                        disabled={git.pending}
-                        onclick={() => void git.run("pull")}
-                    >
-                        Pull from Git
-                    </Button>
-                </div>
-                {#if isAdmin}
-                    <form
-                        class="mt-3 flex gap-2"
-                        onsubmit={async (event) => {
-                            event.preventDefault();
-
-                            if (
-                                await git.run(
-                                    "push",
-                                    undefined,
-                                    commitMessage,
-                                )
-                            )
-                                commitMessage = "";
-                        }}
-                    >
-                        <Input
-                            bind:value={commitMessage}
-                            placeholder="Update Compose configuration"
-                            aria-label="Commit message"
-                            disabled={git.pending}
-                        />
-                        <Button
-                            type="submit"
-                            disabled={git.pending ||
-                                !commitMessage.trim()}
-                        >
-                            Commit &amp; push
-                        </Button>
-                    </form>
-                {/if}
-            </div>
-        {/if}
-    {:else}
-        <div>
-            {@render title(
-                "Source Repo",
-                "Compose is edited in Stoat. Connect a repository to deploy its Compose file and configs from Git instead.",
-            )}
-            <div class="mt-3 flex flex-wrap gap-2">
-                <Button
-                    variant="outline"
-                    disabled={git.pending}
-                    onclick={() => (sourceDialogOpen = true)}
-                >
-                    <FolderGit2 class="size-4" aria-hidden="true" />
-                    Connect Repo
-                </Button>
-                <Button
-                    variant="ghost"
-                    onclick={() => void tab.set("compose")}
-                >
-                    Open editor
-                </Button>
-            </div>
-        </div>
-    {/if}
-
-    {#if git.error}
-        <Alert variant="error">
-            <AlertDescription>{git.error}</AlertDescription>
-        </Alert>
-    {:else if git.status}
-        <Alert variant="success" role="status">
-            <AlertDescription>{git.status}</AlertDescription>
-        </Alert>
-    {/if}
-{/snippet}
-
-<!-- Railway's networking row: icon, a name with a muted line beneath, actions on the right. -->
-{#snippet networkRow(
-    icon: Component,
-    iconClass: string,
-    name: string,
-    href: string | undefined,
-    detail: Snippet,
-    copyText: string | undefined,
-    entry: IngressEntry | null,
-)}
-    {@const Icon = icon}
-    <div class="flex items-center gap-4 rounded-md border px-4 py-3">
-        <Icon
-            class={["size-5 shrink-0", iconClass]}
-            aria-hidden="true"
-        />
-        <div class="min-w-0 flex-1">
-            {#if href}
-                <a
-                    {href}
-                    target="_blank"
-                    rel="noreferrer"
-                    class="block truncate hover:underline"
-                >
-                    {name}
-                </a>
-            {:else}
-                <p class="truncate">{name}</p>
-            {/if}
-            <p
-                class="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"
-            >
-                {@render detail()}
-            </p>
-        </div>
-        <div class="flex shrink-0 items-center">
-            {#if copyText}
-                <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Copy {name}"
-                    onclick={() =>
-                        void navigator.clipboard.writeText(copyText)}
-                >
-                    <Copy class="size-4" aria-hidden="true" />
-                </Button>
-            {/if}
-            {#if entry && !isInternal}
-                {#if entry.kind === "caddy"}
-                    <!-- A Caddyfile has no Railway form; the Ingress page edits it. -->
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Edit {name} on the Ingress page"
-                        href="/projects/{resource.projectId}/{resource.id}/ingress"
-                    >
-                        <Pencil class="size-4" aria-hidden="true" />
-                    </Button>
-                {:else}
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Edit {name}"
-                        disabled={!canEditIngress}
-                        onclick={() =>
-                            (ingressDialog = {
-                                mode:
-                                    entry.kind === "http"
-                                        ? "domain"
-                                        : "tcp",
-                                entry,
-                            })}
-                    >
-                        <Pencil class="size-4" aria-hidden="true" />
-                    </Button>
-                {/if}
-                <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Remove {name}"
-                    disabled={!canEditIngress}
-                    onclick={() => (ingressRemoval = entry)}
-                >
-                    <Trash2 class="size-4" aria-hidden="true" />
-                </Button>
-            {/if}
-        </div>
-    </div>
-{/snippet}
-
-{#snippet networkingSection()}
-    {#if shows("networking", "public", "domain", "port")}
-        <div>
-            {@render title(
-                "Public Networking",
-                "Access your application over HTTP with the following domains.",
-            )}
-            <div class="mt-3 space-y-2">
-                {#each ingressEntries as entry (entry.kind === "caddy" ? `caddy/${entry.service}` : `${entry.service}/${entry.raw}`)}
-                    {@const url =
-                        entry.kind === "http" && entry.hostname
-                            ? `${entry.protocol}://${entry.hostname}`
-                            : undefined}
-                    {#snippet detail()}
-                        {#if entry.kind === "caddy"}
-                            Caddyfile routes
-                        {:else}
-                            <ArrowRight
-                                class="size-3 shrink-0"
-                                aria-hidden="true"
-                            />
-                            Port {entry.containerPort}
-                            {#if entry.kind === "host"}
-                                · {entry.protocol.toUpperCase()}
-                            {/if}
-                        {/if}
-                        {#if services.length > 1}
-                            · {entry.service}
-                        {/if}
-                    {/snippet}
-                    {@render networkRow(
-                        entry.kind === "http" ? Globe : Cable,
-                        "text-muted-foreground",
-                        ingressLabel(entry),
-                        url,
-                        detail,
-                        url ??
-                            (entry.kind === "host"
-                                ? ingressLabel(entry)
-                                : undefined),
-                        entry,
-                    )}
-                {:else}
-                    <p
-                        class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-                    >
-                        {ingress === null
-                            ? "The Compose draft is not valid YAML, so its ingress can't be read."
-                            : "Nothing is public yet."}
-                    </p>
-                {/each}
-            </div>
-            {#if ingressError}
-                <Alert variant="error" class="mt-3">
-                    <AlertDescription>
-                        {ingressError}
-                    </AlertDescription>
-                </Alert>
-            {/if}
-            {#if !isInternal}
-                <div class="mt-3 flex flex-wrap gap-2">
-                    <Button
-                        variant="outline"
-                        disabled={!canEditIngress}
-                        onclick={() =>
-                            (ingressDialog = {
-                                mode: "domain",
-                                entry: null,
-                            })}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        Custom Domain
-                    </Button>
-                    <Button
-                        variant="outline"
-                        disabled={!canEditIngress}
-                        onclick={() =>
-                            (ingressDialog = {
-                                mode: "tcp",
-                                entry: null,
-                            })}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        TCP Proxy
-                    </Button>
-                </div>
-            {/if}
-        </div>
-    {/if}
-
-    {#if shows("networking", "private", "internal", "dns")}
-        <div>
-            {@render title(
-                "Private Networking",
-                "Communicate with this service from anywhere in the cluster.",
-            )}
-            <div class="mt-3 space-y-2">
-                {#each privateHosts as entry (entry.hostname)}
-                    {#snippet detail()}
-                        Ready to talk privately
-                        {#if services.length > 1}
-                            <span>· {entry.service}</span>
-                        {/if}
-                    {/snippet}
-                    {@render networkRow(
-                        CircleCheck,
-                        "text-success-foreground",
-                        entry.hostname,
-                        undefined,
-                        detail,
-                        entry.hostname,
-                        null,
-                    )}
-                {:else}
-                    <p
-                        class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-                    >
-                        Private hostnames appear after the first
-                        deploy.
-                    </p>
-                {/each}
-            </div>
-        </div>
-    {/if}
-{/snippet}
-
-{#snippet updateOrderToggle(
-    service: string,
-    current: UpdateOrder | null | undefined,
-)}
-    {#if current !== undefined}
-        <!-- auto leaves it unset: Uncloud starts first, or stops first for port conflicts and single-replica volumes. -->
-        <ToggleGroup
-            variant="outline"
-            size="sm"
-            aria-label={services.length === 1
-                ? "Update order"
-                : `Update order of ${service}`}
-            value={[current ?? "auto"]}
-            onValueChange={(next) => {
-                // Pressing the active button would clear the group; keep the current order then.
-                if (next[0]) void setUpdateOrder(service, next[0]);
-            }}
-        >
-            {#each ["auto", "start-first", "stop-first"] as order (order)}
-                <ToggleGroupItem
-                    value={order}
-                    disabled={savingDraft || isInternal}
-                >
-                    {order}
-                </ToggleGroupItem>
-            {/each}
-        </ToggleGroup>
-    {/if}
-{/snippet}
-
-{#snippet deploySection()}
-    <div>
-        {@render title(
-            "Prefix Names",
-            "Changing it replaces services and starts volumes empty.",
-        )}
-        {@render toggleRow(
-            "Prefix names",
-            prefixNames,
-            savingPrefix || isInternal,
-            (checked) => void setPrefixNames(checked),
-        )}
-        {#if prefixError}
-            <Alert variant="error" class="mt-3">
-                <AlertDescription>{prefixError}</AlertDescription>
-            </Alert>
-        {/if}
-    </div>
-    <div>
-        {#if services.length === 1}
-            <div class="flex items-center justify-between gap-4">
-                <div>
-                    {@render title(
-                        "Update Order",
-                        "Use stop-first for databases.",
-                    )}
-                </div>
-                {#each updateOrders as entry (entry.service)}
-                    {@render updateOrderToggle(
-                        entry.service,
-                        entry.order,
-                    )}
-                {/each}
-            </div>
-        {:else}
-            {@render title(
-                "Update Order",
-                "Use stop-first for databases.",
-            )}
-            {#each updateOrders as entry (entry.service)}
-                <div
-                    class="mt-3 flex items-center justify-between gap-4"
-                >
-                    <span class="truncate text-sm">
-                        {entry.service}
-                    </span>
-                    {@render updateOrderToggle(
-                        entry.service,
-                        entry.order,
-                    )}
-                </div>
-            {/each}
-        {/if}
-        {#if updateOrderError}
-            <Alert variant="error" class="mt-3">
-                <AlertDescription>
-                    {updateOrderError}
-                </AlertDescription>
-            </Alert>
-        {/if}
-    </div>
-{/snippet}
-
-{#snippet generalSection()}
-    <div>
-        {@render title("Name")}
-        <div
-            class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
-        >
-            <span class="min-w-0 flex-1 truncate">
-                {resource.name}
-            </span>
-            <Button
-                size="sm"
-                variant="outline"
-                onclick={() => actions.edit("rename", resource.id)}
-            >
-                Rename
-            </Button>
-        </div>
-    </div>
-    <div>
-        {@render title(
-            "Icon",
-            "Shown on the canvas and in the sidebar.",
-        )}
-        <div class="mt-3 flex flex-wrap gap-2">
-            <Button
-                variant="outline"
-                onclick={() =>
-                    actions.edit("icon-upload", resource.id)}
-            >
-                Upload image
-            </Button>
-            <Button
-                variant="outline"
-                onclick={() => actions.edit("icon-link", resource.id)}
-            >
-                Use a link
-            </Button>
-        </div>
-    </div>
-    {#if !isBucket && !isInternal && shows("project", "move", "copy", "duplicate")}
-        <div>
-            {@render title(
-                "Project",
-                "Move it to another project, or copy its configuration into one. A deployed resource can't move to another cluster.",
-            )}
-            <div class="mt-3 flex flex-wrap gap-2">
-                <Button
-                    variant="outline"
-                    onclick={() => actions.edit("move", resource.id)}
-                >
-                    Move to Project
-                </Button>
-                <Button
-                    variant="outline"
-                    onclick={() => actions.edit("copy", resource.id)}
-                >
-                    Copy to Project
-                </Button>
-            </div>
-        </div>
-    {/if}
-{/snippet}
-
-{#snippet storageSection()}
-    <div>
-        {@render title(
-            "Storage limit",
-            "Cap how much this bucket can hold.",
-        )}
-        <div
-            class="mt-3 flex items-center gap-3 rounded-md bg-muted/60 px-4 py-3"
-        >
-            <div class="min-w-0 flex-1">
-                <p class="truncate">
-                    {bucket?.quota ? bytes(bucket.quota) : "No limit"}
-                </p>
-                {#if bucket}
-                    <p class="truncate text-sm text-muted-foreground">
-                        {bucket.enforcedQuota
-                            ? `${bucket.connection.providerName} rejects uploads past the limit.`
-                            : `Display only: ${bucket.connection.providerName} cannot enforce a limit.`}
-                    </p>
-                {/if}
-            </div>
-            {#if isAdmin}
-                <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bucket?.status !== "ready"}
-                    onclick={() => void limitDialog.set(true)}
-                >
-                    {bucket?.quota ? "Edit limit" : "Set limit"}
-                </Button>
-            {/if}
-        </div>
-    </div>
-{/snippet}
-
-{#snippet dangerSection()}
-    {@const pendingDelete = actions.isPendingDelete(resource.id)}
-    <div>
-        <h4 class="text-sm font-medium text-destructive-foreground">
-            {isBucket ? "Delete Bucket" : "Delete Resource"}
-        </h4>
-        <p class="mt-1 text-sm text-destructive-foreground">
-            {#if pendingDelete}
-                Staged for deletion. Deploying the staged changes
-                removes it.
-            {:else if isBucket}
-                Revokes this bucket's keys and removes it from the
-                project once you apply the change. A bucket that still
-                holds objects is kept at the provider.
-            {:else}
-                Stops its services on the cluster and removes it from
-                the project once you apply the change.
-            {/if}
-        </p>
-        {#if pendingDelete}
-            <Button
-                variant="outline"
-                class="mt-4"
-                onclick={() => actions.restore(resource.id)}
-            >
-                Undo delete
-            </Button>
-        {:else}
-            <Button
-                variant="destructive"
-                class="mt-4"
-                onclick={() => actions.remove(resource.id)}
-            >
-                {isBucket ? "Delete bucket" : "Delete resource"}
-            </Button>
-        {/if}
-    </div>
-{/snippet}
-
 {#snippet body(id: string)}
     {#if id === "source"}
-        {@render sourceSection()}
+        <SettingsSource {git} {isAdmin} {shows} />
     {:else if id === "networking"}
-        {@render networkingSection()}
+        <SettingsNetworking
+            {resource}
+            {services}
+            {draftCompose}
+            {env}
+            {isInternal}
+            {savingDraft}
+            {saveDraft}
+            {shows}
+        />
     {:else if id === "deploy"}
-        {@render deploySection()}
+        <SettingsDeploy
+            {resource}
+            {services}
+            settings={details?.settings}
+            {draftCompose}
+            {isInternal}
+            {savingDraft}
+            {saveDraft}
+        />
     {:else if id === "general"}
-        {@render generalSection()}
+        <SettingsGeneral {resource} {isBucket} {isInternal} {shows} />
     {:else if id === "storage"}
-        {@render storageSection()}
+        <SettingsStorage {resource} {isAdmin} />
     {:else}
-        {@render dangerSection()}
+        <SettingsDanger {resource} {isBucket} />
     {/if}
 {/snippet}
 
@@ -1395,66 +408,3 @@
         </div>
     {/if}
 </div>
-
-{#if isBucket}
-    <BucketLimitDialog
-        projectId={resource.projectId}
-        resourceId={resource.id}
-        {bucket}
-        bind:open={
-            () => limitDialog.current,
-            (open) => void limitDialog.set(open)
-        }
-    />
-{/if}
-
-<CanvasSourceDialog
-    bind:open={sourceDialogOpen}
-    {source}
-    busy={git.pending}
-    onsubmit={(next) => git.run("source", next)}
-/>
-
-{#if ingressDialog}
-    <CanvasIngressDialog
-        mode={ingressDialog.mode}
-        entry={ingressDialog.entry}
-        entries={ingressEntries}
-        services={ingress?.services ?? []}
-        compose={draftCompose}
-        busy={savingDraft}
-        onsubmit={saveDraft}
-        onclose={() => (ingressDialog = null)}
-    />
-{/if}
-
-<ConfirmDialog
-    bind:open={
-        () => ingressRemoval !== null,
-        (open) => {
-            if (!open) ingressRemoval = null;
-        }
-    }
-    title="Remove {ingressRemoval
-        ? ingressLabel(ingressRemoval)
-        : 'ingress'}?"
-    description="It is removed from the Compose draft and stops being published on the next deploy."
-    confirmLabel="Remove"
-    onconfirm={() => {
-        if (ingressRemoval) void removeIngress(ingressRemoval);
-        ingressRemoval = null;
-    }}
-/>
-
-<ConfirmDialog
-    bind:open={
-        () => git.confirmation !== null,
-        (open) => {
-            if (!open) git.answer(false);
-        }
-    }
-    title={git.confirmation?.title ?? ""}
-    description={git.confirmation?.description ?? ""}
-    confirmLabel={git.confirmation?.confirmLabel ?? "Confirm"}
-    onconfirm={() => git.answer(true)}
-/>

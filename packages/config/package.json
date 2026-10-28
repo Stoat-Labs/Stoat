@@ -1,5 +1,20 @@
 {
     "name": "@stoat/config",
     "version": "0.0.0",
-    "private": true
+    "private": true,
+    "type": "module",
+    "exports": {
+        "./tsconfig.base.json": "./tsconfig.base.json",
+        "./*": {
+            "types": "./src/*.ts",
+            "default": "./src/*.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc -b",
+        "check-types": "tsc -b"
+    },
+    "devDependencies": {
+        "typescript": "catalog:"
+    }
 }

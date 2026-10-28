@@ -25,13 +25,12 @@
     const cluster = getCanvasCluster();
 
     // A finished deploy only says the rollout worked; the containers say whether it still runs.
-    // Same query as the deployments panel, so opening the panel reuses this cache.
+    // Every card reads one project-wide query, so the canvas polls the sidecar once.
     const containersQuery = createQuery(() =>
-        orpc.resources.getContainers.queryOptions({
+        orpc.resources.getProjectContainers.queryOptions({
             input: {
                 clusterId: cluster.id,
                 projectId: resource.projectId,
-                resourceId: resource.id,
             },
             enabled:
                 cluster.id.length > 0 &&
@@ -41,8 +40,10 @@
         }),
     );
 
+    const containers = $derived(containersQuery.data?.[resource.id]);
+
     const unhealthy = $derived(
-        containersQuery.data?.some(({ container }) => {
+        containers?.some(({ container }) => {
             const info = containerInfo(container);
 
             return (

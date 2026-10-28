@@ -8,6 +8,6 @@ it("defers DATABASE_URL validation until the database layer is built", async () 
     vi.stubEnv("DATABASE_URL", "");
 
     await expect(Effect.runPromise(Layer.build(PgLive).pipe(Effect.scoped))).rejects.toThrow(
-        "DATABASE_URL is required for the workflow queue.",
+        "DATABASE_URL is required.",
     );
 });
