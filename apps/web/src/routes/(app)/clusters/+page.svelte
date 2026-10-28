@@ -92,6 +92,15 @@
                 includeDiagnostics: false,
             },
             enabled: !searchPending,
+            // Setups also finish while their dialog is closed.
+            refetchInterval: (query) =>
+                query.state.data?.items.some(
+                    (cluster) =>
+                        cluster.setup?.status === "queued" ||
+                        cluster.setup?.status === "running",
+                )
+                    ? 3000
+                    : false,
         }),
     );
 

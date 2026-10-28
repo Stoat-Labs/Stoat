@@ -109,12 +109,18 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the cl
     }
 
     await setup.getByRole("button", { name: "Start setup" }).click();
-    await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 45_000 });
+    await expect(setup.getByRole("button", { name: "Start setup" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(setup).toHaveCount(0);
+
+    // The list follows the setup after its dialog closes.
+    await expect(row(page, name)).toContainText("Failed", { timeout: 45_000 });
+    await row(page, name).getByRole("button", { name, exact: true }).click();
+    await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible();
     await expect(setup.getByRole("log", { name: "Setup logs" })).not.toBeEmpty();
     await page.keyboard.press("Escape");
     await expect(setup).toHaveCount(0);
 
-    await expect(row(page, name)).toContainText("Failed");
     await row(page, name)
         .getByRole("button", { name: `Delete ${name}` })
         .click();
