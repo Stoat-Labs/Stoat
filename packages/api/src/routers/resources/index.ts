@@ -1997,6 +1997,7 @@ export const resourcesRouter = {
 
     // Containers of every resource in a project from one sidecar call, so the canvas polls once
     // instead of once per card. Keyed by resource id; a resource that does not parse has none.
+    // Each container carries its service name, so a collapsed stack can count its services.
     getProjectContainers: organizationProcedure
         .input(
             v.object({
@@ -2058,7 +2059,12 @@ export const resourcesRouter = {
 
                     return [
                         resource.id,
-                        names.flatMap((name) => byName.get(name)?.containers ?? []),
+                        names.flatMap((name) =>
+                            (byName.get(name)?.containers ?? []).map((item) => ({
+                                ...item,
+                                service: name,
+                            })),
+                        ),
                     ];
                 }),
             );

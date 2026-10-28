@@ -15,7 +15,10 @@
     import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
     import Group from "@lucide/svelte/icons/group";
     import type { Node, NodeProps } from "@xyflow/svelte";
-    import { getCanvasActions } from "../context";
+    import { orpc } from "$lib/api/orpc";
+    import { containerInfo } from "$lib/resources/container-info";
+    import { createQuery } from "@tanstack/svelte-query";
+    import { getCanvasActions, getCanvasCluster } from "../context";
     import type { GroupData } from "../graph";
     import NodeHandles from "./node-handles.svelte";
 
@@ -24,8 +27,48 @@
 
     const actions = getCanvasActions();
 
-    const online = $derived(
+    const cluster = getCanvasCluster();
+
+    const ready = $derived(
         data.resource.deploymentStatus === "ready",
+    );
+
+    // Same project-wide query as the cards, so a collapsed stack adds no polling.
+    const containersQuery = createQuery(() =>
+        orpc.resources.getProjectContainers.queryOptions({
+            input: {
+                clusterId: cluster.id,
+                projectId: data.resource.projectId,
+            },
+            enabled: cluster.id.length > 0 && ready,
+            refetchInterval: 30_000,
+        }),
+    );
+
+    // A service is online while one of its containers runs and is not unhealthy.
+    const online = $derived.by(() => {
+        if (!ready) return 0;
+
+        const containers = containersQuery.data?.[data.resource.id];
+
+        if (!containers) return data.serviceCount;
+
+        const running = containers.flatMap(
+            ({ container, service }) => {
+                const info = containerInfo(container);
+
+                return info.status === "running" &&
+                    info.health !== "unhealthy"
+                    ? [service]
+                    : [];
+            },
+        );
+
+        return new Set(running).size;
+    });
+
+    const allOnline = $derived(
+        online > 0 && online === data.serviceCount,
     );
 </script>
 
@@ -182,12 +225,12 @@
         <p
             class={cn(
                 "flex items-center gap-2 text-sm",
-                online
+                allOnline
                     ? "text-success-foreground"
                     : "text-muted-foreground",
             )}
         >
-            {#if online}
+            {#if allOnline}
                 <svg
                     class="size-4"
                     viewBox="0 0 16 16"
@@ -196,8 +239,7 @@
                     <circle cx="8" cy="8" r="3" fill="currentColor" />
                 </svg>
             {/if}
-            {online ? data.serviceCount : 0}/{data.serviceCount} services
-            online
+            {online}/{data.serviceCount} services online
         </p>
     </div>
 {:else}

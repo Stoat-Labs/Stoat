@@ -1672,7 +1672,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
         const containers = await client.getProjectContainers({ clusterId, projectId });
 
-        expect(containers[web.id]).toEqual([{ id: "web-1" }]);
+        expect(containers[web.id]).toEqual([{ id: "web-1", service: "web" }]);
         // A spec that no longer parses shows no containers instead of failing the whole canvas.
         expect(containers[broken.id]).toEqual([]);
         expect(fetch).toHaveBeenCalledTimes(1);
