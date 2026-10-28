@@ -141,6 +141,8 @@ const monitoringSchema = v.object({
 export async function startFakeSidecar() {
     let received: string[] = [];
     const services = new Map<string, Service>();
+    const reserved = { domain: SIDECAR_DOMAIN, reserved: true };
+    let domain: { domain: string; reserved: boolean } | null = reserved;
 
     /** Deploys the compose file, or only the `only` services of it when given. */
     function deploy(compose: string, only: string[] | undefined, response: ServerResponse) {
@@ -240,12 +242,35 @@ export async function startFakeSidecar() {
         if (path === "/__reset") {
             received = [];
             services.clear();
+            domain = reserved;
 
             return json(response, 200, received);
         }
 
-        if (get && path === "/api/v1/cluster/domain")
-            return json(response, 200, { domain: SIDECAR_DOMAIN, reserved: true });
+        // Like Uncloud: one domain at a time, and DELETE releases a reserved one.
+        if (path === "/api/v1/cluster/domain") {
+            if (request.method === "PUT") {
+                if (domain)
+                    return json(response, 409, { error: "cluster domain already configured" });
+
+                const { name } = v.parse(
+                    v.object({ name: v.string() }),
+                    JSON.parse(Buffer.concat(chunks).toString()),
+                );
+
+                domain = { domain: name, reserved: false };
+            }
+
+            if (request.method === "DELETE") {
+                domain = null;
+
+                return json(response, 200, { status: "cleared" });
+            }
+
+            return domain
+                ? json(response, 200, domain)
+                : json(response, 404, { error: "cluster domain not found" });
+        }
 
         if (get && path === "/api/v1/cluster/diagnostics") {
             const diagnostics: ClusterDiagnostics = {

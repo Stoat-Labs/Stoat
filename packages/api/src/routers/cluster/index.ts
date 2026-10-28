@@ -14,6 +14,7 @@ import {
 } from "../..";
 import { caddyRouter } from "./caddy";
 import { deploymentsRouter } from "./deployments";
+import { domainRouter } from "./domain";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
 import { observabilityRouter } from "./observability";
@@ -47,6 +48,7 @@ export const clusterRouter = {
     ...metricsRouter,
     ...observabilityRouter,
     ...caddyRouter,
+    ...domainRouter,
     ...provisioningRouter,
     listClusters: organizationProcedure
         .input(

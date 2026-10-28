@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { MACHINE } from "./fake-sidecar";
+import { MACHINE, SIDECAR_DOMAIN } from "./fake-sidecar";
 import { ids, memberStorageState, receivedComposes, resetSidecar, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alertdialog"));
@@ -7,6 +7,9 @@ const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alert
 const row = (page: Page, name: string) => page.getByRole("row").filter({ hasText: name });
 
 const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
+
+const domainCard = (page: Page) =>
+    page.locator("[data-slot=card]").filter({ hasText: "Cluster domain" });
 
 let clusters = 0;
 
@@ -128,6 +131,32 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the cl
     await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, name)).toHaveCount(0);
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
+});
+
+test("an admin replaces the cluster's domain with their own, then removes it", async ({ page }) => {
+    const { id } = await createCluster(page);
+    await page.goto(`/clusters/${id}`);
+    await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
+    await expect(domainCard(page)).toContainText("Uncloud DNS");
+
+    await domainCard(page).getByRole("button", { name: "Change domain" }).click();
+    const edit = page.getByRole("dialog", { name: "Cluster domain" });
+    await edit.getByLabel("Domain").fill("Apps.Example.com");
+    await edit.getByRole("button", { name: "Save domain" }).click();
+
+    // Giving up the reserved domain is permanent, so it needs its own confirmation.
+    const release = page.getByRole("alertdialog");
+    await expect(release).toContainText(`Release ${SIDECAR_DOMAIN}?`);
+    await release.getByRole("button", { name: "Release and save" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(domainCard(page)).toContainText("Your DNS");
+    await expect(domainCard(page)).toContainText("*.apps.example.com");
+
+    await domainCard(page).getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Remove domain" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(domainCard(page)).toContainText("Not set");
+    await resetSidecar();
 });
 
 test("searching narrows the list", async ({ page }) => {
@@ -267,5 +296,11 @@ test.describe("as a member", () => {
         await expect(breadcrumb(page)).toContainText("Lonely");
         await expect(page.getByRole("button", { name: "Initialize monitoring" })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Reinitialize" })).toHaveCount(0);
+    });
+
+    test("the cluster domain is visible but cannot be changed", async ({ page }) => {
+        await page.goto(`/clusters/${ids.lonelyCluster}`);
+        await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
+        await expect(domainCard(page).getByRole("button")).toHaveCount(0);
     });
 });
