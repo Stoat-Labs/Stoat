@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
+import { organizationHasInfrastructure } from "@stoat/db/organizations";
 import { clusters, deployments } from "@stoat/db/schema/index";
 import * as uncloud from "@stoat/uncloud";
 import { provisionCluster, provisioningCredentials } from "@stoat/workflows/provision-cluster";
@@ -495,6 +496,27 @@ describe("cluster provisioning (PostgreSQL)", () => {
 
         await call(clusterRouter.deleteCluster, { clusterId }, { context });
         expect(await db.select().from(clusters).where(eq(clusters.id, clusterId))).toEqual([]);
+    });
+
+    it("keeps the organization from being deleted during its first setup", async () => {
+        const ownerId = randomUUID();
+
+        const owned = await insertUserWithOrganization(
+            db,
+            ownerId,
+            "Owner",
+            `${ownerId}@example.test`,
+        );
+
+        expect(await organizationHasInfrastructure(db, owned)).toBe(false);
+
+        await call(
+            clusterRouter.provisionCluster,
+            { name: "First", host: PUBLIC_HOST },
+            { context: sessionContext(ownerId, owned) },
+        );
+
+        expect(await organizationHasInfrastructure(db, owned)).toBe(true);
     });
 
     it("rejects bad addresses and users, and setup on a finished cluster", async () => {
