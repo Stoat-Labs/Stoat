@@ -713,6 +713,9 @@ importers:
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
       valibot:
         specifier: 'catalog:'
         version: 1.5.0(typescript@6.0.3)
@@ -756,6 +759,9 @@ importers:
       effect-mq:
         specifier: 0.7.0
         version: 0.7.0(patch_hash=08f400a44993c842978ac4bfaa4f3e89a32505b160280c9edde3c12778767761)(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(effect@4.0.0-rc.116)
+      selfsigned:
+        specifier: ^5.5.0
+        version: 5.5.0
       yaml:
         specifier: ^2.8.1
         version: 2.9.1

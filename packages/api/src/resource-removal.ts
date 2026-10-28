@@ -101,12 +101,19 @@ export async function removeResources(tx: Transaction, clusterId: string, remove
     }
 
     const [cluster] = await tx
-        .select({ sidecarUrl: clusters.sidecarUrl, sidecarToken: clusters.sidecarToken })
+        .select({
+            sidecarUrl: clusters.sidecarUrl,
+            sidecarToken: clusters.sidecarToken,
+            sidecarCertificate: clusters.sidecarCertificate,
+        })
         .from(clusters)
         .where(eq(clusters.id, clusterId))
         .limit(1);
 
-    const uc = ucClient(cluster!.sidecarUrl, { token: cluster!.sidecarToken });
+    const uc = ucClient(cluster!.sidecarUrl, {
+        token: cluster!.sidecarToken,
+        certificate: cluster!.sidecarCertificate,
+    });
 
     for (const resource of removed) {
         for (const service of await deployedServices(tx, resource)) {

@@ -9,7 +9,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - `apps/worker`: standalone worker image (`ghcr.io/stoat-labs/worker`) for `USE_INTERNAL_WORKER=false`. Vite bundles `src/index.ts` and every dependency into one `dist/worker.mjs`; the image is Alpine with Node, git and ssh. Both it and `apps/web` start the worker through `@stoat/api/worker`.
 - `packages/api`: oRPC routers and business logic. Packages export `src/*.ts` directly; `dist/` is only `tsc -b` output.
 - `packages/db`: Drizzle schema and queries. Migrations live in `packages/db/src/migrations` and **also include** `packages/workflows/src/schema.ts` (effect-mq tables).
-- `packages/workflows`: effect-mq jobs (`InitializeCluster`, `DeployResource`, `ReconcileBucket`). `internal/monitoring/compose.yaml` is the monitoring stack it deploys.
+- `packages/workflows`: effect-mq jobs (`InitializeCluster`, `DeployResource`, `ReconcileBucket`, `ProvisionCluster`). `internal/monitoring/compose.yaml` is the monitoring stack it deploys; `internal/sidecar/compose.yaml` is the sidecar `ProvisionCluster` deploys to clusters it creates over SSH with the `uc` CLI: HTTPS on port 51443 with a self-signed certificate pinned in `clusters.sidecar_certificate`.
 - `packages/s3`: S3 providers (Generic, RustFS, R2) and the AWS SDK client behind `/s3` connections and `bucket` resources. `src/providers/index.ts` is the client-safe catalog; the other provider files are server-only.
 - `packages/uncloud`: TS client for the sidecar. `openapi.json` and `src/generated/` are committed artifacts.
 - `packages/config`: shared `tsconfig.base.json` and `src/env.ts`, the one place packages read env.
@@ -34,6 +34,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - Use `effect` only for effect-mq job and queue code in `packages/workflows` and the worker bootstrap. Don't add it elsewhere; existing `Match`/`Predicate` imports in `apps/web` and `packages/api` are legacy, not a pattern. It is pinned to `4.0.0-rc.116` (Effect v4, not v3 APIs).
 - oRPC is v2 beta, so load the `orpc` skill instead of relying on v1 knowledge.
 - `effect-mq` and `nuqs-svelte` are patched through `patches/`.
+- The web image bundles `uc` (`UNCLOUD_VERSION` and hashes in `apps/web/Dockerfile`). Keep it in sync with `github.com/psviderski/uncloud` in `apps/sidecar/go.mod`: `ProvisionCluster` installs the daemon at the bundled CLI's version. Never pass `--yes` to `uc machine init` unless the user confirmed a reset; it wipes an already-initialised server.
 - Lint includes custom `anti-slop` oxlint plugins (`tools/oxlint/anti-slop`), configured in the root `vite.config.ts`. They ban module mocking, object parameters, `unknown` params/returns, runtime `typeof`, chained or unexplained type assertions (they need a safety comment), `filter().map()`, and manual Effect `_tag` handling, among other things.
 - Formatting uses 4 spaces, double quotes, and semicolons.
 

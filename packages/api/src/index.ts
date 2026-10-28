@@ -78,6 +78,7 @@ export const uncloudMiddleware = organizationProcedure.middleware(
             .select({
                 sidecarUrl: clusters.sidecarUrl,
                 sidecarToken: clusters.sidecarToken,
+                sidecarCertificate: clusters.sidecarCertificate,
             })
             .from(clusters)
             .where(
@@ -91,7 +92,10 @@ export const uncloudMiddleware = organizationProcedure.middleware(
 
         return next({
             context: {
-                uc: ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken }),
+                uc: ucClient(cluster.sidecarUrl, {
+                    token: cluster.sidecarToken,
+                    certificate: cluster.sidecarCertificate,
+                }),
             },
         });
     },

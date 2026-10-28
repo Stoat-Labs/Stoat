@@ -19,7 +19,7 @@
 
 Stoat allows you to manage multiple [Uncloud](https://uncloud.run) clusters from a single dashboard.
 
-- **Clusters** - Connect Uncloud clusters and manage every machine from one place.
+- **Clusters** - Connect Uncloud clusters, or create one on a fresh server over SSH, and manage every machine from one place.
 - **Projects & Resources** - Group your services into projects and deploy them from Compose files.
 - **Templates** - One-click deploys for common apps and databases.
 - **Git** - Connect Forgejo, GitHub (incl. Enterprise) or any Git server via token, SSH or OAuth, then deploy and push Compose files straight from your repos.
@@ -34,14 +34,18 @@ Stoat allows you to manage multiple [Uncloud](https://uncloud.run) clusters from
 
 ## How it works
 
-Stoat does not talk to your servers with ssh keys like similar apps. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (initializing clusters, deploying resources) runs in a background worker backed by Postgres.
+Stoat does not keep SSH keys to your servers like similar apps. A small **sidecar** runs globally on every machine in your Uncloud cluster and exposes the Uncloud API over HTTP. The Stoat dashboard connects to that sidecar to deploy services, stream logs and run jobs such as resource deployments. Long-running work (creating and initializing clusters, deploying resources) runs in a background worker backed by Postgres.
+
+To create a cluster from the dashboard, Stoat generates a single-use SSH key for that server. Once you add its public key to the server, Stoat runs `uc machine init` over SSH, deploys the sidecar at `https://<server>:51443` with a self-signed certificate that Stoat generates and pins, and connects to it. No domain or certificate authority sits in between, so port 51443 only needs to be open to Stoat. The private key is deleted as soon as the cluster is ready. The server needs a root user or one with passwordless sudo.
+
+Public servers also get a free `uncld.dev` domain for your apps, which needs ports 80 and 443 open to the internet. Servers on a private network or Tailscale (`100.64.0.0/10`) get no public domain. The sidecar URL uses the address you enter, so give cloud servers a static IP (an Elastic IP on EC2) or a hostname.
 
 ## Getting Started
 
 ### Prerequisites
 
-- A Linux server you can SSH into as `root`, or as a user with passwordless sudo
-- A domain with a DNS record pointing to that server
+- A Linux server you can SSH into as `root`, or as a user with passwordless sudo.
+- A domain with a DNS record pointing to that server, or the server's LAN or Tailscale IP address (browsers then warn about Caddy's own certificate until you trust the root certificate the installer saves)
 
 ### Quick Install
 
@@ -51,7 +55,7 @@ Run this on your own computer:
 curl -fsSL https://raw.githubusercontent.com/Stoat-Labs/Stoat/master/scripts/install.sh | bash
 ```
 
-The script installs the Uncloud CLI if it's missing, sets up an [Uncloud](https://uncloud.run/) cluster on your server (or uses the one you already have), generates `.env` with random secrets and deploys Stoat with `uc deploy`. When it's done, open your domain and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster with the sidecar URL and token the script prints.
+The script installs the Uncloud CLI if it's missing, sets up an [Uncloud](https://uncloud.run/) cluster on your server (or uses the one you already have), generates `.env` with random secrets and deploys Stoat with `uc deploy`. When it's done, open your domain or IP address and follow the setup wizard: the first account becomes the instance admin, then you name your organization and connect your cluster with the sidecar URL and token the script prints.
 
 ### Manual install
 

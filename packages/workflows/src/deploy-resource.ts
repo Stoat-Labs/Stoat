@@ -99,14 +99,18 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             });
 
             const cluster = await db.query.clusters.findFirst({
-                columns: { sidecarUrl: true, sidecarToken: true },
+                columns: { sidecarUrl: true, sidecarToken: true, sidecarCertificate: true },
                 where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
             });
 
             if (!input || !cluster || !deployment.spec) throw new Error(RESOURCE_FAILURE_MESSAGE);
             const deployedSpec = deployment.spec;
             signal.throwIfAborted();
-            const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+            const uc = ucClient(cluster.sidecarUrl, {
+                token: cluster.sidecarToken,
+                certificate: cluster.sidecarCertificate,
+            });
 
             const {
                 rows: [identity],

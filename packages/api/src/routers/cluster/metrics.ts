@@ -46,6 +46,7 @@ export const metricsRouter = {
                         id: clusters.id,
                         sidecarUrl: clusters.sidecarUrl,
                         sidecarToken: clusters.sidecarToken,
+                        sidecarCertificate: clusters.sidecarCertificate,
                         initializedAt: clusters.initializedAt,
                         encryptedPassword: clusterMonitoring.encryptedPassword,
                     })
@@ -76,7 +77,10 @@ export const metricsRouter = {
                         cluster.id,
                     );
 
-                    const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+                    const uc = ucClient(cluster.sidecarUrl, {
+                        token: cluster.sidecarToken,
+                        certificate: cluster.sidecarCertificate,
+                    });
 
                     // The cluster id comes from our own database and is a validated UUID.
                     const customer = `'${cluster.id}'`;

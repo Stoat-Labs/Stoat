@@ -16,17 +16,23 @@ import { deploymentsRouter } from "./deployments";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
 import { observabilityRouter } from "./observability";
+import { provisionRouter } from "./provisions";
 
 const clusterInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
 });
 
-async function getClusterDiagnostics(sidecarUrl: string, sidecarToken: string) {
+async function getClusterDiagnostics(
+    sidecarUrl: string,
+    sidecarToken: string,
+    sidecarCertificate: string | null,
+) {
     try {
         return await unwrap(
-            ucClient(sidecarUrl, { token: sidecarToken }).GET("/api/v1/cluster/diagnostics", {
-                signal: AbortSignal.timeout(10_000),
-            }),
+            ucClient(sidecarUrl, { token: sidecarToken, certificate: sidecarCertificate }).GET(
+                "/api/v1/cluster/diagnostics",
+                { signal: AbortSignal.timeout(10_000) },
+            ),
         );
     } catch {
         return null;
@@ -40,6 +46,7 @@ export const clusterRouter = {
     ...metricsRouter,
     ...observabilityRouter,
     ...caddyRouter,
+    ...provisionRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(
@@ -75,6 +82,7 @@ export const clusterRouter = {
                     updatedAt: clusters.updatedAt,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -92,11 +100,15 @@ export const clusterRouter = {
                 .where(conditions);
 
             const itemsWithDiagnostics = await Promise.all(
-                items.map(async ({ sidecarUrl, sidecarToken, ...item }) => {
+                items.map(async ({ sidecarUrl, sidecarToken, sidecarCertificate, ...item }) => {
                     const diagnostics =
                         input?.includeDiagnostics === false
                             ? null
-                            : await getClusterDiagnostics(sidecarUrl, sidecarToken);
+                            : await getClusterDiagnostics(
+                                  sidecarUrl,
+                                  sidecarToken,
+                                  sidecarCertificate,
+                              );
 
                     return { ...item, diagnostics };
                 }),
@@ -126,6 +138,7 @@ export const clusterRouter = {
                     updatedAt: clusters.updatedAt,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -144,8 +157,19 @@ export const clusterRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
             }
 
-            const { sidecarUrl, sidecarToken, initializationConfiguration, ...item } = cluster;
-            const diagnostics = await getClusterDiagnostics(sidecarUrl, sidecarToken);
+            const {
+                sidecarUrl,
+                sidecarToken,
+                sidecarCertificate,
+                initializationConfiguration,
+                ...item
+            } = cluster;
+
+            const diagnostics = await getClusterDiagnostics(
+                sidecarUrl,
+                sidecarToken,
+                sidecarCertificate,
+            );
 
             const canInitialize = isOrganizationAdmin(organizationRole);
 

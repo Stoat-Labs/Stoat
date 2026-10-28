@@ -538,6 +538,7 @@ const monitoringMiddleware = organizationProcedure.middleware(
                 id: clusters.id,
                 sidecarUrl: clusters.sidecarUrl,
                 sidecarToken: clusters.sidecarToken,
+                sidecarCertificate: clusters.sidecarCertificate,
                 initializedAt: clusters.initializedAt,
                 password: clusterMonitoring.encryptedPassword,
                 monitoringResource: clusterMonitoring.resourceId,
@@ -560,7 +561,10 @@ const monitoringMiddleware = organizationProcedure.middleware(
         return next({
             context: {
                 cluster: { ...cluster, password: cluster.password },
-                uc: ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken }),
+                uc: ucClient(cluster.sidecarUrl, {
+                    token: cluster.sidecarToken,
+                    certificate: cluster.sidecarCertificate,
+                }),
             },
         });
     },

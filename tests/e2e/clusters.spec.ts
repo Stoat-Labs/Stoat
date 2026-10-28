@@ -70,6 +70,52 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
 });
 
+test("an admin sets up a server over SSH, sees why it failed, and deletes the setup", async ({
+    page,
+}) => {
+    const name = `Server ${Date.now()}`;
+    await page.goto("/clusters");
+    await page.getByRole("button", { name: "Create cluster" }).click();
+
+    const create = dialog(page);
+    await create.getByRole("tab", { name: "New server" }).click();
+    await create.getByLabel("Name").fill(name);
+    // .invalid names never resolve, so the setup fails without touching a real server.
+    await create.getByLabel("Server address").fill("server.invalid");
+    await create.getByRole("button", { name: "Continue" }).click();
+
+    const setup = page.getByRole("dialog", { name: new RegExp(name) });
+    await expect(setup.getByRole("textbox", { name: "Public key" })).toHaveValue(
+        /^ssh-ed25519 \S+ stoat-/,
+    );
+    await expect(setup.getByRole("textbox", { name: "Or run this on the server" })).toHaveValue(
+        /authorized_keys$/,
+    );
+
+    // The private key never reaches the browser.
+    const listing = await page.request.post("/rpc/api/cluster/listProvisions", {
+        data: {},
+        headers: { origin: process.env.E2E_BASE_URL! },
+    });
+
+    expect(await listing.text()).not.toContain("PRIVATE KEY");
+
+    await setup.getByRole("button", { name: "Start setup" }).click();
+    await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 45_000 });
+    await expect(setup.getByRole("log", { name: "Setup logs" })).not.toBeEmpty();
+    await page.keyboard.press("Escape");
+    await expect(setup).toHaveCount(0);
+
+    await expect(row(page, name)).toContainText("Failed");
+    await row(page, name)
+        .getByRole("button", { name: `Delete ${name}` })
+        .click();
+    await dialog(page).getByRole("button", { name: "Delete" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(row(page, name)).toHaveCount(0);
+    expect(await sql("SELECT id FROM cluster_provisions WHERE name = $1", [name])).toEqual([]);
+});
+
 test("searching narrows the list", async ({ page }) => {
     await page.goto("/clusters");
     await page.getByLabel("Search clusters").fill("lonel");

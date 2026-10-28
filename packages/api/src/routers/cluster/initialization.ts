@@ -171,6 +171,7 @@ export const initializationRouter = {
                     .select({
                         sidecarUrl: clusters.sidecarUrl,
                         sidecarToken: clusters.sidecarToken,
+                        sidecarCertificate: clusters.sidecarCertificate,
                     })
                     .from(clusters)
                     .where(
@@ -183,7 +184,10 @@ export const initializationRouter = {
 
                 if (!cluster) throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 
-                const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+                const uc = ucClient(cluster.sidecarUrl, {
+                    token: cluster.sidecarToken,
+                    certificate: cluster.sidecarCertificate,
+                });
 
                 const machines = await unwrap(
                     uc.GET("/api/v1/machines", {
@@ -280,6 +284,7 @@ export const initializationRouter = {
                     id: clusters.id,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                     configuration: clusters.initializationConfiguration,
                 })
                 .from(clusters)
@@ -328,7 +333,10 @@ export const initializationRouter = {
                         "Stored monitoring credentials are unreadable. Re-run initialization to issue fresh ones.",
                 });
 
-            const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+            const uc = ucClient(cluster.sidecarUrl, {
+                token: cluster.sidecarToken,
+                certificate: cluster.sidecarCertificate,
+            });
 
             try {
                 await sql(

@@ -196,14 +196,18 @@ export async function deployCaddy(db: Database, deploymentId: string, signal: Ab
         if (!claimed.rowCount) return;
 
         const cluster = await db.query.clusters.findFirst({
-            columns: { sidecarUrl: true, sidecarToken: true },
+            columns: { sidecarUrl: true, sidecarToken: true, sidecarCertificate: true },
             where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
         });
 
         if (!cluster) throw new Error("Cluster not found.");
 
         const settings = parseCaddyComposeSpec(deployment.spec);
-        const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+        const uc = ucClient(cluster.sidecarUrl, {
+            token: cluster.sidecarToken,
+            certificate: cluster.sidecarCertificate,
+        });
 
         await log(`Deploying Caddy ${settings.image} to every machine.`);
 

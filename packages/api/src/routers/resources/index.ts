@@ -1410,6 +1410,7 @@ export const resourcesRouter = {
                     name: projects.name,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                 })
                 .from(projects)
                 .innerJoin(clusters, eq(projects.clusterId, clusters.id))
@@ -1419,7 +1420,10 @@ export const resourcesRouter = {
             if (!project) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
 
             // STOAT_DOMAIN is simply left out while the sidecar is unreachable.
-            const { data } = await ucClient(project.sidecarUrl, { token: project.sidecarToken })
+            const { data } = await ucClient(project.sidecarUrl, {
+                token: project.sidecarToken,
+                certificate: project.sidecarCertificate,
+            })
                 .GET("/api/v1/cluster/domain", { signal: AbortSignal.timeout(5_000) })
                 .catch(() => ({ data: undefined }));
 
@@ -1561,6 +1565,7 @@ export const resourcesRouter = {
                     id: projects.id,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                 })
                 .from(projects)
                 .innerJoin(clusters, eq(projects.clusterId, clusters.id))
@@ -1585,9 +1590,10 @@ export const resourcesRouter = {
                         .join(),
                 )
                     ? await unwrap(
-                          ucClient(project.sidecarUrl, { token: project.sidecarToken }).GET(
-                              "/api/v1/cluster/domain",
-                          ),
+                          ucClient(project.sidecarUrl, {
+                              token: project.sidecarToken,
+                              certificate: project.sidecarCertificate,
+                          }).GET("/api/v1/cluster/domain"),
                       ).then(
                           ({ domain }) => domain,
                           () => {
@@ -1919,6 +1925,7 @@ export const resourcesRouter = {
                     initializedAt: clusters.initializedAt,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
                 })
                 .from(clusterMonitoring)
                 .innerJoin(clusters, eq(clusters.id, clusterMonitoring.clusterId))
@@ -1945,10 +1952,10 @@ export const resourcesRouter = {
 
             // Pre-rename configurations stored an ID; show its current name when reachable.
             const machine = await unwrap(
-                ucClient(monitoring.sidecarUrl, { token: monitoring.sidecarToken }).GET(
-                    "/api/v1/machines",
-                    { signal: AbortSignal.timeout(5_000) },
-                ),
+                ucClient(monitoring.sidecarUrl, {
+                    token: monitoring.sidecarToken,
+                    certificate: monitoring.sidecarCertificate,
+                }).GET("/api/v1/machines", { signal: AbortSignal.timeout(5_000) }),
             ).then(
                 ({ items }) => machineName(items, saved),
                 () => saved,

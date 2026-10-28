@@ -7,6 +7,7 @@ import {
 } from "@stoat/db/deployments";
 import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
 import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initialization";
+import { queuedProvisions, setProvisionStatus } from "@stoat/db/provisions";
 import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
@@ -20,10 +21,12 @@ import {
     DeployResource,
     HealthCheck,
     InitializeCluster,
+    ProvisionCluster,
     ReconcileBucket,
     RollOutMonitoring,
     WatchGitSources,
 } from "./jobs";
+import { provisionCluster } from "./provision-cluster";
 import { reconcileBucket } from "./reconcile-bucket";
 import { JobStoreLive, PgLive } from "./store";
 
@@ -160,6 +163,15 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
             // One rollout per cluster is enforced when queueing; across clusters they are independent.
             { concurrency: 4 },
         ),
+        ProvisionCluster.toLayer(
+            ({ provisionId, requestId }) =>
+                attempt(
+                    (signal) => provisionCluster(db, provisionId, requestId, appSecret(), signal),
+                    // provisionCluster records its own failure; uc's messages carry no secrets.
+                    (error) => error,
+                ),
+            { concurrency: 2 },
+        ),
         ReconcileBucket.toLayer(
             ({ resourceId, requestId }) =>
                 attempt(
@@ -227,6 +239,20 @@ async function recordBucketFailureAsync(db: Database, failure: Worker.JobFailure
         key.slice(0, separator),
         new Date(key.slice(separator + 1)),
         cause instanceof Error ? cause.message : "Bucket job failed.",
+    );
+}
+
+// Covers timeouts; the handler already marked every other failure.
+async function recordProvisionFailureAsync(db: Database, failure: Worker.JobFailure) {
+    // effect-mq ids are `ProvisionCluster/<provisionId>:<requestId>`.
+    const key = failure.jobId.slice(failure.jobId.indexOf("/") + 1);
+    const cause = Cause.squash(failure.cause);
+
+    await setProvisionStatus(
+        db,
+        key.slice(0, key.indexOf(":")),
+        "failed",
+        Cause.isTimeoutError(cause) ? "Provisioning timed out." : "Provisioning failed.",
     );
 }
 
@@ -307,6 +333,7 @@ function workerLive(db: Database) {
             monitoring: { concurrency: 1 },
             health: { concurrency: 1 },
             git: { concurrency: 2 },
+            provision: { concurrency: 2 },
         },
         lockDuration: "10 minutes",
         // effect-mq also delivers cross-process cancellation on this heartbeat.
@@ -316,6 +343,11 @@ function workerLive(db: Database) {
         onJobFailure: (failure) => {
             if (failure.name === "ReconcileBucket")
                 return Effect.promise(() => recordBucketFailureAsync(db, failure)).pipe(
+                    Effect.ignore,
+                );
+
+            if (failure.name === "ProvisionCluster")
+                return Effect.promise(() => recordProvisionFailureAsync(db, failure)).pipe(
                     Effect.ignore,
                 );
 
@@ -424,19 +456,22 @@ async function pollOutboxAsync(db: Database) {
     // mid-update is still caught. Older workers find nothing: their version is never higher.
     const monitoring = await listOutdatedMonitoring(db, MONITORING_VERSION);
 
+    const provisions = await queuedProvisions(db);
+
     return {
         initialization: initialization.rows,
         resources: queued.rows.filter((row) => row.name === "DeployResource"),
         caddy: queued.rows.filter((row) => row.name === "DeployCaddy"),
         buckets,
         monitoring,
+        provisions,
     };
 }
 
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox(db: Database) {
     return Effect.promise(() => pollOutboxAsync(db)).pipe(
-        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring }) =>
+        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring, provisions }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
@@ -455,6 +490,12 @@ export function pollInitializationOutbox(db: Database) {
                     ...monitoring.map(({ clusterId }) =>
                         RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
                     ),
+                    ...provisions.map((row) =>
+                        ProvisionCluster.enqueue({
+                            provisionId: row.id,
+                            requestId: row.requestedAt.toISOString(),
+                        }),
+                    ),
                 ],
                 (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
             ),
@@ -470,6 +511,7 @@ export {
     DeployResource,
     HealthCheck,
     InitializeCluster,
+    ProvisionCluster,
     ReconcileBucket,
     RollOutMonitoring,
 };

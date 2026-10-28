@@ -186,3 +186,32 @@ export const WatchGitSources: Job.Job<
         },
     },
 });
+
+const provisionPayload = Schema.Struct({
+    provisionId: Schema.String,
+    // The provision row's requested_at ISO string; each retry is a new job.
+    requestId: Schema.String,
+});
+
+// Creates a cluster on a server over SSH with the bundled uc CLI, then deploys its sidecar.
+export const ProvisionCluster: Job.Job<
+    "ProvisionCluster",
+    typeof provisionPayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("ProvisionCluster", {
+    payload: provisionPayload,
+    success: Schema.Void,
+    idempotencyKey: ({ provisionId, requestId }) => `${provisionId}:${requestId}`,
+    queue: "provision",
+    defaults: {
+        // No retries: SSH and server problems need the user, and a retry may need a reset.
+        attempts: 1,
+        // Installing Docker and issuing the sidecar's certificate can take several minutes.
+        timeout: "20 minutes",
+        keep: {
+            completed: { age: "1 day" },
+            failed: { age: "30 days" },
+        },
+    },
+});
