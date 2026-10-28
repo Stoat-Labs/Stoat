@@ -25,3 +25,4 @@ vite.config.ts.timestamp-*
 
 !.env.schema
 /src/generated-env.ts
+/build-worker

@@ -11,6 +11,7 @@ import { createFsDrain } from "evlog/fs";
 import { createEvlogHooks } from "evlog/sveltekit";
 
 import { CLIENT_IP_HEADER } from "@stoat/auth";
+import { env } from "./env.server";
 import { getAuth, setAuthCookiePlugin } from "./services";
 import { startMonitoringWorker } from "./lib/server/worker";
 
@@ -31,8 +32,9 @@ setAuthCookiePlugin(
 );
 
 // Server modules also execute during `vite build` (SSR analysis). The worker
-// must only run in a live server, never at build time.
-if (!building) {
+// must only run in a live server, never at build time. With USE_INTERNAL_WORKER=false,
+// a separate worker container (src/worker.ts) runs it instead.
+if (!building && env.USE_INTERNAL_WORKER !== false) {
     startMonitoringWorker();
 }
 

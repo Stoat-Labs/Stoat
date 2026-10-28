@@ -1,11 +1,12 @@
 import type { Database } from "@stoat/db";
 import {
     getInitialization,
+    getMonitoringSpec,
     prepareMonitoring,
     updateMonitoringPassword,
 } from "@stoat/db/initialization";
 import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@stoat/uncloud";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Schema } from "effect";
 import {
@@ -19,6 +20,14 @@ import template from "../../../internal/monitoring/compose.yaml?raw";
 import { sql } from "./greptime";
 
 export { readSqlRows } from "./greptime";
+
+export { template as monitoringTemplate };
+
+/** Identifies the bundled monitoring template; a new one is rolled out to initialized clusters. */
+export const monitoringTemplateHash = createHash("sha256")
+    .update(template)
+    .digest("hex")
+    .slice(0, 16);
 
 import { appendDeploymentLog } from "@stoat/db/deployments";
 import { deployCompose } from "./deploy-compose";
@@ -195,13 +204,20 @@ export function createInitializeClusterHandler(
             signal.throwIfAborted();
             const cluster = await getInitialization(db, clusterId);
 
-            if (cluster.initializedAt) {
+            // Initialized clusters only re-run to roll out a changed monitoring template.
+            const reconciling = Boolean(cluster.initializedAt);
+
+            if (reconciling && (await getMonitoringSpec(db, clusterId)) === template) {
                 await log("Cluster is already initialized; nothing to do.");
 
                 return;
             }
 
-            await log("Starting cluster monitoring initialization.");
+            await log(
+                reconciling
+                    ? "Rolling out the updated monitoring stack."
+                    : "Starting cluster monitoring initialization.",
+            );
             const config = cluster.initializationConfiguration!;
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
@@ -375,13 +391,16 @@ export function createInitializeClusterHandler(
                             "UPDATE resources SET spec = $1, updated_at = now() WHERE id = $2",
                             [template, state.resourceId],
                         );
-                        await enableCaddyMetrics(
-                            db,
-                            uc,
-                            clusterId,
-                            (text) => log(text),
-                            bounded(signal, 30_000),
-                        );
+
+                        // Caddy already pushes metrics once initialized; don't restart it again.
+                        if (!reconciling)
+                            await enableCaddyMetrics(
+                                db,
+                                uc,
+                                clusterId,
+                                (text) => log(text),
+                                bounded(signal, 30_000),
+                            );
 
                         return;
                     }

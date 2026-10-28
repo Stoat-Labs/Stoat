@@ -3,8 +3,8 @@ import { Schema } from "effect";
 
 const payload = Schema.Struct({
     clusterId: Schema.String,
-    // InitializationRequestedAt ISO string. Makes the job id deterministic
-    // per request so retries and outbox recovery are idempotent.
+    // InitializationRequestedAt ISO string, or `monitoring-<template hash>` for a template
+    // rollout. Makes the job id deterministic so retries and recovery are idempotent.
     requestId: Schema.String,
 });
 

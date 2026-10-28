@@ -6,11 +6,15 @@ import {
     setDeploymentStatus,
 } from "@stoat/db/deployments";
 import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
-import { setInitializationStatus } from "@stoat/db/initialization";
+import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initialization";
 import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
-import { createInitializeClusterHandler } from "./initialize-cluster";
+import {
+    createInitializeClusterHandler,
+    monitoringTemplate,
+    monitoringTemplateHash,
+} from "./initialize-cluster";
 import { CADDY_FAILURE_MESSAGE, deployCaddy } from "./deploy-caddy";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
 import { runHealthCheck } from "./health-check";
@@ -31,6 +35,10 @@ const WorkerDb = Effect.acquireRelease(
     (db) => Effect.promise(() => db.$client.end()).pipe(Effect.ignore),
 );
 
+const MONITORING_ROLLOUT_PREFIX = "monitoring-";
+
+const monitoringRolloutId = () => `${MONITORING_ROLLOUT_PREFIX}${monitoringTemplateHash}`;
+
 const TERMINAL_FAILURE_MESSAGE =
     "Cluster monitoring initialization failed. Check the selected machine and sidecar connectivity, then retry.";
 
@@ -43,6 +51,12 @@ async function runAttemptAsync(
     signal: AbortSignal,
 ) {
     const jobId = `${clusterId}:${requestId}`;
+
+    // Mid-roll, a worker on another version may claim a rollout job. Completing it there would
+    // drop the rollout, so fail the attempt and let a retry land on a worker with that template.
+    if (requestId.startsWith(MONITORING_ROLLOUT_PREFIX) && requestId !== monitoringRolloutId()) {
+        throw new Error("Monitoring rollout belongs to a worker on another Stoat version.");
+    }
 
     await setInitializationStatus(db, clusterId, "running", null).catch(() => {});
     const deployment = await getDeploymentByJobId(db, jobId).catch(() => null);
@@ -321,6 +335,19 @@ export function monitoringWorkerLive(watchGitSources: GitWatcher) {
 // (clusterId, requestId) via the job's idempotencyKey.
 export function enqueueInitialization(clusterId: string, requestId: string) {
     return InitializeCluster.enqueue({ clusterId, requestId });
+}
+
+// Run once when a worker starts, so new code is live: roll the bundled monitoring template out to
+// clusters still on an older one. Keyed by the template hash, so any number of workers starting
+// together queue one job per cluster, and releases that don't touch monitoring queue nothing.
+export function rollOutMonitoring(db: Database) {
+    return Effect.promise(() => listOutdatedMonitoring(db, monitoringTemplate)).pipe(
+        Effect.flatMap((clusters) =>
+            Effect.forEach(clusters, ({ clusterId }) =>
+                enqueueInitialization(clusterId, monitoringRolloutId()),
+            ),
+        ),
+    );
 }
 
 export async function queueResourceDeployment(deploymentId: string): Promise<void> {

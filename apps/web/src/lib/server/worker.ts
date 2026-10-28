@@ -2,7 +2,11 @@ import { startWorker } from "@stoat/workflows/lifecycle";
 import { watchGitSources } from "@stoat/api/git-watch";
 import { appSecret, databaseUrl } from "@stoat/config/env";
 import { encryptLegacySidecarTokens } from "@stoat/db/clusters";
-import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
+import {
+    monitoringWorkerLive,
+    pollInitializationOutbox,
+    rollOutMonitoring,
+} from "@stoat/workflows/runtime";
 import { JobStoreLive } from "@stoat/workflows/store";
 import { Effect, Layer } from "effect";
 import { getDb } from "../../services";
@@ -26,8 +30,16 @@ export function startMonitoringWorker() {
         console.error("[worker] Could not encrypt legacy sidecar tokens:", error.message),
     );
 
-    startWorker(
+    const started = startWorker(
         Layer.launch(monitoringWorkerLive(watchGitSources)),
         pollInitializationOutbox(getDb()).pipe(Effect.provide(JobStoreLive)),
     );
+
+    // Once per process start (not per dev reload), never in the sweep: workers still on the old
+    // version mid-roll must not push their template back.
+    if (started)
+        Effect.runPromise(rollOutMonitoring(getDb()).pipe(Effect.provide(JobStoreLive))).catch(
+            (error: Error) =>
+                console.error("[worker] Could not queue monitoring rollouts:", error.message),
+        );
 }

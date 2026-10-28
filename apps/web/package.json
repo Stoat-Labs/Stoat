@@ -5,9 +5,10 @@
     "type": "module",
     "scripts": {
         "dev": "vp dev",
-        "build": "vp build",
+        "build": "vp build && vp build -c vite.worker.config.ts",
         "preview": "vp preview",
         "start": "node server.js",
+        "start:worker": "node build-worker/worker.js",
         "prepare": "svelte-kit sync",
         "check-types": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
         "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

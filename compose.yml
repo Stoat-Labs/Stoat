@@ -22,6 +22,7 @@ services:
             DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
             REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
             APP_USE_INTERNAL_CACHE: ${APP_USE_INTERNAL_CACHE:-false}
+            USE_INTERNAL_WORKER: ${USE_INTERNAL_WORKER:-true}
         x-pre_deploy:
             command:
                 [
@@ -47,6 +48,26 @@ services:
             retries: 5
             start_period: 10s
         restart: unless-stopped
+
+    # Optional: run background jobs in their own container. Uncomment and set
+    # USE_INTERNAL_WORKER=false, or no deployments or monitoring jobs ever run.
+    # stoat-worker:
+    #     image: ghcr.io/stoat-labs/stoat:latest
+    #     pull_policy: always
+    #     command: ["node", "build-worker/worker.js"]
+    #     env_file: .env
+    #     environment:
+    #         APP_URL: https://${APP_URL:-stoat.example.com}
+    #         DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
+    #         REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
+    #     # Waits for stoat, whose pre-deploy hook runs the migrations this worker's jobs need.
+    #     depends_on:
+    #         stoat:
+    #             condition: service_healthy
+    #     # The image's healthcheck probes the web port, which the worker does not serve.
+    #     healthcheck:
+    #         disable: true
+    #     restart: unless-stopped
 
     stoat-db:
         image: postgres:18

@@ -70,6 +70,32 @@ export async function prepareMonitoring(
     });
 }
 
+/** The monitoring template last deployed successfully, if any. */
+export async function getMonitoringSpec(db: Database, clusterId: string) {
+    const [row] = await db
+        .select({ spec: resources.spec })
+        .from(clusterMonitoring)
+        .innerJoin(resources, eq(resources.id, clusterMonitoring.resourceId))
+        .where(eq(clusterMonitoring.clusterId, clusterId));
+
+    return row?.spec ?? null;
+}
+
+/** Initialized clusters whose monitoring was last deployed from a different template. */
+export function listOutdatedMonitoring(db: Database, template: string) {
+    return db
+        .select({ clusterId: clusters.id })
+        .from(clusters)
+        .innerJoin(clusterMonitoring, eq(clusterMonitoring.clusterId, clusters.id))
+        .innerJoin(resources, eq(resources.id, clusterMonitoring.resourceId))
+        .where(
+            and(
+                isNotNull(clusters.initializedAt),
+                sql`${resources.spec} is distinct from ${template}`,
+            ),
+        );
+}
+
 export function listInitializationRequests(db: Database) {
     return db
         .select({ clusterId: clusters.id, status: clusters.initializationStatus })

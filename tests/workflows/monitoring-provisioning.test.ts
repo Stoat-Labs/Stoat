@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createDb } from "@stoat/db";
-import { prepareMonitoring, setInitializationStatus } from "@stoat/db/initialization";
+import {
+    getMonitoringSpec,
+    listOutdatedMonitoring,
+    prepareMonitoring,
+    setInitializationStatus,
+} from "@stoat/db/initialization";
 import {
     clusterMonitoring,
     clusters,
@@ -245,4 +250,26 @@ describe("monitoring provisioning (PostgreSQL)", () => {
             ]);
         },
     );
+
+    it("lists only initialized clusters whose deployed template differs from the bundled one", async () => {
+        const { resourceId } = await prepareMonitoring(db, clusterId, "encrypted", template);
+        const outdated = () => listOutdatedMonitoring(db, template);
+
+        // Not initialized yet: first-time init owns it.
+        expect(await outdated()).toEqual([]);
+
+        await db
+            .update(clusters)
+            .set({ initializedAt: new Date() })
+            .where(eq(clusters.id, clusterId));
+        await db
+            .update(resources)
+            .set({ spec: "old template" })
+            .where(eq(resources.id, resourceId));
+        expect(await outdated()).toEqual([{ clusterId }]);
+        expect(await getMonitoringSpec(db, clusterId)).toBe("old template");
+
+        await db.update(resources).set({ spec: template }).where(eq(resources.id, resourceId));
+        expect(await outdated()).toEqual([]);
+    });
 });
