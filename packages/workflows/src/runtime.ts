@@ -6,11 +6,12 @@ import {
     setDeploymentStatus,
 } from "@stoat/db/deployments";
 import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
-import { setInitializationStatus } from "@stoat/db/initialization";
+import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initialization";
 import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
 import { createInitializeClusterHandler } from "./initialize-cluster";
+import { MONITORING_VERSION } from "./monitoring-compose";
 import { CADDY_FAILURE_MESSAGE, deployCaddy } from "./deploy-caddy";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
 import { runHealthCheck } from "./health-check";
@@ -20,6 +21,7 @@ import {
     HealthCheck,
     InitializeCluster,
     ReconcileBucket,
+    RollOutMonitoring,
     WatchGitSources,
 } from "./jobs";
 import { reconcileBucket } from "./reconcile-bucket";
@@ -87,6 +89,20 @@ async function runAttemptAsync(
     await setInitializationStatus(db, clusterId, "ready", null).catch(() => {});
 }
 
+// Never rolls monitoring backward: a newer version's job waits for a newer worker, and a stale
+// one deploys this worker's newer version instead (the handler skips clusters already current).
+async function rollOutMonitoring(
+    db: Database,
+    clusterId: string,
+    version: number,
+    signal: AbortSignal,
+) {
+    if (version > MONITORING_VERSION)
+        throw new Error(`Monitoring v${version} needs a newer worker than v${MONITORING_VERSION}.`);
+
+    await createInitializeClusterHandler(db, appSecret(), { rollout: true })(clusterId, signal);
+}
+
 function runAttempt(db: Database, clusterId: string, requestId: string) {
     return attempt(
         (signal) => runAttemptAsync(db, clusterId, requestId, signal),
@@ -151,6 +167,14 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
                     (error) => new Error(s3FailureMessage(error)),
                 ),
             { concurrency: 2 },
+        ),
+        RollOutMonitoring.toLayer(
+            ({ clusterId, version }) =>
+                attempt(
+                    (signal) => rollOutMonitoring(db, clusterId, version, signal),
+                    (error) => error,
+                ),
+            { concurrency: 1 },
         ),
         HealthCheck.toLayer(
             ({ clusterId }) =>
@@ -280,6 +304,7 @@ function workerLive(db: Database) {
             initialize: { concurrency: 1 },
             deploy: { concurrency: 4 },
             buckets: { concurrency: 2 },
+            monitoring: { concurrency: 1 },
             health: { concurrency: 1 },
             git: { concurrency: 2 },
         },
@@ -395,19 +420,23 @@ async function pollOutboxAsync(db: Database) {
     );
 
     const buckets = await pendingBucketRequests(db);
+    // Every worker checks on every sweep, so a cluster whose init an older worker finishes
+    // mid-update is still caught. Older workers find nothing: their version is never higher.
+    const monitoring = await listOutdatedMonitoring(db, MONITORING_VERSION);
 
     return {
         initialization: initialization.rows,
         resources: queued.rows.filter((row) => row.name === "DeployResource"),
         caddy: queued.rows.filter((row) => row.name === "DeployCaddy"),
         buckets,
+        monitoring,
     };
 }
 
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox(db: Database) {
     return Effect.promise(() => pollOutboxAsync(db)).pipe(
-        Effect.flatMap(({ initialization, resources, caddy, buckets }) =>
+        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
@@ -423,6 +452,9 @@ export function pollInitializationOutbox(db: Database) {
                             requestId: row.requestedAt.toISOString(),
                         }),
                     ),
+                    ...monitoring.map(({ clusterId }) =>
+                        RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
+                    ),
                 ],
                 (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
             ),
@@ -433,6 +465,13 @@ export function pollInitializationOutbox(db: Database) {
 
 export { JobStoreLive, PgLive };
 
-export { DeployCaddy, DeployResource, HealthCheck, InitializeCluster, ReconcileBucket };
+export {
+    DeployCaddy,
+    DeployResource,
+    HealthCheck,
+    InitializeCluster,
+    ReconcileBucket,
+    RollOutMonitoring,
+};
 
 export type { Database };

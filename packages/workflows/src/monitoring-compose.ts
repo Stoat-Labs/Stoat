@@ -8,6 +8,13 @@ export const ALLOY_SERVICE = "stoat-monitoring-alloy";
 
 export const MONITORING_DATABASE = "monitoring";
 
+/**
+ * Bump whenever internal/monitoring/compose.yaml or its rendering changes: workers roll a higher
+ * version out to every initialized cluster, and never a lower one. The pinned-hash test in
+ * tests/workflows/monitoring.test.ts fails until this is bumped alongside a template edit.
+ */
+export const MONITORING_VERSION = 1;
+
 export const GREPTIME_USERNAME = "stoat";
 
 export const DEFAULT_GREPTIME_VOLUME = "stoat-monitoring-greptime";

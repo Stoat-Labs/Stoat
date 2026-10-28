@@ -11,8 +11,9 @@ import { createFsDrain } from "evlog/fs";
 import { createEvlogHooks } from "evlog/sveltekit";
 
 import { CLIENT_IP_HEADER } from "@stoat/auth";
-import { getAuth, setAuthCookiePlugin } from "./services";
-import { startMonitoringWorker } from "./lib/server/worker";
+import { env } from "./env.server";
+import { getAuth, getDb, setAuthCookiePlugin } from "./services";
+import { startMonitoringWorker } from "@stoat/api/worker";
 
 /** WebSocket calls (rpc-socket.ts) read sessions outside any request, with no response to set cookies on. */
 function currentRequestEvent(): RequestEvent | undefined {
@@ -31,9 +32,10 @@ setAuthCookiePlugin(
 );
 
 // Server modules also execute during `vite build` (SSR analysis). The worker
-// must only run in a live server, never at build time.
-if (!building) {
-    startMonitoringWorker();
+// must only run in a live server, never at build time. With USE_INTERNAL_WORKER=false,
+// the separate apps/worker container runs it instead.
+if (!building && env.USE_INTERNAL_WORKER !== false) {
+    startMonitoringWorker(getDb());
 }
 
 const { handle: evlogHandle, handleError } = createEvlogHooks({

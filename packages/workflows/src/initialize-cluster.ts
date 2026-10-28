@@ -1,7 +1,9 @@
 import type { Database } from "@stoat/db";
 import {
     getInitialization,
+    getMonitoringVersion,
     prepareMonitoring,
+    setMonitoringVersion,
     updateMonitoringPassword,
 } from "@stoat/db/initialization";
 import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@stoat/uncloud";
@@ -12,6 +14,7 @@ import {
     ALLOY_SERVICE,
     GREPTIME_SERVICE,
     MONITORING_DATABASE,
+    MONITORING_VERSION,
     renderMonitoringCompose,
 } from "./monitoring-compose";
 import { decryptMonitoringPassword, encryptMonitoringPassword } from "./secrets";
@@ -162,7 +165,8 @@ async function checkOwnership(uc: UcClient, clusterId: string, signal: AbortSign
 export function createInitializeClusterHandler(
     db: Database,
     encryptionSecret: string,
-    opts?: { deploymentId?: string },
+    // rollout: only update already initialized clusters; first-time init has its own job.
+    opts?: { deploymentId?: string; rollout?: boolean },
 ) {
     // Validate before accepting jobs, including when the database contains no requests yet.
     encryptMonitoringPassword("validation", encryptionSecret, "startup");
@@ -195,13 +199,23 @@ export function createInitializeClusterHandler(
             signal.throwIfAborted();
             const cluster = await getInitialization(db, clusterId);
 
-            if (cluster.initializedAt) {
+            // Initialized clusters only re-run to roll out a newer monitoring version, never an
+            // older one: a worker from before an update must not undo what a newer one deployed.
+            const reconciling = Boolean(cluster.initializedAt);
+
+            if (!reconciling && opts?.rollout) return;
+
+            if (reconciling && (await getMonitoringVersion(db, clusterId)) >= MONITORING_VERSION) {
                 await log("Cluster is already initialized; nothing to do.");
 
                 return;
             }
 
-            await log("Starting cluster monitoring initialization.");
+            await log(
+                reconciling
+                    ? "Rolling out the updated monitoring stack."
+                    : "Starting cluster monitoring initialization.",
+            );
             const config = cluster.initializationConfiguration!;
             const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
 
@@ -375,13 +389,17 @@ export function createInitializeClusterHandler(
                             "UPDATE resources SET spec = $1, updated_at = now() WHERE id = $2",
                             [template, state.resourceId],
                         );
-                        await enableCaddyMetrics(
-                            db,
-                            uc,
-                            clusterId,
-                            (text) => log(text),
-                            bounded(signal, 30_000),
-                        );
+                        await setMonitoringVersion(db, clusterId, MONITORING_VERSION);
+
+                        // Caddy already pushes metrics once initialized; don't restart it again.
+                        if (!reconciling)
+                            await enableCaddyMetrics(
+                                db,
+                                uc,
+                                clusterId,
+                                (text) => log(text),
+                                bounded(signal, 30_000),
+                            );
 
                         return;
                     }

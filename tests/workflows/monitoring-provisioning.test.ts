@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createDb } from "@stoat/db";
-import { prepareMonitoring, setInitializationStatus } from "@stoat/db/initialization";
+import {
+    getMonitoringVersion,
+    listOutdatedMonitoring,
+    prepareMonitoring,
+    setInitializationStatus,
+    setMonitoringVersion,
+} from "@stoat/db/initialization";
 import {
     clusterMonitoring,
     clusters,
@@ -245,4 +251,29 @@ describe("monitoring provisioning (PostgreSQL)", () => {
             ]);
         },
     );
+
+    it("lists only initialized clusters on an older monitoring version", async () => {
+        await prepareMonitoring(db, clusterId, "encrypted", template);
+        const outdated = () => listOutdatedMonitoring(db, 2);
+
+        // Not initialized yet: first-time init owns it.
+        expect(await outdated()).toEqual([]);
+
+        await db
+            .update(clusters)
+            .set({ initializedAt: new Date() })
+            .where(eq(clusters.id, clusterId));
+        // No recorded version predates versioning and counts as 0.
+        expect(await getMonitoringVersion(db, clusterId)).toBe(0);
+        expect(await outdated()).toEqual([{ clusterId }]);
+
+        await setMonitoringVersion(db, clusterId, 1);
+        expect(await outdated()).toEqual([{ clusterId }]);
+
+        // Current or newer: an older worker never rolls it back.
+        await setMonitoringVersion(db, clusterId, 2);
+        expect(await outdated()).toEqual([]);
+        await setMonitoringVersion(db, clusterId, 3);
+        expect(await outdated()).toEqual([]);
+    });
 });

@@ -33,6 +33,37 @@ export const InitializeCluster: Job.Job<
     },
 });
 
+const rolloutPayload = Schema.Struct({
+    clusterId: Schema.String,
+    // MONITORING_VERSION of the worker that queued it.
+    version: Schema.Number,
+});
+
+// Its own queue, so workers from before versioned rollouts never claim one.
+export const RollOutMonitoring: Job.Job<
+    "RollOutMonitoring",
+    typeof rolloutPayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("RollOutMonitoring", {
+    payload: rolloutPayload,
+    success: Schema.Void,
+    idempotencyKey: ({ clusterId, version }) => `${clusterId}:v${version}`,
+    queue: "monitoring",
+    defaults: {
+        attempts: 5,
+        backoff: { type: "exponential", delay: "30 seconds" },
+        timeout: "15 minutes",
+        keep: {
+            // The version is stored before completing, so a finished job is never needed again; a
+            // short window lets the sweep re-queue a cluster an older worker re-initialized.
+            completed: { age: "1 minute" },
+            // Short, so the outbox sweep re-queues a cluster that was unreachable.
+            failed: { age: "1 hour" },
+        },
+    },
+});
+
 const resourcePayload = Schema.Struct({ deploymentId: Schema.String });
 
 export const DeployResource: Job.Job<

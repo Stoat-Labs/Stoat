@@ -37,34 +37,44 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             return;
 
         const lock = await db.$client.connect();
-        const lockKey = `stoat:resource-deploy:${deployment.clusterId}`;
         let closing: Promise<void> | undefined;
         const close = () => (closing ??= lock.end());
 
         try {
-            step = "Waiting for the cluster deployment lock.";
             const backend = await lock.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-            let cancelling: Promise<void> | undefined;
 
-            const cancel = () => {
-                // A socket close alone does not wake PostgreSQL's advisory-lock wait.
-                cancelling = db.$client
-                    .query("SELECT pg_cancel_backend($1)", [backend.rows[0]!.pid])
-                    .then(() => {}, close);
+            // Session advisory locks, held until the session closes. Keys are taken in sorted order,
+            // so two deploys waiting on overlapping keys can never deadlock.
+            const acquire = async (keys: string[]) => {
+                let cancelling: Promise<void> | undefined;
+
+                const cancel = () => {
+                    // A socket close alone does not wake PostgreSQL's advisory-lock wait.
+                    cancelling = db.$client
+                        .query("SELECT pg_cancel_backend($1)", [backend.rows[0]!.pid])
+                        .then(() => {}, close);
+                };
+
+                signal.throwIfAborted();
+                signal.addEventListener("abort", cancel, { once: true });
+
+                try {
+                    for (const key of [...new Set(keys)].toSorted())
+                        await lock.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
+                            `stoat:resource-deploy:${deployment.clusterId}:${key}`,
+                        ]);
+                } finally {
+                    // Once acquired, keep the lock until the sidecar stream has drained on abort.
+                    signal.removeEventListener("abort", cancel);
+                    await cancelling;
+                }
+
+                signal.throwIfAborted();
             };
 
-            signal.throwIfAborted();
-            signal.addEventListener("abort", cancel, { once: true });
-
-            try {
-                await lock.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [lockKey]);
-            } finally {
-                // Once acquired, keep the lock until the sidecar stream has drained on abort.
-                signal.removeEventListener("abort", cancel);
-                await cancelling;
-            }
-
-            signal.throwIfAborted();
+            // Deploys of one resource run one at a time; other resources on the cluster don't wait.
+            step = "Waiting for this resource's previous deployment.";
+            await acquire([`resource:${deployment.resourceId}`]);
 
             // Claim after locking, so a cancellation while acquiring the lock wins.
             const claimed = await db.$client.query(
@@ -161,7 +171,8 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             // possibly on the same volume, so they go before the new Compose starts. Volumes stay.
             step = "Removing services the Compose file no longer has.";
 
-            const deployed = await deployedServiceNames(
+            // This resource's own names can't change meanwhile: it holds its resource lock.
+            const { own } = await deployedServiceNames(
                 db,
                 deployment.clusterId,
                 deployment.resourceId,
@@ -178,10 +189,25 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                   )
                 : [];
 
+            // Every service this deploy creates or may remove. Deploys sharing none run in parallel;
+            // one that shares a name (a service moved between resources) waits, so stale removal
+            // below always sees the other deploy's finished snapshot.
+            step = "Waiting for deployments using the same services.";
+            await acquire(
+                [...compose.serviceNames, ...own, ...leftovers].map((name) => `service:${name}`),
+            );
+
+            // Read after locking: a deploy we waited for may have just taken one of these services.
+            const { others } = await deployedServiceNames(
+                db,
+                deployment.clusterId,
+                deployment.resourceId,
+            );
+
             for (const name of staleServices(
-                [...deployed.own, ...leftovers],
+                [...own, ...leftovers],
                 compose.serviceNames,
-                deployed.others,
+                others,
             )) {
                 signal.throwIfAborted();
                 await log(

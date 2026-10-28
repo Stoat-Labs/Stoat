@@ -4,8 +4,9 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 
 ## Layout
 
-- `apps/web`: SvelteKit app (adapter-node). The browser calls oRPC over one WebSocket at `/rpc` (`src/lib/server/rpc-socket.ts`, attached by `server.js` in production and `rpc-socket-plugin.ts` in dev); `src/routes/rpc/[...rest]` only serves the REST API for API keys. Starts the effect-mq worker from `hooks.server.ts` (never during build).
+- `apps/web`: SvelteKit app (adapter-node). The browser calls oRPC over one WebSocket at `/rpc` (`src/lib/server/rpc-socket.ts`, attached by `server.js` in production and `rpc-socket-plugin.ts` in dev); `src/routes/rpc/[...rest]` only serves the REST API for API keys. Starts the effect-mq worker from `hooks.server.ts` (never during build) unless `USE_INTERNAL_WORKER=false`.
 - `apps/sidecar`: Go HTTP API wrapping Uncloud; runs as root on cluster machines. `cmd/openapi` emits its OpenAPI spec.
+- `apps/worker`: standalone worker image (`ghcr.io/stoat-labs/worker`) for `USE_INTERNAL_WORKER=false`. Vite bundles `src/index.ts` and every dependency into one `dist/worker.mjs`; the image is Alpine with Node, git and ssh. Both it and `apps/web` start the worker through `@stoat/api/worker`.
 - `packages/api`: oRPC routers and business logic. Packages export `src/*.ts` directly; `dist/` is only `tsc -b` output.
 - `packages/db`: Drizzle schema and queries. Migrations live in `packages/db/src/migrations` and **also include** `packages/workflows/src/schema.ts` (effect-mq tables).
 - `packages/workflows`: effect-mq jobs (`InitializeCluster`, `DeployResource`, `ReconcileBucket`). `internal/monitoring/compose.yaml` is the monitoring stack it deploys.

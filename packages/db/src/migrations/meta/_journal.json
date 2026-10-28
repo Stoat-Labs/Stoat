@@ -85,6 +85,13 @@
             "when": 1792858617702,
             "tag": "0011_resource_draft_config_files",
             "breakpoints": true
+        },
+        {
+            "idx": 12,
+            "version": "7",
+            "when": 1793218606889,
+            "tag": "0012_monitoring_template_version",
+            "breakpoints": true
         }
     ]
 }

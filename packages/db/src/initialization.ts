@@ -70,6 +70,37 @@ export async function prepareMonitoring(
     });
 }
 
+/** The monitoring template version last deployed successfully; 0 when none is recorded. */
+export async function getMonitoringVersion(db: Database, clusterId: string) {
+    const [row] = await db
+        .select({ version: clusterMonitoring.templateVersion })
+        .from(clusterMonitoring)
+        .where(eq(clusterMonitoring.clusterId, clusterId));
+
+    return row?.version ?? 0;
+}
+
+export async function setMonitoringVersion(db: Database, clusterId: string, version: number) {
+    await db
+        .update(clusterMonitoring)
+        .set({ templateVersion: version })
+        .where(eq(clusterMonitoring.clusterId, clusterId));
+}
+
+/** Initialized clusters whose monitoring is older than `version`. Never lists newer ones. */
+export function listOutdatedMonitoring(db: Database, version: number) {
+    return db
+        .select({ clusterId: clusters.id })
+        .from(clusters)
+        .innerJoin(clusterMonitoring, eq(clusterMonitoring.clusterId, clusters.id))
+        .where(
+            and(
+                isNotNull(clusters.initializedAt),
+                sql`coalesce(${clusterMonitoring.templateVersion}, 0) < ${version}`,
+            ),
+        );
+}
+
 export function listInitializationRequests(db: Database) {
     return db
         .select({ clusterId: clusters.id, status: clusters.initializationStatus })

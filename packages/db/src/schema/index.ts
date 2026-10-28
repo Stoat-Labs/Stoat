@@ -248,6 +248,8 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
         .unique()
         .references(() => resources.id, { onDelete: "cascade" }),
     encryptedPassword: t.text("encrypted_password").notNull(),
+    // MONITORING_VERSION of the last successful deploy; null predates versioning.
+    templateVersion: t.integer("template_version"),
 });
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
