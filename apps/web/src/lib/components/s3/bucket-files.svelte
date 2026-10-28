@@ -117,24 +117,42 @@
         unloaded.delete(prefix);
         loading.add(prefix);
 
-        // shortcut: only the first page (100 entries) per folder, follow `cursor` if buckets get big.
-        const page = await client.buckets
-            .listFiles({ projectId, resourceId, prefix })
-            .finally(() => loading.delete(prefix));
+        const items = [];
+        const prefixes = [];
 
-        if (current !== generation) return;
+        try {
+            // S3 returns at most 100 entries per page, so follow the cursor to the end.
+            let cursor: string | undefined;
 
-        for (const item of page.items) objects.set(item.key, item);
+            do {
+                const page = await client.buckets.listFiles({
+                    projectId,
+                    resourceId,
+                    prefix,
+                    cursor,
+                });
 
-        for (const folder of page.prefixes) unloaded.add(folder);
+                if (current !== generation) return;
+
+                items.push(...page.items);
+                prefixes.push(...page.prefixes);
+                cursor = page.cursor ?? undefined;
+            } while (cursor);
+        } finally {
+            loading.delete(prefix);
+        }
+
+        for (const item of items) objects.set(item.key, item);
+
+        for (const folder of prefixes) unloaded.add(folder);
 
         model.batch([
-            ...page.prefixes.map((path) => ({
+            ...prefixes.map((path) => ({
                 type: "add" as const,
                 path,
             })),
             // S3 may return the folder's own marker object; it isn't a file.
-            ...page.items.flatMap((item) =>
+            ...items.flatMap((item) =>
                 item.key === prefix
                     ? []
                     : [{ type: "add" as const, path: item.key }],
@@ -221,7 +239,11 @@
     }
 </script>
 
-<div class="flex h-full min-h-0 bg-card">
+<div
+    class="flex h-full min-h-0 bg-card"
+    role="region"
+    aria-label="Files"
+>
     <div class="flex w-80 shrink-0 flex-col border-r">
         {#if status === "loading"}
             <Skeleton loading loading-label="Loading files">
@@ -284,6 +306,7 @@
                 <Button
                     size="sm"
                     variant="outline"
+                    aria-label={`Download ${file.current}`}
                     onclick={() =>
                         file.current && download(file.current)}
                 >

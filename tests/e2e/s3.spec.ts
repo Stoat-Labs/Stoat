@@ -234,9 +234,10 @@ test.describe("buckets", () => {
 
         await page.goto(path);
         const files = page.getByRole("region", { name: "Files" });
-        await expect(files.getByText("hello.txt")).toBeVisible();
+        await expect(files.getByRole("treeitem", { name: "hello.txt" })).toBeVisible();
 
-        // Download sends the browser to a presigned URL that serves the file.
+        // Selecting the file opens its details, with Download sending the browser to a presigned URL.
+        await files.getByRole("treeitem", { name: "hello.txt" }).click();
         const presigned = page.waitForRequest((sent) => sent.url().includes("X-Amz-Signature"));
         await files.getByRole("button", { name: "Download hello.txt" }).click();
         expect(await fetchFromRustfs((await presigned).url())).toBe("hi from e2e");

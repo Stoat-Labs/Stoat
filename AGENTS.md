@@ -18,8 +18,8 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 ## Commands
 
 - `pnpm check`: lint, then `vp fmt --write`. `pnpm check-types`: `tsc -b` / `svelte-check` in every package.
-- `pnpm test`: runs two separate configs, root `vite.config.ts` (api/uncloud/workflows) and `apps/web/vite.config.ts` (tests/web).
-- Single test: `pnpm exec vp test run tests/api/git.test.ts`. For web tests: `pnpm --dir apps/web exec vp test run ../../tests/web/<file>.test.ts`.
+- `pnpm test`: runs three separate configs, root `vite.config.ts` (api/uncloud/workflows), `apps/web/vite.config.ts` (tests/web) and `packages/trees/vite.config.ts` (tests/trees).
+- Single test: `pnpm exec vp test run tests/api/git.test.ts`. For web tests: `pnpm --dir apps/web exec vp test run ../../tests/web/<file>.test.ts`. For tree tests (needs its Svelte plugin and jsdom): `pnpm --dir packages/trees exec vp test run ../../tests/trees/<file>.test.ts`.
 - Go: `go -C apps/sidecar test ./...`.
 - After changing sidecar routes or schemas: `pnpm uc:refresh` (needs Go) and commit both `openapi.json` and the generated types.
 - DB: `pnpm db:start` runs `compose.dev.yaml` (Postgres on host port **5435**, Dragonfly on **6380**); `pnpm dev` runs it plus `pnpm db:migrate` first. Use `pnpm db:generate` for new migrations and `pnpm db:migrate` to apply them. The image never migrates on start; `compose.yml` runs `drizzle-kit migrate` as an `x-pre_deploy` hook.

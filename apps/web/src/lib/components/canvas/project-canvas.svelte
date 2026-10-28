@@ -166,6 +166,12 @@
         parseAsString.withOptions(pageOptions),
     );
 
+    // The selected file in a bucket panel, cleared with the rest when another card opens.
+    const file = useQueryState(
+        "file",
+        parseAsString.withOptions(pageOptions),
+    );
+
     // Transient, so plain state: only which menu the next right-click shows.
     let menuTarget = $state<MenuTarget>();
 
@@ -202,6 +208,7 @@
 
         void deployment.set(null);
         void tab.set(null);
+        void file.set(null);
         void panelState.set(null);
         void selected.set(nodeId);
     }
