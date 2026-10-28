@@ -1,8 +1,9 @@
 import { createServer, type Server } from "node:https";
 import type { AddressInfo } from "node:net";
+import type { TLSSocket } from "node:tls";
 
 import { generate } from "selfsigned";
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { sidecarFetch, ucClient, unwrap } from "../../packages/uncloud/src/index";
 
@@ -101,6 +102,34 @@ describe("sidecars with a pinned certificate", () => {
 
         await unwrap(uc.GET("/api/v1/machines"));
         expect(statuses).toEqual([200]);
+    });
+
+    it("closes the least recently used pool, and its clients reconnect", async () => {
+        const sockets: TLSSocket[] = [];
+        const track = (socket: TLSSocket) => sockets.push(socket);
+
+        // Each distinct certificate gets its own pool; trailing newlines keep the PEM valid.
+        const certificate = (index: number) => pinned.cert + "\n".repeat(index);
+
+        server.on("secureConnection", track);
+
+        try {
+            const first = ucClient(baseUrl, { certificate: certificate(1) });
+            await unwrap(first.GET("/api/v1/machines"));
+
+            for (let index = 2; index <= 101; index += 1) {
+                const uc = ucClient(baseUrl, { certificate: certificate(index) });
+                await unwrap(uc.GET("/api/v1/machines"));
+            }
+
+            await vi.waitFor(() => expect(sockets[0]!.closed).toBe(true));
+            expect(sockets.at(-1)!.closed).toBe(false);
+
+            await expect(unwrap(first.GET("/api/v1/machines"))).resolves.toEqual({ items: [] });
+            expect(sockets).toHaveLength(102);
+        } finally {
+            server.off("secureConnection", track);
+        }
     });
 
     it("refuses a sidecar that presents any other certificate", async () => {

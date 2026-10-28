@@ -121,27 +121,42 @@ function normalizeSidecarUrl(sidecarUrl: string): string {
     return trimmed.replace(/\/+$/, "");
 }
 
+// Past this many pinned certificates, the least recently used pool is closed, e.g. a deleted cluster's.
+const MAX_PINNED_AGENTS = 64;
+
 // One connection pool per pinned certificate, so clients built per request still reuse connections.
 const pinnedAgents = new Map<string, Agent>();
+
+/** The pool for `certificate`, moved to the end of `pinnedAgents` as the most recently used. */
+function pinnedAgent(certificate: string) {
+    const agent = pinnedAgents.get(certificate) ?? new Agent({ connect: { ca: certificate } });
+
+    pinnedAgents.delete(certificate);
+    pinnedAgents.set(certificate, agent);
+
+    for (const [oldest, evicted] of pinnedAgents) {
+        if (pinnedAgents.size <= MAX_PINNED_AGENTS) break;
+
+        pinnedAgents.delete(oldest);
+        // Graceful: requests still running on it, such as followed logs, finish first.
+        void evicted.close().catch(() => {});
+    }
+
+    return agent;
+}
 
 /**
  * Request options that trust `certificate` and nothing else. undici's own fetch and Request
  * are used together with its Agent, so they never mix with the copy bundled into Node.
  */
 function pinnedTransport(certificate: string) {
-    let agent = pinnedAgents.get(certificate);
-
-    if (!agent) {
-        agent = new Agent({ connect: { ca: certificate } });
-        pinnedAgents.set(certificate, agent);
-    }
-
-    const dispatcher = agent;
-
     return {
         // SAFETY: undici's Request implements the same Fetch standard openapi-fetch builds requests with.
         Request: PinnedRequest as typeof PinnedRequest & typeof Request,
         fetch: async (request: Request): Promise<Response> => {
+            // Looked up per request, so a client built earlier never sends through a closed pool.
+            const dispatcher = pinnedAgent(certificate);
+
             // SAFETY: openapi-fetch builds every request with the Request class above.
             const response = await pinnedFetch(request as Request & PinnedRequest, { dispatcher });
 
