@@ -12,6 +12,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - `packages/s3`: S3 providers (Generic, RustFS, R2) and the AWS SDK client behind `/s3` connections and `bucket` resources. `src/providers/index.ts` is the client-safe catalog; the other provider files are server-only.
 - `packages/uncloud`: TS client for the sidecar. `openapi.json` and `src/generated/` are committed artifacts.
 - `packages/config`: shared `tsconfig.base.json` and `src/env.ts`, the one place packages read env.
+- `packages/trees`: Svelte 5 bindings for `@pierre/trees` (`<FileTree>`, `createFileTree`, reactive selection/search). Tests in `tests/trees` run and type-check from this package.
 - `tests/`: all TS tests live here (`api`, `uncloud`, `workflows`, `web`), not beside the source. Go tests stay in `apps/sidecar`.
 
 ## Commands

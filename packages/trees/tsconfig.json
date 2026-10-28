@@ -1,0 +1,9 @@
+{
+    "extends": "@stoat/config/tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    },
+    // tests/trees is type-checked here, like tests/web in apps/web.
+    "include": ["src", "../../tests/trees"]
+}

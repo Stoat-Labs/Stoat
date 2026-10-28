@@ -1,58 +1,211 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
-    import {
-        Frame,
-        FrameHeader,
-        FramePanel,
-        FrameTitle,
-    } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { formatDate } from "$lib/format";
     import { client, orpc } from "$lib/api/orpc";
     import { bytes } from "$lib/observability";
-    import CornerLeftUp from "@lucide/svelte/icons/corner-left-up";
     import Download from "@lucide/svelte/icons/download";
-    import File from "@lucide/svelte/icons/file";
-    import Folder from "@lucide/svelte/icons/folder";
+    import {
+        FileTree,
+        createFileTree,
+        useFileTreeSelector,
+        type FileTreeDirectoryHandle,
+    } from "@stoat/trees";
     import { createQuery } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryStates } from "nuqs-svelte";
+    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import { onMount } from "svelte";
+    import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
     let {
         projectId,
         resourceId,
     }: { projectId: string; resourceId: string } = $props();
 
-    const location = useQueryStates(
-        {
-            prefix: parseAsString.withDefault(""),
-        },
-        { history: "push", shallow: true, scroll: false },
+    const file = useQueryState(
+        "file",
+        parseAsString.withOptions({ shallow: true, scroll: false }),
     );
 
-    const filesQuery = createQuery(() =>
-        orpc.buckets.listFiles.queryOptions({
-            input: {
-                projectId,
-                resourceId,
-                prefix: location.prefix.current || undefined,
-            },
-            retry: false,
+    // Listed files, for the details pane.
+    const objects = new SvelteMap<
+        string,
+        { size: number; lastModified: Date | null }
+    >();
+
+    // Folders shown in the tree whose contents haven't been listed yet.
+    const unloaded = new Set<string>();
+
+    // Folders being listed right now; their rows show a spinner.
+    const loading = new SvelteSet<string>();
+
+    // Bumped on bucket switch so a slow listing for the old bucket is dropped.
+    let generation = 0;
+
+    let status = $state<"loading" | "ready" | "error">("loading");
+
+    let error = $state("");
+
+    const model = createFileTree({
+        paths: [],
+        icons: { set: "complete", colored: true },
+        unsafeCSS:
+            "@keyframes bucket-spin { to { transform: rotate(360deg); } }",
+        onSelectionChange: (paths) => {
+            const path = paths.at(-1);
+
+            // Folder paths end in "/"; selecting one only expands it.
+            if (path && !path.endsWith("/")) void file.set(path);
+        },
+    });
+
+    // The tree has no per-row icon API, so a loading folder's chevron is swapped for a spinner in CSS.
+    $effect(() => {
+        const root = model.getFileTreeContainer()?.shadowRoot;
+
+        if (!root || !loading.size) return;
+
+        const icons = [...loading].map(
+            (path) =>
+                `button[data-item-path="${CSS.escape(path)}"] > [data-item-section="icon"]`,
+        );
+
+        const style = document.createElement("style");
+        style.textContent = `
+            :is(${icons.join(",")}) > svg { display: none; }
+            :is(${icons.join(",")})::after {
+                content: "";
+                width: 12px;
+                height: 12px;
+                border: 1.5px solid currentColor;
+                border-right-color: transparent;
+                border-radius: 50%;
+                animation: bucket-spin 0.7s linear infinite;
+            }
+        `;
+        root.append(style);
+
+        return () => style.remove();
+    });
+
+    const isEmpty = useFileTreeSelector(
+        model,
+        (m) => m.getVisibleCount() === 0,
+    );
+
+    const selected = $derived(
+        file.current ? objects.get(file.current) : undefined,
+    );
+
+    const isImage = $derived(
+        /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)$/i.test(
+            file.current ?? "",
+        ),
+    );
+
+    // Presigned URLs expire after 60s, so refresh them before that.
+    const previewQuery = createQuery(() => ({
+        ...orpc.buckets.downloadUrl.queryOptions({
+            input: { projectId, resourceId, key: file.current ?? "" },
+        }),
+        enabled: isImage,
+        staleTime: 45_000,
+        retry: false,
+    }));
+
+    async function load(prefix: string) {
+        const current = generation;
+        unloaded.delete(prefix);
+        loading.add(prefix);
+
+        // shortcut: only the first page (100 entries) per folder, follow `cursor` if buckets get big.
+        const page = await client.buckets
+            .listFiles({ projectId, resourceId, prefix })
+            .finally(() => loading.delete(prefix));
+
+        if (current !== generation) return;
+
+        for (const item of page.items) objects.set(item.key, item);
+
+        for (const folder of page.prefixes) unloaded.add(folder);
+
+        model.batch([
+            ...page.prefixes.map((path) => ({
+                type: "add" as const,
+                path,
+            })),
+            // S3 may return the folder's own marker object; it isn't a file.
+            ...page.items.flatMap((item) =>
+                item.key === prefix
+                    ? []
+                    : [{ type: "add" as const, path: item.key }],
+            ),
+        ]);
+    }
+
+    async function expand(folder: string) {
+        const current = generation;
+
+        try {
+            await load(folder);
+        } catch (cause) {
+            if (current !== generation) return;
+
+            unloaded.add(folder);
+            folderItem(folder)?.collapse();
+            error = message(cause);
+        }
+    }
+
+    // `isDirectory()` returns a literal type, which TS doesn't narrow on.
+    function folderItem(path: string) {
+        const item = model.getItem(path);
+
+        // SAFETY: isDirectory() is true only on directory handles.
+        return item?.isDirectory()
+            ? (item as FileTreeDirectoryHandle)
+            : null;
+    }
+
+    function message(cause: unknown) {
+        return cause instanceof Error
+            ? cause.message
+            : "S3 request failed.";
+    }
+
+    onMount(() =>
+        model.subscribe(() => {
+            for (const folder of unloaded) {
+                if (folderItem(folder)?.isExpanded())
+                    void expand(folder);
+            }
         }),
     );
 
-    const data = $derived(filesQuery.data);
+    // `load` reads projectId and resourceId, so switching buckets re-lists from the root.
+    $effect(() => {
+        const current = ++generation;
+        objects.clear();
+        unloaded.clear();
+        loading.clear();
+        model.resetPaths([]);
+        status = "loading";
+        error = "";
 
-    // S3 may return the folder's own marker object; it isn't a file.
-    const files = $derived(
-        data?.items.filter(
-            (item) => item.key !== location.prefix.current,
-        ) ?? [],
-    );
+        load("").then(
+            () => {
+                if (current === generation) status = "ready";
+            },
+            (cause) => {
+                if (current !== generation) return;
 
-    let downloadError = $state("");
+                error = message(cause);
+                status = "error";
+            },
+        );
+    });
 
     async function download(key: string) {
-        downloadError = "";
+        error = "";
 
         try {
             const { url } = await client.buckets.downloadUrl({
@@ -63,125 +216,110 @@
 
             window.location.href = url;
         } catch (cause) {
-            downloadError =
-                cause instanceof Error
-                    ? cause.message
-                    : "Unable to download the file.";
+            error = message(cause);
         }
-    }
-
-    function open(prefix: string) {
-        void location.set({ prefix });
-    }
-
-    function up() {
-        const current = location.prefix.current.replace(/\/$/, "");
-
-        open(
-            current.includes("/")
-                ? current.slice(0, current.lastIndexOf("/") + 1)
-                : "",
-        );
     }
 </script>
 
-<Frame role="region" aria-labelledby="bucket-files-heading">
-    <FrameHeader>
-        <div
-            class="flex flex-wrap items-center justify-between gap-3"
-        >
-            <div class="min-w-0">
-                <FrameTitle class="text-base">
-                    <h2 id="bucket-files-heading">Files</h2>
-                </FrameTitle>
-                <p
-                    class="mt-1 truncate font-mono text-xs text-muted-foreground"
-                >
-                    /{location.prefix.current}
-                </p>
-            </div>
-        </div>
-    </FrameHeader>
-    <FramePanel
-        class="min-h-0 flex-1 divide-y divide-border overflow-y-auto p-0"
-    >
-        {#if downloadError}
-            <p
-                class="p-3 text-sm text-destructive-foreground"
-                role="alert"
-            >
-                {downloadError}
-            </p>
-        {/if}
-        {#if location.prefix.current}
-            <button
-                type="button"
-                class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent/50"
-                onclick={up}
-            >
-                <CornerLeftUp
-                    class="size-4 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                ../
-            </button>
-        {/if}
-        {#if filesQuery.isPending}
+<div class="flex h-full min-h-0 bg-card">
+    <div class="flex w-80 shrink-0 flex-col border-r">
+        {#if status === "loading"}
             <Skeleton loading loading-label="Loading files">
-                {#each { length: 3 }, index (index)}
-                    <div class="px-3 py-2 text-sm">file-name.txt</div>
+                {#each { length: 8 }, index (index)}
+                    <div class="px-3 py-1.5 text-sm">
+                        file-name.txt
+                    </div>
                 {/each}
             </Skeleton>
-        {:else if filesQuery.isError}
+        {:else if status === "error"}
             <p class="p-3 text-sm text-destructive-foreground">
-                {filesQuery.error.message}
+                {error}
             </p>
-        {:else if !data || (!data.prefixes.length && !files.length)}
+        {:else if isEmpty.current}
             <p class="p-3 text-sm text-muted-foreground">
-                This folder is empty.
+                This bucket is empty.
             </p>
-        {:else}
-            {#each data.prefixes as folder (folder)}
-                <button
-                    type="button"
-                    class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent/50"
-                    onclick={() => open(folder)}
-                >
-                    <Folder
-                        class="size-4 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    {folder.slice(location.prefix.current.length)}
-                </button>
-            {/each}
-            {#each files as item (item.key)}
-                <div class="flex items-center gap-3 py-1 pr-1 pl-3">
-                    <File
-                        class="size-4 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                    />
-                    <span class="min-w-0 flex-1 truncate text-sm">
-                        {item.key.slice(
-                            location.prefix.current.length,
-                        )}
-                    </span>
-                    <span
-                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
-                    >
-                        {bytes(item.size)}{item.lastModified
-                            ? ` · ${formatDate(new Date(item.lastModified))}`
-                            : ""}
-                    </span>
-                    <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={`Download ${item.key}`}
-                        onclick={() => download(item.key)}
-                    >
-                        <Download class="size-4" aria-hidden="true" />
-                    </Button>
-                </div>
-            {/each}
         {/if}
-    </FramePanel>
-</Frame>
+        <FileTree
+            {model}
+            class="min-h-0 flex-1 {status === 'ready'
+                ? ''
+                : 'hidden'}"
+            style="--trees-bg-override:var(--card);--trees-fg-override:var(--foreground);--trees-fg-muted-override:var(--muted-foreground);--trees-bg-muted-override:var(--accent);--trees-selected-bg-override:var(--accent);--trees-border-color-override:var(--border);--trees-accent-override:var(--primary);--trees-focus-ring-color-override:var(--primary);--trees-font-family-override:inherit;"
+        />
+    </div>
+    <div class="flex min-w-0 flex-1 flex-col">
+        {#if error && status !== "error"}
+            <p
+                class="border-b p-3 text-sm text-destructive-foreground"
+                role="alert"
+            >
+                {error}
+            </p>
+        {/if}
+        {#if file.current}
+            <div class="flex items-center gap-3 border-b px-4 py-2">
+                <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm">
+                        <span class="text-muted-foreground">
+                            {file.current.slice(
+                                0,
+                                file.current.lastIndexOf("/") + 1,
+                            )}
+                        </span>
+                        {file.current.slice(
+                            file.current.lastIndexOf("/") + 1,
+                        )}
+                    </p>
+                    {#if selected}
+                        <p class="text-xs text-muted-foreground">
+                            {bytes(
+                                selected.size,
+                            )}{selected.lastModified
+                                ? ` · Modified ${formatDate(selected.lastModified)}`
+                                : ""}
+                        </p>
+                    {/if}
+                </div>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onclick={() =>
+                        file.current && download(file.current)}
+                >
+                    <Download aria-hidden="true" />
+                    Download
+                </Button>
+            </div>
+            <div
+                class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6"
+            >
+                {#if !isImage}
+                    <p class="text-sm text-muted-foreground">
+                        No preview for this file.
+                    </p>
+                {:else if previewQuery.data}
+                    <img
+                        src={previewQuery.data.url}
+                        alt={file.current}
+                        class="max-h-full max-w-full object-contain"
+                    />
+                {:else if previewQuery.isError}
+                    <p class="text-sm text-destructive-foreground">
+                        {previewQuery.error.message}
+                    </p>
+                {:else}
+                    <Skeleton loading loading-label="Loading preview">
+                        <div class="size-48"></div>
+                    </Skeleton>
+                {/if}
+            </div>
+        {:else}
+            <div class="flex flex-1 items-center justify-center">
+                <p class="text-sm text-muted-foreground">
+                    Select a file to preview it.
+                </p>
+            </div>
+        {/if}
+    </div>
+</div>
