@@ -676,6 +676,84 @@ describe("resource deployment worker", () => {
         10_000,
     );
 
+    // A second resource in the same project. Its prefix decides its service names, so the same
+    // prefix as the main resource stands in for a service moved between them.
+    async function otherResource(prefix: string) {
+        const otherId = randomUUID();
+        const id = randomUUID();
+        await db
+            .insert(resources)
+            .values({ id: otherId, projectId, name: "Other", draftSpec: spec });
+        await db.insert(deployments).values({
+            id,
+            jobId: id,
+            clusterId,
+            resourceId: otherId,
+            name: "DeployResource",
+            spec,
+        });
+        await db.insert(resourceDeploymentInputs).values({ deploymentId: id, prefix });
+
+        return { otherId, id };
+    }
+
+    it("deploys different resources on one cluster in parallel", async () => {
+        mode = "pause";
+        const first = await snapshot();
+        const { otherId, id: second } = await otherResource("project-other");
+        const count = requestCount;
+
+        try {
+            const deploying = [first, second].map((id) =>
+                deployResource(db, id, new AbortController().signal),
+            );
+
+            // Both reach the sidecar while each is still paused there.
+            await expect.poll(() => requestCount).toBe(count + 2);
+            finish.resolve();
+            await Promise.all(deploying);
+            expect((await getDeploymentWithLogs(db, first))?.status).toBe("ready");
+            expect((await getDeploymentWithLogs(db, second))?.status).toBe("ready");
+        } finally {
+            finish.resolve();
+            await db.delete(resources).where(eq(resources.id, otherId));
+        }
+    });
+
+    it("waits for a deploy of another resource that shares a service name", async () => {
+        mode = "pause";
+        const first = await snapshot();
+        const { otherId, id: second } = await otherResource("project-resource");
+        const count = requestCount;
+
+        try {
+            const deployingFirst = deployResource(db, first, new AbortController().signal);
+            await received.promise;
+            const deployingSecond = deployResource(db, second, new AbortController().signal);
+
+            // Inspect the native lock wait, never poll deployment logs.
+            await expect
+                .poll(async () => {
+                    const result = await db.$client.query(
+                        `SELECT pid FROM pg_stat_activity
+                         WHERE datname = current_database() AND wait_event = 'advisory'`,
+                    );
+
+                    return result.rowCount;
+                })
+                .toBe(1);
+            expect(requestCount).toBe(count + 1);
+
+            finish.resolve();
+            await Promise.all([deployingFirst, deployingSecond]);
+            expect(requestCount).toBe(count + 2);
+            expect((await getDeploymentWithLogs(db, second))?.status).toBe("ready");
+        } finally {
+            finish.resolve();
+            await db.delete(resources).where(eq(resources.id, otherId));
+        }
+    });
+
     it("does not send invalid private Compose input to the sidecar", async () => {
         const id = await snapshot();
         await db

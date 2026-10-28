@@ -43,7 +43,32 @@
         }),
     );
 
-    const containers = $derived(containersQuery.data?.[resource.id]);
+    // A stop-first rollout keeps the replaced container, exited, until the new one is healthy. The
+    // shared query may have polled during that window, so once this deploy turns ready, ignore
+    // snapshots from before then and fetch a fresh one. Client clock only, so skew can't matter.
+    let readyAt = $state<number>();
+
+    // "unseen" until the first run, so a card that loads already ready doesn't refetch.
+    let previousStatus: typeof status | "unseen" = "unseen";
+
+    $effect(() => {
+        if (
+            status === "ready" &&
+            previousStatus !== "unseen" &&
+            previousStatus !== "ready"
+        ) {
+            readyAt = Date.now();
+            void containersQuery.refetch();
+        }
+
+        previousStatus = status;
+    });
+
+    const containers = $derived(
+        readyAt && containersQuery.dataUpdatedAt < readyAt
+            ? undefined
+            : containersQuery.data?.[resource.id],
+    );
 
     const unhealthy = $derived(
         containers?.some(({ container }) => {
@@ -80,7 +105,7 @@
         return sources[source] ? ` via ${sources[source]}` : "";
     });
 
-    const state = $derived.by(() => {
+    const cardState = $derived.by(() => {
         if (resource.bucketStatus) return "bucket";
 
         if (!status) return "offline";
@@ -104,7 +129,7 @@
     });
 </script>
 
-{#if state === "bucket"}
+{#if cardState === "bucket"}
     <!-- Railway's bucket card: plain grey text, with a braille spinner while a job runs. -->
     <p
         class="flex items-center gap-2 truncate text-sm text-muted-foreground capitalize"
@@ -117,13 +142,13 @@
         {/if}
         {resource.bucketStatus}
     </p>
-{:else if state === "offline"}
+{:else if cardState === "offline"}
     <p class="truncate text-sm text-muted-foreground">
         {draftOnly ? "Draft, not deployed" : "Service is offline"}
     </p>
-{:else if state === "stopped"}
+{:else if cardState === "stopped"}
     <p class="truncate text-sm text-muted-foreground">Stopped</p>
-{:else if state === "cancelled"}
+{:else if cardState === "cancelled"}
     <p class="truncate text-sm text-muted-foreground">
         Deploy cancelled {finishedAt
             ? ago(finishedAt, clock.now)
@@ -134,7 +159,7 @@
     <span
         class="grid min-w-0 grid-cols-[24px_1fr] items-center gap-3 text-sm"
     >
-        {#if state === "online"}
+        {#if cardState === "online"}
             <svg
                 class="size-4 text-success"
                 viewBox="0 0 16 16"
@@ -145,7 +170,7 @@
             <span class="truncate text-success-foreground">
                 Online
             </span>
-        {:else if state === "deployed"}
+        {:else if cardState === "deployed"}
             <CircleCheck
                 class="size-4 text-success-foreground"
                 aria-hidden="true"
@@ -153,7 +178,7 @@
             <span class="truncate text-muted-foreground">
                 Just deployed{via}
             </span>
-        {:else if state === "deploying"}
+        {:else if cardState === "deploying"}
             <LoaderCircle
                 class="size-4 animate-spin text-warning-foreground motion-reduce:animate-none"
                 aria-hidden="true"
@@ -167,7 +192,7 @@
                 aria-hidden="true"
             />
             <span class="truncate text-destructive-foreground">
-                {state === "unhealthy"
+                {cardState === "unhealthy"
                     ? "Unhealthy"
                     : `Failed ${finishedAt ? ago(finishedAt, clock.now) : ""}`}
             </span>
