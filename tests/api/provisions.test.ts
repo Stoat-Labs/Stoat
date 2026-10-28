@@ -44,6 +44,10 @@ case "$1" in
                 echo "Connecting to ssh+go://root@93.184.216.34:22" >&2
                 echo "Error: reserve cluster domain in Uncloud DNS: unavailable" >&2
                 exit 1 ;;
+            interrupted)
+                echo "current_context: default" > "$config"
+                touch "$dir/interrupted"
+                exec sleep 30 ;;
             unreachable)
                 echo "current_context: default" > "$config"
                 echo "Error: failed to update DNS records pointing to caddy service: no internet-reachable machines running service containers" >&2
@@ -157,7 +161,15 @@ describe("cluster provisioning (PostgreSQL)", () => {
     }, 30_000);
 
     beforeEach(async () => {
-        for (const file of ["calls", "ssh-calls", "deploy", "compose", "tls-cert", "tls-key"])
+        for (const file of [
+            "calls",
+            "ssh-calls",
+            "deploy",
+            "compose",
+            "tls-cert",
+            "tls-key",
+            "interrupted",
+        ])
             await rm(join(bin, file), { force: true });
 
         await writeFile(join(bin, "mode"), "ok");
@@ -325,6 +337,35 @@ describe("cluster provisioning (PostgreSQL)", () => {
             (await lines("calls")).filter((line) => line.startsWith("machine init")).at(-1),
         ).toContain("--yes");
         expect(await lines("ssh-calls")).toHaveLength(1);
+    });
+
+    it("remembers a half-created cluster when setup is interrupted", async () => {
+        await writeFile(join(bin, "mode"), "interrupted");
+        const clusterId = await create();
+        const deploymentId = await start(clusterId);
+        const controller = new AbortController();
+        const running = provisionCluster(db, deploymentId, controller.signal);
+
+        await vi.waitFor(() => expect(existsSync(join(bin, "interrupted"))).toBe(true), {
+            timeout: 5_000,
+        });
+        controller.abort();
+        await expect(running).rejects.toThrow();
+
+        const [cluster] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+
+        expect(cluster!.provisioning?.initState).toBe("partial");
+
+        // The released job runs again and asks for a reset instead of refusing Stoat's own cluster.
+        await writeFile(join(bin, "ssh-mode"), "member");
+        await provisionCluster(db, deploymentId, new AbortController().signal).catch(() => {});
+
+        const [deployment] = await db
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, deploymentId));
+
+        expect(deployment!.error).toContain("confirm the reset");
     });
 
     it("skips init on a retry once the cluster exists", async () => {

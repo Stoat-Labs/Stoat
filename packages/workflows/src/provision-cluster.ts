@@ -314,11 +314,13 @@ async function initMachine(
             () => false,
         );
 
-        // An abort must stay an abort so the job is released, not failed.
-        if (signal.aborted || !(error instanceof Error)) throw error;
-
         // Pointing the apps' uncld.dev domain at the server is init's last step, and Stoat doesn't need it.
-        if (created && error.message.includes("no internet-reachable machines")) {
+        if (
+            created &&
+            !signal.aborted &&
+            error instanceof Error &&
+            error.message.includes("no internet-reachable machines")
+        ) {
             log(
                 "Uncloud couldn't reach this server from the internet on port 80, so the cluster's uncld.dev domain doesn't point to it. Stoat doesn't need it; open ports 80 and 443 if your apps should use it.",
             );
@@ -327,7 +329,11 @@ async function initMachine(
             return;
         }
 
+        // Recorded before an abort is rethrown too, so the rerun doesn't refuse Stoat's own cluster.
         if (created) await setProvisioningInitState(db, clusterId, "partial");
+
+        // An abort must stay an abort so the job is released, not failed.
+        if (signal.aborted || !(error instanceof Error)) throw error;
 
         throw new Error(initFailure(error.message, server.user));
     }
