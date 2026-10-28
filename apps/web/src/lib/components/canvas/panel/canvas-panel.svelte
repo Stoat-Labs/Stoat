@@ -3,6 +3,7 @@
     import CanvasDeploymentLogs from "./canvas-deployment-logs.svelte";
     import CanvasResourceLogs from "./canvas-resource-logs.svelte";
     import ResourceMetricsView from "$lib/components/projects/resource-metrics-view.svelte";
+    import BucketFiles from "$lib/components/s3/bucket-files.svelte";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Button } from "$lib/components/ui/button";
     import Box from "@lucide/svelte/icons/box";
@@ -49,6 +50,7 @@
     } = $props();
 
     const tabs = [
+        "files",
         "deployments",
         "variables",
         "compose",
@@ -58,6 +60,7 @@
     ] as const;
 
     const labels: Record<(typeof tabs)[number], string> = {
+        files: "Files",
         deployments: "Deployments",
         variables: "Variables",
         compose: "Compose",
@@ -68,9 +71,11 @@
 
     const isBucket = $derived(resource.type === "bucket");
 
-    // Buckets have no deployments, containers or logs of their own.
+    // Buckets have no deployments, containers or logs of their own; only buckets hold files.
     const visibleTabs = $derived(
-        isBucket ? (["variables", "settings"] as const) : tabs,
+        isBucket
+            ? (["files", "variables", "settings"] as const)
+            : tabs.filter((name) => name !== "files"),
     );
 
     // Matches project-canvas, so Back steps through tabs and stacked logs.
@@ -100,6 +105,7 @@
 
     const fullBleed = $derived(
         active === "logs" ||
+            active === "files" ||
             active === "settings" ||
             active === "compose",
     );
@@ -210,18 +216,25 @@
     </div>
 
     <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
-    <!-- Settings and logs run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
+    <!-- Settings, logs and files run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
     <div
         class={[
             "min-h-0 flex-1",
-            active === "logs" || active === "compose"
+            active === "logs" ||
+            active === "files" ||
+            active === "compose"
                 ? "overflow-hidden"
                 : "overflow-y-auto",
             !fullBleed && "px-12 pt-8 pb-12",
         ]}
         role="tabpanel"
     >
-        {#if active === "deployments"}
+        {#if active === "files"}
+            <BucketFiles
+                projectId={resource.projectId}
+                resourceId={resource.id}
+            />
+        {:else if active === "deployments"}
             <CanvasDeployments
                 {clusterId}
                 {resource}

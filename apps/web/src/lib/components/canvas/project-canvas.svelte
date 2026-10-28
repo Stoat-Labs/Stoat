@@ -33,6 +33,8 @@
         useQueryStates,
     } from "nuqs-svelte";
     import { onMount, untrack } from "svelte";
+    import { cubicOut } from "svelte/easing";
+    import { prefersReducedMotion, Tween } from "svelte/motion";
     import CanvasApi from "./canvas-api.svelte";
     import { CanvasLayout } from "./canvas-layout.svelte";
     import CanvasResourceDialogs from "./canvas-resource-dialogs.svelte";
@@ -87,6 +89,14 @@
     import CanvasConfigPanel from "./panel/canvas-config-panel.svelte";
     import CanvasPanel from "./panel/canvas-panel.svelte";
     import CanvasVolumePanel from "./panel/canvas-volume-panel.svelte";
+    import {
+        fullPanelGap,
+        minPanelWidth,
+        panelCloseOvershoot,
+        panelSnapSlack,
+        readPanelWidth,
+        savePanelWidth,
+    } from "./panel/panel-width";
 
     let {
         projectId,
@@ -181,6 +191,8 @@
             range: parseAsString,
             from: parseAsString,
             to: parseAsString,
+            logStart: parseAsString,
+            logEnd: parseAsString,
         },
         { shallow: true, scroll: false },
     );
@@ -572,9 +584,7 @@
     const narrow = $derived(canvasWidth < 900);
 
     // Wider canvases step the docked panel up to a fixed width, as Railway does: 70% to 1150px, then 904, 1008 and 1184px.
-    const panelWidth = $derived.by(() => {
-        if (narrow) return Math.max(canvasWidth - 40, 0);
-
+    const defaultPanelWidth = $derived.by(() => {
         if (canvasWidth < 1150) return Math.round(canvasWidth * 0.7);
 
         if (canvasWidth < 1400) return 904;
@@ -583,6 +593,91 @@
 
         return 1184;
     });
+
+    let canvasElement = $state<HTMLDivElement>();
+
+    // The width the user dragged the panel to, kept in a cookie.
+    let chosenPanelWidth = $state(readPanelWidth());
+
+    let resizingPanel = $state(false);
+
+    const panelTarget = $derived.by(() => {
+        if (narrow) return Math.max(canvasWidth - 40, 0);
+
+        if (chosenPanelWidth === "full") return canvasWidth;
+
+        // A width saved on a wider window still leaves some canvas beside the panel.
+        return Math.min(
+            Math.max(
+                chosenPanelWidth ?? defaultPanelWidth,
+                minPanelWidth,
+            ),
+            canvasWidth - fullPanelGap,
+        );
+    });
+
+    const panelTween = new Tween(0, { easing: cubicOut });
+
+    // Starts from the saved state, so a saved full-screen panel does not animate in on page load.
+    let panelWasFull = readPanelWidth() === "full";
+
+    // Only snapping to or from full screen animates; dragging and window resizes follow at once.
+    $effect.pre(() => {
+        const full = chosenPanelWidth === "full";
+        const snapped = full !== panelWasFull;
+        panelWasFull = full;
+
+        void panelTween.set(panelTarget, {
+            duration:
+                snapped && !prefersReducedMotion.current ? 300 : 0,
+        });
+    });
+
+    const panelWidth = $derived(panelTween.current);
+
+    function startPanelResize(
+        event: PointerEvent & { currentTarget: HTMLDivElement },
+    ) {
+        if (event.button !== 0) return;
+
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        resizingPanel = true;
+    }
+
+    function resizePanel(event: PointerEvent) {
+        if (!resizingPanel || !canvasElement) return;
+
+        const width =
+            canvasElement.getBoundingClientRect().right -
+            event.clientX;
+
+        // Pulling well past the minimum closes the panel, like collapsing a sidebar; its saved width stays.
+        if (width < minPanelWidth - panelCloseOvershoot) {
+            resizingPanel = false;
+            chosenPanelWidth = readPanelWidth();
+            select(null);
+
+            return;
+        }
+
+        // Leaving full screen takes a further pull, so hovering at the threshold does not flicker between the two.
+        const fullAt =
+            canvasWidth -
+            fullPanelGap -
+            (chosenPanelWidth === "full" ? panelSnapSlack : 0);
+
+        chosenPanelWidth =
+            width > fullAt ? "full" : Math.max(width, minPanelWidth);
+    }
+
+    function endPanelResize() {
+        if (!resizingPanel) return;
+
+        resizingPanel = false;
+
+        if (chosenPanelWidth) savePanelWidth(chosenPanelWidth);
+    }
 
     function contains(frame: Rect, point: { x: number; y: number }) {
         return (
@@ -1144,6 +1239,7 @@
 
 <div
     class="project-canvas relative size-full"
+    bind:this={canvasElement}
     bind:clientWidth={canvasWidth}
 >
     <CanvasContextMenu
@@ -1388,6 +1484,29 @@
                 onclose={() => select(null)}
             />
         {/key}
+    {/if}
+
+    {#if selectedResource && !narrow}
+        <!-- Like the sidebar rail: drag the panel's left edge to resize it, to the far left to fill the canvas, past the minimum to close it. -->
+        <div
+            class="group absolute top-6 bottom-0 z-30 w-3 cursor-col-resize touch-none"
+            style:right="{Math.min(
+                panelWidth - 6,
+                canvasWidth - 12,
+            )}px"
+            aria-hidden="true"
+            onpointerdown={startPanelResize}
+            onpointermove={resizePanel}
+            onpointerup={endPanelResize}
+            onlostpointercapture={endPanelResize}
+        >
+            <div
+                class={[
+                    "mx-auto h-full w-0.5 transition-colors group-hover:bg-border",
+                    resizingPanel && "bg-border",
+                ]}
+            ></div>
+        </div>
     {/if}
 </div>
 

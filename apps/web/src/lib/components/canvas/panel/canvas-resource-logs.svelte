@@ -7,13 +7,20 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
     import { logsAsText } from "$lib/deployments/log-text";
-    import { toLocalDateInput } from "$lib/format";
-    import { LogStream } from "$lib/resources/log-stream.svelte";
+    import { logDateTime, toLocalDateInput } from "$lib/format";
+    import {
+        decorateLogs,
+        LogStream,
+    } from "$lib/resources/log-stream.svelte";
     import { selectedLogServices } from "$lib/resources/logs";
     import Download from "@lucide/svelte/icons/download";
     import ExternalLink from "@lucide/svelte/icons/external-link";
     import Search from "@lucide/svelte/icons/search";
-    import { createQuery } from "@tanstack/svelte-query";
+    import X from "@lucide/svelte/icons/x";
+    import {
+        createInfiniteQuery,
+        createQuery,
+    } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
         parseAsString,
@@ -44,8 +51,20 @@
             logQuery: parseAsString.withDefault(""),
             logWrap: parseAsBoolean.withDefault(false),
             logFollowing: parseAsBoolean.withDefault(true),
+            // Set by the metrics tab's "Logs for this range": stored logs instead of the live tail.
+            logStart: parseAsString,
+            logEnd: parseAsString,
         },
         { shallow: true, scroll: false, history: "replace" },
+    );
+
+    const range = $derived(
+        view.logStart.current && view.logEnd.current
+            ? {
+                  start: view.logStart.current,
+                  end: view.logEnd.current,
+              }
+            : null,
     );
 
     let ready = $state(false);
@@ -87,17 +106,45 @@
         () => names,
         () => selectedIds,
         () => false,
-        () => ready,
+        () => ready && !range,
     );
+
+    const history = createInfiniteQuery(() =>
+        orpc.resources.searchLogs.infiniteOptions({
+            input: (cursor: string | undefined) => ({
+                projectId,
+                resourceId,
+                serviceIds: selectedIds,
+                start: range?.start ?? "",
+                end: range?.end ?? "",
+                query: "",
+                cursor,
+            }),
+            initialPageParam: undefined,
+            getNextPageParam: (page) => page.nextCursor ?? undefined,
+            enabled:
+                ready && range !== null && selectedIds.length > 0,
+            retry: false,
+        }),
+    );
+
+    // Search pages come newest first; the table reads oldest to newest like the live tail.
+    const historyLogs = $derived(
+        decorateLogs(
+            (history.data?.pages ?? []).flatMap((page) => page.logs),
+        ).sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    );
+
+    const logs = $derived(range ? historyLogs : stream.logs);
 
     const query = $derived(view.logQuery.current.toLowerCase());
 
     const visibleLogs = $derived(
         query
-            ? stream.logs.filter((log) =>
+            ? logs.filter((log) =>
                   log.message.toLowerCase().includes(query),
               )
-            : stream.logs,
+            : logs,
     );
 
     const loading = $derived(servicesQuery.isPending);
@@ -161,6 +208,27 @@
                 /
             </Kbd>
         </div>
+        {#if range}
+            {#if history.hasNextPage}
+                <Button
+                    variant="outline"
+                    disabled={history.isFetchingNextPage}
+                    onclick={() => history.fetchNextPage()}
+                >
+                    Load older
+                </Button>
+            {/if}
+            <Button
+                variant="outline"
+                aria-label="Back to live logs"
+                title="Back to live logs"
+                onclick={() =>
+                    view.set({ logStart: null, logEnd: null })}
+            >
+                {logDateTime(range.start)} to {logDateTime(range.end)}
+                <X class="size-4" aria-hidden="true" />
+            </Button>
+        {/if}
         <Button
             variant="outline"
             size="icon"
@@ -182,7 +250,7 @@
         </Button>
     </div>
 
-    {#if loading}
+    {#if loading || (range && history.isPending && selectedIds.length)}
         <Skeleton
             loading
             loading-label="Loading logs"
@@ -216,7 +284,7 @@
             }
         >
             <LogNotices
-                live
+                live={!range}
                 streamError={stream.error}
                 reconnecting={stream.reconnecting}
                 failures={stream.failures.map((failure) => ({
@@ -225,15 +293,17 @@
                         (service) => service.id === failure.id,
                     )?.name,
                 }))}
-                searchError=""
+                searchError={range
+                    ? (history.error?.message ?? "")
+                    : ""}
             />
 
             {#snippet empty()}
                 <LogEmptyState
                     hasServices={selectedIds.length > 0}
-                    mode="live"
-                    searched={false}
-                    pending={false}
+                    mode={range ? "search" : "live"}
+                    searched={history.isSuccess}
+                    pending={history.isFetching}
                 />
             {/snippet}
         </CanvasLogTable>

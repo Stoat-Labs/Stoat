@@ -53,10 +53,11 @@ export function subscribeToStream<T>(
     };
 }
 
-/** One warning toast per live stream: kept up to date while it retries, closed once it reconnects. */
-export function streamErrorToast() {
-    let id: string | undefined;
+// Every live stream shares the one RPC WebSocket, so a dropped socket warns once, not per stream.
+let id: string | undefined;
 
+/** The shared live-stream warning toast: kept up to date while it retries, closed once it reconnects. */
+export function streamErrorToast() {
     let pending: ReturnType<typeof setTimeout> | undefined;
 
     let latest: Error | undefined;

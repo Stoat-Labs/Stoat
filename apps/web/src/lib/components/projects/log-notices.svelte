@@ -24,15 +24,10 @@
     } = $props();
 </script>
 
-{#if streamError && live}
-    <Alert
-        variant={reconnecting ? "warning" : "error"}
-        class="m-2 shrink-0 px-3 py-2"
-    >
-        <AlertDescription>
-            {streamError}
-            {#if reconnecting}Retrying with a fresh recent tail.{/if}
-        </AlertDescription>
+<!-- A stream that is still retrying warns through LogStream's toast instead. -->
+{#if streamError && live && !reconnecting}
+    <Alert variant="error" class="m-2 shrink-0 px-3 py-2">
+        <AlertDescription>{streamError}</AlertDescription>
     </Alert>
 {/if}
 {#if live && failures.length}
