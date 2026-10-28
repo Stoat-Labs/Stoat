@@ -481,6 +481,30 @@ describe("cluster provisioning (PostgreSQL)", () => {
         );
     });
 
+    it("leaves a cluster out of pickers until its setup finishes", async () => {
+        const clusterId = await create();
+
+        const pickable = async () => {
+            const { items } = await call(
+                clusterRouter.listClusters,
+                { includeDiagnostics: false, includeSettingUp: false, limit: 100 },
+                { context },
+            );
+
+            const observable = await call(clusterRouter.listObservableClusters, undefined, {
+                context,
+            });
+
+            return [items, observable].map((list) => list.some(({ id }) => id === clusterId));
+        };
+
+        expect(await pickable()).toEqual([false, false]);
+
+        await attempt(clusterId);
+
+        expect(await pickable()).toEqual([true, true]);
+    });
+
     it("lets only its organization see, start or delete a setup", async () => {
         const clusterId = await create();
 

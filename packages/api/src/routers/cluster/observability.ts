@@ -10,7 +10,7 @@ import {
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
-import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
@@ -579,7 +579,8 @@ export const observabilityRouter = {
                 monitored: sql<boolean>`${clusters.initializedAt} is not null`,
             })
             .from(clusters)
-            .where(eq(clusters.organizationId, organizationId))
+            // A cluster still being set up can't be monitored yet.
+            .where(and(eq(clusters.organizationId, organizationId), isNull(clusters.provisioning)))
             .orderBy(asc(clusters.name)),
     ),
     getObservabilityMachines: organizationProcedure

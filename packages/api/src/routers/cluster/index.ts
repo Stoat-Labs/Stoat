@@ -2,7 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { latestProvisioningDeployments } from "@stoat/db/clusters";
 import { clusters, deployments, projects, resources, s3Buckets } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
-import { and, asc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 import { queueClusterHealthCheck } from "@stoat/workflows/runtime";
@@ -54,6 +54,8 @@ export const clusterRouter = {
                 v.object({
                     q: v.optional(v.string()),
                     includeDiagnostics: v.optional(v.boolean(), true),
+                    // Pickers leave out clusters that can't be used until their setup finishes.
+                    includeSettingUp: v.optional(v.boolean(), true),
                     limit: v.optional(
                         v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
                     ),
@@ -68,9 +70,11 @@ export const clusterRouter = {
 
             const pattern = q ? `%${q.replace(/([%_])/g, "\\$1")}%` : null;
 
-            const conditions = pattern
-                ? and(eq(clusters.organizationId, organizationId), ilike(clusters.name, pattern))
-                : eq(clusters.organizationId, organizationId);
+            const conditions = and(
+                eq(clusters.organizationId, organizationId),
+                pattern ? ilike(clusters.name, pattern) : undefined,
+                input?.includeSettingUp === false ? isNull(clusters.provisioning) : undefined,
+            );
 
             // Connection credentials must never be included in the browser response.
             const items = await db
