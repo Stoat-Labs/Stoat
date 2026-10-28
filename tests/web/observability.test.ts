@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/client";
 import {
     hasPostgresExporter,
+    isPostgresExporter,
     histogramQuantile,
     hostGroups,
     httpQueries,
@@ -69,6 +70,11 @@ it("detects Postgres metrics from a Postgres server and postgres-exporter in any
     expect(hasPostgresExporter(services("postgres:18", "wrouesnel/postgres_exporter"))).toBe(true);
     expect(hasPostgresExporter(services("postgres:18-alpine"))).toBe(false);
     expect(hasPostgresExporter(services("mysql:9", "postgres-exporter"))).toBe(false);
+    expect(
+        services("postgres:18", "prometheuscommunity/postgres-exporter:v0.20.1").map(
+            isPostgresExporter,
+        ),
+    ).toEqual([false, true]);
 });
 
 it("matches filesystem usage by machine, device, mount and type, preserving missing samples", () => {

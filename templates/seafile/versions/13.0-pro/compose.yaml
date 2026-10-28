@@ -8,7 +8,7 @@ services:
             INIT_SEAFILE_MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
             SEAFILE_MYSQL_DB_HOST: ${DB_HOST}
             SEAFILE_MYSQL_DB_PORT: "3306"
-            SEAFILE_MYSQL_DB_USER: seafile
+            SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER}
             SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
             SEAFILE_MYSQL_DB_CCNET_DB_NAME: ccnet_db
             SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: seafile_db
@@ -58,7 +58,7 @@ services:
         environment:
             DB_HOST: ${DB_HOST}
             DB_PORT: "3306"
-            DB_USER: seafile
+            DB_USER: ${SEAFILE_MYSQL_DB_USER}
             DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
             DB_NAME: seahub_db
             TIME_ZONE: ${TIME_ZONE}

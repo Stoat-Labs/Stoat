@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
 import { describe, expect, it } from "vite-plus/test";
@@ -59,6 +60,13 @@ describe("templates", () => {
                 expect(new Set(required).size).toBe(required.length);
             }
         }
+    });
+
+    // An invalid manifest or a version without a compose file is skipped silently.
+    it("loads every folder under templates/", () => {
+        const folders = readdirSync(new URL("../../templates", import.meta.url));
+
+        expect(templates.map(({ appId }) => appId).toSorted()).toEqual(folders.toSorted());
     });
 
     it("bundles a database template for every engine", () => {
@@ -250,6 +258,10 @@ describe("templates", () => {
             for (const [, service] of services) {
                 expect(service).not.toHaveProperty("env_file");
                 expect(service).not.toHaveProperty("container_name");
+
+                // Uncloud only routes HTTP(S) through ingress; TCP and UDP need `@host`.
+                for (const port of v.parse(v.optional(v.array(v.string()), []), service["x-ports"]))
+                    expect(port).toMatch(/\/https?$|@host$/u);
             }
         });
 

@@ -1,5 +1,5 @@
 import { client, orpc, queryClient } from "$lib/api/orpc";
-import { subscribeToStream } from "$lib/deployments/stream";
+import { streamErrorToast, subscribeToStream } from "$lib/deployments/stream";
 import {
     classifyLog,
     liveStreamStatus,
@@ -69,6 +69,8 @@ export class LogStream {
 
     // Replaced by each open stream so the pause button can show what is buffered.
     flush = () => {};
+
+    private toast = streamErrorToast();
 
     constructor(
         private getProjectId: () => string,
@@ -156,9 +158,11 @@ export class LogStream {
                     }));
 
                     // Resolve names and open current IDs together on the server, avoiding a refetch/open race.
-                    return client.resources.streamLogs(
-                        { ...scope, serviceNames: names ?? undefined },
-                        { signal },
+                    return this.toast.connected(
+                        client.resources.streamLogs(
+                            { ...scope, serviceNames: names ?? undefined },
+                            { signal },
+                        ),
                     );
                 },
                 (event) => {
@@ -238,7 +242,12 @@ export class LogStream {
                     this.error = error.message;
                     this.reconnecting = retrying;
 
-                    if (!retrying) clearInterval(timer);
+                    // A stopped stream shows its error inline next to the reconnect button.
+                    if (retrying) this.toast.show(error, true);
+                    else {
+                        this.toast.clear();
+                        clearInterval(timer);
+                    }
                 },
                 () => {
                     const ended =
@@ -260,6 +269,7 @@ export class LogStream {
         return () => {
             clearInterval(timer);
             stop();
+            this.toast.clear();
             this.flush = () => {};
         };
     }

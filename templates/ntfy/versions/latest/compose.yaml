@@ -4,10 +4,11 @@ services:
         command:
             - serve
         environment:
-            TZ: Europe/Bucharest
+            TZ: ${TZ}
+            NTFY_BASE_URL: https://${NTFY_HOST}
             NTFY_BEHIND_PROXY: "true"
         x-ports:
-            - "80/https"
+            - ${NTFY_HOST}:80/https
         healthcheck:
             test:
                 [

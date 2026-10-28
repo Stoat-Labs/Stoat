@@ -328,7 +328,7 @@
 
             {#if bucket.status === "ready"}
                 <div
-                    class="flex min-h-0 min-w-0 flex-col xl:col-span-2 *:data-[slot=frame]:min-h-0 *:data-[slot=frame]:flex-1"
+                    class="h-[640px] min-w-0 overflow-hidden rounded-xl border xl:col-span-2"
                 >
                     <BucketFiles {projectId} {resourceId} />
                 </div>

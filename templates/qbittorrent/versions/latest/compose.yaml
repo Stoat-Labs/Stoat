@@ -11,9 +11,9 @@ services:
             - qbittorrent_data:/config
             - ${DOWNLOADS_PATH}:/downloads
         x-ports:
-            - ${QBITTORRENT_HOST}:8080:8080/https
-            - 6881:6881
-            - 6881:6881/udp
+            - ${QBITTORRENT_HOST}:8080/https
+            - 6881:6881/tcp@host
+            - 6881:6881/udp@host
         healthcheck:
             test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
             interval: 30s

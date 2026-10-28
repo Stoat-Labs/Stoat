@@ -37,6 +37,7 @@
         "@stoat/auth": "workspace:*",
         "@stoat/db": "workspace:*",
         "@stoat/s3": "workspace:*",
+        "@stoat/trees": "workspace:*",
         "@stoat/workflows": "workspace:*",
         "@tanstack/charts": "^1.0.0",
         "@tanstack/svelte-query": "^6.1.48",

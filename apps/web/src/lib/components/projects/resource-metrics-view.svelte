@@ -1,6 +1,7 @@
 <script lang="ts">
     import { syncMetricCharts } from "$lib/components/observability/chart-sync";
     import { browser } from "$app/environment";
+    import { page } from "$app/state";
     import { ago } from "$lib/format";
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
     import RangeControls from "$lib/components/observability/range-controls.svelte";
@@ -49,6 +50,7 @@
     import {
         hasPostgresExporter,
         httpMetricNames,
+        isPostgresExporter,
         postgresMetricNames,
         type MetricSeries,
     } from "@stoat/api/observability";
@@ -132,10 +134,46 @@
         ...new Set(resourceServices.map((service) => service.id)),
     ]);
 
+    const graph = createQuery(() =>
+        orpc.resources.getProjectGraph.queryOptions({
+            input: { projectId },
+            enabled: browser && projectId.length > 0,
+        }),
+    );
+
+    // An exporter in its own resource points at this one through a variable reference.
+    const referrers = $derived(
+        new Set(
+            (graph.data?.resources ?? [])
+                .filter((entry) =>
+                    entry.references.includes(resourceId),
+                )
+                .map((entry) => entry.id),
+        ),
+    );
+
+    const exporterServices = $derived(
+        (services.data ?? []).filter(
+            (service) =>
+                service.resource?.projectId === projectId &&
+                referrers.has(service.resource.resourceId) &&
+                isPostgresExporter(service),
+        ),
+    );
+
     // Any resource running Postgres next to postgres-exporter, not only database resources.
     const hasPostgres = $derived(
-        hasPostgresExporter(resourceServices),
+        hasPostgresExporter([
+            ...resourceServices,
+            ...exporterServices,
+        ]),
     );
+
+    // Alloy tags exporter series with the exporter's own service ID.
+    const postgresServiceIds = $derived([
+        ...serviceIds,
+        ...exporterServices.map((service) => service.id),
+    ]);
 
     const metrics = createQueries(() => ({
         queries: names.map((name) =>
@@ -169,7 +207,6 @@
         ),
     }));
 
-    // The exporter service is one of this resource's services, so the same scope applies.
     const postgres = createQueries(() => ({
         queries: postgresMetricNames.map((name) =>
             orpc.cluster.getObservabilityMetric.queryOptions({
@@ -177,7 +214,7 @@
                     clusterId,
                     name,
                     range: range.value,
-                    serviceIds,
+                    serviceIds: postgresServiceIds,
                 },
                 select: unpackMetric,
                 ...options,
@@ -647,6 +684,16 @@
     }
 
     function logsHref(from: number, to: number) {
+        // The canvas panel opens its own Logs tab on that range instead of leaving the canvas.
+        if (embedded) {
+            const params = new URLSearchParams(page.url.searchParams);
+            params.set("tab", "logs");
+            params.set("logStart", new Date(from).toISOString());
+            params.set("logEnd", new Date(to).toISOString());
+
+            return `?${params}`;
+        }
+
         const params = new URLSearchParams({
             logMode: "search",
             logRange: "custom",

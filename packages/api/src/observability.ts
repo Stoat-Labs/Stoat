@@ -253,17 +253,19 @@ function imageRepository(image: string) {
     return reference.split("/").at(-1)?.split(":")[0] ?? "";
 }
 
+/** Whether the service runs postgres-exporter. */
+export function isPostgresExporter(service: ObservabilityService) {
+    return service.containers.some((container) =>
+        ["postgres-exporter", "postgres_exporter"].includes(imageRepository(container.image)),
+    );
+}
+
 /** Postgres metrics exist when services run both a Postgres server and postgres-exporter next to it. */
 export function hasPostgresExporter(services: ObservabilityService[]) {
-    const repositories = new Set(
-        services.flatMap((service) =>
-            service.containers.map((container) => imageRepository(container.image)),
-        ),
-    );
-
     return (
-        repositories.has("postgres") &&
-        (repositories.has("postgres-exporter") || repositories.has("postgres_exporter"))
+        services.some((service) =>
+            service.containers.some((container) => imageRepository(container.image) === "postgres"),
+        ) && services.some(isPostgresExporter)
     );
 }
 
