@@ -1,6 +1,5 @@
 <script lang="ts">
     import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
-    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import ProvisionClusterDialog from "$lib/components/clusters/provision-cluster-dialog.svelte";
     import ProvisionStatusBadge from "$lib/components/clusters/provision-status-badge.svelte";
@@ -58,7 +57,6 @@
             page: pageParser,
             dialog: parseAsString,
             clusterId: parseAsString,
-            provisionId: parseAsString,
             source: parseAsStringLiteral([
                 "connect",
                 "server",
@@ -103,19 +101,6 @@
         clustersQuery.data?.canManage === true,
     );
 
-    const provisionsQuery = createQuery(() =>
-        orpc.cluster.listProvisions.queryOptions({
-            enabled: canManage,
-        }),
-    );
-
-    // Unfinished setups lead the first page of the unfiltered list.
-    const provisions = $derived(
-        list.page.current === 1 && !debounced.current
-            ? (provisionsQuery.data ?? [])
-            : [],
-    );
-
     const total = $derived(clustersQuery.data?.total ?? 0);
 
     const totalPages = $derived(
@@ -126,12 +111,9 @@
     // gets totalPages, re-add URL write-back if empty last-pages get reported.
 
     const meta = $derived(
-        (total === 0
+        total === 0
             ? "0 of 0"
-            : `${(list.page.current - 1) * limit + 1}–${Math.min(list.page.current * limit, total)} of ${total}`) +
-            (provisions.length
-                ? ` · ${provisions.length} ${provisions.length === 1 ? "setup" : "setups"}`
-                : ""),
+            : `${(list.page.current - 1) * limit + 1}–${Math.min(list.page.current * limit, total)} of ${total}`,
     );
 
     type ClusterItem = {
@@ -201,23 +183,6 @@
         if (!clusterToDelete || deleteMutationState.isPending) return;
         deleteMutationState.mutate({ clusterId: clusterToDelete.id });
     }
-
-    const provisionToDelete = $derived(
-        provisions.find(
-            (provision) => provision.id === list.provisionId.current,
-        ) ?? null,
-    );
-
-    const deleteProvisionMutation = createMutation(() =>
-        orpc.cluster.deleteProvision.mutationOptions({
-            onSuccess: async () => {
-                await queryClient.invalidateQueries({
-                    queryKey: orpc.cluster.listProvisions.queryKey(),
-                });
-                void list.set({ dialog: null, provisionId: null });
-            },
-        }),
-    );
 </script>
 
 <svelte:head><title>Clusters / Stoat</title></svelte:head>
@@ -270,7 +235,7 @@
             loading={clustersQuery.isPending || searchPending}
             loadingRows={5}
             colSpan={4}
-            isEmpty={items.length === 0 && provisions.length === 0}
+            isEmpty={items.length === 0}
             emptyTitle={debounced.current
                 ? "No matching clusters"
                 : "No clusters yet"}
@@ -298,77 +263,52 @@
                 </TableRow>
             {/snippet}
             {#snippet children()}
-                {#each provisions as provision (provision.id)}
-                    <TableRow class="group">
-                        <TableCell class="text-center">
-                            <ProvisionStatusBadge
-                                status={provision.status}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            <button
-                                type="button"
-                                class="block text-left font-semibold hover:underline"
-                                onclick={() =>
-                                    void list.set({
-                                        dialog: "provision",
-                                        provisionId: provision.id,
-                                    })}
-                            >
-                                {provision.name}
-                            </button>
-                            <span
-                                class="mt-0.5 block text-xs text-muted-foreground"
-                            >
-                                {provision.host}
-                            </span>
-                        </TableCell>
-                        <TableCell class="text-center">0</TableCell>
-                        <TableCell class="text-center">
-                            {#if provision.status === "pending" || provision.status === "failed"}
-                                <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    class="text-muted-foreground hover:text-destructive-foreground"
-                                    aria-label={`Delete ${provision.name}`}
-                                    onclick={() => {
-                                        deleteProvisionMutation.reset();
-                                        void list.set({
-                                            dialog: "delete-provision",
-                                            provisionId: provision.id,
-                                        });
-                                    }}
-                                >
-                                    <Trash2
-                                        class="size-4"
-                                        aria-hidden="true"
-                                    />
-                                </Button>
-                            {/if}
-                        </TableCell>
-                    </TableRow>
-                {/each}
                 {#each items as cluster (cluster.id)}
                     <TableRow class="group">
                         <TableCell class="text-center">
-                            <ClusterHealthBadge
-                                clusterId={cluster.id}
-                            />
+                            {#if cluster.setup}
+                                <ProvisionStatusBadge
+                                    status={cluster.setup.status}
+                                />
+                            {:else}
+                                <ClusterHealthBadge
+                                    clusterId={cluster.id}
+                                />
+                            {/if}
                         </TableCell>
                         <TableCell>
-                            <a
-                                href={`/clusters/${cluster.id}`}
-                                class="block font-semibold hover:underline"
-                            >
-                                {cluster.name}
-                            </a>
-                            <span
-                                class="mt-0.5 block text-xs text-muted-foreground"
-                            >
-                                Created {formatDate(
-                                    cluster.createdAt,
-                                )}
-                            </span>
+                            {#if cluster.setup}
+                                <button
+                                    type="button"
+                                    class="block font-semibold hover:underline"
+                                    onclick={() =>
+                                        void list.set({
+                                            dialog: "provision",
+                                            clusterId: cluster.id,
+                                        })}
+                                >
+                                    {cluster.name}
+                                </button>
+                                <span
+                                    class="mt-0.5 block text-xs text-muted-foreground"
+                                >
+                                    {cluster.setup.host}
+                                </span>
+                            {:else}
+                                <a
+                                    href={`/clusters/${cluster.id}`}
+                                    class="block font-semibold hover:underline"
+                                >
+                                    {cluster.name}
+                                </a>
+                                <span
+                                    class="mt-0.5 block text-xs text-muted-foreground"
+                                >
+                                    Created {formatDate(
+                                        cluster.createdAt,
+                                    )}
+                                </span>
+                            {/if}
                         </TableCell>
                         <TableCell class="text-center">
                             {cluster.projectCount}
@@ -427,38 +367,15 @@
         () => list.source.current,
         (source) => void list.set({ source })
     }
-    onprovision={(provisionId) =>
+    onprovision={(clusterId) =>
         void list.set({
             dialog: "provision",
-            provisionId,
+            clusterId,
             source: null,
         })}
 />
 
 <ProvisionClusterDialog />
-
-<ConfirmDialog
-    bind:open={
-        () =>
-            list.dialog.current === "delete-provision" &&
-            Boolean(provisionToDelete),
-        (open) => {
-            if (!open)
-                void list.set({ dialog: null, provisionId: null });
-        }
-    }
-    title="Delete setup?"
-    description={`The setup for "${provisionToDelete?.name ?? "this server"}" and its SSH key will be deleted. Anything already installed on ${provisionToDelete?.host ?? "the server"} stays.`}
-    confirmLabel="Delete"
-    pending={deleteProvisionMutation.isPending}
-    error={deleteProvisionMutation.error?.message ?? ""}
-    onconfirm={() => {
-        if (provisionToDelete)
-            deleteProvisionMutation.mutate({
-                provisionId: provisionToDelete.id,
-            });
-    }}
-/>
 
 <AlertDialog
     bind:open={

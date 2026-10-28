@@ -1,15 +1,10 @@
 import type { Database } from "@stoat/db";
-import {
-    appendProvisionLog,
-    completeProvision,
-    getProvision,
-    setProvisionInitState,
-    setProvisionStatus,
-    type ClusterProvision,
-} from "@stoat/db/provisions";
+import { finishProvisioning, setProvisioningInitState } from "@stoat/db/clusters";
+import { appendDeploymentLog, setDeploymentStatus } from "@stoat/db/deployments";
+import type { ClusterProvisioning } from "@stoat/db/schema/index";
 import { ucClient } from "@stoat/uncloud";
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
@@ -21,13 +16,17 @@ import { stripVTControlCharacters } from "node:util";
 import { generate } from "selfsigned";
 import { stringify } from "yaml";
 import sidecarCompose from "../../../internal/sidecar/compose.yaml?raw";
-import { decryptProvisionKey } from "./secrets";
 import { isAllowedServerAddress, isPrivateServerAddress } from "./server-address";
 
 type Log = (text: string, level?: "info" | "error") => void;
 
 // The job's temp directory is also uc's HOME, so its config and SSH state never outlive the job.
 type Workspace = { dir: string; config: string; key: string };
+
+type Server = Pick<ClusterProvisioning, "host" | "port" | "user">;
+
+// What `clusters.provisioning_secrets` holds until the cluster is ready.
+type ProvisioningSecrets = { sshKey: string; tlsKey: string };
 
 // The port the sidecar serves HTTPS on for Stoat, next to Uncloud's own 51xxx ports.
 const SIDECAR_PORT = 51443;
@@ -40,11 +39,58 @@ const ALREADY_MEMBER =
 // Docker reports every image layer's progress; the image's own Pulling and Pulled lines are enough.
 const LAYER_PROGRESS = /^[0-9a-f]{12} on \S+ /;
 
-/** `user@host:port`, with IPv6 hosts in brackets. */
-export function sshDestination(provision: Pick<ClusterProvision, "user" | "host" | "port">) {
-    const host = provision.host.includes(":") ? `[${provision.host}]` : provision.host;
+/** The URL Stoat reaches the sidecar of a cluster it sets up on `host` at. */
+export function provisionedSidecarUrl(host: string) {
+    return `https://${isIP(host) === 6 ? `[${host}]` : host}:${SIDECAR_PORT}`;
+}
 
-    return `${provision.user}@${host}:${provision.port}`;
+// An SSH wire-format string: a 32-bit length, then the bytes.
+function sshString(value: Buffer) {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(value.length);
+
+    return Buffer.concat([length, value]);
+}
+
+/**
+ * The single-use SSH key and the pinned sidecar certificate for a cluster Stoat sets up on
+ * `host`. Everything private ends up in `secrets`, which is deleted once the cluster is ready.
+ */
+export async function provisioningCredentials(host: string, comment: string) {
+    const ssh = generateKeyPairSync("ed25519");
+    const raw = ssh.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+    const blob = Buffer.concat([sshString(Buffer.from("ssh-ed25519")), sshString(raw)]);
+
+    const tls = await generate([{ name: "commonName", value: host }], {
+        keyType: "ec",
+        algorithm: "sha256",
+        // Pinned rather than trusted through a CA, so it only needs to outlast the cluster.
+        notAfterDate: new Date(Date.now() + 10 * 365 * 24 * 60 * 60_000),
+        extensions: [
+            {
+                name: "subjectAltName",
+                altNames: [isIP(host) ? { type: 7, ip: host } : { type: 2, value: host }],
+            },
+        ],
+    });
+
+    const secrets: ProvisioningSecrets = {
+        sshKey: ssh.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+        tlsKey: tls.private,
+    };
+
+    return {
+        publicKey: `ssh-ed25519 ${blob.toString("base64")} ${comment}`,
+        certificate: tls.cert,
+        secrets: JSON.stringify(secrets),
+    };
+}
+
+/** `user@host:port`, with IPv6 hosts in brackets. */
+export function sshDestination(server: Server) {
+    const host = server.host.includes(":") ? `[${server.host}]` : server.host;
+
+    return `${server.user}@${host}:${server.port}`;
 }
 
 /** The uc config `machine init` would have written, so later steps also work on a retry. */
@@ -145,7 +191,7 @@ async function serverAddress(host: string) {
  * Whether the server already belongs to a cluster. `uc machine init` installs Uncloud before it
  * checks this, which restarts (or replaces) a member's daemon, so look first over plain SSH.
  */
-function isClusterMember(server: ClusterProvision, workspace: Workspace, signal: AbortSignal) {
+function isClusterMember(server: Server, workspace: Workspace, signal: AbortSignal) {
     // Only root can read the machine state; a password prompt fails here and again, clearly, in uc.
     const sudo = server.user === "root" ? "" : "sudo -n ";
 
@@ -214,25 +260,26 @@ async function ucVersion(workspace: Workspace, signal: AbortSignal) {
 
 async function initMachine(
     db: Database,
-    provision: ClusterProvision,
+    clusterId: string,
+    server: Server,
+    initState: ClusterProvisioning["initState"],
     workspace: Workspace,
-    lan: boolean,
     log: Log,
     signal: AbortSignal,
 ) {
-    if (provision.initState === "partial")
+    if (initState === "partial")
         throw new Error(
             "An earlier attempt created a cluster on this server but didn't finish setting it up. Retry and confirm the reset to start over.",
         );
 
     // A confirmed reset targets the cluster Stoat's own earlier attempt created.
-    if (provision.initState === "none") {
-        log(`Checking ${provision.host} for an existing Uncloud cluster...`);
+    if (initState === "none") {
+        log(`Checking ${server.host} for an existing Uncloud cluster...`);
 
-        const member = await isClusterMember(provision, workspace, signal).catch((error: Error) => {
+        const member = await isClusterMember(server, workspace, signal).catch((error: Error) => {
             if (signal.aborted) throw error;
 
-            throw new Error(initFailure(error.message, provision.user));
+            throw new Error(initFailure(error.message, server.user));
         });
 
         if (member) throw new Error(ALREADY_MEMBER);
@@ -243,7 +290,7 @@ async function initMachine(
     const args = [
         "machine",
         "init",
-        `ssh+go://${sshDestination(provision)}`,
+        `ssh+go://${sshDestination(server)}`,
         "--ssh-key",
         workspace.key,
     ];
@@ -251,12 +298,12 @@ async function initMachine(
     if (version) args.push("--version", version);
 
     // An uncld.dev domain needs the server reachable from the internet; Caddy still serves the LAN.
-    if (lan) args.push("--no-dns");
+    if (isPrivateServerAddress(server.host)) args.push("--no-dns");
 
     // Only after the user confirmed resetting the cluster an earlier attempt left behind.
-    if (provision.initState === "reset") args.push("--yes");
+    if (initState === "reset") args.push("--yes");
 
-    log(`Installing Uncloud ${version ?? "(latest)"} on ${provision.host}...`);
+    log(`Installing Uncloud ${version ?? "(latest)"} on ${server.host}...`);
 
     try {
         await runUc(workspace, args, log, signal);
@@ -275,38 +322,23 @@ async function initMachine(
             log(
                 "Uncloud couldn't reach this server from the internet on port 80, so the cluster's uncld.dev domain doesn't point to it. Stoat doesn't need it; open ports 80 and 443 if your apps should use it.",
             );
-            await setProvisionInitState(db, provision.id, "done");
+            await setProvisioningInitState(db, clusterId, "done");
 
             return;
         }
 
-        if (created) await setProvisionInitState(db, provision.id, "partial");
+        if (created) await setProvisioningInitState(db, clusterId, "partial");
 
-        throw new Error(initFailure(error.message, provision.user));
+        throw new Error(initFailure(error.message, server.user));
     }
 
-    await setProvisionInitState(db, provision.id, "done");
-}
-
-/** A certificate for the sidecar at `host`, which Stoat pins instead of trusting a CA. */
-async function sidecarCertificate(host: string, address: string) {
-    const altNames: { type: 2 | 7; value?: string; ip?: string }[] = [{ type: 7, ip: address }];
-
-    if (!isIP(host)) altNames.push({ type: 2, value: host });
-
-    return generate([{ name: "commonName", value: host }], {
-        keyType: "ec",
-        algorithm: "sha256",
-        // Pinned rather than trusted through a CA, so it only needs to outlast the cluster.
-        notAfterDate: new Date(Date.now() + 10 * 365 * 24 * 60 * 60_000),
-        extensions: [{ name: "subjectAltName", altNames }],
-    });
+    await setProvisioningInitState(db, clusterId, "done");
 }
 
 async function waitForSidecar(
     url: string,
     token: string,
-    certificate: string,
+    certificate: string | null,
     log: Log,
     signal: AbortSignal,
 ) {
@@ -336,77 +368,26 @@ async function waitForSidecar(
     );
 }
 
-async function provision(
-    db: Database,
-    request: ClusterProvision,
-    workspace: Workspace,
-    secret: string,
-    log: Log,
-    signal: AbortSignal,
-) {
-    if (!request.encryptedPrivateKey)
-        throw new Error("This request's SSH key is gone. Delete it and start again.");
-
-    const server = { ...request, host: await serverAddress(request.host) };
-    // Stoat reaches a private server directly, so an internet-facing uncld.dev domain is no use there.
-    const lan = isPrivateServerAddress(server.host);
-
-    if (lan) log(`${server.host} is on a private network, so the cluster gets no public domain.`);
-
-    await writeFile(
-        workspace.key,
-        decryptProvisionKey(request.encryptedPrivateKey, secret, request.id),
-        { mode: 0o600 },
+/** Runs one setup attempt, the `ProvisionCluster` deployment `deploymentId`. */
+export async function provisionCluster(db: Database, deploymentId: string, signal: AbortSignal) {
+    const claimed = await db.$client.query<{ clusterId: string }>(
+        `UPDATE deployments SET status = 'running', error = NULL, finished_at = NULL, updated_at = now()
+         WHERE id = $1 AND name = 'ProvisionCluster' AND status IN ('queued', 'running')
+         RETURNING cluster_id AS "clusterId"`,
+        [deploymentId],
     );
 
-    if (request.initState !== "done") await initMachine(db, server, workspace, lan, log, signal);
+    // Cancelled, settled or deleted since it was queued.
+    const clusterId = claimed.rows[0]?.clusterId;
 
-    await writeFile(workspace.config, clusterConfig(sshDestination(server), workspace.key), {
-        mode: 0o600,
-    });
-
-    const url = `https://${isIP(request.host) === 6 ? `[${request.host}]` : request.host}:${SIDECAR_PORT}`;
-    const certificate = await sidecarCertificate(request.host, server.host);
-    const token = randomBytes(32).toString("hex");
-    const compose = join(workspace.dir, "compose.yaml");
-
-    await writeFile(compose, sidecarCompose);
-    log(`Deploying the Stoat sidecar to ${url}...`);
-    await runUc(workspace, ["deploy", "--file", compose, "--yes"], log, signal, {
-        SIDECAR_TOKEN: token,
-        SIDECAR_TLS_CERT: certificate.cert,
-        SIDECAR_TLS_KEY: certificate.private,
-    });
-    await waitForSidecar(url, token, certificate.cert, log, signal);
-    await completeProvision(db, request.id, url, token, certificate.cert);
-    log("Cluster is ready.");
-}
-
-export async function provisionCluster(
-    db: Database,
-    provisionId: string,
-    requestId: string,
-    secret: string,
-    signal: AbortSignal,
-) {
-    const request = await getProvision(db, provisionId);
-
-    // A retry or delete since this job was queued supersedes it.
-    if (
-        !request ||
-        request.requestedAt?.toISOString() !== requestId ||
-        (request.status !== "queued" && request.status !== "running")
-    )
-        return;
-
-    await setProvisionStatus(db, provisionId, "running", null);
+    if (!clusterId) return;
 
     // Lines are written in order without holding up uc's output.
     let pending = Promise.resolve();
 
     const log: Log = (text, level = "info") => {
         pending = pending.then(() =>
-            appendProvisionLog(db, provisionId, text, level).catch(() => {}),
+            appendDeploymentLog(db, deploymentId, text, { level }).catch(() => {}),
         );
     };
 
@@ -414,15 +395,61 @@ export async function provisionCluster(
     const workspace = { dir, config: join(dir, "config.yaml"), key: join(dir, "id_ed25519") };
 
     try {
-        await provision(db, request, workspace, secret, log, signal);
+        const cluster = await db.query.clusters.findFirst({
+            where: (row, { eq }) => eq(row.id, clusterId),
+        });
+
+        if (!cluster?.provisioning || !cluster.provisioningSecrets)
+            throw new Error("This cluster is already set up.");
+
+        // SAFETY: provisioningCredentials wrote this JSON, and the column is authenticated encryption.
+        const secrets = JSON.parse(cluster.provisioningSecrets) as ProvisioningSecrets;
+        const { initState } = cluster.provisioning;
+
+        const server = {
+            ...cluster.provisioning,
+            host: await serverAddress(cluster.provisioning.host),
+        };
+
+        if (isPrivateServerAddress(server.host))
+            log(`${server.host} is on a private network, so the cluster gets no public domain.`);
+
+        await writeFile(workspace.key, secrets.sshKey, { mode: 0o600 });
+
+        if (initState !== "done")
+            await initMachine(db, clusterId, server, initState, workspace, log, signal);
+
+        await writeFile(workspace.config, clusterConfig(sshDestination(server), workspace.key), {
+            mode: 0o600,
+        });
+
+        const compose = join(workspace.dir, "compose.yaml");
+
+        await writeFile(compose, sidecarCompose);
+        log(`Deploying the Stoat sidecar to ${cluster.sidecarUrl}...`);
+        await runUc(workspace, ["deploy", "--file", compose, "--yes"], log, signal, {
+            SIDECAR_TOKEN: cluster.sidecarToken,
+            SIDECAR_TLS_CERT: cluster.sidecarCertificate ?? "",
+            SIDECAR_TLS_KEY: secrets.tlsKey,
+        });
+        await waitForSidecar(
+            cluster.sidecarUrl,
+            cluster.sidecarToken,
+            cluster.sidecarCertificate,
+            log,
+            signal,
+        );
+        log("Cluster is ready.");
+        await pending;
+        await finishProvisioning(db, clusterId, deploymentId);
     } catch (error) {
         // Interruption is not a failure: the job is released and runs again.
         if (signal.aborted) throw error;
 
-        const message = error instanceof Error ? error.message : "Provisioning failed.";
+        const message = error instanceof Error ? error.message : "Setting up the cluster failed.";
         log(message, "error");
         await pending;
-        await setProvisionStatus(db, provisionId, "failed", message);
+        await setDeploymentStatus(db, deploymentId, "failed", message);
 
         throw new Error(message);
     } finally {

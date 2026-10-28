@@ -26,7 +26,7 @@
     import ProvisionStatusBadge from "./provision-status-badge.svelte";
 
     const params = useQueryStates(
-        { dialog: parseAsString, provisionId: parseAsString },
+        { dialog: parseAsString, clusterId: parseAsString },
         { shallow: true, scroll: false },
     );
 
@@ -36,12 +36,12 @@
             params.dialog.current === "reset-provision",
     );
 
-    const provisionId = $derived(params.provisionId.current ?? "");
+    const clusterId = $derived(params.clusterId.current ?? "");
 
     const provisionQuery = createQuery(() =>
-        orpc.cluster.getProvision.queryOptions({
-            input: { provisionId },
-            enabled: open && Boolean(provisionId),
+        orpc.cluster.getProvisioning.queryOptions({
+            input: { clusterId },
+            enabled: open && Boolean(clusterId),
             refetchInterval: (query) =>
                 query.state.data?.status === "queued" ||
                 query.state.data?.status === "running"
@@ -54,8 +54,8 @@
     const provision = $derived(provisionQuery.data);
 
     const command = $derived(
-        provision
-            ? `mkdir -p ~/.ssh && echo '${provision.publicKey}' >> ~/.ssh/authorized_keys`
+        provision?.setup
+            ? `mkdir -p ~/.ssh && echo '${provision.setup.publicKey}' >> ~/.ssh/authorized_keys`
             : "",
     );
 
@@ -64,14 +64,14 @@
     let following = $state(true);
 
     const startMutation = createMutation(() =>
-        orpc.cluster.startProvision.mutationOptions({
+        orpc.cluster.startProvisioning.mutationOptions({
             onSuccess: async () => {
                 following = true;
                 await Promise.all([
                     provisionQuery.refetch(),
                     queryClient.invalidateQueries({
                         queryKey:
-                            orpc.cluster.listProvisions.queryKey(),
+                            orpc.cluster.listClusters.queryKey(),
                     }),
                 ]);
 
@@ -88,7 +88,7 @@
             : "",
     );
 
-    // The new cluster shows up in the list as soon as it is ready.
+    // The cluster's row in the list follows the setup's outcome.
     let lastStatus = "";
 
     $effect(() => {
@@ -98,14 +98,9 @@
         lastStatus = status;
 
         if (status === "ready" || status === "failed")
-            void Promise.all([
-                queryClient.invalidateQueries({
-                    queryKey: orpc.cluster.listClusters.queryKey(),
-                }),
-                queryClient.invalidateQueries({
-                    queryKey: orpc.cluster.listProvisions.queryKey(),
-                }),
-            ]);
+            void queryClient.invalidateQueries({
+                queryKey: orpc.cluster.listClusters.queryKey(),
+            });
     });
 
     // Stick to the newest line while the user stays at the bottom.
@@ -129,20 +124,20 @@
 
     function close() {
         startMutation.reset();
-        void params.set({ dialog: null, provisionId: null });
+        void params.set({ dialog: null, clusterId: null });
     }
 
     function start(reset = false) {
         if (!provision || startMutation.isPending) return;
 
         // A half-created cluster is only reset after an explicit confirmation.
-        if (provision.initState === "partial" && !reset) {
+        if (provision.setup?.initState === "partial" && !reset) {
             void params.set({ dialog: "reset-provision" });
 
             return;
         }
 
-        startMutation.mutate({ provisionId: provision.id, reset });
+        startMutation.mutate({ clusterId: provision.id, reset });
     }
 </script>
 
@@ -164,8 +159,9 @@
                 {/if}
             </DialogTitle>
             <DialogDescription>
-                {#if provision}
-                    {provision.user}@{provision.host}:{provision.port}
+                {#if provision?.setup}
+                    {provision.setup.user}@{provision.setup
+                        .host}:{provision.setup.port}
                 {:else}
                     Setting up a server over SSH.
                 {/if}
@@ -204,7 +200,7 @@
                         Authorize this key for <span
                             class="font-mono text-foreground"
                         >
-                            {provision.user}
+                            {provision.setup?.user}
                         </span>
                         and then start the setup. Stoat installs Docker
                         and Uncloud, creates the cluster, and deploys its
@@ -213,7 +209,7 @@
                     </p>
                     <ConnectionField
                         label="Public key"
-                        value={provision.publicKey}
+                        value={provision.setup?.publicKey ?? ""}
                     />
                     <ConnectionField
                         label="Or run this on the server"
@@ -277,8 +273,8 @@
                 >
                     Retry
                 </Button>
-            {:else if provision?.status === "ready" && provision.clusterId}
-                <Button href={`/clusters/${provision.clusterId}`}>
+            {:else if provision?.status === "ready"}
+                <Button href={`/clusters/${provision.id}`}>
                     Open cluster
                 </Button>
             {/if}
@@ -294,7 +290,7 @@
         }
     }
     title="Reset the server?"
-    description={`The last attempt created a cluster on ${provision?.host ?? "this server"} but didn't finish setting it up. Retrying resets Uncloud on the server and removes its containers.`}
+    description={`The last attempt created a cluster on ${provision?.setup?.host ?? "this server"} but didn't finish setting it up. Retrying resets Uncloud on the server and removes its containers.`}
     confirmLabel="Reset and retry"
     pending={startMutation.isPending}
     error={startError}

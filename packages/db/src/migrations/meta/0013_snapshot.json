@@ -1,5 +1,5 @@
 {
-    "id": "f9e7bd30-3721-4ccb-bba4-83e04a2a4c56",
+    "id": "311cc7c4-7636-4966-8a8d-711876c77005",
     "prevId": "e533ddf7-21dc-455b-83d6-135339eccecd",
     "version": "7",
     "dialect": "postgresql",
@@ -970,224 +970,6 @@
             "checkConstraints": {},
             "isRLSEnabled": false
         },
-        "public.cluster_provision_logs": {
-            "name": "cluster_provision_logs",
-            "schema": "",
-            "columns": {
-                "id": {
-                    "name": "id",
-                    "type": "bigserial",
-                    "primaryKey": true,
-                    "notNull": true
-                },
-                "provision_id": {
-                    "name": "provision_id",
-                    "type": "uuid",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "text": {
-                    "name": "text",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "level": {
-                    "name": "level",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": "'info'"
-                },
-                "created_at": {
-                    "name": "created_at",
-                    "type": "timestamp with time zone",
-                    "primaryKey": false,
-                    "notNull": true
-                }
-            },
-            "indexes": {
-                "cluster_provision_logs_provision_idx": {
-                    "name": "cluster_provision_logs_provision_idx",
-                    "columns": [
-                        {
-                            "expression": "provision_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        },
-                        {
-                            "expression": "id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        }
-                    ],
-                    "isUnique": false,
-                    "concurrently": false,
-                    "method": "btree",
-                    "with": {}
-                }
-            },
-            "foreignKeys": {
-                "cluster_provision_logs_provision_id_cluster_provisions_id_fk": {
-                    "name": "cluster_provision_logs_provision_id_cluster_provisions_id_fk",
-                    "tableFrom": "cluster_provision_logs",
-                    "tableTo": "cluster_provisions",
-                    "columnsFrom": ["provision_id"],
-                    "columnsTo": ["id"],
-                    "onDelete": "cascade",
-                    "onUpdate": "no action"
-                }
-            },
-            "compositePrimaryKeys": {},
-            "uniqueConstraints": {},
-            "policies": {},
-            "checkConstraints": {},
-            "isRLSEnabled": false
-        },
-        "public.cluster_provisions": {
-            "name": "cluster_provisions",
-            "schema": "",
-            "columns": {
-                "id": {
-                    "name": "id",
-                    "type": "uuid",
-                    "primaryKey": true,
-                    "notNull": true
-                },
-                "organization_id": {
-                    "name": "organization_id",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "name": {
-                    "name": "name",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "host": {
-                    "name": "host",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "port": {
-                    "name": "port",
-                    "type": "integer",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": 22
-                },
-                "user": {
-                    "name": "user",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": "'root'"
-                },
-                "public_key": {
-                    "name": "public_key",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "encrypted_private_key": {
-                    "name": "encrypted_private_key",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": false
-                },
-                "status": {
-                    "name": "status",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": "'pending'"
-                },
-                "init_state": {
-                    "name": "init_state",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": "'none'"
-                },
-                "error": {
-                    "name": "error",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": false
-                },
-                "requested_at": {
-                    "name": "requested_at",
-                    "type": "timestamp with time zone",
-                    "primaryKey": false,
-                    "notNull": false
-                },
-                "cluster_id": {
-                    "name": "cluster_id",
-                    "type": "uuid",
-                    "primaryKey": false,
-                    "notNull": false
-                },
-                "created_at": {
-                    "name": "created_at",
-                    "type": "timestamp with time zone",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "updated_at": {
-                    "name": "updated_at",
-                    "type": "timestamp with time zone",
-                    "primaryKey": false,
-                    "notNull": true
-                }
-            },
-            "indexes": {
-                "cluster_provisions_organization_idx": {
-                    "name": "cluster_provisions_organization_idx",
-                    "columns": [
-                        {
-                            "expression": "organization_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        }
-                    ],
-                    "isUnique": false,
-                    "concurrently": false,
-                    "method": "btree",
-                    "with": {}
-                }
-            },
-            "foreignKeys": {
-                "cluster_provisions_organization_id_organization_id_fk": {
-                    "name": "cluster_provisions_organization_id_organization_id_fk",
-                    "tableFrom": "cluster_provisions",
-                    "tableTo": "organization",
-                    "columnsFrom": ["organization_id"],
-                    "columnsTo": ["id"],
-                    "onDelete": "cascade",
-                    "onUpdate": "no action"
-                },
-                "cluster_provisions_cluster_id_clusters_id_fk": {
-                    "name": "cluster_provisions_cluster_id_clusters_id_fk",
-                    "tableFrom": "cluster_provisions",
-                    "tableTo": "clusters",
-                    "columnsFrom": ["cluster_id"],
-                    "columnsTo": ["id"],
-                    "onDelete": "cascade",
-                    "onUpdate": "no action"
-                }
-            },
-            "compositePrimaryKeys": {},
-            "uniqueConstraints": {},
-            "policies": {},
-            "checkConstraints": {},
-            "isRLSEnabled": false
-        },
         "public.clusters": {
             "name": "clusters",
             "schema": "",
@@ -1218,6 +1000,18 @@
                 },
                 "sidecar_certificate": {
                     "name": "sidecar_certificate",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "provisioning": {
+                    "name": "provisioning",
+                    "type": "jsonb",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "provisioning_secrets": {
+                    "name": "provisioning_secrets",
                     "type": "text",
                     "primaryKey": false,
                     "notNull": false

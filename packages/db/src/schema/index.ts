@@ -23,6 +23,20 @@ export const userSettings = t.pgTable("user_settings", {
     canvasMode: t.boolean("canvas_mode").notNull().default(true),
 });
 
+/**
+ * A cluster Stoat is setting up on a server over SSH. `initState` tracks how far `uc machine init`
+ * got: "partial" means a cluster exists on the server but its setup failed, and "reset" that the
+ * user approved resetting it on the next attempt.
+ */
+export type ClusterProvisioning = {
+    host: string;
+    port: number;
+    user: string;
+    /** Authorized on the server by the user; the private half is in `provisioningSecrets`. */
+    publicKey: string;
+    initState: "none" | "partial" | "reset" | "done";
+};
+
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
     machine: string;
@@ -41,6 +55,10 @@ export const clusters = t.pgTable(
         sidecarToken: encryptedText("sidecar_token", "sidecar-token").notNull(),
         // The self-signed certificate Stoat pinned for a cluster it created; null trusts public CAs.
         sidecarCertificate: t.text("sidecar_certificate"),
+        // Set while Stoat creates the cluster on a server over SSH, and cleared once it's ready.
+        provisioning: t.jsonb("provisioning").$type<ClusterProvisioning>(),
+        // JSON of the single-use SSH private key and the sidecar's TLS key, deleted with `provisioning`.
+        provisioningSecrets: encryptedText("provisioning_secrets", "cluster-provisioning"),
         greptimeUrl: t.text("greptime_url"),
         organizationId: t
             .text("organization_id")
@@ -255,67 +273,6 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
 });
 
 // "pending" waits for the user to authorize the public key on the server.
-export type ClusterProvisionStatus = "pending" | "queued" | "running" | "failed" | "ready";
-
-// How far `uc machine init` got. A "partial" cluster exists on the server but its setup failed;
-// "reset" means the user approved resetting it on the next attempt.
-export type ClusterProvisionInitState = "none" | "partial" | "reset" | "done";
-
-// Creates a cluster on a server over SSH. The row stays after success as the cluster's setup log.
-export const clusterProvisions = t.pgTable(
-    "cluster_provisions",
-    {
-        id: t.uuid("id").primaryKey(),
-        organizationId: t
-            .text("organization_id")
-            .notNull()
-            .references(() => organization.id, { onDelete: "cascade" }),
-        name: t.text("name").notNull(),
-        host: t.text("host").notNull(),
-        port: t.integer("port").notNull().default(22),
-        user: t.text("user").notNull().default("root"),
-        publicKey: t.text("public_key").notNull(),
-        // Single-use: cleared once the cluster is ready.
-        encryptedPrivateKey: t.text("encrypted_private_key"),
-        status: t.text("status").$type<ClusterProvisionStatus>().notNull().default("pending"),
-        initState: t
-            .text("init_state")
-            .$type<ClusterProvisionInitState>()
-            .notNull()
-            .default("none"),
-        error: t.text("error"),
-        requestedAt: t.timestamp("requested_at", { withTimezone: true }),
-        clusterId: t.uuid("cluster_id").references(() => clusters.id, { onDelete: "cascade" }),
-        createdAt: t
-            .timestamp("created_at", { withTimezone: true })
-            .notNull()
-            .$defaultFn(() => new Date()),
-        updatedAt: t
-            .timestamp("updated_at", { withTimezone: true })
-            .notNull()
-            .$defaultFn(() => new Date())
-            .$onUpdate(() => new Date()),
-    },
-    (table) => [t.index("cluster_provisions_organization_idx").on(table.organizationId)],
-);
-
-export const clusterProvisionLogs = t.pgTable(
-    "cluster_provision_logs",
-    {
-        id: t.bigserial("id", { mode: "number" }).primaryKey(),
-        provisionId: t
-            .uuid("provision_id")
-            .notNull()
-            .references(() => clusterProvisions.id, { onDelete: "cascade" }),
-        text: t.text("text").notNull(),
-        level: t.text("level").$type<"info" | "error">().notNull().default("info"),
-        createdAt: t
-            .timestamp("created_at", { withTimezone: true })
-            .notNull()
-            .$defaultFn(() => new Date()),
-    },
-    (table) => [t.index("cluster_provision_logs_provision_idx").on(table.provisionId, table.id)],
-);
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 

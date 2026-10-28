@@ -7,7 +7,6 @@ import {
 } from "@stoat/db/deployments";
 import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
 import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initialization";
-import { queuedProvisions, setProvisionStatus } from "@stoat/db/provisions";
 import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
@@ -164,9 +163,9 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
             { concurrency: 4 },
         ),
         ProvisionCluster.toLayer(
-            ({ provisionId, requestId }) =>
+            ({ deploymentId }) =>
                 attempt(
-                    (signal) => provisionCluster(db, provisionId, requestId, appSecret(), signal),
+                    (signal) => provisionCluster(db, deploymentId, signal),
                     // provisionCluster records its own failure; uc's messages carry no secrets.
                     (error) => error,
                 ),
@@ -242,18 +241,13 @@ async function recordBucketFailureAsync(db: Database, failure: Worker.JobFailure
     );
 }
 
-// Covers timeouts; the handler already marked every other failure.
-async function recordProvisionFailureAsync(db: Database, failure: Worker.JobFailure) {
-    // effect-mq ids are `ProvisionCluster/<provisionId>:<requestId>`.
-    const key = failure.jobId.slice(failure.jobId.indexOf("/") + 1);
-    const cause = Cause.squash(failure.cause);
+// The job's own message when an attempt failed without recording one.
+function deploymentFailureMessage(name: string) {
+    if (name === "DeployCaddy") return CADDY_FAILURE_MESSAGE;
 
-    await setProvisionStatus(
-        db,
-        key.slice(0, key.indexOf(":")),
-        "failed",
-        Cause.isTimeoutError(cause) ? "Provisioning timed out." : "Provisioning failed.",
-    );
+    if (name === "ProvisionCluster") return "Setting up the cluster failed.";
+
+    return RESOURCE_FAILURE_MESSAGE;
 }
 
 async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
@@ -285,15 +279,18 @@ async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
         return;
     }
 
-    if (failure.name === "DeployResource" || failure.name === "DeployCaddy") {
+    if (
+        failure.name === "DeployResource" ||
+        failure.name === "DeployCaddy" ||
+        failure.name === "ProvisionCluster"
+    ) {
         if (!deployment || !["queued", "running"].includes(deployment.status)) return;
         const cause = Cause.squash(failure.cause);
         const timedOut = Cause.isTimeoutError(cause);
 
         const reason = timedOut
             ? cause.message
-            : (deployment.error ??
-              (failure.name === "DeployCaddy" ? CADDY_FAILURE_MESSAGE : RESOURCE_FAILURE_MESSAGE));
+            : (deployment.error ?? deploymentFailureMessage(failure.name));
 
         // The attempt already logged its own reason; only timeouts are new here.
         const text = timedOut ? reason : "Deployment failed.";
@@ -346,14 +343,10 @@ function workerLive(db: Database) {
                     Effect.ignore,
                 );
 
-            if (failure.name === "ProvisionCluster")
-                return Effect.promise(() => recordProvisionFailureAsync(db, failure)).pipe(
-                    Effect.ignore,
-                );
-
             if (
                 failure.name !== "DeployResource" &&
                 failure.name !== "DeployCaddy" &&
+                failure.name !== "ProvisionCluster" &&
                 failure.name !== "InitializeCluster"
             )
                 return Effect.void;
@@ -419,15 +412,14 @@ export async function queueClusterHealthCheck(clusterId: string): Promise<void> 
  */
 export async function cancelDeploymentJob(
     jobId: string,
-    name: "InitializeCluster" | "DeployResource" | "DeployCaddy" = "InitializeCluster",
+    name:
+        | "InitializeCluster"
+        | "DeployResource"
+        | "DeployCaddy"
+        | "ProvisionCluster" = "InitializeCluster",
 ): Promise<void> {
     try {
-        const job =
-            name === "DeployResource"
-                ? DeployResource
-                : name === "DeployCaddy"
-                  ? DeployCaddy
-                  : InitializeCluster;
+        const job = { InitializeCluster, DeployResource, DeployCaddy, ProvisionCluster }[name];
 
         const program = job
             .cancel(JobStore.JobId(`${name}/${jobId}`))
@@ -448,7 +440,7 @@ async function pollOutboxAsync(db: Database) {
 
     const queued = await db.$client.query<{ deploymentId: string; name: string }>(
         `SELECT id AS "deploymentId", name FROM deployments
-         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy')`,
+         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy', 'ProvisionCluster')`,
     );
 
     const buckets = await pendingBucketRequests(db);
@@ -456,15 +448,13 @@ async function pollOutboxAsync(db: Database) {
     // mid-update is still caught. Older workers find nothing: their version is never higher.
     const monitoring = await listOutdatedMonitoring(db, MONITORING_VERSION);
 
-    const provisions = await queuedProvisions(db);
-
     return {
         initialization: initialization.rows,
         resources: queued.rows.filter((row) => row.name === "DeployResource"),
         caddy: queued.rows.filter((row) => row.name === "DeployCaddy"),
         buckets,
         monitoring,
-        provisions,
+        provisions: queued.rows.filter((row) => row.name === "ProvisionCluster"),
     };
 }
 
@@ -490,11 +480,8 @@ export function pollInitializationOutbox(db: Database) {
                     ...monitoring.map(({ clusterId }) =>
                         RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
                     ),
-                    ...provisions.map((row) =>
-                        ProvisionCluster.enqueue({
-                            provisionId: row.id,
-                            requestId: row.requestedAt.toISOString(),
-                        }),
+                    ...provisions.map(({ deploymentId }) =>
+                        ProvisionCluster.enqueue({ deploymentId }),
                     ),
                 ],
                 (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),

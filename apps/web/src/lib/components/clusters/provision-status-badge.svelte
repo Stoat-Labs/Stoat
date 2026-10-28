@@ -1,8 +1,8 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
-    import type { ClusterProvisionStatus } from "@stoat/db/schema/index";
+    import type { ProvisioningStatus } from "@stoat/api/routers/cluster/provisioning";
 
-    let { status }: { status: ClusterProvisionStatus } = $props();
+    let { status }: { status: ProvisioningStatus } = $props();
 </script>
 
 {#if status === "pending"}

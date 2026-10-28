@@ -187,22 +187,16 @@ export const WatchGitSources: Job.Job<
     },
 });
 
-const provisionPayload = Schema.Struct({
-    provisionId: Schema.String,
-    // The provision row's requested_at ISO string; each retry is a new job.
-    requestId: Schema.String,
-});
-
-// Creates a cluster on a server over SSH with the bundled uc CLI, then deploys its sidecar.
 export const ProvisionCluster: Job.Job<
     "ProvisionCluster",
-    typeof provisionPayload,
+    typeof resourcePayload,
     Schema.Void,
     Schema.Never
 > = Job.make("ProvisionCluster", {
-    payload: provisionPayload,
+    // Each attempt is its own `ProvisionCluster` deployment of the cluster being set up.
+    payload: resourcePayload,
     success: Schema.Void,
-    idempotencyKey: ({ provisionId, requestId }) => `${provisionId}:${requestId}`,
+    idempotencyKey: ({ deploymentId }) => deploymentId,
     queue: "provision",
     defaults: {
         // No retries: SSH and server problems need the user, and a retry may need a reset.

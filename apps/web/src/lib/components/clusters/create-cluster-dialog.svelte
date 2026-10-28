@@ -25,7 +25,7 @@
     }: {
         open?: boolean;
         source?: "connect" | "server";
-        onprovision: (provisionId: string) => void;
+        onprovision: (clusterId: string) => void;
     } = $props();
 
     // Only the active tab's form is mounted, so both share these.

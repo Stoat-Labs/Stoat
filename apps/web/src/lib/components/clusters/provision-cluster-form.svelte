@@ -22,7 +22,7 @@
         formId: string;
         pending?: boolean;
         canSubmit?: boolean;
-        oncreated: (provisionId: string) => void;
+        oncreated: (clusterId: string) => void;
     } = $props();
 
     let name = $state("");
@@ -34,12 +34,12 @@
     let port = $state(22);
 
     const createMutationState = createMutation(() =>
-        orpc.cluster.createProvision.mutationOptions({
-            onSuccess: async (provision) => {
+        orpc.cluster.provisionCluster.mutationOptions({
+            onSuccess: async (cluster) => {
                 await queryClient.invalidateQueries({
-                    queryKey: orpc.cluster.listProvisions.queryKey(),
+                    queryKey: orpc.cluster.listClusters.queryKey(),
                 });
-                oncreated(provision.id);
+                oncreated(cluster.id);
             },
         }),
     );
@@ -61,7 +61,7 @@
             : "",
     );
 
-    function createProvision(event: SubmitEvent) {
+    function createServerCluster(event: SubmitEvent) {
         event.preventDefault();
 
         if (!canSubmit) return;
@@ -84,7 +84,7 @@
 <form
     id={formId}
     method="POST"
-    onsubmit={createProvision}
+    onsubmit={createServerCluster}
     class="space-y-4"
     aria-busy={createMutationState.isPending}
 >

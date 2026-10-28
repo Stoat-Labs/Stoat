@@ -323,7 +323,7 @@ export const projectsRouter = {
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
-                .select({ id: clusters.id })
+                .select({ id: clusters.id, provisioning: clusters.provisioning })
                 .from(clusters)
                 .where(
                     and(
@@ -336,6 +336,11 @@ export const projectsRouter = {
             if (!cluster) {
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
             }
+
+            if (cluster.provisioning)
+                throw new ORPCError("PRECONDITION_FAILED", {
+                    message: "This cluster is still being set up.",
+                });
 
             const description = input.description?.trim() ? input.description.trim() : null;
 

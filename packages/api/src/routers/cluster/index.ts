@@ -1,7 +1,8 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, projects, resources, s3Buckets } from "@stoat/db/schema/index";
+import { latestProvisioningDeployments } from "@stoat/db/clusters";
+import { clusters, deployments, projects, resources, s3Buckets } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
-import { and, asc, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 import { queueClusterHealthCheck } from "@stoat/workflows/runtime";
@@ -16,7 +17,7 @@ import { deploymentsRouter } from "./deployments";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
 import { observabilityRouter } from "./observability";
-import { provisionRouter } from "./provisions";
+import { provisioningRouter, provisioningStatus } from "./provisioning";
 
 const clusterInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
@@ -46,7 +47,7 @@ export const clusterRouter = {
     ...metricsRouter,
     ...observabilityRouter,
     ...caddyRouter,
-    ...provisionRouter,
+    ...provisioningRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(
@@ -83,6 +84,7 @@ export const clusterRouter = {
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
                     sidecarCertificate: clusters.sidecarCertificate,
+                    provisioning: clusters.provisioning,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -94,24 +96,48 @@ export const clusterRouter = {
                 .limit(limit)
                 .offset(offset);
 
+            const attempts = await latestProvisioningDeployments(
+                db,
+                items.flatMap((item) => (item.provisioning ? [item.id] : [])),
+            );
+
             const [row] = await db
                 .select({ count: sql<number>`count(*)::int` })
                 .from(clusters)
                 .where(conditions);
 
             const itemsWithDiagnostics = await Promise.all(
-                items.map(async ({ sidecarUrl, sidecarToken, sidecarCertificate, ...item }) => {
-                    const diagnostics =
-                        input?.includeDiagnostics === false
-                            ? null
-                            : await getClusterDiagnostics(
-                                  sidecarUrl,
-                                  sidecarToken,
-                                  sidecarCertificate,
-                              );
+                items.map(
+                    async ({
+                        sidecarUrl,
+                        sidecarToken,
+                        sidecarCertificate,
+                        provisioning,
+                        ...item
+                    }) => {
+                        // A cluster still being set up has no sidecar to ask yet.
+                        const diagnostics =
+                            input?.includeDiagnostics === false || provisioning
+                                ? null
+                                : await getClusterDiagnostics(
+                                      sidecarUrl,
+                                      sidecarToken,
+                                      sidecarCertificate,
+                                  );
 
-                    return { ...item, diagnostics };
-                }),
+                        const setup = provisioning
+                            ? {
+                                  host: provisioning.host,
+                                  status: provisioningStatus(
+                                      provisioning,
+                                      attempts.get(item.id)?.status,
+                                  ),
+                              }
+                            : null;
+
+                        return { ...item, setup, diagnostics };
+                    },
+                ),
             );
 
             return {
@@ -139,6 +165,7 @@ export const clusterRouter = {
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
                     sidecarCertificate: clusters.sidecarCertificate,
+                    provisioning: clusters.provisioning,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -161,15 +188,15 @@ export const clusterRouter = {
                 sidecarUrl,
                 sidecarToken,
                 sidecarCertificate,
+                provisioning,
                 initializationConfiguration,
                 ...item
             } = cluster;
 
-            const diagnostics = await getClusterDiagnostics(
-                sidecarUrl,
-                sidecarToken,
-                sidecarCertificate,
-            );
+            // A cluster still being set up has no sidecar to ask yet.
+            const diagnostics = provisioning
+                ? null
+                : await getClusterDiagnostics(sidecarUrl, sidecarToken, sidecarCertificate);
 
             const canInitialize = isOrganizationAdmin(organizationRole);
 
@@ -188,6 +215,7 @@ export const clusterRouter = {
 
             return {
                 ...item,
+                settingUp: provisioning !== null,
                 retentionDays: initializationConfiguration?.retentionDays ?? null,
                 diagnostics,
                 canInitialize,
@@ -255,6 +283,23 @@ export const clusterRouter = {
             if (!cluster) {
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
             }
+
+            const [setup] = await db
+                .select({ id: deployments.id })
+                .from(deployments)
+                .where(
+                    and(
+                        eq(deployments.clusterId, cluster.id),
+                        eq(deployments.name, "ProvisionCluster"),
+                        inArray(deployments.status, ["queued", "running"]),
+                    ),
+                )
+                .limit(1);
+
+            if (setup)
+                throw new ORPCError("CONFLICT", {
+                    message: "Wait for the cluster's setup to finish or fail before deleting it.",
+                });
 
             if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {
                 throw new ORPCError("CONFLICT", {

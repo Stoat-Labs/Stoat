@@ -70,7 +70,7 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
 });
 
-test("an admin sets up a server over SSH, sees why it failed, and deletes the setup", async ({
+test("an admin sets up a server over SSH, sees why it failed, and deletes the cluster", async ({
     page,
 }) => {
     const name = `Server ${Date.now()}`;
@@ -92,13 +92,21 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the se
         /authorized_keys$/,
     );
 
-    // The private key never reaches the browser.
-    const listing = await page.request.post("/rpc/api/cluster/listProvisions", {
-        data: {},
-        headers: { origin: process.env.E2E_BASE_URL! },
-    });
+    // The private keys never reach the browser.
+    const clusterId = new URL(page.url()).searchParams.get("clusterId");
+    const headers = { origin: process.env.E2E_BASE_URL! };
 
-    expect(await listing.text()).not.toContain("PRIVATE KEY");
+    for (const [path, data] of [
+        ["listClusters", {}],
+        ["getProvisioning", { clusterId }],
+    ] as const) {
+        const response = await page.request.post(`/rpc/api/cluster/${path}`, { data, headers });
+        const body = await response.text();
+
+        expect(response.ok()).toBe(true);
+        expect(body).not.toContain("PRIVATE KEY");
+        expect(body).not.toContain("enc:v1:");
+    }
 
     await setup.getByRole("button", { name: "Start setup" }).click();
     await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 45_000 });
@@ -113,7 +121,7 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the se
     await dialog(page).getByRole("button", { name: "Delete" }).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, name)).toHaveCount(0);
-    expect(await sql("SELECT id FROM cluster_provisions WHERE name = $1", [name])).toEqual([]);
+    expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
 });
 
 test("searching narrows the list", async ({ page }) => {
