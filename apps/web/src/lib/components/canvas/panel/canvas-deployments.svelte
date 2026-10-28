@@ -15,7 +15,10 @@
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { isActiveDeploymentStatus } from "$lib/deployments/status";
     import { ago, deploymentDuration } from "$lib/format";
-    import { containerInfo } from "$lib/resources/container-info";
+    import {
+        allExited,
+        containerInfo,
+    } from "$lib/resources/container-info";
     import { imageIcon } from "$lib/resources/image-icons";
     import Box from "@lucide/svelte/icons/box";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
@@ -135,6 +138,9 @@
 
     const containers = $derived(containersQuery.data ?? []);
 
+    // Stopped from the canvas: the deployment is still the live one, but nothing runs.
+    const stopped = $derived(allExited(containers));
+
     const sources = {
         forgejo: "Forgejo",
         github: "GitHub",
@@ -155,7 +161,8 @@
 
     // Railway's badge words; superseded deployments are "Removed".
     function badge(deployment: Deployment) {
-        if (deployment === live) return "Active";
+        if (deployment === live)
+            return stopped ? "Stopped" : "Active";
 
         if (isActiveDeploymentStatus(deployment.status))
             return deployment.status === "queued"
@@ -170,7 +177,8 @@
     }
 
     function tone(deployment: Deployment): Tone {
-        if (deployment === live) return "success";
+        if (deployment === live)
+            return stopped ? "neutral" : "success";
 
         if (isActiveDeploymentStatus(deployment.status))
             return "info";
@@ -526,7 +534,12 @@
                             >
                                 {#if info.health === "unhealthy" || info.status === "exited"}
                                     <CircleX
-                                        class="size-4 text-destructive-foreground"
+                                        class={[
+                                            "size-4",
+                                            stopped
+                                                ? "text-muted-foreground"
+                                                : "text-destructive-foreground",
+                                        ]}
                                         aria-hidden="true"
                                     />
                                 {:else}

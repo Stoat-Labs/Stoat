@@ -286,9 +286,14 @@
             resourceId,
             running,
         });
-        await queryClient.invalidateQueries({
-            queryKey: orpc.resources.getProjectContainers.key(),
-        });
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getProjectContainers.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.getContainers.key(),
+            }),
+        ]);
     }
 
     async function stop() {
