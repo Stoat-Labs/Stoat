@@ -35,6 +35,8 @@ export type ClusterProvisioning = {
     /** Authorized on the server by the user; the private half is in `provisioningSecrets`. */
     publicKey: string;
     initState: "none" | "partial" | "reset" | "done";
+    /** Caddy shares certificates through Uncloud's cluster store once the cluster is ready. */
+    caddyStorage: boolean;
 };
 
 export type ClusterInitializationConfiguration = {

@@ -16,6 +16,7 @@ import { stripVTControlCharacters } from "node:util";
 import { generate } from "selfsigned";
 import { stringify } from "yaml";
 import sidecarCompose from "../../../internal/sidecar/compose.yaml?raw";
+import { CLUSTER_STORAGE_CADDY, createCaddyDeployment } from "./deploy-caddy";
 import { isAllowedServerAddress, isPrivateServerAddress } from "./server-address";
 
 type Log = (text: string, level?: "info" | "error") => void;
@@ -375,6 +376,18 @@ async function waitForSidecar(
 }
 
 /** Runs one setup attempt, the `ProvisionCluster` deployment `deploymentId`. */
+// Like Caddy's metrics for monitoring, this never fails setup: stock Caddy still serves the cluster.
+async function deployClusterStorageCaddy(db: Database, clusterId: string, log: Log) {
+    const { image, caddyfile } = CLUSTER_STORAGE_CADDY;
+
+    try {
+        await createCaddyDeployment(db, clusterId, image, caddyfile, false);
+        log(`Deploying ${image} so every machine's Caddy shares certificates through the cluster.`);
+    } catch {
+        log("Couldn't switch Caddy to cluster storage. Change it in the cluster's Caddy settings.");
+    }
+}
+
 export async function provisionCluster(db: Database, deploymentId: string, signal: AbortSignal) {
     const claimed = await db.$client.query<{ clusterId: string }>(
         `UPDATE deployments SET status = 'running', error = NULL, finished_at = NULL, updated_at = now()
@@ -445,6 +458,9 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
             log,
             signal,
         );
+
+        if (cluster.provisioning.caddyStorage) await deployClusterStorageCaddy(db, clusterId, log);
+
         log("Cluster is ready.");
         await pending;
         await finishProvisioning(db, clusterId, deploymentId);

@@ -8,9 +8,10 @@ import { createDb } from "@stoat/db";
 import { organizationHasInfrastructure } from "@stoat/db/organizations";
 import { clusters, deployments } from "@stoat/db/schema/index";
 import * as uncloud from "@stoat/uncloud";
+import { parseCaddyComposeSpec } from "@stoat/workflows/deploy-caddy";
 import { provisionCluster, provisioningCredentials } from "@stoat/workflows/provision-cluster";
 import { isAllowedServerAddress, isPrivateServerAddress } from "@stoat/workflows/server-address";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Context } from "../../packages/api/src/context";
@@ -188,10 +189,10 @@ describe("cluster provisioning (PostgreSQL)", () => {
         }
     });
 
-    async function create(host = PUBLIC_HOST) {
+    async function create(host = PUBLIC_HOST, caddyStorage = false) {
         const { id } = await call(
             clusterRouter.provisionCluster,
-            { name: "Edge", host },
+            { name: "Edge", host, caddyStorage },
             { context },
         );
 
@@ -222,6 +223,13 @@ describe("cluster provisioning (PostgreSQL)", () => {
             .where(eq(deployments.id, deploymentId));
 
         return { cluster: cluster!, deployment: deployment! };
+    }
+
+    function caddyDeployments(clusterId: string) {
+        return db
+            .select()
+            .from(deployments)
+            .where(and(eq(deployments.clusterId, clusterId), eq(deployments.name, "DeployCaddy")));
     }
 
     async function lines(file: string) {
@@ -284,6 +292,22 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(setup).toMatchObject({ status: "ready", setup: null });
         expect(text).toContain("Image ghcr.io/stoat-labs/sidecar:latest on edge  Pulled");
         expect(text.some((line) => line.includes("Downloading ["))).toBe(false);
+        // Caddy keeps the image uc machine init deployed.
+        expect(await caddyDeployments(clusterId)).toEqual([]);
+    });
+
+    it("switches Caddy to cluster storage once the cluster is ready, if asked", async () => {
+        const clusterId = await create(PUBLIC_HOST, true);
+        const { deployment } = await attempt(clusterId);
+        const [caddy, ...others] = await caddyDeployments(clusterId);
+
+        expect(deployment.status).toBe("ready");
+        expect(others).toEqual([]);
+        expect(caddy?.status).toBe("queued");
+        expect(parseCaddyComposeSpec(caddy!.spec!)).toEqual({
+            image: "ghcr.io/unlabs-dev/caddy-uncloud:0.1.3",
+            caddyfile: "{\n\tstorage uncloud\n}\n",
+        });
     });
 
     it("refuses a cluster member without running uc on it", async () => {

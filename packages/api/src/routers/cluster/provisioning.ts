@@ -61,6 +61,7 @@ export const provisioningRouter = {
                     ),
                     "root",
                 ),
+                caddyStorage: v.optional(v.boolean(), false),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -94,6 +95,7 @@ export const provisioningRouter = {
                     user: input.user,
                     publicKey: credentials.publicKey,
                     initState: "none",
+                    caddyStorage: input.caddyStorage,
                 },
                 provisioningSecrets: credentials.secrets,
             });

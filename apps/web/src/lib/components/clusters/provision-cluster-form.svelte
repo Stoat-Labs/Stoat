@@ -3,6 +3,7 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
+    import { Checkbox } from "$lib/components/ui/checkbox";
     import {
         Field,
         FieldDescription,
@@ -32,6 +33,8 @@
     let user = $state("root");
 
     let port = $state(22);
+
+    let caddyStorage = $state(false);
 
     const createMutationState = createMutation(() =>
         orpc.cluster.provisionCluster.mutationOptions({
@@ -70,6 +73,7 @@
             host: host.trim(),
             user: user.trim(),
             port,
+            caddyStorage,
         });
     }
 </script>
@@ -149,4 +153,19 @@
             />
         </Field>
     </div>
+    <Field>
+        <label class="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+                bind:checked={caddyStorage}
+                disabled={createMutationState.isPending}
+                aria-describedby="provision-caddy-storage-hint"
+            />
+            Share Caddy's certificates across machines
+        </label>
+        <FieldDescription id="provision-caddy-storage-hint">
+            Caddy stores certificates and ACME challenges in the
+            cluster, so any machine can answer them. Uses Uncloud's
+            caddy-uncloud image.
+        </FieldDescription>
+    </Field>
 </form>

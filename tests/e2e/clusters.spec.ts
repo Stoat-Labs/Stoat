@@ -85,6 +85,9 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the cl
     await create.getByLabel("Name").fill(name);
     // .invalid names never resolve, so the setup fails without touching a real server.
     await create.getByLabel("Server address").fill("server.invalid");
+    await create
+        .getByRole("checkbox", { name: "Share Caddy's certificates across machines" })
+        .check();
     await create.getByRole("button", { name: "Continue" }).click();
 
     const setup = page.getByRole("dialog", { name: new RegExp(name) });
@@ -95,8 +98,15 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the cl
         /authorized_keys$/,
     );
 
+    const clusterId = new URL(page.url()).searchParams.get("clusterId") ?? "";
+
+    expect(
+        await sql("SELECT provisioning->>'caddyStorage' AS storage FROM clusters WHERE id = $1", [
+            clusterId,
+        ]),
+    ).toEqual([{ storage: "true" }]);
+
     // The private keys never reach the browser.
-    const clusterId = new URL(page.url()).searchParams.get("clusterId");
     const headers = { origin: process.env.E2E_BASE_URL! };
 
     for (const [path, data] of [
