@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ url }) =>
         await generator.generate(appRouter, {
             version: "3.1.1",
             base: {
-                info: { title: "Stoat API", version: "1.0.0" },
+                info: { title: "Stoat API", version: "1.1.0" },
                 servers: [{ url: `${url.origin}/rpc/api` }],
                 security: [{ apiKey: [] }],
                 components: {
