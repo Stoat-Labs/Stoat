@@ -6,7 +6,7 @@ services:
             - qui_data:/config
         restart: unless-stopped
         x-ports:
-            - 7476/https
+            - ${QUI_HOST}:7476/https
         healthcheck:
             test: ["CMD", "wget", "-q", "--spider", "http://localhost:7476/health"]
             interval: 30s

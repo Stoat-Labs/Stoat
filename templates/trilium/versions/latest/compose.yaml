@@ -5,7 +5,7 @@ services:
         environment:
             - TRILIUM_DATA_DIR=/home/node/trilium-data
         x-ports:
-            - "8080/https"
+            - ${TRILIUM_HOST}:8080/https
         volumes:
             - trilium-data:/home/node/trilium-data
             - /etc/timezone:/etc/timezone:ro
