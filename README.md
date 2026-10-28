@@ -102,6 +102,10 @@ This project is licensed under the [Apache 2.0 License](LICENSE).
 
 Kudos to the contributors of [Coolify](https://coolify.io/) and [Dokploy](https://dokploy.com/), these 2 are the inspiration that Stoat is based on. Coolify's way of being more of a PaaS and Dokploy's of being closer to docker compose. The software Stoat uses [Uncloud](https://uncloud.run/). And Railway for letting me copy their ui lol, great platform if you dont want to manage your own infrastructure ♥️
 
+## Sponsors
+
+[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
+
 ## Screenshots
 
 <img width="2242" height="1334" alt="image" src="https://github.com/user-attachments/assets/c3ac1f85-a097-4f1e-a603-a5d183ef8dbd" />
