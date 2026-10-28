@@ -1,0 +1,21 @@
+{
+    "extends": "@stoat/config/tsconfig.base.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    "include": ["src/**/*.ts", "vite.config.ts"],
+    "references": [
+        {
+            "path": "../../packages/api"
+        },
+        {
+            "path": "../../packages/config"
+        },
+        {
+            "path": "../../packages/db"
+        },
+        {
+            "path": "../../packages/workflows"
+        }
+    ]
+}

@@ -500,6 +500,34 @@ importers:
         specifier: 'catalog:'
         version: '@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1)'
 
+  apps/worker:
+    dependencies:
+      '@stoat/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@stoat/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@stoat/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@stoat/workflows':
+        specifier: workspace:*
+        version: link:../../packages/workflows
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.1
+        version: 26.5.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vite:
+        specifier: 'catalog:'
+        version: '@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1)'
+      vite-plus:
+        specifier: 'catalog:'
+        version: 0.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(svelte@5.57.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1)
+
   packages/api:
     dependencies:
       '@orpc/server':

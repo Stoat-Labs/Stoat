@@ -49,7 +49,6 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/runtime ./
 COPY --from=build --chown=node:node /app/apps/web/build ./build
 COPY --from=build --chown=node:node /app/apps/web/server.js ./server.js
-COPY --from=build --chown=node:node /app/apps/web/build-worker ./build-worker
 COPY --from=build --chown=node:node /app/apps/web/src/generated-env.ts ./src/generated-env.ts
 COPY --from=build --chown=node:node /app/apps/web/drizzle.config.ts ./drizzle.config.ts
 

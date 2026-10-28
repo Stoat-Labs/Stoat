@@ -52,9 +52,8 @@ services:
     # Optional: run background jobs in their own container. Uncomment and set
     # USE_INTERNAL_WORKER=false, or no deployments or monitoring jobs ever run.
     # stoat-worker:
-    #     image: ghcr.io/stoat-labs/stoat:latest
+    #     image: ghcr.io/stoat-labs/worker:latest
     #     pull_policy: always
-    #     command: ["node", "build-worker/worker.js"]
     #     env_file: .env
     #     environment:
     #         APP_URL: https://${APP_URL:-stoat.example.com}
@@ -64,9 +63,6 @@ services:
     #     depends_on:
     #         stoat:
     #             condition: service_healthy
-    #     # The image's healthcheck probes the web port, which the worker does not serve.
-    #     healthcheck:
-    #         disable: true
     #     restart: unless-stopped
 
     stoat-db:

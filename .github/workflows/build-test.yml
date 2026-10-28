@@ -78,13 +78,13 @@ jobs:
               if: always()
               uses: actions/setup-go@v5
               with:
-                  go-version-file: apps/worker/go.mod
-                  cache-dependency-path: apps/worker/go.sum
+                  go-version-file: apps/sidecar/go.mod
+                  cache-dependency-path: apps/sidecar/go.sum
 
             - name: Run Go Tests
               id: go-test
               if: always() && steps.setup-go.conclusion == 'success'
-              working-directory: apps/worker
+              working-directory: apps/sidecar
               run: go test ./...
 
             - name: Build All Packages

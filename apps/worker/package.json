@@ -1,0 +1,22 @@
+{
+    "name": "@stoat/worker",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vp build",
+        "start": "node dist/worker.mjs",
+        "check-types": "tsc -b"
+    },
+    "dependencies": {
+        "@stoat/api": "workspace:*",
+        "@stoat/config": "workspace:*",
+        "@stoat/db": "workspace:*",
+        "@stoat/workflows": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^26.4.1",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plus": "catalog:"
+    }
+}
