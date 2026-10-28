@@ -11,6 +11,7 @@
     } from "./graph";
 
     let {
+        clusterId,
         projectId,
         resources,
         graph,
@@ -19,6 +20,7 @@
         onopen,
         onerror,
     }: {
+        clusterId: string;
         projectId: string;
         resources: CanvasResource[];
         graph: CanvasGraph;
@@ -68,6 +70,12 @@
 
     let redeployError = $state("");
 
+    let pendingStop = $state<CanvasResource>();
+
+    let stopping = $state(false);
+
+    let stopError = $state("");
+
     export function askRemoveVolume(nodeId: string) {
         const { resourceId, volume } = parseNodeId(nodeId);
 
@@ -99,6 +107,26 @@
             (resource) => resource.id === resourceId,
         );
         redeployError = "";
+    }
+
+    export function askStop(resourceId: string) {
+        pendingStop = resources.find(
+            (resource) => resource.id === resourceId,
+        );
+        stopError = "";
+    }
+
+    // Starting needs no confirmation; a failure goes to the canvas notice.
+    export async function start(resourceId: string) {
+        try {
+            await setRunning(resourceId, true);
+        } catch (error) {
+            onerror(
+                error instanceof Error
+                    ? error.message
+                    : "The resource could not be started.",
+            );
+        }
     }
 
     export async function disconnectVolume(nodeId: string) {
@@ -249,6 +277,38 @@
             redeploying = false;
         }
     }
+
+    // Stops or starts the containers in place; the next deploy starts stopped ones again.
+    async function setRunning(resourceId: string, running: boolean) {
+        await client.resources.setRunning({
+            clusterId,
+            projectId,
+            resourceId,
+            running,
+        });
+        await queryClient.invalidateQueries({
+            queryKey: orpc.resources.getProjectContainers.key(),
+        });
+    }
+
+    async function stop() {
+        if (!pendingStop) return;
+
+        stopping = true;
+        stopError = "";
+
+        try {
+            await setRunning(pendingStop.id, false);
+            pendingStop = undefined;
+        } catch (error) {
+            stopError =
+                error instanceof Error
+                    ? error.message
+                    : "The resource could not be stopped.";
+        } finally {
+            stopping = false;
+        }
+    }
 </script>
 
 {#if pendingVolumeDelete}
@@ -302,5 +362,22 @@
         pending={redeploying}
         error={redeployError}
         onconfirm={() => void redeployResource()}
+    />
+{/if}
+
+{#if pendingStop}
+    <ConfirmDialog
+        bind:open={
+            () => pendingStop !== undefined,
+            (open) => {
+                if (!open && !stopping) pendingStop = undefined;
+            }
+        }
+        title={`Stop ${pendingStop.name}?`}
+        description="Its containers stop and it goes offline until you start it again. Deploying it again also starts it."
+        confirmLabel="Stop"
+        pending={stopping}
+        error={stopError}
+        onconfirm={() => void stop()}
     />
 {/if}

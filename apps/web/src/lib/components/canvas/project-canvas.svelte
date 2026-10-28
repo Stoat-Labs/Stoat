@@ -1,6 +1,7 @@
 <script lang="ts">
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
+    import { allExited } from "$lib/resources/container-info";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -253,6 +254,7 @@
                 "icon-link",
                 "move",
                 "copy",
+                "duplicate",
             ].find((name): name is GroupAction => name === action),
             resource: resources.find(
                 (resource) => resource.id === resourceId,
@@ -283,6 +285,32 @@
         redeploy: (resourceId) => dialogs?.askRedeploy(resourceId),
         canRedeploy: (resourceId) =>
             !graph.find((item) => item.id === resourceId)?.changed,
+        setRunning: (resourceId, running) => {
+            if (running) void dialogs?.start(resourceId);
+            else dialogs?.askStop(resourceId);
+        },
+        // Read when the menu opens, from the cache the card's status already fills.
+        runState: (resourceId) => {
+            const resource = resources.find(
+                (item) => item.id === resourceId,
+            );
+
+            if (
+                resource?.deploymentStatus !== "ready" ||
+                resource.bucketStatus
+            )
+                return undefined;
+
+            const containers = queryClient.getQueryData(
+                orpc.resources.getProjectContainers.queryKey({
+                    input: { clusterId, projectId },
+                }),
+            )?.[resourceId];
+
+            return containers && allExited(containers)
+                ? "stopped"
+                : "running";
+        },
         regroup: (nodeId, toResourceId) =>
             void regroup(nodeId, toResourceId),
         selectVolume: (resourceId, volume) =>
@@ -1379,6 +1407,7 @@
     selected={selected.current}
     onclose={() => select(null)}
     onopen={openPanel}
+    {clusterId}
     onerror={(message) => (moveNotice = { message, warnings: [] })}
 />
 

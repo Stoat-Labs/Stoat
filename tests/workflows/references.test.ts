@@ -9,6 +9,7 @@ import {
 } from "../../packages/workflows/src/compose";
 import {
     referencedResourceIds,
+    referenceKeys,
     referenceVariables,
     resolveReferences,
     type ReferenceTarget,
@@ -469,7 +470,7 @@ describe("system variables", () => {
         ).toMatchObject({ STOAT_RESOURCE_NAME: "custom" });
     });
 
-    it("lists the same keys that references can read", () => {
+    it("lists the same keys that references can read, plus Compose environment", () => {
         const shop = target(POSTGRES_ID, "postgres", "", web);
 
         const keys = composeSystemVariables(
@@ -481,7 +482,7 @@ describe("system variables", () => {
         ).map((variable) => variable.key);
 
         expect(Object.keys(referenceVariables(shop, "example.com")).toSorted()).toEqual(
-            keys.toSorted(),
+            [...keys, "SELF"].toSorted(),
         );
         expect(keys).toEqual(
             expect.arrayContaining([
@@ -490,6 +491,83 @@ describe("system variables", () => {
                 "WEB_INTERNAL_HOST",
                 "WEB_PUBLIC_DOMAIN",
             ]),
+        );
+    });
+});
+
+describe("Compose environment references", () => {
+    const worker = target(
+        REDIS_ID,
+        "worker",
+        "API_KEY=secret\nSHARED=from-variables\nINDIRECT=" + ref(POSTGRES_ID, "POSTGRES_USER"),
+        [
+            "x-common: &common",
+            "  COMMON: anchored",
+            "services:",
+            "  api:",
+            "    image: api",
+            "    environment:",
+            "      <<: *common",
+            "      WORKER_API_KEY: ${API_KEY}",
+            "      SHARED: from-compose",
+            "      PRICE: $$5",
+            "      FROM_REFERENCE: ${INDIRECT}",
+            "      UNSET: null",
+            "  jobs:",
+            "    image: jobs",
+            "    environment:",
+            "      - WORKER_API_KEY=second",
+            "      - JOBS_URL=http://${API_INTERNAL_HOST}",
+            "      - PASSTHROUGH",
+        ].join("\n"),
+    );
+
+    it("resolves keys only Compose sets, expanded like a deploy", () => {
+        expect(resolveReferences(`A=${ref(REDIS_ID, "WORKER_API_KEY")}`, [worker])).toEqual({
+            [`${REDIS_ID}.WORKER_API_KEY`]: "secret",
+        });
+        expect(referenceVariables(worker)).toMatchObject({
+            COMMON: "anchored",
+            PRICE: "$5",
+            JOBS_URL: "http://aaaaaaaa-66666666-api.internal",
+        });
+        expect(referenceVariables(worker)).not.toHaveProperty("UNSET");
+        expect(referenceVariables(worker)).not.toHaveProperty("PASSTHROUGH");
+    });
+
+    it("lets Variables win a key Compose also sets", () => {
+        expect(referenceVariables(worker).SHARED).toBe("from-variables");
+    });
+
+    it("refuses a Compose value that is itself a reference", () => {
+        expect(() => resolveReferences(`A=${ref(REDIS_ID, "FROM_REFERENCE")}`, [worker])).toThrow(
+            '"worker".FROM_REFERENCE is itself a reference, which cannot be referenced.',
+        );
+    });
+
+    it("labels each key with where it comes from, draft keys included", () => {
+        const keys = referenceKeys({
+            ...worker,
+            draftSpec:
+                worker.spec + "\n  extra:\n    image: x\n    environment:\n      DRAFT_ONLY: yes",
+        });
+
+        const source = (key: string) => keys.find((entry) => entry.key === key)?.source;
+
+        expect(source("API_KEY")).toBe("variables");
+        expect(source("SHARED")).toBe("variables");
+        expect(source("WORKER_API_KEY")).toBe("compose");
+        expect(source("DRAFT_ONLY")).toBe("compose");
+        expect(source("API_INTERNAL_HOST")).toBe("stoat");
+    });
+
+    it("still offers Variables when the Compose cannot be read", () => {
+        expect(referenceKeys({ ...worker, spec: "services: [", draftSpec: "services: [" })).toEqual(
+            [
+                { key: "API_KEY", source: "variables" },
+                { key: "INDIRECT", source: "variables" },
+                { key: "SHARED", source: "variables" },
+            ],
         );
     });
 });

@@ -21,70 +21,105 @@ const target = (
     name: string,
     projectId: string,
     projectName: string,
-    keys: string[] = [],
+    keys: ReferenceTarget["keys"] = [],
 ): ReferenceTarget => ({ id, name, projectId, projectName, keys });
 
 // Server order: by project name, then creation.
 const targets = [
     target("b0000000-0000-4000-8000-000000000001", "clickhouse", OTHER_PROJECT, "Analytics", [
-        "CH_PASSWORD",
+        { key: "CH_PASSWORD", source: "variables" },
     ]),
-    target(POSTGRES, "postgres", PROJECT, "Shop", ["DB_INTERNAL_HOST", "POSTGRES_USER"]),
-    target("b0000000-0000-4000-8000-000000000003", "redis", PROJECT, "Shop", ["URL"]),
+    target(POSTGRES, "postgres", PROJECT, "Shop", [
+        { key: "DB_INTERNAL_HOST", source: "stoat" },
+        { key: "POSTGRES_USER", source: "variables" },
+        { key: "WORKER_KEY", source: "compose" },
+    ]),
+    target("b0000000-0000-4000-8000-000000000003", "redis", PROJECT, "Shop", [
+        { key: "URL", source: "variables" },
+    ]),
     target("b0000000-0000-4000-8000-000000000004", "worker", THIRD_PROJECT, "Zebra", []),
 ];
 
+const labels = (groups: ReturnType<typeof referenceGroups>) =>
+    groups.map((group) => [group.label, group.items.map((item) => item.label)]);
+
 describe("referenceGroups", () => {
-    it("lists this project's resources first, then other projects in server order", () => {
-        expect(
-            referenceGroups(targets, PROJECT).map((group) => [
-                group.label,
-                group.items.map((item) => item.search),
-            ]),
-        ).toEqual([
-            ["This project", ["postgres", "redis"]],
-            ["Analytics", ["clickhouse"]],
-            ["Zebra", ["worker"]],
-        ]);
-    });
-
-    it("offers resources, not variables, in step one", () => {
-        for (const group of referenceGroups(targets, PROJECT))
-            for (const item of group.items) expect(item.key).toBeUndefined();
-    });
-
-    it("omits the This project group when it has nothing to offer", () => {
-        expect(referenceGroups(targets, THIRD_PROJECT).map((group) => group.label)).toEqual([
-            "This project",
-            "Analytics",
-            "Shop",
+    it("lists the current project first, then the rest in server order", () => {
+        expect(labels(referenceGroups(targets, { level: "projects" }, PROJECT))).toEqual([
+            ["Projects", ["Shop (this project)", "Analytics", "Zebra"]],
         ]);
         expect(
-            referenceGroups(targets, "aaaaaaaa-0000-4000-8000-00000000000f").map(
-                (group) => group.label,
+            referenceGroups(targets, { level: "projects" }, PROJECT)[0]?.items.map(
+                (item) => item.hint,
             ),
-        ).toEqual(["Analytics", "Shop", "Zebra"]);
-        expect(referenceGroups([], PROJECT)).toEqual([]);
+        ).toEqual(["2 resources", "1 resource", "1 resource"]);
     });
 
-    it("lists only the selected resource's variables in step two", () => {
+    it("leaves out a current project with nothing to reference", () => {
+        expect(
+            labels(
+                referenceGroups(
+                    targets,
+                    { level: "projects" },
+                    "aaaaaaaa-0000-4000-8000-00000000000f",
+                ),
+            ),
+        ).toEqual([["Projects", ["Analytics", "Shop", "Zebra"]]]);
+    });
+
+    it("lists one project's resources, each opening its variables", () => {
+        const [group] = referenceGroups(
+            targets,
+            { level: "resources", projectId: PROJECT },
+            PROJECT,
+        );
+
+        expect(group?.label).toBe("Shop");
+        expect(group?.items.map((item) => [item.label, item.hint])).toEqual([
+            ["postgres", "3 variables"],
+            ["redis", "1 variable"],
+        ]);
+        expect(group?.items[0]?.next).toEqual({
+            level: "variables",
+            projectId: PROJECT,
+            target: targets[1],
+        });
+        expect(
+            referenceGroups(targets, { level: "resources", projectId: OTHER_PROJECT }, PROJECT)[0]
+                ?.label,
+        ).toBe("Analytics");
+    });
+
+    it("groups a resource's variables by where they come from", () => {
         const postgres = targets[1]!;
 
-        expect(referenceGroups(targets, PROJECT, postgres)).toEqual([
-            {
-                label: "postgres",
-                items: [
-                    { target: postgres, key: "DB_INTERNAL_HOST", search: "DB_INTERNAL_HOST" },
-                    { target: postgres, key: "POSTGRES_USER", search: "POSTGRES_USER" },
-                ],
-            },
+        const groups = referenceGroups(
+            targets,
+            { level: "variables", projectId: PROJECT, target: postgres },
+            PROJECT,
+        );
+
+        expect(labels(groups)).toEqual([
+            ["Variables", ["POSTGRES_USER"]],
+            ["Set in Compose", ["WORKER_KEY"]],
+            ["Added by Stoat", ["DB_INTERNAL_HOST"]],
         ]);
+        expect(groups[0]?.items[0]).toEqual({
+            id: "POSTGRES_USER",
+            label: "POSTGRES_USER",
+            key: "POSTGRES_USER",
+            target: postgres,
+        });
     });
 
-    it("returns an empty group for a resource without variables", () => {
-        expect(referenceGroups(targets, PROJECT, targets[3])).toEqual([
-            { label: "worker", items: [] },
-        ]);
+    it("has no groups for a resource without variables", () => {
+        expect(
+            referenceGroups(
+                targets,
+                { level: "variables", projectId: THIRD_PROJECT, target: targets[3]! },
+                PROJECT,
+            ),
+        ).toEqual([]);
     });
 
     it("keeps same-named projects apart", () => {
@@ -93,22 +128,21 @@ describe("referenceGroups", () => {
             target("c0000000-0000-4000-8000-000000000002", "b", THIRD_PROJECT, "Twin"),
         ];
 
-        expect(referenceGroups(twins, PROJECT)).toHaveLength(2);
+        expect(referenceGroups(twins, { level: "projects" }, PROJECT)[0]?.items).toHaveLength(2);
     });
 });
 
 describe("referenceSpans", () => {
     const names = new Map([[POSTGRES, "postgres"]]);
 
-    it("locates the id inside each reference and names known resources", () => {
+    it("covers each whole reference and names known resources", () => {
         const text = `A={{ ${POSTGRES}.POSTGRES_USER }}\nB={{${POSTGRES.toUpperCase()}.URL}}\n`;
         const spans = referenceSpans(text, names);
 
-        expect(spans).toEqual([
-            { from: 5, to: 41, name: "postgres" },
-            { from: text.lastIndexOf("{{") + 2, to: text.lastIndexOf("{{") + 38, name: "postgres" },
+        expect(spans.map((span) => [text.slice(span.from, span.to), span.name, span.key])).toEqual([
+            [`{{ ${POSTGRES}.POSTGRES_USER }}`, "postgres", "POSTGRES_USER"],
+            [`{{${POSTGRES.toUpperCase()}.URL}}`, "postgres", "URL"],
         ]);
-        expect(text.slice(spans[0]!.from, spans[0]!.to)).toBe(POSTGRES);
     });
 
     it("leaves unknown or malformed resources unnamed so they get flagged", () => {
@@ -117,8 +151,8 @@ describe("referenceSpans", () => {
         expect(
             referenceSpans(text, names).map((span) => [text.slice(span.from, span.to), span.name]),
         ).toEqual([
-            ["99999999-2222-4333-8444-555555555555", undefined],
-            ["postgres", undefined],
+            ["{{ 99999999-2222-4333-8444-555555555555.X }}", undefined],
+            ["{{ postgres.X }}", undefined],
         ]);
     });
 

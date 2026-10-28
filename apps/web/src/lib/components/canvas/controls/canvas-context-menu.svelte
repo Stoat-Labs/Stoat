@@ -35,6 +35,7 @@
     import ChartColumn from "@lucide/svelte/icons/chart-column";
     import Container from "@lucide/svelte/icons/container";
     import Copy from "@lucide/svelte/icons/copy";
+    import CopyPlus from "@lucide/svelte/icons/copy-plus";
     import FolderInput from "@lucide/svelte/icons/folder-input";
     import Database from "@lucide/svelte/icons/database";
     import ExternalLink from "@lucide/svelte/icons/external-link";
@@ -42,7 +43,9 @@
     import FileCog from "@lucide/svelte/icons/file-cog";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import Layers from "@lucide/svelte/icons/layers";
+    import Play from "@lucide/svelte/icons/play";
     import RotateCw from "@lucide/svelte/icons/rotate-cw";
+    import Square from "@lucide/svelte/icons/square";
     import ScrollText from "@lucide/svelte/icons/scroll-text";
     import Settings from "@lucide/svelte/icons/settings";
     import SquareTerminal from "@lucide/svelte/icons/square-terminal";
@@ -247,6 +250,7 @@
             {/each}
             {#if page.data.isOrganizationAdmin && resourceId}
                 {@const id = resourceId}
+                {@const runState = actions.runState(id)}
                 <ContextMenuSeparator />
                 <!-- Staged edits ship through the apply bar instead. -->
                 <ContextMenuItem
@@ -256,6 +260,21 @@
                     <RotateCw aria-hidden="true" />
                     Redeploy
                 </ContextMenuItem>
+                {#if runState === "stopped"}
+                    <ContextMenuItem
+                        onclick={() => actions.setRunning(id, true)}
+                    >
+                        <Play aria-hidden="true" />
+                        Start
+                    </ContextMenuItem>
+                {:else if runState === "running"}
+                    <ContextMenuItem
+                        onclick={() => actions.setRunning(id, false)}
+                    >
+                        <Square aria-hidden="true" />
+                        Stop
+                    </ContextMenuItem>
+                {/if}
             {/if}
             {#if isFrame && resourceId}
                 {@const id = resourceId}
@@ -291,6 +310,12 @@
             {#if wholeResource && resourceId}
                 {@const id = resourceId}
                 <ContextMenuSeparator />
+                <ContextMenuItem
+                    onclick={() => actions.edit("duplicate", id)}
+                >
+                    <CopyPlus aria-hidden="true" />
+                    Duplicate…
+                </ContextMenuItem>
                 <ContextMenuItem
                     onclick={() => actions.edit("move", id)}
                 >

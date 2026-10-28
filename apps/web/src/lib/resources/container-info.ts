@@ -47,3 +47,13 @@ export function containerInfo(
         ),
     };
 }
+
+/** Every container has exited, as after a stop; some exiting while others run is a crash. */
+export function allExited(
+    containers: Awaited<ReturnType<AppRouterClient["resources"]["getContainers"]>>,
+) {
+    return (
+        containers.length > 0 &&
+        containers.every(({ container }) => containerInfo(container).status === "exited")
+    );
+}

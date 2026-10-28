@@ -103,6 +103,12 @@
             </MenuItem>
             <MenuSeparator />
             <MenuItem
+                onclick={() =>
+                    actions.edit("duplicate", data.resource.id)}
+            >
+                Duplicate…
+            </MenuItem>
+            <MenuItem
                 onclick={() => actions.edit("move", data.resource.id)}
             >
                 Move to Project…

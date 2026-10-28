@@ -2,20 +2,20 @@ import { RangeSetBuilder, StateField, type EditorState, type Extension } from "@
 import { Decoration, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { referenceResourceId, VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
 
-/** Shows a resource's name where its id sits in `{{ <id>.KEY }}`. */
-class ResourceNameWidget extends WidgetType {
-    constructor(readonly name: string) {
+/** Shows a whole `{{ <id>.KEY }}` as one `Name.KEY` chip. */
+class ReferenceWidget extends WidgetType {
+    constructor(readonly label: string) {
         super();
     }
 
-    override eq(other: ResourceNameWidget) {
-        return other.name === this.name;
+    override eq(other: ReferenceWidget) {
+        return other.label === this.label;
     }
 
     toDOM() {
         const chip = document.createElement("span");
         chip.className = "cm-reference-name";
-        chip.textContent = this.name;
+        chip.textContent = this.label;
 
         return chip;
     }
@@ -26,13 +26,17 @@ const unknownReference = Decoration.mark({
     attributes: { title: "Unknown resource. Type {{ and pick one instead." },
 });
 
-/** Where each reference's resource id sits, and its name when the id is a known resource. */
+/** Where each whole reference sits, and its resource's name when the id is a known resource. */
 export function referenceSpans(text: string, names: Map<string, string>) {
     return Array.from(text.matchAll(VARIABLE_REFERENCE), (match) => {
-        const [reference, id = ""] = match;
-        const from = match.index + reference.indexOf(id);
+        const [reference, id = "", key = ""] = match;
 
-        return { from, to: from + id.length, name: names.get(referenceResourceId(id) ?? "") };
+        return {
+            from: match.index,
+            to: match.index + reference.length,
+            name: names.get(referenceResourceId(id) ?? ""),
+            key,
+        };
     });
 }
 
@@ -44,18 +48,20 @@ export function typedTrigger(before: string, cursor: number): [number, number] |
 function referenceDecorations(state: EditorState, names: Map<string, string>) {
     const ranges = new RangeSetBuilder<Decoration>();
 
-    for (const { from, to, name } of referenceSpans(state.doc.toString(), names))
+    for (const { from, to, name, key } of referenceSpans(state.doc.toString(), names))
         ranges.add(
             from,
             to,
-            name ? Decoration.replace({ widget: new ResourceNameWidget(name) }) : unknownReference,
+            name
+                ? Decoration.replace({ widget: new ReferenceWidget(`${name}.${key}`) })
+                : unknownReference,
         );
 
     return ranges.finish();
 }
 
 /**
- * Editor side of `{{ <resourceId>.KEY }}`: ids render as resource names, and typing `{{`
+ * Editor side of `{{ <resourceId>.KEY }}`: each renders as a `Name.KEY` chip, and typing `{{`
  * (or Ctrl-Space) calls `onTrigger` with the range a picked reference should replace.
  */
 export function envReferences(
@@ -68,7 +74,7 @@ export function envReferences(
             transaction.docChanged ? referenceDecorations(transaction.state, names) : current,
         provide: (field) => [
             EditorView.decorations.from(field),
-            // The cursor skips over a whole id instead of stepping through its characters.
+            // The cursor skips a whole reference, and Backspace deletes it in one go.
             EditorView.atomicRanges.of((view) => view.state.field(field)),
         ],
     });

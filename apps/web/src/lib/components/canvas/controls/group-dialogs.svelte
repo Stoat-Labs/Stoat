@@ -131,6 +131,14 @@
 
 {#if resource && (action === "move" || action === "copy")}
     <TransferDialog mode={action} {projectId} {resource} {onclose} />
+{:else if resource && action === "duplicate"}
+    <TransferDialog
+        mode="copy"
+        duplicate
+        {projectId}
+        {resource}
+        {onclose}
+    />
 {/if}
 
 <ResourceIconUploadDialog

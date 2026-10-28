@@ -234,7 +234,9 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         expect(ids).not.toContain(internalResourceId);
         expect(ids).not.toContain(elsewhereId);
         expect(listed.find((target) => target.id === siblingId)).toEqual(
-            expect.objectContaining({ keys: expect.arrayContaining(["SECRET"]) }),
+            expect.objectContaining({
+                keys: expect.arrayContaining([{ key: "SECRET", source: "variables" }]),
+            }),
         );
         expect(JSON.stringify(listed)).not.toContain("leak-canary-7f3");
 
@@ -1424,6 +1426,39 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(await storedResource(row.id)).toEqual(row);
         },
     );
+
+    it.each([
+        [false, "stop"],
+        [true, "start"],
+    ] as const)("running %j calls %s on every service of the stack", async (running, action) => {
+        const row = await resource({
+            spec: "services:\n  web:\n    image: nginx\n  worker:\n    image: busybox\n",
+            settings: { prefixNames: false },
+        });
+
+        const input = { clusterId, projectId, resourceId: row.id, running };
+
+        fetch.mockImplementation(async () => Response.json({ status: "ok" }));
+
+        await expect(client.setRunning(input)).rejects.toMatchObject({ code: "FORBIDDEN" });
+        expect(fetch).not.toHaveBeenCalled();
+
+        await db.$client.query(`UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`);
+
+        try {
+            await client.setRunning(input);
+        } finally {
+            await db.$client.query(
+                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
+            );
+        }
+
+        expect(fetch.mock.calls.map(([request]) => request.url).sort()).toEqual([
+            `http://owned.test/api/v1/services/web/${action}`,
+            `http://owned.test/api/v1/services/worker/${action}`,
+        ]);
+        expect(fetch.mock.calls.every(([request]) => request.method === "POST")).toBe(true);
+    });
 
     it("gets containers from the saved draft when the resource has never been deployed", async () => {
         const row = await resource({

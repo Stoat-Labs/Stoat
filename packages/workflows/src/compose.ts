@@ -862,6 +862,55 @@ export function assertNoComposeReference(compose: string) {
         );
 }
 
+/**
+ * What services set in Compose `environment`, interpolated like a deploy. When two services
+ * set the same key, the first service in the file wins.
+ */
+export function composeServiceVariables(
+    compose: string,
+    envText: string,
+    prefix?: string,
+    domain?: string,
+    identity?: ResourceIdentity,
+): Record<string, string> {
+    const doc = YAML.parseDocument(
+        interpolateCompose(compose, envText, prefix, domain, undefined, identity),
+    );
+
+    const services = doc.get("services", true);
+    const variables: Record<string, string> = {};
+
+    if (!isMap(services)) return variables;
+
+    for (const { value: service } of services.items) {
+        if (!isMap(service)) continue;
+
+        const environment = resolvedNode(doc, mergedEntries(doc, service).get("environment"));
+        let entries: [string, string][] = [];
+
+        if (isSeq(environment))
+            entries = environment.items.flatMap((item) => {
+                const node = isNode(item) ? resolvedNode(doc, item) : undefined;
+                const line = isScalar(node) ? String(node.value) : "";
+                const split = line.indexOf("=");
+
+                // Bare `KEY` entries pass a host variable through and have no value here.
+                return split === -1 ? [] : [[line.slice(0, split), line.slice(split + 1)]];
+            });
+        else if (isMap(environment))
+            entries = [...mergedEntries(doc, environment)].flatMap(([name, value]) => {
+                const node = resolvedNode(doc, value);
+
+                return isScalar(node) && node.value !== null ? [[name, String(node.value)]] : [];
+            });
+
+        // Interpolated output keeps `$` escaped as `$$`.
+        for (const [name, value] of entries) variables[name] ??= value.replaceAll("$$", "$");
+    }
+
+    return variables;
+}
+
 /** Every variable a resource's Compose sees: built-ins plus its resolved `.env`. */
 export function composeVariables(
     compose: string,

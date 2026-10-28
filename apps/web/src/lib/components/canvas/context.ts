@@ -4,7 +4,7 @@ import { createContext } from "svelte";
 export const [getCanvasClock, setCanvasClock] = createContext<{ now: number }>();
 
 /** What a frame's ⋮ menu can do; nodes are rendered by Svelte Flow, so this comes via context. */
-export type GroupAction = "rename" | "icon-upload" | "icon-link" | "move" | "copy";
+export type GroupAction = "rename" | "icon-upload" | "icon-link" | "move" | "copy" | "duplicate";
 
 export const [getCanvasActions, setCanvasActions] = createContext<{
     edit: (action: GroupAction, resourceId: string) => void;
@@ -21,6 +21,10 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     redeploy: (resourceId: string) => void;
     /** Staged edits would ship with a redeploy, so it is only offered without any. */
     canRedeploy: (resourceId: string) => boolean;
+    /** Stops (the canvas confirms it first) or starts a resource's containers in place. */
+    setRunning: (resourceId: string, running: boolean) => void;
+    /** Undefined when there is nothing deployed to stop or start, like a bucket or a draft. */
+    runState: (resourceId: string) => "running" | "stopped" | undefined;
     /** Railway's "Group ›": moves a service card into another group, or out into its own (null). */
     regroup: (nodeId: string, toResourceId: string | null) => void;
     /** Opens a volume's pane, from the tray under the service that mounts it. */

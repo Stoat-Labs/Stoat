@@ -1,6 +1,7 @@
 <script lang="ts">
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
+    import ReferenceInput from "$lib/components/variables/reference-input.svelte";
     import VariableReferencePicker from "$lib/components/variables/variable-reference-picker.svelte";
     import {
         Alert,
@@ -40,7 +41,6 @@
     } from "nuqs-svelte";
     import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
     import * as v from "valibot";
-    import CanvasReferenceMenu from "./canvas-reference-menu.svelte";
     import {
         VariableHeader,
         VariableRow,
@@ -312,37 +312,6 @@
     }
 </script>
 
-<!-- A value field with Railway's `{}` button for inserting a reference to another resource's variable. -->
-{#snippet valueField(
-    value: string,
-    onchange: (value: string) => void,
-    onkeydown: (event: KeyboardEvent) => void,
-    label: string,
-    focus: boolean,
-)}
-    <div class="relative min-w-0 flex-1">
-        <Input
-            {value}
-            oninput={(event) => onchange(event.currentTarget.value)}
-            {onkeydown}
-            placeholder={"VALUE or {{ resource.KEY }}"}
-            aria-label={label}
-            autofocus={focus}
-            class="pr-10 font-mono"
-            autocomplete="off"
-            spellcheck={false}
-        />
-        <div class="absolute top-1/2 right-1 -translate-y-1/2">
-            <CanvasReferenceMenu
-                targets={references}
-                loading={referencesQuery.isPending}
-                onpick={(reference) =>
-                    onchange(`${value}${reference}`)}
-            />
-        </div>
-    </div>
-{/snippet}
-
 <div class="space-y-4">
     {#if adding}
         <form
@@ -362,13 +331,15 @@
                 spellcheck={false}
                 autofocus
             />
-            {@render valueField(
-                newValue,
-                (value) => (newValue = value),
-                escapeTo(() => (adding = false)),
-                "Variable value",
-                false,
-            )}
+            <ReferenceInput
+                bind:value={newValue}
+                label="Variable value"
+                targets={references}
+                projectId={resource.projectId}
+                loading={referencesQuery.isPending}
+                onsubmit={() => void add()}
+                onescape={() => (adding = false)}
+            />
             <Button
                 type="submit"
                 loading={saving}
@@ -484,13 +455,16 @@
                                 void update();
                             }}
                         >
-                            {@render valueField(
-                                editValue,
-                                (value) => (editValue = value),
-                                escapeTo(() => (editing = undefined)),
-                                `${variable.key} value`,
-                                true,
-                            )}
+                            <ReferenceInput
+                                bind:value={editValue}
+                                label="{variable.key} value"
+                                targets={references}
+                                projectId={resource.projectId}
+                                loading={referencesQuery.isPending}
+                                autofocus
+                                onsubmit={() => void update()}
+                                onescape={() => (editing = undefined)}
+                            />
                             <Button
                                 size="icon-sm"
                                 variant="ghost"

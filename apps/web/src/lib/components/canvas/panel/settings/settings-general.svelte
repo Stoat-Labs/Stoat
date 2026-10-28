@@ -65,6 +65,12 @@
         <div class="mt-3 flex flex-wrap gap-2">
             <Button
                 variant="outline"
+                onclick={() => actions.edit("duplicate", resource.id)}
+            >
+                Duplicate
+            </Button>
+            <Button
+                variant="outline"
                 onclick={() => actions.edit("move", resource.id)}
             >
                 Move to Project

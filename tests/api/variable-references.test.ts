@@ -191,15 +191,16 @@ describe("variable references API (PostgreSQL)", () => {
                 projectId,
                 projectName: "Shop",
                 keys: [
-                    "DB_INTERNAL_HOST",
-                    "DB_SERVICE_NAME",
-                    "POSTGRES_PASSWORD",
-                    "POSTGRES_USER",
-                    "STOAT_PREFIX",
-                    "STOAT_PROJECT_ID",
-                    "STOAT_PROJECT_NAME",
-                    "STOAT_RESOURCE_ID",
-                    "STOAT_RESOURCE_NAME",
+                    { key: "DB_INTERNAL_HOST", source: "stoat" },
+                    { key: "DB_SERVICE_NAME", source: "stoat" },
+                    { key: "POSTGRES_PASSWORD", source: "variables" },
+                    { key: "POSTGRES_USER", source: "variables" },
+                    { key: "STOAT_DOMAIN", source: "stoat" },
+                    { key: "STOAT_PREFIX", source: "stoat" },
+                    { key: "STOAT_PROJECT_ID", source: "stoat" },
+                    { key: "STOAT_PROJECT_NAME", source: "stoat" },
+                    { key: "STOAT_RESOURCE_ID", source: "stoat" },
+                    { key: "STOAT_RESOURCE_NAME", source: "stoat" },
                 ],
             });
             expect(listed.find((target) => target.id === workerId)).toMatchObject({
@@ -214,7 +215,9 @@ describe("variable references API (PostgreSQL)", () => {
                 context,
             });
 
-            expect(listed.find((target) => target.id === brokenId)?.keys).toEqual(["SECRET"]);
+            expect(listed.find((target) => target.id === brokenId)?.keys).toEqual([
+                { key: "SECRET", source: "variables" },
+            ]);
         });
 
         it("never lists the resource itself", async () => {
@@ -432,9 +435,10 @@ describe("variable references API (PostgreSQL)", () => {
                 { context },
             );
 
-            expect(listed.find((target) => target.id === database!.id)?.keys).toContain(
-                "POSTGRES_PASSWORD",
-            );
+            expect(listed.find((target) => target.id === database!.id)?.keys).toContainEqual({
+                key: "POSTGRES_PASSWORD",
+                source: "variables",
+            });
         });
     });
 });

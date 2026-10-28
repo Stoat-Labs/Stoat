@@ -1,11 +1,11 @@
+import { getRequestEvent } from "$app/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { onError } from "@orpc/server";
 import { appRouter } from "@stoat/api/routers/index";
-import { getRequestEvent } from "$app/server";
 import type { RequestHandler } from "@sveltejs/kit";
 
-import { createContext } from "../../../context";
 import { logRpcError } from "$lib/server/rpc-errors";
+import { createContext } from "../../../context";
 
 // The browser talks RPC over the /rpc WebSocket ($lib/server/rpc-socket.ts). This route only
 // serves the REST API, since API key clients send an x-api-key header a WebSocket cannot carry.

@@ -25,7 +25,7 @@ import { composeSystemVariables, composeVariables } from "@stoat/workflows/compo
 import {
     referencedResourceIds,
     referenceTargets,
-    referenceVariables,
+    referenceKeys,
     resolveReferences,
 } from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
@@ -229,6 +229,17 @@ function deployTarget(
                 eq(clusters.organizationId, organizationId),
             ),
         );
+}
+
+// The Uncloud services a resource runs: the last ready deploy's, or the draft's before one.
+async function resourceServiceNames(db: Database, resource: Resource) {
+    const monitoring = await isMonitoringResource(db, resource.id);
+
+    const snapshot = monitoring
+        ? undefined
+        : (await deployedSnapshots(db, [resource.id])).get(resource.id);
+
+    return serviceNamesFor(resource, snapshot, monitoring);
 }
 
 // Internal projects are only visible to organization admins.
@@ -1466,26 +1477,19 @@ export const resourcesRouter = {
 
             const targets = await referenceTargets(db, project.clusterId);
 
-            return targets.flatMap((target) => {
-                if (target.id === input.resourceId) return [];
-                let keys: string[];
-
-                try {
-                    keys = Object.keys(referenceVariables(target));
-                } catch {
-                    keys = Object.keys(parseEnv(resourceEnv(target)));
-                }
-
-                return [
-                    {
-                        id: target.id,
-                        name: target.name,
-                        projectId: target.projectId,
-                        projectName: target.projectName,
-                        keys: keys.toSorted(),
-                    },
-                ];
-            });
+            return targets.flatMap((target) =>
+                target.id === input.resourceId
+                    ? []
+                    : [
+                          {
+                              id: target.id,
+                              name: target.name,
+                              projectId: target.projectId,
+                              projectName: target.projectName,
+                              keys: referenceKeys(target),
+                          },
+                      ],
+            );
         }),
 
     createResource: organizationProcedure
@@ -1972,13 +1976,7 @@ export const resourcesRouter = {
         .use(uncloudMiddleware)
         .use(resourceReadMiddleware)
         .handler(async ({ context: { db, resource, uc } }) => {
-            const monitoring = await isMonitoringResource(db, resource.id);
-
-            const snapshot = monitoring
-                ? undefined
-                : (await deployedSnapshots(db, [resource.id])).get(resource.id);
-
-            const serviceNames = serviceNamesFor(resource, snapshot, monitoring);
+            const serviceNames = await resourceServiceNames(db, resource);
 
             const containers = await Promise.all(
                 serviceNames.map(async (id) => {
@@ -2066,6 +2064,33 @@ export const resourcesRouter = {
             );
         }),
 
+    // Stops or starts the resource's containers in place. Nothing records it, so the next deploy starts them again.
+    setRunning: organizationAdminProcedure
+        .input(
+            v.object({
+                clusterId: v.pipe(v.string(), v.uuid()),
+                projectId: v.pipe(v.string(), v.uuid()),
+                resourceId: v.pipe(v.string(), v.uuid()),
+                running: v.boolean(),
+            }),
+        )
+        .use(uncloudMiddleware)
+        .use(resourceMiddleware)
+        .handler(async ({ context: { db, resource, uc }, input }) => {
+            const serviceNames = await resourceServiceNames(db, resource);
+
+            if (serviceNames.length === 0) {
+                throw new ORPCError("BAD_REQUEST", { message: "Resource has no services to run." });
+            }
+
+            const path = input.running
+                ? "/api/v1/services/{id}/start"
+                : "/api/v1/services/{id}/stop";
+
+            await Promise.all(
+                serviceNames.map((id) => unwrap(uc.POST(path, { params: { path: { id } } }))),
+            );
+        }),
     getFormattedCompose: organizationProcedure
         .input(
             v.object({

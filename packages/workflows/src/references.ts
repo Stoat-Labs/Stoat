@@ -3,6 +3,7 @@ import { parseEnv } from "node:util";
 import {
     ComposeVariableError,
     assertNoComposeReference,
+    composeServiceVariables,
     composeVariables,
     resourceComposePrefix,
     resourceEnv,
@@ -60,27 +61,76 @@ export function referencedResourceIds(envText: string) {
     return [...ids];
 }
 
-/** Variables a target exposes to references: built-ins plus its own resolved `.env`. */
-export function referenceVariables(target: ReferenceTarget, domain?: string) {
+/** Where a referenceable key comes from, so pickers can group them like the Variables tab. */
+export type ReferenceSource = "variables" | "compose" | "stoat";
+
+function readVariables(target: ReferenceTarget, domain?: string) {
+    const env = resourceEnv(target);
+    const prefix = resourceComposePrefix(target);
+
+    const identity = {
+        projectId: target.projectId,
+        projectName: target.projectName,
+        resourceId: target.id,
+        resourceName: target.name,
+    };
+
+    let variables: Record<string, string>;
+
     try {
-        return composeVariables(
-            target.spec,
-            resourceEnv(target),
-            resourceComposePrefix(target),
-            domain,
-            undefined,
-            {
-                projectId: target.projectId,
-                projectName: target.projectName,
-                resourceId: target.id,
-                resourceName: target.name,
-            },
-        );
+        variables = composeVariables(target.spec, env, prefix, domain, undefined, identity);
     } catch (error) {
         const reason = error instanceof Error ? error.message : "Invalid variables.";
 
         throw new ComposeVariableError(`Unable to read variables from "${target.name}": ${reason}`);
     }
+
+    let compose: Record<string, string> = {};
+
+    try {
+        compose = composeServiceVariables(target.spec, env, prefix, domain, identity);
+    } catch {
+        // A Compose file that cannot deploy only loses its own keys; Variables still resolve.
+    }
+
+    return { variables, compose };
+}
+
+/**
+ * Variables a target exposes to references: built-ins, its own resolved `.env`, and what its
+ * Compose `environment` sets. Variables win a shared key, though the container sees Compose's.
+ */
+export function referenceVariables(target: ReferenceTarget, domain?: string) {
+    const { variables, compose } = readVariables(target, domain);
+
+    return { ...compose, ...variables };
+}
+
+/** Keys a picker offers, by source. Draft keys count too, since references fall back to the draft. */
+export function referenceKeys(target: ReferenceTarget) {
+    const own = parseEnv(resourceEnv(target));
+    const keys = new Map<string, ReferenceSource>();
+
+    for (const spec of new Set([target.spec, target.draftSpec ?? target.spec])) {
+        let read: ReturnType<typeof readVariables>;
+
+        try {
+            // Keys only, so any domain satisfies `${STOAT_DOMAIN:?}`.
+            read = readVariables({ ...target, spec }, "stoat-domain.invalid");
+        } catch {
+            continue;
+        }
+
+        for (const key of Object.keys({ ...read.compose, ...read.variables }))
+            keys.set(key, key in own ? "variables" : key in read.variables ? "stoat" : "compose");
+    }
+
+    // Unreadable Compose still leaves the target's own Variables to offer.
+    if (keys.size === 0) for (const key of Object.keys(own)) keys.set(key, "variables");
+
+    return Array.from(keys, ([key, source]) => ({ key, source })).toSorted((a, b) =>
+        a.key < b.key ? -1 : 1,
+    );
 }
 
 function draftVariable(target: ReferenceTarget, key: string, domain?: string) {

@@ -2,7 +2,10 @@
     import { orpc } from "$lib/api/orpc";
     import { isActiveDeploymentStatus } from "$lib/deployments/status";
     import { ago } from "$lib/format";
-    import { containerInfo } from "$lib/resources/container-info";
+    import {
+        allExited,
+        containerInfo,
+    } from "$lib/resources/container-info";
     import CircleCheck from "@lucide/svelte/icons/circle-check";
     import CircleX from "@lucide/svelte/icons/circle-x";
     import LoaderCircle from "@lucide/svelte/icons/loader-circle";
@@ -53,6 +56,10 @@
         }) ?? false,
     );
 
+    const stopped = $derived(
+        containers ? allExited(containers) : false,
+    );
+
     const finishedAt = $derived(
         resource.deploymentFinishedAt ?? resource.deploymentCreatedAt,
     );
@@ -85,6 +92,8 @@
 
         if (status === "failed") return "failed";
 
+        if (stopped) return "stopped";
+
         if (unhealthy) return "unhealthy";
 
         return finishedAt &&
@@ -112,6 +121,8 @@
     <p class="truncate text-sm text-muted-foreground">
         {draftOnly ? "Draft, not deployed" : "Service is offline"}
     </p>
+{:else if state === "stopped"}
+    <p class="truncate text-sm text-muted-foreground">Stopped</p>
 {:else if state === "cancelled"}
     <p class="truncate text-sm text-muted-foreground">
         Deploy cancelled {finishedAt

@@ -33,11 +33,14 @@
 
     let {
         mode: initialMode,
+        duplicate = false,
         projectId,
         resource,
         onclose,
     }: {
         mode: "move" | "copy";
+        /** Railway's Duplicate: a copy with this project already picked. */
+        duplicate?: boolean;
         projectId: string;
         resource: CanvasResource;
         onclose: () => void;
@@ -46,7 +49,9 @@
     // A deployed resource can't move to another cluster, so the dialog offers to copy it instead.
     let mode = $state(untrack(() => initialMode));
 
-    let targetId = $state("");
+    let targetId = $state(
+        untrack(() => (duplicate ? projectId : "")),
+    );
 
     let editedName = $state<string | null>(null);
 
