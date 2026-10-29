@@ -20,10 +20,12 @@ import {
     DeployResource,
     HealthCheck,
     InitializeCluster,
+    ProvisionCluster,
     ReconcileBucket,
     RollOutMonitoring,
     WatchGitSources,
 } from "./jobs";
+import { provisionCluster } from "./provision-cluster";
 import { reconcileBucket } from "./reconcile-bucket";
 import { JobStoreLive, PgLive } from "./store";
 
@@ -160,6 +162,15 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
             // One rollout per cluster is enforced when queueing; across clusters they are independent.
             { concurrency: 4 },
         ),
+        ProvisionCluster.toLayer(
+            ({ deploymentId }) =>
+                attempt(
+                    (signal) => provisionCluster(db, deploymentId, signal),
+                    // provisionCluster records its own failure; uc's messages carry no secrets.
+                    (error) => error,
+                ),
+            { concurrency: 2 },
+        ),
         ReconcileBucket.toLayer(
             ({ resourceId, requestId }) =>
                 attempt(
@@ -230,6 +241,15 @@ async function recordBucketFailureAsync(db: Database, failure: Worker.JobFailure
     );
 }
 
+// The job's own message when an attempt failed without recording one.
+function deploymentFailureMessage(name: string) {
+    if (name === "DeployCaddy") return CADDY_FAILURE_MESSAGE;
+
+    if (name === "ProvisionCluster") return "Setting up the cluster failed.";
+
+    return RESOURCE_FAILURE_MESSAGE;
+}
+
 async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
     // effect-mq namespaces deterministic ids as `<JobName>/<idempotencyKey>`,
     // so strip the prefix before matching our `${clusterId}:${requestId}` shape.
@@ -259,15 +279,18 @@ async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
         return;
     }
 
-    if (failure.name === "DeployResource" || failure.name === "DeployCaddy") {
+    if (
+        failure.name === "DeployResource" ||
+        failure.name === "DeployCaddy" ||
+        failure.name === "ProvisionCluster"
+    ) {
         if (!deployment || !["queued", "running"].includes(deployment.status)) return;
         const cause = Cause.squash(failure.cause);
         const timedOut = Cause.isTimeoutError(cause);
 
         const reason = timedOut
             ? cause.message
-            : (deployment.error ??
-              (failure.name === "DeployCaddy" ? CADDY_FAILURE_MESSAGE : RESOURCE_FAILURE_MESSAGE));
+            : (deployment.error ?? deploymentFailureMessage(failure.name));
 
         // The attempt already logged its own reason; only timeouts are new here.
         const text = timedOut ? reason : "Deployment failed.";
@@ -307,6 +330,7 @@ function workerLive(db: Database) {
             monitoring: { concurrency: 1 },
             health: { concurrency: 1 },
             git: { concurrency: 2 },
+            provision: { concurrency: 2 },
         },
         lockDuration: "10 minutes",
         // effect-mq also delivers cross-process cancellation on this heartbeat.
@@ -322,6 +346,7 @@ function workerLive(db: Database) {
             if (
                 failure.name !== "DeployResource" &&
                 failure.name !== "DeployCaddy" &&
+                failure.name !== "ProvisionCluster" &&
                 failure.name !== "InitializeCluster"
             )
                 return Effect.void;
@@ -387,15 +412,14 @@ export async function queueClusterHealthCheck(clusterId: string): Promise<void> 
  */
 export async function cancelDeploymentJob(
     jobId: string,
-    name: "InitializeCluster" | "DeployResource" | "DeployCaddy" = "InitializeCluster",
+    name:
+        | "InitializeCluster"
+        | "DeployResource"
+        | "DeployCaddy"
+        | "ProvisionCluster" = "InitializeCluster",
 ): Promise<void> {
     try {
-        const job =
-            name === "DeployResource"
-                ? DeployResource
-                : name === "DeployCaddy"
-                  ? DeployCaddy
-                  : InitializeCluster;
+        const job = { InitializeCluster, DeployResource, DeployCaddy, ProvisionCluster }[name];
 
         const program = job
             .cancel(JobStore.JobId(`${name}/${jobId}`))
@@ -416,7 +440,7 @@ async function pollOutboxAsync(db: Database) {
 
     const queued = await db.$client.query<{ deploymentId: string; name: string }>(
         `SELECT id AS "deploymentId", name FROM deployments
-         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy')`,
+         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy', 'ProvisionCluster')`,
     );
 
     const buckets = await pendingBucketRequests(db);
@@ -430,13 +454,14 @@ async function pollOutboxAsync(db: Database) {
         caddy: queued.rows.filter((row) => row.name === "DeployCaddy"),
         buckets,
         monitoring,
+        provisions: queued.rows.filter((row) => row.name === "ProvisionCluster"),
     };
 }
 
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox(db: Database) {
     return Effect.promise(() => pollOutboxAsync(db)).pipe(
-        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring }) =>
+        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring, provisions }) =>
             Effect.forEach(
                 [
                     ...initialization.map((row) =>
@@ -455,6 +480,9 @@ export function pollInitializationOutbox(db: Database) {
                     ...monitoring.map(({ clusterId }) =>
                         RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
                     ),
+                    ...provisions.map(({ deploymentId }) =>
+                        ProvisionCluster.enqueue({ deploymentId }),
+                    ),
                 ],
                 (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
             ),
@@ -470,6 +498,7 @@ export {
     DeployResource,
     HealthCheck,
     InitializeCluster,
+    ProvisionCluster,
     ReconcileBucket,
     RollOutMonitoring,
 };

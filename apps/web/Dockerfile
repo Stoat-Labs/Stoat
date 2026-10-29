@@ -35,11 +35,29 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local,required=fals
     && pnpm --filter @stoat/stoat build \
     && pnpm deploy --filter @stoat/stoat --prod /app/runtime --legacy
 
+# The Uncloud CLI that ProvisionCluster uses to create clusters over SSH. Keep the version in sync
+# with github.com/psviderski/uncloud in apps/sidecar/go.mod, and the hashes with its checksums.txt.
+FROM alpine:3.23.3 AS uc
+
+ARG TARGETARCH
+ARG UNCLOUD_VERSION=0.21.0
+ARG UC_SHA256_amd64=11a87551d31144a5837c04d87d4f984c2a62b29052bb3a29d2a5cb72be7de616
+ARG UC_SHA256_arm64=f9416a97a409865238e8a7be5ad4a0441cc8523c8f33967a9a87eea27109d47e
+
+RUN apk --no-cache add curl \
+    && curl -fsSL --retry 3 -o /tmp/uc.tar.gz \
+        "https://github.com/psviderski/uncloud/releases/download/v${UNCLOUD_VERSION}/uc_linux_${TARGETARCH}.tar.gz" \
+    && eval "sha=\$UC_SHA256_${TARGETARCH}" \
+    && echo "${sha}  /tmp/uc.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/uc.tar.gz -C /usr/local/bin uc
+
 FROM node:24-alpine AS runtime
 
 # Git operations use both HTTPS and SSH at runtime.
 RUN apk add --no-cache ca-certificates git openssh-client \
     && npm install --global pnpm@12.4.2
+
+COPY --from=uc /usr/local/bin/uc /usr/local/bin/uc
 
 WORKDIR /app
 ENV NODE_ENV=production \

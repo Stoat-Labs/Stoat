@@ -10,7 +10,7 @@ import {
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
-import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
@@ -538,6 +538,7 @@ const monitoringMiddleware = organizationProcedure.middleware(
                 id: clusters.id,
                 sidecarUrl: clusters.sidecarUrl,
                 sidecarToken: clusters.sidecarToken,
+                sidecarCertificate: clusters.sidecarCertificate,
                 initializedAt: clusters.initializedAt,
                 password: clusterMonitoring.encryptedPassword,
                 monitoringResource: clusterMonitoring.resourceId,
@@ -560,7 +561,10 @@ const monitoringMiddleware = organizationProcedure.middleware(
         return next({
             context: {
                 cluster: { ...cluster, password: cluster.password },
-                uc: ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken }),
+                uc: ucClient(cluster.sidecarUrl, {
+                    token: cluster.sidecarToken,
+                    certificate: cluster.sidecarCertificate,
+                }),
             },
         });
     },
@@ -575,7 +579,8 @@ export const observabilityRouter = {
                 monitored: sql<boolean>`${clusters.initializedAt} is not null`,
             })
             .from(clusters)
-            .where(eq(clusters.organizationId, organizationId))
+            // A cluster still being set up can't be monitored yet.
+            .where(and(eq(clusters.organizationId, organizationId), isNull(clusters.provisioning)))
             .orderBy(asc(clusters.name)),
     ),
     getObservabilityMachines: organizationProcedure

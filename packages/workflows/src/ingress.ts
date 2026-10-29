@@ -222,6 +222,15 @@ export function hostnameError(hostname: string): string | null {
     return null;
 }
 
+/** Whether Uncloud takes `domain` as a cluster domain: two labels or more and no wildcard. */
+export function isClusterDomain(domain: string) {
+    return (
+        !domain.startsWith("*") &&
+        domain.replace(/\.$/u, "").includes(".") &&
+        hostnameError(domain) === null
+    );
+}
+
 /** Null when the text is an integer port in range. */
 export function portTextError(portText: string): string | null {
     if (!/^[0-9]+$/u.test(portText)) return `"${portText}" is not a valid port.`;

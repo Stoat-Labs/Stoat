@@ -4,6 +4,8 @@
     import CaddyDialog from "$lib/components/clusters/caddy-dialog.svelte";
     import ClusterCaddyCard from "$lib/components/clusters/cluster-caddy-card.svelte";
     import ClusterConnectionsFlow from "$lib/components/clusters/cluster-connections-flow.svelte";
+    import ClusterDomainCard from "$lib/components/clusters/cluster-domain-card.svelte";
+    import ClusterDomainDialog from "$lib/components/clusters/cluster-domain-dialog.svelte";
     import ClusterMachinesTable from "$lib/components/clusters/cluster-machines-table.svelte";
     import ClusterMonitoringCard from "$lib/components/clusters/cluster-monitoring-card.svelte";
     import ClusterSummaryStrip from "$lib/components/clusters/cluster-summary-strip.svelte";
@@ -169,7 +171,9 @@
             | "reinitialize"
             | "monitoring"
             | "retention"
-            | "caddy",
+            | "caddy"
+            | "domain"
+            | "remove-domain",
     ) {
         void dialog.set(next);
     }
@@ -433,6 +437,11 @@
                 clusterId={cluster.id}
                 onconfigure={() => openDialog("caddy")}
             />
+
+            <ClusterDomainCard
+                clusterId={cluster.id}
+                onopendialog={openDialog}
+            />
         {:else}
             <Alert variant="error">
                 <CircleAlert aria-hidden="true" />
@@ -481,6 +490,7 @@
         {clusterId}
         ondeployed={openDeployment}
     />
+    <ClusterDomainDialog {clusterId} />
 {/if}
 <MonitoringConnectionDialog
     bind:open={

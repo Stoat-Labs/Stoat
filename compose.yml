@@ -94,6 +94,8 @@ services:
             SIDECAR_TOKEN: ${SIDECAR_TOKEN:?set SIDECAR_TOKEN to a random secret, e.g. openssl rand -hex 32}
         volumes:
             - /run/uncloud:/run/uncloud:ro
+            # The sidecar installs the GeoIP database Alloy reads from here (--geoip-dir).
+            - /var/lib/stoat/geoip:/host/var/lib/stoat/geoip
         # Root + privileged + host PID: the sidecar talks to the Uncloud socket and
         # runs host commands via nsenter into PID 1. Uncloud ignores group_add.
         user: root

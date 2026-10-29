@@ -45,7 +45,11 @@
 
     const clustersQuery = createQuery(() =>
         orpc.cluster.listClusters.queryOptions({
-            input: { limit: 100, includeDiagnostics: false },
+            input: {
+                limit: 100,
+                includeDiagnostics: false,
+                includeSettingUp: false,
+            },
         }),
     );
 

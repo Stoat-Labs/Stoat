@@ -217,7 +217,11 @@ export function createInitializeClusterHandler(
                     : "Starting cluster monitoring initialization.",
             );
             const config = cluster.initializationConfiguration!;
-            const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+            const uc = ucClient(cluster.sidecarUrl, {
+                token: cluster.sidecarToken,
+                certificate: cluster.sidecarCertificate,
+            });
 
             const machines = await unwrap(
                 uc.GET("/api/v1/machines", {

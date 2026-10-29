@@ -1,7 +1,8 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, projects, resources, s3Buckets } from "@stoat/db/schema/index";
+import { latestProvisioningDeployments } from "@stoat/db/clusters";
+import { clusters, deployments, projects, resources, s3Buckets } from "@stoat/db/schema/index";
 import { ucClient, unwrap } from "@stoat/uncloud";
-import { and, asc, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 import { queueClusterHealthCheck } from "@stoat/workflows/runtime";
@@ -13,20 +14,27 @@ import {
 } from "../..";
 import { caddyRouter } from "./caddy";
 import { deploymentsRouter } from "./deployments";
+import { domainRouter } from "./domain";
 import { initializationRouter, monitoringRouter } from "./initialization";
 import { metricsRouter } from "./metrics";
 import { observabilityRouter } from "./observability";
+import { provisioningRouter, provisioningStatus } from "./provisioning";
 
 const clusterInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
 });
 
-async function getClusterDiagnostics(sidecarUrl: string, sidecarToken: string) {
+async function getClusterDiagnostics(
+    sidecarUrl: string,
+    sidecarToken: string,
+    sidecarCertificate: string | null,
+) {
     try {
         return await unwrap(
-            ucClient(sidecarUrl, { token: sidecarToken }).GET("/api/v1/cluster/diagnostics", {
-                signal: AbortSignal.timeout(10_000),
-            }),
+            ucClient(sidecarUrl, { token: sidecarToken, certificate: sidecarCertificate }).GET(
+                "/api/v1/cluster/diagnostics",
+                { signal: AbortSignal.timeout(10_000) },
+            ),
         );
     } catch {
         return null;
@@ -40,12 +48,16 @@ export const clusterRouter = {
     ...metricsRouter,
     ...observabilityRouter,
     ...caddyRouter,
+    ...domainRouter,
+    ...provisioningRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(
                 v.object({
                     q: v.optional(v.string()),
                     includeDiagnostics: v.optional(v.boolean(), true),
+                    // Pickers leave out clusters that can't be used until their setup finishes.
+                    includeSettingUp: v.optional(v.boolean(), true),
                     limit: v.optional(
                         v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
                     ),
@@ -60,9 +72,11 @@ export const clusterRouter = {
 
             const pattern = q ? `%${q.replace(/([%_])/g, "\\$1")}%` : null;
 
-            const conditions = pattern
-                ? and(eq(clusters.organizationId, organizationId), ilike(clusters.name, pattern))
-                : eq(clusters.organizationId, organizationId);
+            const conditions = and(
+                eq(clusters.organizationId, organizationId),
+                pattern ? ilike(clusters.name, pattern) : undefined,
+                input?.includeSettingUp === false ? isNull(clusters.provisioning) : undefined,
+            );
 
             // Connection credentials must never be included in the browser response.
             const items = await db
@@ -75,6 +89,8 @@ export const clusterRouter = {
                     updatedAt: clusters.updatedAt,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
+                    provisioning: clusters.provisioning,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -86,20 +102,48 @@ export const clusterRouter = {
                 .limit(limit)
                 .offset(offset);
 
+            const attempts = await latestProvisioningDeployments(
+                db,
+                items.flatMap((item) => (item.provisioning ? [item.id] : [])),
+            );
+
             const [row] = await db
                 .select({ count: sql<number>`count(*)::int` })
                 .from(clusters)
                 .where(conditions);
 
             const itemsWithDiagnostics = await Promise.all(
-                items.map(async ({ sidecarUrl, sidecarToken, ...item }) => {
-                    const diagnostics =
-                        input?.includeDiagnostics === false
-                            ? null
-                            : await getClusterDiagnostics(sidecarUrl, sidecarToken);
+                items.map(
+                    async ({
+                        sidecarUrl,
+                        sidecarToken,
+                        sidecarCertificate,
+                        provisioning,
+                        ...item
+                    }) => {
+                        // A cluster still being set up has no sidecar to ask yet.
+                        const diagnostics =
+                            input?.includeDiagnostics === false || provisioning
+                                ? null
+                                : await getClusterDiagnostics(
+                                      sidecarUrl,
+                                      sidecarToken,
+                                      sidecarCertificate,
+                                  );
 
-                    return { ...item, diagnostics };
-                }),
+                        const setup = provisioning
+                            ? {
+                                  host: provisioning.host,
+                                  status: provisioningStatus(
+                                      provisioning,
+                                      attempts.get(item.id)?.status,
+                                  ),
+                              }
+                            : null;
+
+                        return { ...item, setup, diagnostics };
+                    },
+                ),
             );
 
             return {
@@ -126,6 +170,8 @@ export const clusterRouter = {
                     updatedAt: clusters.updatedAt,
                     sidecarUrl: clusters.sidecarUrl,
                     sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
+                    provisioning: clusters.provisioning,
                     projectCount: sql<number>`count(${projects.id}) filter (where ${projects.isInternal} is not true)::int`,
                 })
                 .from(clusters)
@@ -144,8 +190,19 @@ export const clusterRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
             }
 
-            const { sidecarUrl, sidecarToken, initializationConfiguration, ...item } = cluster;
-            const diagnostics = await getClusterDiagnostics(sidecarUrl, sidecarToken);
+            const {
+                sidecarUrl,
+                sidecarToken,
+                sidecarCertificate,
+                provisioning,
+                initializationConfiguration,
+                ...item
+            } = cluster;
+
+            // A cluster still being set up has no sidecar to ask yet.
+            const diagnostics = provisioning
+                ? null
+                : await getClusterDiagnostics(sidecarUrl, sidecarToken, sidecarCertificate);
 
             const canInitialize = isOrganizationAdmin(organizationRole);
 
@@ -164,6 +221,7 @@ export const clusterRouter = {
 
             return {
                 ...item,
+                settingUp: provisioning !== null,
                 retentionDays: initializationConfiguration?.retentionDays ?? null,
                 diagnostics,
                 canInitialize,
@@ -216,62 +274,72 @@ export const clusterRouter = {
 
     deleteCluster: organizationAdminProcedure
         .input(clusterInput)
-        .handler(async ({ context: { db, organizationId }, input }) => {
-            const [cluster] = await db
-                .select({ id: clusters.id, initializationStatus: clusters.initializationStatus })
-                .from(clusters)
-                .where(
-                    and(
-                        eq(clusters.id, input.clusterId),
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                )
-                .limit(1);
+        .handler(async ({ context: { db, organizationId }, input }) =>
+            // The row lock makes starting setup or initialization wait until this delete is done.
+            db.transaction(async (tx) => {
+                const [cluster] = await tx
+                    .select({
+                        id: clusters.id,
+                        initializationStatus: clusters.initializationStatus,
+                    })
+                    .from(clusters)
+                    .where(
+                        and(
+                            eq(clusters.id, input.clusterId),
+                            eq(clusters.organizationId, organizationId),
+                        ),
+                    )
+                    .for("update");
 
-            if (!cluster) {
-                throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
-            }
+                if (!cluster) {
+                    throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
+                }
 
-            if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {
-                throw new ORPCError("CONFLICT", {
-                    message:
-                        "Wait for cluster initialization to finish before deleting this connection.",
-                });
-            }
+                const [setup] = await tx
+                    .select({ id: deployments.id })
+                    .from(deployments)
+                    .where(
+                        and(
+                            eq(deployments.clusterId, cluster.id),
+                            eq(deployments.name, "ProvisionCluster"),
+                            inArray(deployments.status, ["queued", "running"]),
+                        ),
+                    )
+                    .limit(1);
 
-            const [bucket] = await db
-                .select({ resourceId: s3Buckets.resourceId })
-                .from(s3Buckets)
-                .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
-                .innerJoin(projects, eq(resources.projectId, projects.id))
-                .where(eq(projects.clusterId, cluster.id))
-                .limit(1);
+                if (setup)
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "Wait for the cluster's setup to finish or fail before deleting it.",
+                    });
 
-            // Cascading would drop bucket rows and leave their provider keys unrevoked.
-            if (bucket) {
-                throw new ORPCError("CONFLICT", {
-                    message: "Delete the S3 buckets in this cluster's projects first.",
-                });
-            }
+                if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "Wait for cluster initialization to finish before deleting this connection.",
+                    });
+                }
 
-            const deleted = await db
-                .delete(clusters)
-                .where(
-                    and(
-                        eq(clusters.id, cluster.id),
-                        eq(clusters.initializationStatus, cluster.initializationStatus),
-                    ),
-                )
-                .returning({ id: clusters.id });
+                const [bucket] = await tx
+                    .select({ resourceId: s3Buckets.resourceId })
+                    .from(s3Buckets)
+                    .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .where(eq(projects.clusterId, cluster.id))
+                    .limit(1);
 
-            // Initialization started between the check and the delete.
-            if (!deleted.length)
-                throw new ORPCError("CONFLICT", {
-                    message: "The cluster changed while deleting it. Try again.",
-                });
+                // Cascading would drop bucket rows and leave their provider keys unrevoked.
+                if (bucket) {
+                    throw new ORPCError("CONFLICT", {
+                        message: "Delete the S3 buckets in this cluster's projects first.",
+                    });
+                }
 
-            return { id: cluster.id };
-        }),
+                await tx.delete(clusters).where(eq(clusters.id, cluster.id));
+
+                return { id: cluster.id };
+            }),
+        ),
     // Queues the HealthCheck job for this cluster only; it otherwise runs hourly for every cluster.
     runHealthCheck: organizationAdminProcedure
         .input(clusterInput)

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,10 +27,15 @@ const (
 	// minAuthTokenLength is a floor, not a policy. It only rejects tokens that
 	// are obviously not randomly generated.
 	minAuthTokenLength = 16
+	// tlsCertEnv and tlsKeyEnv hold the PEM key pair served on --tls-listen. Like
+	// the token, the private key stays out of the process list.
+	tlsCertEnv = "SIDECAR_TLS_CERT"
+	tlsKeyEnv  = "SIDECAR_TLS_KEY"
 )
 
 type options struct {
 	listen         string
+	tlsListen      string
 	configPath     string
 	contextName    string
 	connect        string
@@ -61,6 +68,8 @@ func newCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.listen, "listen", "127.0.0.1:80", "HTTP listen address.")
+	cmd.Flags().StringVar(&opts.tlsListen, "tls-listen", "",
+		"Also serve the API over HTTPS on this address, with the key pair in "+tlsCertEnv+" and "+tlsKeyEnv+". Empty disables it.")
 	cmd.Flags().StringVar(&opts.configPath, "uncloud-config", defaultConfigPath,
 		"Path to the Uncloud configuration file.")
 	cmd.Flags().StringVarP(&opts.contextName, "context", "c", "", "Cluster context to use.")
@@ -98,10 +107,31 @@ func authToken() (string, error) {
 	return token, nil
 }
 
+// tlsConfig reads the key pair for --tls-listen. Half a pair or an unreadable one
+// fails startup rather than leaving the address unserved.
+func tlsConfig() (*tls.Config, error) {
+	cert, key := os.Getenv(tlsCertEnv), os.Getenv(tlsKeyEnv)
+	if cert == "" || key == "" {
+		return nil, fmt.Errorf("--tls-listen needs both %s and %s", tlsCertEnv, tlsKeyEnv)
+	}
+	pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+	if err != nil {
+		return nil, fmt.Errorf("load the key pair in %s and %s: %w", tlsCertEnv, tlsKeyEnv, err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}, nil
+}
+
 func run(ctx context.Context, opts options) error {
 	token, err := authToken()
 	if err != nil {
 		return err
+	}
+
+	var tlsServerConfig *tls.Config
+	if opts.tlsListen != "" {
+		if tlsServerConfig, err = tlsConfig(); err != nil {
+			return err
+		}
 	}
 
 	if opts.geoipDir != "" {
@@ -133,10 +163,24 @@ func run(ctx context.Context, opts options) error {
 		return fmt.Errorf("create HTTP API: %w", err)
 	}
 
-	listenErr := make(chan error, 1)
+	var tlsListener net.Listener
+	if tlsServerConfig != nil {
+		if tlsListener, err = tls.Listen("tcp", opts.tlsListen, tlsServerConfig); err != nil {
+			return fmt.Errorf("listen on %s: %w", opts.tlsListen, err)
+		}
+	}
+
+	listenErr := make(chan error, 2)
 	go func() {
 		listenErr <- server.App().Listen(opts.listen, fiber.ListenConfig{DisableStartupMessage: true})
 	}()
+	// The same app serves both: plain HTTP on the cluster network, HTTPS for a
+	// dashboard that reaches the machine directly.
+	if tlsListener != nil {
+		go func() {
+			listenErr <- server.App().Listener(tlsListener, fiber.ListenConfig{DisableStartupMessage: true})
+		}()
+	}
 
 	select {
 	case <-ctx.Done():

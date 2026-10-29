@@ -16,6 +16,15 @@ export const CADDY_FAILURE_MESSAGE =
 
 export type CaddySettings = { image: string; caddyfile: string; env?: Record<string, string> };
 
+/**
+ * Caddy with Uncloud's storage module, so every machine shares certificates and ACME challenges
+ * through the cluster store. Needs Uncloud 0.21+ on every machine.
+ */
+export const CLUSTER_STORAGE_CADDY = {
+    image: "ghcr.io/unlabs-dev/caddy-uncloud:0.1.3",
+    caddyfile: "{\n\tstorage uncloud\n}\n",
+};
+
 export class CaddyDeploymentInProgressError extends Error {
     constructor() {
         super("A Caddy deployment is already in progress on this cluster.");
@@ -196,14 +205,18 @@ export async function deployCaddy(db: Database, deploymentId: string, signal: Ab
         if (!claimed.rowCount) return;
 
         const cluster = await db.query.clusters.findFirst({
-            columns: { sidecarUrl: true, sidecarToken: true },
+            columns: { sidecarUrl: true, sidecarToken: true, sidecarCertificate: true },
             where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
         });
 
         if (!cluster) throw new Error("Cluster not found.");
 
         const settings = parseCaddyComposeSpec(deployment.spec);
-        const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+        const uc = ucClient(cluster.sidecarUrl, {
+            token: cluster.sidecarToken,
+            certificate: cluster.sidecarCertificate,
+        });
 
         await log(`Deploying Caddy ${settings.image} to every machine.`);
 

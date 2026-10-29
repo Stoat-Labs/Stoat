@@ -78,6 +78,8 @@ export const uncloudMiddleware = organizationProcedure.middleware(
             .select({
                 sidecarUrl: clusters.sidecarUrl,
                 sidecarToken: clusters.sidecarToken,
+                sidecarCertificate: clusters.sidecarCertificate,
+                provisioning: clusters.provisioning,
             })
             .from(clusters)
             .where(
@@ -89,9 +91,18 @@ export const uncloudMiddleware = organizationProcedure.middleware(
             throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
         }
 
+        // Its sidecar doesn't exist until setup finishes.
+        if (cluster.provisioning)
+            throw new ORPCError("PRECONDITION_FAILED", {
+                message: "This cluster is still being set up.",
+            });
+
         return next({
             context: {
-                uc: ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken }),
+                uc: ucClient(cluster.sidecarUrl, {
+                    token: cluster.sidecarToken,
+                    certificate: cluster.sidecarCertificate,
+                }),
             },
         });
     },

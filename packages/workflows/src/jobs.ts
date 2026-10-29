@@ -186,3 +186,26 @@ export const WatchGitSources: Job.Job<
         },
     },
 });
+
+export const ProvisionCluster: Job.Job<
+    "ProvisionCluster",
+    typeof resourcePayload,
+    Schema.Void,
+    Schema.Never
+> = Job.make("ProvisionCluster", {
+    // Each attempt is its own `ProvisionCluster` deployment of the cluster being set up.
+    payload: resourcePayload,
+    success: Schema.Void,
+    idempotencyKey: ({ deploymentId }) => deploymentId,
+    queue: "provision",
+    defaults: {
+        // No retries: SSH and server problems need the user, and a retry may need a reset.
+        attempts: 1,
+        // Installing Docker and issuing the sidecar's certificate can take several minutes.
+        timeout: "20 minutes",
+        keep: {
+            completed: { age: "1 day" },
+            failed: { age: "30 days" },
+        },
+    },
+});

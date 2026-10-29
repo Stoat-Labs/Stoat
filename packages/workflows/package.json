@@ -25,6 +25,7 @@
         "drizzle-orm": "1.0.0-rc.5-5935859",
         "effect": "4.0.0-rc.116",
         "effect-mq": "0.7.0",
+        "selfsigned": "^5.5.0",
         "yaml": "^2.8.1"
     },
     "devDependencies": {

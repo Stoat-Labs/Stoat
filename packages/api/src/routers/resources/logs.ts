@@ -9,7 +9,14 @@ import {
     resourceDeploymentInputs,
     resources,
 } from "@stoat/db/schema/index";
-import { ucClient, UcApiError, unwrap, type LogEvent, type Service } from "@stoat/uncloud";
+import {
+    sidecarFetch,
+    ucClient,
+    UcApiError,
+    unwrap,
+    type LogEvent,
+    type Service,
+} from "@stoat/uncloud";
 import { sql as greptimeSql, GreptimeResponseTooLargeError } from "@stoat/workflows/greptime";
 import {
     ALLOY_SERVICE,
@@ -54,7 +61,12 @@ export type ResourceLogEvent =
 
 type LogService = Service;
 
-type LogCluster = { id: string; sidecarUrl: string; sidecarToken: string };
+type LogCluster = {
+    id: string;
+    sidecarUrl: string;
+    sidecarToken: string;
+    sidecarCertificate: string | null;
+};
 
 const scopeInput = {
     projectId: v.pipe(v.string(), v.uuid()),
@@ -262,7 +274,12 @@ async function deployedServices(
     }
 
     if (names.size > 100) throw new Error("Too many deployed services.");
-    const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+
+    const uc = ucClient(cluster.sidecarUrl, {
+        token: cluster.sidecarToken,
+        certificate: cluster.sidecarCertificate,
+    });
+
     const services: LogService[] = [];
 
     // User resources must never reach monitoring services by naming them.
@@ -421,9 +438,10 @@ async function* serviceEvents(
     try {
         const uc = ucClient(cluster.sidecarUrl, {
             token: cluster.sidecarToken,
+            certificate: cluster.sidecarCertificate,
             // Observe headers without changing the existing uc.stream.serviceLogs transport.
-            fetch: async (request, options) => {
-                const response = await fetch(request, options);
+            fetch: async (request) => {
+                const response = await sidecarFetch(cluster.sidecarCertificate)(request);
 
                 if (
                     !response.ok ||
@@ -584,7 +602,11 @@ async function* followServiceEvents(
     refreshers: Map<string, () => Promise<void>>,
     rediscover: () => ReturnType<typeof deployedServices>,
 ): AsyncGenerator<ResourceLogEvent> {
-    const uc = ucClient(cluster.sidecarUrl, { token: cluster.sidecarToken });
+    const uc = ucClient(cluster.sidecarUrl, {
+        token: cluster.sidecarToken,
+        certificate: cluster.sidecarCertificate,
+    });
+
     const watcherId = service.id;
     let cycle = new AbortController();
     let replacement: LogService | undefined;
@@ -780,6 +802,7 @@ const logProcedure = organizationProcedure
                 id: clusters.id,
                 sidecarUrl: clusters.sidecarUrl,
                 sidecarToken: clusters.sidecarToken,
+                sidecarCertificate: clusters.sidecarCertificate,
                 initializedAt: clusters.initializedAt,
                 configuration: clusters.initializationConfiguration,
             })
@@ -1131,7 +1154,10 @@ export const resourceLogsRouter = {
                     }
                 }
 
-                const uc = ucClient(logCluster.sidecarUrl, { token: logCluster.sidecarToken });
+                const uc = ucClient(logCluster.sidecarUrl, {
+                    token: logCluster.sidecarToken,
+                    certificate: logCluster.sidecarCertificate,
+                });
 
                 // Telemetry is labelled with Uncloud machine IDs; show names where known.
                 const machineNames = unwrap(

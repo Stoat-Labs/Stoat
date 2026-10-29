@@ -23,6 +23,22 @@ export const userSettings = t.pgTable("user_settings", {
     canvasMode: t.boolean("canvas_mode").notNull().default(true),
 });
 
+/**
+ * A cluster Stoat is setting up on a server over SSH. `initState` tracks how far `uc machine init`
+ * got: "partial" means a cluster exists on the server but its setup failed, and "reset" that the
+ * user approved resetting it on the next attempt.
+ */
+export type ClusterProvisioning = {
+    host: string;
+    port: number;
+    user: string;
+    /** Authorized on the server by the user; the private half is in `provisioningSecrets`. */
+    publicKey: string;
+    initState: "none" | "partial" | "reset" | "done";
+    /** Caddy shares certificates through Uncloud's cluster store once the cluster is ready. */
+    caddyStorage: boolean;
+};
+
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
     machine: string;
@@ -39,6 +55,12 @@ export const clusters = t.pgTable(
         name: t.text("name").notNull(),
         sidecarUrl: t.text("sidecar_url").notNull(),
         sidecarToken: encryptedText("sidecar_token", "sidecar-token").notNull(),
+        // The self-signed certificate Stoat pinned for a cluster it created; null trusts public CAs.
+        sidecarCertificate: t.text("sidecar_certificate"),
+        // Set while Stoat creates the cluster on a server over SSH, and cleared once it's ready.
+        provisioning: t.jsonb("provisioning").$type<ClusterProvisioning>(),
+        // JSON of the single-use SSH private key and the sidecar's TLS key, deleted with `provisioning`.
+        provisioningSecrets: encryptedText("provisioning_secrets", "cluster-provisioning"),
         greptimeUrl: t.text("greptime_url"),
         organizationId: t
             .text("organization_id")
@@ -251,6 +273,8 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
     // MONITORING_VERSION of the last successful deploy; null predates versioning.
     templateVersion: t.integer("template_version"),
 });
+
+// "pending" waits for the user to authorize the public key on the server.
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 

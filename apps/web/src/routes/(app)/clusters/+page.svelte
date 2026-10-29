@@ -1,6 +1,8 @@
 <script lang="ts">
     import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
+    import ProvisionClusterDialog from "$lib/components/clusters/provision-cluster-dialog.svelte";
+    import ProvisionStatusBadge from "$lib/components/clusters/provision-status-badge.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -39,7 +41,11 @@
         createMutation,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryStates } from "nuqs-svelte";
+    import {
+        parseAsString,
+        parseAsStringLiteral,
+        useQueryStates,
+    } from "nuqs-svelte";
     import { Debounced } from "runed";
     import { onMount } from "svelte";
 
@@ -51,6 +57,10 @@
             page: pageParser,
             dialog: parseAsString,
             clusterId: parseAsString,
+            source: parseAsStringLiteral([
+                "connect",
+                "server",
+            ]).withDefault("connect"),
         },
         { shallow: true, scroll: false },
     );
@@ -82,6 +92,15 @@
                 includeDiagnostics: false,
             },
             enabled: !searchPending,
+            // Setups also finish while their dialog is closed.
+            refetchInterval: (query) =>
+                query.state.data?.items.some(
+                    (cluster) =>
+                        cluster.setup?.status === "queued" ||
+                        cluster.setup?.status === "running",
+                )
+                    ? 3000
+                    : false,
         }),
     );
 
@@ -256,24 +275,49 @@
                 {#each items as cluster (cluster.id)}
                     <TableRow class="group">
                         <TableCell class="text-center">
-                            <ClusterHealthBadge
-                                clusterId={cluster.id}
-                            />
+                            {#if cluster.setup}
+                                <ProvisionStatusBadge
+                                    status={cluster.setup.status}
+                                />
+                            {:else}
+                                <ClusterHealthBadge
+                                    clusterId={cluster.id}
+                                />
+                            {/if}
                         </TableCell>
                         <TableCell>
-                            <a
-                                href={`/clusters/${cluster.id}`}
-                                class="block font-semibold hover:underline"
-                            >
-                                {cluster.name}
-                            </a>
-                            <span
-                                class="mt-0.5 block text-xs text-muted-foreground"
-                            >
-                                Created {formatDate(
-                                    cluster.createdAt,
-                                )}
-                            </span>
+                            {#if cluster.setup}
+                                <button
+                                    type="button"
+                                    class="block font-semibold hover:underline"
+                                    onclick={() =>
+                                        void list.set({
+                                            dialog: "provision",
+                                            clusterId: cluster.id,
+                                        })}
+                                >
+                                    {cluster.name}
+                                </button>
+                                <span
+                                    class="mt-0.5 block text-xs text-muted-foreground"
+                                >
+                                    {cluster.setup.host}
+                                </span>
+                            {:else}
+                                <a
+                                    href={`/clusters/${cluster.id}`}
+                                    class="block font-semibold hover:underline"
+                                >
+                                    {cluster.name}
+                                </a>
+                                <span
+                                    class="mt-0.5 block text-xs text-muted-foreground"
+                                >
+                                    Created {formatDate(
+                                        cluster.createdAt,
+                                    )}
+                                </span>
+                            {/if}
                         </TableCell>
                         <TableCell class="text-center">
                             {cluster.projectCount}
@@ -325,10 +369,22 @@
                 !open &&
                 list.dialog.current === "create-cluster"
             )
-                void list.set({ dialog: null });
+                void list.set({ dialog: null, source: null });
         }
     }
+    bind:source={
+        () => list.source.current,
+        (source) => void list.set({ source })
+    }
+    onprovision={(clusterId) =>
+        void list.set({
+            dialog: "provision",
+            clusterId,
+            source: null,
+        })}
 />
+
+<ProvisionClusterDialog />
 
 <AlertDialog
     bind:open={

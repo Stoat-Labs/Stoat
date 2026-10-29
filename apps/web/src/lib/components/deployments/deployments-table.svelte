@@ -275,6 +275,8 @@
 
         if (name === "DeployCaddy") return "Caddy";
 
+        if (name === "ProvisionCluster") return "Cluster creation";
+
         return name;
     }
 

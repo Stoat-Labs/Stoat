@@ -121,7 +121,9 @@
               ? "Cluster initialization"
               : deployment?.name === "DeployCaddy"
                 ? "Caddy deployment"
-                : (deployment?.name ?? "Deployment"),
+                : deployment?.name === "ProvisionCluster"
+                  ? "Cluster creation"
+                  : (deployment?.name ?? "Deployment"),
     );
 
     const raw = $derived(view.deploymentDebug.current);

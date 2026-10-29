@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { Agent, fetch as pinnedFetch, Request as PinnedRequest } from "undici";
 
 import { UcApiError } from "./errors";
 import type { paths } from "./generated/schema";
@@ -29,8 +30,16 @@ export type UcClientOptions = {
      * health-probe client can be built without a credential.
      */
     token?: string;
-    /** Custom fetch, mainly for tests. Defaults to `globalThis.fetch`. */
-    fetch?: typeof globalThis.fetch;
+    /**
+     * The only certificate the sidecar may present, in PEM. Set for sidecars Stoat set up on a
+     * private network, which serve a self-signed certificate. Null trusts the usual CAs.
+     */
+    certificate?: string | null;
+    /**
+     * Custom fetch, for tests or to observe responses. A wrapper sends the request on with
+     * `sidecarFetch(certificate)`. Defaults to that transport.
+     */
+    fetch?: (request: Request) => Promise<Response>;
     /** Headers sent with every request. */
     headers?: Record<string, string>;
 };
@@ -112,6 +121,58 @@ function normalizeSidecarUrl(sidecarUrl: string): string {
     return trimmed.replace(/\/+$/, "");
 }
 
+// Past this many pinned certificates, the least recently used pool is closed, e.g. a deleted cluster's.
+const MAX_PINNED_AGENTS = 64;
+
+// One connection pool per pinned certificate, so clients built per request still reuse connections.
+const pinnedAgents = new Map<string, Agent>();
+
+/** The pool for `certificate`, moved to the end of `pinnedAgents` as the most recently used. */
+function pinnedAgent(certificate: string) {
+    const agent = pinnedAgents.get(certificate) ?? new Agent({ connect: { ca: certificate } });
+
+    pinnedAgents.delete(certificate);
+    pinnedAgents.set(certificate, agent);
+
+    for (const [oldest, evicted] of pinnedAgents) {
+        if (pinnedAgents.size <= MAX_PINNED_AGENTS) break;
+
+        pinnedAgents.delete(oldest);
+        // Graceful: requests still running on it, such as followed logs, finish first.
+        void evicted.close().catch(() => {});
+    }
+
+    return agent;
+}
+
+/**
+ * Request options that trust `certificate` and nothing else. undici's own fetch and Request
+ * are used together with its Agent, so they never mix with the copy bundled into Node.
+ */
+function pinnedTransport(certificate: string) {
+    return {
+        // SAFETY: undici's Request implements the same Fetch standard openapi-fetch builds requests with.
+        Request: PinnedRequest as typeof PinnedRequest & typeof Request,
+        fetch: async (request: Request): Promise<Response> => {
+            // Looked up per request, so a client built earlier never sends through a closed pool.
+            const dispatcher = pinnedAgent(certificate);
+
+            // SAFETY: openapi-fetch builds every request with the Request class above.
+            const response = await pinnedFetch(request as Request & PinnedRequest, { dispatcher });
+
+            // SAFETY: undici's Response is the Fetch standard Response the global type describes.
+            return response as typeof response & Response;
+        },
+    };
+}
+
+/** How requests to a sidecar are sent: through the pinned certificate's pool, or the global fetch. */
+export function sidecarFetch(certificate?: string | null) {
+    return certificate
+        ? pinnedTransport(certificate).fetch
+        : (request: Request) => globalThis.fetch(request);
+}
+
 /**
  * Creates a typed client for a specific Uncloud sidecar.
  *
@@ -163,9 +224,11 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
     const client = createClient<paths>({
         baseUrl,
         headers,
-        // Resolve the global fetch per request rather than once here, so a fetch
+        // A pinned transport only accepts requests built with its own Request class.
+        Request: options.certificate ? pinnedTransport(options.certificate).Request : undefined,
+        // The default resolves the global fetch per request rather than once here, so a fetch
         // replaced later (instrumentation, test stubs) also reaches long-lived clients.
-        fetch: options.fetch ?? ((request) => globalThis.fetch(request)),
+        fetch: options.fetch ?? sidecarFetch(options.certificate),
     });
 
     return {

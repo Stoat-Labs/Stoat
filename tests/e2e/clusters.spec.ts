@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { MACHINE } from "./fake-sidecar";
+import { MACHINE, SIDECAR_DOMAIN } from "./fake-sidecar";
 import { ids, memberStorageState, receivedComposes, resetSidecar, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alertdialog"));
@@ -7,6 +7,9 @@ const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alert
 const row = (page: Page, name: string) => page.getByRole("row").filter({ hasText: name });
 
 const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
+
+const domainCard = (page: Page) =>
+    page.locator("[data-slot=card]").filter({ hasText: "Cluster domain" });
 
 let clusters = 0;
 
@@ -68,6 +71,102 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, name)).toHaveCount(0);
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
+});
+
+test("an admin sets up a server over SSH, sees why it failed, and deletes the cluster", async ({
+    page,
+}) => {
+    const name = `Server ${Date.now()}`;
+    await page.goto("/clusters");
+    await page.getByRole("button", { name: "Create cluster" }).click();
+
+    const create = dialog(page);
+    await create.getByRole("tab", { name: "New server" }).click();
+    await create.getByLabel("Name").fill(name);
+    // .invalid names never resolve, so the setup fails without touching a real server.
+    await create.getByLabel("Server address").fill("server.invalid");
+    await create
+        .getByRole("checkbox", { name: "Share Caddy's certificates across machines" })
+        .check();
+    await create.getByRole("button", { name: "Continue" }).click();
+
+    const setup = page.getByRole("dialog", { name: new RegExp(name) });
+    await expect(setup.getByRole("textbox", { name: "Public key" })).toHaveValue(
+        /^ssh-ed25519 \S+ stoat-/,
+    );
+    await expect(setup.getByRole("textbox", { name: "Or run this on the server" })).toHaveValue(
+        /authorized_keys$/,
+    );
+
+    const clusterId = new URL(page.url()).searchParams.get("clusterId") ?? "";
+
+    expect(
+        await sql("SELECT provisioning->>'caddyStorage' AS storage FROM clusters WHERE id = $1", [
+            clusterId,
+        ]),
+    ).toEqual([{ storage: "true" }]);
+
+    // The private keys never reach the browser.
+    const headers = { origin: process.env.E2E_BASE_URL! };
+
+    for (const [path, data] of [
+        ["listClusters", {}],
+        ["getProvisioning", { clusterId }],
+    ] as const) {
+        const response = await page.request.post(`/rpc/api/cluster/${path}`, { data, headers });
+        const body = await response.text();
+
+        expect(response.ok()).toBe(true);
+        expect(body).not.toContain("PRIVATE KEY");
+        expect(body).not.toContain("enc:v1:");
+    }
+
+    await setup.getByRole("button", { name: "Start setup" }).click();
+    await expect(setup.getByRole("button", { name: "Start setup" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(setup).toHaveCount(0);
+
+    // The list follows the setup after its dialog closes.
+    await expect(row(page, name)).toContainText("Failed", { timeout: 45_000 });
+    await row(page, name).getByRole("button", { name, exact: true }).click();
+    await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(setup.getByRole("log", { name: "Setup logs" })).not.toBeEmpty();
+    await page.keyboard.press("Escape");
+    await expect(setup).toHaveCount(0);
+
+    await row(page, name)
+        .getByRole("button", { name: `Delete ${name}` })
+        .click();
+    await dialog(page).getByRole("button", { name: "Delete" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(row(page, name)).toHaveCount(0);
+    expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
+});
+
+test("an admin replaces the cluster's domain with their own, then removes it", async ({ page }) => {
+    const { id } = await createCluster(page);
+    await page.goto(`/clusters/${id}`);
+    await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
+    await expect(domainCard(page)).toContainText("Uncloud DNS");
+
+    await domainCard(page).getByRole("button", { name: "Change domain" }).click();
+    const edit = page.getByRole("dialog", { name: "Cluster domain" });
+    await edit.getByLabel("Domain").fill("Apps.Example.com");
+    await edit.getByRole("button", { name: "Save domain" }).click();
+
+    // Giving up the reserved domain is permanent, so it needs its own confirmation.
+    const release = page.getByRole("alertdialog");
+    await expect(release).toContainText(`Release ${SIDECAR_DOMAIN}?`);
+    await release.getByRole("button", { name: "Release and save" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(domainCard(page)).toContainText("Your DNS");
+    await expect(domainCard(page)).toContainText("*.apps.example.com");
+
+    await domainCard(page).getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Remove domain" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(domainCard(page)).toContainText("Not set");
+    await resetSidecar();
 });
 
 test("searching narrows the list", async ({ page }) => {
@@ -207,5 +306,11 @@ test.describe("as a member", () => {
         await expect(breadcrumb(page)).toContainText("Lonely");
         await expect(page.getByRole("button", { name: "Initialize monitoring" })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Reinitialize" })).toHaveCount(0);
+    });
+
+    test("the cluster domain is visible but cannot be changed", async ({ page }) => {
+        await page.goto(`/clusters/${ids.lonelyCluster}`);
+        await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
+        await expect(domainCard(page).getByRole("button")).toHaveCount(0);
     });
 });

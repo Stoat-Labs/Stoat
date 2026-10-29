@@ -20,6 +20,8 @@
         secret?: boolean;
     } = $props();
 
+    const id = $props.id();
+
     let revealed = $state(false);
 
     let copied = $state(false);
@@ -51,9 +53,10 @@
 </script>
 
 <Field>
-    <Label>{label}</Label>
+    <Label for={id}>{label}</Label>
     <InputGroup>
         <InputGroupInput
+            {id}
             readonly
             value={displayValue}
             class="font-mono"

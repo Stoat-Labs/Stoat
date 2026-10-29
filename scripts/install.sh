@@ -80,6 +80,21 @@ is_valid_domain() {
     printf '%s' "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
 }
 
+is_ipv4() {
+    local octet='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+    printf '%s' "$1" | grep -Eq "^($octet\.){3}$octet\$"
+}
+
+# LAN (RFC 1918) and Tailscale (100.64.0.0/10) addresses, which the internet can't reach.
+is_private_ipv4() {
+    local a b
+    IFS=. read -r a b _ <<<"$1"
+    [ "$a" -eq 10 ] ||
+        { [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ]; } ||
+        { [ "$a" -eq 192 ] && [ "$b" -eq 168 ]; } ||
+        { [ "$a" -eq 100 ] && [ "$b" -ge 64 ] && [ "$b" -le 127 ]; }
+}
+
 print_intro() {
     cat <<EOF
 
@@ -137,6 +152,11 @@ use_existing_cluster() {
     if [ -z "$EXISTING_ENV" ] && "$UC" inspect stoat >/dev/null 2>&1; then
         die "Stoat is already deployed on '$context'. Deploying it with new secrets would lock it out of its database. Run this script again and enter the directory that holds that deployment's .env."
     fi
+    # Clusters a Stoat dashboard created over SSH run its sidecar, which Stoat's compose.yml would replace.
+    if [ -z "$EXISTING_ENV" ] && "$UC" inspect sidecar >/dev/null 2>&1; then
+        notice "This cluster already runs a Stoat sidecar, likely set up by another Stoat dashboard. Deploying Stoat replaces it, and that dashboard loses access to the cluster."
+        confirm "Replace it anyway? Answer n to set up a new cluster on another server." n || return 1
+    fi
     CLUSTER_SUMMARY="existing cluster '$context'"
 }
 
@@ -164,42 +184,76 @@ choose_cluster() {
     CLUSTER_SUMMARY="new cluster on $SSH_TARGET"
 }
 
-choose_domain() {
-    step "Domain"
+choose_address() {
+    step "Address"
     if [ -n "$EXISTING_ENV" ]; then
         APP_URL=$(read_env_value APP_URL "$STOAT_DIR/.env")
         [ -n "$APP_URL" ] ||
             die "$STOAT_DIR/.env has no APP_URL. Set it, or remove the file to start fresh, then run this script again."
         note "Keeping the existing $STOAT_DIR/.env and its secrets."
-        note "Domain: $APP_URL (edit APP_URL in that file to change it)"
+        note "Address: $APP_URL (edit APP_URL in that file to change it)"
         return
     fi
-    note "Stoat will be served over HTTPS on this domain."
+    note "Choose how you'll open Stoat in your browser:"
+    note "  1. A domain, e.g. stoat.example.com. Caddy gets a trusted HTTPS certificate for it,"
+    note "     so the server must be reachable from the internet on ports 80 and 443."
+    note "  2. An IP address, e.g. a server on your LAN or Tailscale. Caddy signs its own"
+    note "     certificate, which browsers warn about until you trust it."
     while true; do
-        prompt "Domain, e.g. stoat.example.com"
+        prompt "Domain or IP address? Enter 1 or 2" "1"
+        case "$ANSWER" in
+            1 | 2) break ;;
+            *) note "Enter 1 for a domain or 2 for an IP address." ;;
+        esac
+    done
+
+    if [ "$ANSWER" = 1 ]; then
+        while true; do
+            prompt "Domain, e.g. stoat.example.com"
+            APP_URL=$(normalize_domain "$ANSWER")
+            if is_ipv4 "$APP_URL"; then
+                note "Using $APP_URL as an IP address."
+                break
+            fi
+            if is_valid_domain "$APP_URL"; then
+                break
+            fi
+            note "'$ANSWER' isn't a valid domain. Enter something like stoat.example.com."
+        done
+        return
+    fi
+
+    # The server you're setting up is the likely answer.
+    local server=${SSH_TARGET#*@}
+    server=${server%:*}
+    is_ipv4 "$server" || server=""
+    while true; do
+        prompt "IP address" "$server"
         APP_URL=$(normalize_domain "$ANSWER")
-        if is_valid_domain "$APP_URL"; then
+        if is_ipv4 "$APP_URL"; then
             break
         fi
-        note "'$ANSWER' isn't a valid domain. Enter something like stoat.example.com."
+        note "'$ANSWER' isn't an IPv4 address. Enter something like 192.168.1.10."
     done
 }
 
 confirm_plan() {
     step "Ready to install"
     note "Cluster:    $CLUSTER_SUMMARY"
-    note "Domain:     https://$APP_URL"
+    note "Address:    https://$APP_URL"
     note "Directory:  $STOAT_DIR"
     if [ -z "$EXISTING_ENV" ]; then
         note "Secrets:    generated into $STOAT_DIR/.env"
     fi
-    # IP addresses need no DNS record.
-    case "$APP_URL" in
-        *[a-z]*)
-            printf '\n'
-            notice "$APP_URL needs a DNS record (A or AAAA) pointing to your server's public IP, so Caddy can issue its HTTPS certificate."
-            ;;
-    esac
+    printf '\n'
+    if ! is_ipv4 "$APP_URL"; then
+        notice "$APP_URL needs a DNS record (A or AAAA) pointing to your server's public IP, so Caddy can issue its HTTPS certificate."
+    else
+        notice "Browsers will warn about Caddy's own certificate for $APP_URL until you trust its root certificate. The installer saves it for you."
+        if [ -n "$SSH_TARGET" ] && is_private_ipv4 "$APP_URL"; then
+            notice "$APP_URL is a private address, so the new cluster gets no public uncld.dev domain."
+        fi
+    fi
     printf '\n'
     confirm "Continue?" y || stop "Cancelled."
 }
@@ -246,9 +300,13 @@ init_cluster() {
         return
     fi
     step "Creating the cluster on $SSH_TARGET"
-    local before after
+    local before after args=("$SSH_TARGET")
+    # Uncloud's public domain needs the server reachable from the internet, which a private address isn't.
+    if is_ipv4 "$APP_URL" && is_private_ipv4 "$APP_URL"; then
+        args+=(--no-dns)
+    fi
     before=$("$UC" ctx show 2>/dev/null || true)
-    if "$UC" machine init "$SSH_TARGET" </dev/tty; then
+    if "$UC" machine init "${args[@]}" </dev/tty; then
         return
     fi
     # uc switches to the new cluster's context as soon as the cluster exists.
@@ -267,6 +325,56 @@ deploy() {
     note "uc shows the deployment plan next. Type y to confirm it."
     (cd "$STOAT_DIR" && "$UC" deploy </dev/tty) ||
         die "Stoat wasn't deployed (see uc's message above). When you're ready, run 'uc deploy' in $STOAT_DIR or run this script again."
+}
+
+# Browsers send no server name (SNI) for an IP address, so Caddy has to be told which certificate to serve.
+configure_caddy_for_ip() {
+    is_ipv4 "$APP_URL" || return 0
+    local global="{
+    default_sni $APP_URL
+}"
+    step "Configuring Caddy for $APP_URL"
+    local esc
+    esc=$(printf '\033')
+    # A re-run, or a cluster someone already set up for this address.
+    if "$UC" caddy config 2>/dev/null | sed "s/${esc}\[[0-9;]*m//g" |
+        awk -v ip="$APP_URL" '$1 == "default_sni" && $2 == ip { found = 1 } END { exit !found }'; then
+        note "Caddy already serves $APP_URL."
+        return
+    fi
+    if [ -z "$SSH_TARGET" ]; then
+        notice "This cluster's global Caddy config is left as is. Add this to it, e.g. under Configure Caddy in Stoat, or HTTPS on $APP_URL won't work:"
+        printf '%s\n' "$global" | sed 's/^/        /'
+        return
+    fi
+    local caddyfile
+    caddyfile=$(mktemp)
+    printf '%s\n' "$global" >"$caddyfile"
+    note "uc shows Caddy's deployment plan next. Type y to confirm it."
+    if ! "$UC" caddy deploy --caddyfile "$caddyfile" </dev/tty; then
+        rm -f "$caddyfile"
+        die "Configuring Caddy failed (see uc's message above). Run 'uc caddy deploy --caddyfile <file>' with the config above, then open https://$APP_URL."
+    fi
+    rm -f "$caddyfile"
+}
+
+# Caddy signs IP addresses with its own certificate authority; trusting its root removes the browser warning.
+save_root_certificate() {
+    is_ipv4 "$APP_URL" || return 0
+    step "Caddy's root certificate"
+    local cert="$STOAT_DIR/caddy-root.crt" path=/data/caddy/pki/authorities/local/root.crt
+    # Caddy creates the authority once it starts serving the address, a few seconds after the deploy.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if "$UC" exec -T caddy cat "$path" >"$cert.tmp" 2>/dev/null && grep -q "BEGIN CERTIFICATE" "$cert.tmp"; then
+            mv "$cert.tmp" "$cert"
+            note "Saved to $cert"
+            note "Import it as a trusted root certificate on each device you open Stoat from to remove the browser warning."
+            return
+        fi
+        sleep 3
+    done
+    rm -f "$cert.tmp"
+    notice "Caddy hasn't created it yet. Fetch it later with: uc exec -T caddy cat $path > caddy-root.crt"
 }
 
 print_next_steps() {
@@ -298,11 +406,13 @@ main() {
     ensure_uc
     choose_directory
     choose_cluster
-    choose_domain
+    choose_address
     confirm_plan
     write_config
     init_cluster
     deploy
+    configure_caddy_for_ip
+    save_root_certificate
     print_next_steps
 }
 
