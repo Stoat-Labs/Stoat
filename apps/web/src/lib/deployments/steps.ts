@@ -54,6 +54,19 @@ function seconds(status: string) {
 
 const planHeader = /^Deployment plan: (\d+) operation/u;
 
+// The uc CLI (cluster setup) prints "Container web-1 on m1  Started" instead of "... | Started".
+const cliProgress = /^((?:Container|Volume|Image) .+ on \S+)\s{2,}(?=\S)/u;
+
+// Its plan is a box-drawn tree under a bare "Deployment plan", ending with "1 create · across 1 machine".
+const cliPlanOp = /^[+~-]\s+(.+)$/u;
+
+const cliPlanEnd = /^\d+ \w+ · /u;
+
+// The Docker install script's own output, which stays in the raw logs.
+const dockerStart = /^Installing Docker/u;
+
+const dockerEnd = /^Docker installed/u;
+
 const progressLine = /^(?:(?:Old )?[Pp]re-deploy hook|Container|Volume|Image) .+ on \S+ \| /u;
 
 // Logs stored without event tags (older runs, or an out-of-date worker) still follow the same text shapes.
@@ -89,9 +102,45 @@ export function deploymentSteps(lines: DeploymentLine[], running: boolean) {
 
     // Plan operations that the latest "Deployment plan: N operation(s)" header still has to announce.
     let planLeft = 0;
+    let inCliPlan = false;
+    let inDocker = false;
 
     for (const [index, line] of lines.entries()) {
-        const text = line.message.trim();
+        const text = line.message
+            .trim()
+            .replace(/^[⏳✓]\uFE0F?\s+/u, "")
+            .replace(cliProgress, "$1 | ");
+
+        if (dockerStart.test(text)) inDocker = true;
+        else if (dockerEnd.test(text)) inDocker = false;
+        else if (inDocker && line.level !== "error") continue;
+
+        if (text === "Deployment plan") {
+            upsert("plan", { kind: "plan", state: "done", title: "Plan", time: line.time });
+            inCliPlan = true;
+            continue;
+        }
+
+        if (inCliPlan && !progressLine.test(text)) {
+            const plan = byKey.get("plan")!;
+            const op = text.match(cliPlanOp)?.[1];
+            // Nested lines ("│   image: ...", "╰── +   run container ...") describe the op above them.
+            const detail = text.replace(/^[│├╰─\s]*(?:[+~-]\s+)?/u, "");
+
+            if (op) plan.ops.push({ title: op.replace(/\s+/gu, " "), detail: "" });
+            else if (cliPlanEnd.test(text)) inCliPlan = false;
+            else if (detail && !/^─+$/u.test(detail) && plan.ops.length) {
+                const last = plan.ops.at(-1)!;
+                last.detail = [last.detail, detail.replace(/\s+/gu, " ")]
+                    .filter(Boolean)
+                    .join(" · ");
+            }
+
+            continue;
+        }
+
+        inCliPlan = false;
+
         const event = line.event ?? inferEvent(text, planLeft > 0);
         const header = text.match(planHeader);
 
@@ -226,11 +275,10 @@ export function deploymentSteps(lines: DeploymentLine[], running: boolean) {
         const previous = steps.at(-1);
         const { title, detail } = sentence(text);
 
-        // Collapse repeats such as "Still verifying ingestion (attempt 3/40)".
-        if (
-            previous?.kind === "note" &&
-            previous.title.replace(/\d+/gu, "#") === title.replace(/\d+/gu, "#")
-        ) {
+        // Collapse repeats such as "Still verifying ingestion (attempt 3/40)" or "Machine m1  Reachable".
+        const subject = (value: string) => value.replace(/\s{2,}.*$/u, "").replace(/\d+/gu, "#");
+
+        if (previous?.kind === "note" && subject(previous.title) === subject(title)) {
             Object.assign(previous, {
                 title,
                 detail,

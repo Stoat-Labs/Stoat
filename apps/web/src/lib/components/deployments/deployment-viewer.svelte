@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import ProvisionActions from "$lib/components/clusters/provision-actions.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
@@ -266,6 +267,13 @@
 </svelte:head>
 
 {#snippet cancelAction()}
+    {#if deployment?.name === "ProvisionCluster"}
+        <ProvisionActions
+            clusterId={deployment.clusterId}
+            {deploymentId}
+            status={stream.status}
+        />
+    {/if}
     {#if deployment?.spec}
         <Button
             variant="outline"

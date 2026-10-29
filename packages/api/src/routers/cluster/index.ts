@@ -138,6 +138,7 @@ export const clusterRouter = {
                                       provisioning,
                                       attempts.get(item.id)?.status,
                                   ),
+                                  deploymentId: attempts.get(item.id)?.id ?? null,
                               }
                             : null;
 

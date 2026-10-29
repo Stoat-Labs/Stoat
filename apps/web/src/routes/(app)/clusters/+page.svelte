@@ -198,7 +198,10 @@
 
     // Clusters still being set up open their provisioning dialog instead.
     function openCluster(cluster: ClusterItem) {
-        if (cluster.setup)
+        // A started setup is followed on its deployment page.
+        if (cluster.setup?.deploymentId)
+            void goto(`/deployments/${cluster.setup.deploymentId}`);
+        else if (cluster.setup)
             void list.set({
                 dialog: "provision",
                 clusterId: cluster.id,
@@ -332,6 +335,8 @@
                             {#if cluster.setup?.deploymentId}
                                 <a
                                     href={`/deployments/${cluster.setup.deploymentId}`}
+                                    onclick={(event) =>
+                                        event.stopPropagation()}
                                     class="block font-semibold hover:underline"
                                 >
                                     {cluster.name}

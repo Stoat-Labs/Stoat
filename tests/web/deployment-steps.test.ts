@@ -195,3 +195,65 @@ it("pairs replaced containers only with their own service on the same machine", 
         ["cache/bbbbbb", undefined],
     ]);
 });
+
+it("condenses the uc CLI output of a cluster setup", () => {
+    const steps = deploymentSteps(
+        lines([
+            [0, "Installing Uncloud 0.21.0 on 2.29.143.81..."],
+            [0, "⏳ Installing Docker..."],
+            [0, "+ sh -c apt-get -qq update >/dev/null"],
+            [0, "Client: Docker Engine - Community"],
+            [0, "================================================================================"],
+            [1, "✓ Docker installed and configured successfully."],
+            [2, "Machine debian-4gb-hel1-1 (2.29.143.81)  Querying"],
+            [2, "Machine debian-4gb-hel1-1 (2.29.143.81)  Reachable"],
+            [3, "Deployment plan"],
+            [3, "+ create service sidecar (global)"],
+            [3, "│   image: ghcr.io/stoat-labs/sidecar:latest"],
+            [3, "│"],
+            [3, "╰── +   run container sidecar on debian-4gb-hel1-1"],
+            [3, "───────────────────────────"],
+            [3, "1 create · across 1 machine"],
+            [4, "Container sidecar-kiuf on debian-4gb-hel1-1  Creating"],
+            [4, "Image ghcr.io/stoat-labs/sidecar:latest on debian-4gb-hel1-1  Pulling"],
+            [5, "Image ghcr.io/stoat-labs/sidecar:latest on debian-4gb-hel1-1  Pulled"],
+            [5, "Container sidecar-kiuf on debian-4gb-hel1-1  Started"],
+            [5, "Container sidecar-kiuf on debian-4gb-hel1-1  Monitoring (5s)"],
+            [
+                6,
+                "Container sidecar-kiuf on debian-4gb-hel1-1  Unhealthy (Restarting (1) 1 second ago)",
+            ],
+            [
+                6,
+                "Oct 29 13:41:33.355 debian-4gb-hel1-1 sidecar/8af18 Error: unknown flag: --tls-listen",
+            ],
+            [
+                7,
+                "Oct 29 13:41:34.124 debian-4gb-hel1-1 sidecar/8af18 Error: unknown flag: --tls-listen",
+            ],
+        ]),
+        false,
+    );
+
+    expect(steps.map((step) => [step.kind, step.title, step.state])).toEqual([
+        ["note", "Installing Uncloud 0.21.0 on 2.29.143.81", "done"],
+        ["note", "Installing Docker", "done"],
+        ["note", "Docker installed and configured successfully", "done"],
+        ["note", "Machine debian-4gb-hel1-1 (2.29.143.81)  Reachable", "done"],
+        ["plan", "Plan", "done"],
+        ["resource", "sidecar-kiuf", "error"],
+        ["pull", "ghcr.io/stoat-labs/sidecar:latest", "done"],
+        [
+            "note",
+            "Oct 29 13:41:34.124 debian-4gb-hel1-1 sidecar/8af18 Error: unknown flag: --tls-listen",
+            "done",
+        ],
+    ]);
+    expect(steps[4]!.ops).toEqual([
+        {
+            title: "create service sidecar (global)",
+            detail: "image: ghcr.io/stoat-labs/sidecar:latest · run container sidecar on debian-4gb-hel1-1",
+        },
+    ]);
+    expect(steps[5]!.detail).toBe("Restarting (1) 1 second ago");
+});
