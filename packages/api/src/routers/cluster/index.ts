@@ -274,79 +274,72 @@ export const clusterRouter = {
 
     deleteCluster: organizationAdminProcedure
         .input(clusterInput)
-        .handler(async ({ context: { db, organizationId }, input }) => {
-            const [cluster] = await db
-                .select({ id: clusters.id, initializationStatus: clusters.initializationStatus })
-                .from(clusters)
-                .where(
-                    and(
-                        eq(clusters.id, input.clusterId),
-                        eq(clusters.organizationId, organizationId),
-                    ),
-                )
-                .limit(1);
+        .handler(async ({ context: { db, organizationId }, input }) =>
+            // The row lock makes starting setup or initialization wait until this delete is done.
+            db.transaction(async (tx) => {
+                const [cluster] = await tx
+                    .select({
+                        id: clusters.id,
+                        initializationStatus: clusters.initializationStatus,
+                    })
+                    .from(clusters)
+                    .where(
+                        and(
+                            eq(clusters.id, input.clusterId),
+                            eq(clusters.organizationId, organizationId),
+                        ),
+                    )
+                    .for("update");
 
-            if (!cluster) {
-                throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
-            }
+                if (!cluster) {
+                    throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
+                }
 
-            const [setup] = await db
-                .select({ id: deployments.id })
-                .from(deployments)
-                .where(
-                    and(
-                        eq(deployments.clusterId, cluster.id),
-                        eq(deployments.name, "ProvisionCluster"),
-                        inArray(deployments.status, ["queued", "running"]),
-                    ),
-                )
-                .limit(1);
+                const [setup] = await tx
+                    .select({ id: deployments.id })
+                    .from(deployments)
+                    .where(
+                        and(
+                            eq(deployments.clusterId, cluster.id),
+                            eq(deployments.name, "ProvisionCluster"),
+                            inArray(deployments.status, ["queued", "running"]),
+                        ),
+                    )
+                    .limit(1);
 
-            if (setup)
-                throw new ORPCError("CONFLICT", {
-                    message: "Wait for the cluster's setup to finish or fail before deleting it.",
-                });
+                if (setup)
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "Wait for the cluster's setup to finish or fail before deleting it.",
+                    });
 
-            if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {
-                throw new ORPCError("CONFLICT", {
-                    message:
-                        "Wait for cluster initialization to finish before deleting this connection.",
-                });
-            }
+                if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "Wait for cluster initialization to finish before deleting this connection.",
+                    });
+                }
 
-            const [bucket] = await db
-                .select({ resourceId: s3Buckets.resourceId })
-                .from(s3Buckets)
-                .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
-                .innerJoin(projects, eq(resources.projectId, projects.id))
-                .where(eq(projects.clusterId, cluster.id))
-                .limit(1);
+                const [bucket] = await tx
+                    .select({ resourceId: s3Buckets.resourceId })
+                    .from(s3Buckets)
+                    .innerJoin(resources, eq(s3Buckets.resourceId, resources.id))
+                    .innerJoin(projects, eq(resources.projectId, projects.id))
+                    .where(eq(projects.clusterId, cluster.id))
+                    .limit(1);
 
-            // Cascading would drop bucket rows and leave their provider keys unrevoked.
-            if (bucket) {
-                throw new ORPCError("CONFLICT", {
-                    message: "Delete the S3 buckets in this cluster's projects first.",
-                });
-            }
+                // Cascading would drop bucket rows and leave their provider keys unrevoked.
+                if (bucket) {
+                    throw new ORPCError("CONFLICT", {
+                        message: "Delete the S3 buckets in this cluster's projects first.",
+                    });
+                }
 
-            const deleted = await db
-                .delete(clusters)
-                .where(
-                    and(
-                        eq(clusters.id, cluster.id),
-                        eq(clusters.initializationStatus, cluster.initializationStatus),
-                    ),
-                )
-                .returning({ id: clusters.id });
+                await tx.delete(clusters).where(eq(clusters.id, cluster.id));
 
-            // Initialization started between the check and the delete.
-            if (!deleted.length)
-                throw new ORPCError("CONFLICT", {
-                    message: "The cluster changed while deleting it. Try again.",
-                });
-
-            return { id: cluster.id };
-        }),
+                return { id: cluster.id };
+            }),
+        ),
     // Queues the HealthCheck job for this cluster only; it otherwise runs hourly for every cluster.
     runHealthCheck: organizationAdminProcedure
         .input(clusterInput)

@@ -505,6 +505,41 @@ describe("cluster provisioning (PostgreSQL)", () => {
         );
     });
 
+    it("refuses to delete a cluster whose setup another admin is starting", async () => {
+        const clusterId = await create();
+        const deploymentId = randomUUID();
+        // Stands in for startProvisioning, which holds this lock until its deployment is saved.
+        const starting = await db.$client.connect();
+
+        try {
+            await starting.query("BEGIN");
+            await starting.query("SELECT id FROM clusters WHERE id = $1 FOR UPDATE", [clusterId]);
+
+            const deleting = call(clusterRouter.deleteCluster, { clusterId }, { context });
+
+            await vi.waitFor(async () => {
+                const { rows } = await db.$client.query(
+                    "SELECT 1 FROM pg_stat_activity WHERE datname = $1 AND wait_event_type = 'Lock'",
+                    [databaseName],
+                );
+
+                expect(rows).toHaveLength(1);
+            });
+            await starting.query(
+                `INSERT INTO deployments (id, job_id, cluster_id, name, status, created_at, updated_at)
+                 VALUES ($1, $2, $3, 'ProvisionCluster', 'queued', now(), now())`,
+                [deploymentId, deploymentId, clusterId],
+            );
+            await starting.query("COMMIT");
+
+            await expect(deleting).rejects.toThrow("Wait for the cluster's setup");
+        } finally {
+            starting.release();
+        }
+
+        expect(await db.select().from(clusters).where(eq(clusters.id, clusterId))).toHaveLength(1);
+    });
+
     it("leaves a cluster out of pickers until its setup finishes", async () => {
         const clusterId = await create();
 
