@@ -1167,17 +1167,6 @@
 
 {#snippet headerActions()}
     <div class="flex items-center gap-2">
-<<<<<<< Updated upstream
-=======
-        {#if changes.length}
-            <!-- Centered in the header on wide screens; narrow ones keep it inline. -->
-            <div
-                class="border-e pe-2 md:absolute md:left-1/2 md:-translate-x-1/2 md:border-none md:pe-0"
-            >
-                <ApplyBar {projectId} {changes} />
-            </div>
-        {/if}
->>>>>>> Stashed changes
         <Button
             size="sm"
             variant="ghost"
