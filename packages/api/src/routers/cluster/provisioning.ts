@@ -1,6 +1,5 @@
 import { ORPCError } from "@orpc/server";
 import { latestProvisioningDeployments } from "@stoat/db/clusters";
-import { latestDeploymentLogs } from "@stoat/db/deployments";
 import { clusters, deployments, type ClusterProvisioning } from "@stoat/db/schema/index";
 import {
     provisionedSidecarUrl,
@@ -107,7 +106,7 @@ export const provisioningRouter = {
             return { id, publicKey: credentials.publicKey };
         }),
 
-    // The setup dialog: what to authorize, where setup is, and the latest attempt's logs.
+    // What to authorize, where setup is, and the latest attempt.
     getProvisioning: organizationAdminProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) => {
@@ -134,20 +133,13 @@ export const provisioningRouter = {
             if (!cluster || (!cluster.provisioning && !attempt))
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 
-            // Polled while setup runs, so the dialog always gets the newest lines.
-            const logs = attempt ? await latestDeploymentLogs(db, attempt.id) : [];
-
             return {
                 id: cluster.id,
                 name: cluster.name,
                 setup: cluster.provisioning,
                 status: provisioningStatus(cluster.provisioning, attempt?.status),
-                error: attempt?.error ?? null,
-                logs: logs.map((line) => ({
-                    id: line.id,
-                    text: line.text,
-                    level: line.metadata.level === "error" ? ("error" as const) : ("info" as const),
-                })),
+                // Each attempt's logs live on its deployment page.
+                deploymentId: attempt?.id ?? null,
             };
         }),
 

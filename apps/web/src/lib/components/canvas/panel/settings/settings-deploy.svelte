@@ -17,7 +17,7 @@
     import * as v from "valibot";
     import type { CanvasResource, CanvasService } from "../../graph";
     import SettingsTitle from "./settings-title.svelte";
-    import SettingsToggle from "./settings-toggle.svelte";
+    import { Switch } from "$lib/components/ui/switch";
 
     type ResourceDetails = Awaited<
         ReturnType<AppRouterClient["resources"]["getResource"]>
@@ -165,16 +165,19 @@
 {/snippet}
 
 <div>
-    <SettingsTitle
-        text={"Prefix Names"}
-        description={"Changing it replaces services and starts volumes empty."}
-    />
-    <SettingsToggle
-        label="Prefix names"
-        checked={prefixNames}
-        disabled={savingPrefix || isInternal}
-        onchange={(checked) => void setPrefixNames(checked)}
-    />
+    <div class="flex items-center justify-between gap-4">
+        <SettingsTitle
+            text={"Prefix Names"}
+            description={"Changing it replaces services and starts volumes empty."}
+        />
+        <Switch
+            aria-label="Prefix names"
+            checked={prefixNames}
+            disabled={savingPrefix || isInternal}
+            onCheckedChange={(checked) =>
+                void setPrefixNames(checked)}
+        />
+    </div>
     {#if prefixError}
         <Alert variant="error" class="mt-3">
             <AlertDescription>{prefixError}</AlertDescription>

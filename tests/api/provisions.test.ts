@@ -7,7 +7,7 @@ import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
 import { cancelDeployment } from "@stoat/db/deployments";
 import { organizationHasInfrastructure } from "@stoat/db/organizations";
-import { clusters, deployments } from "@stoat/db/schema/index";
+import { clusters, deploymentLogs, deployments } from "@stoat/db/schema/index";
 import * as uncloud from "@stoat/uncloud";
 import { parseCaddyComposeSpec } from "@stoat/workflows/deploy-caddy";
 import { provisionCluster, provisioningCredentials } from "@stoat/workflows/provision-cluster";
@@ -239,6 +239,14 @@ describe("cluster provisioning (PostgreSQL)", () => {
         return (await readFile(join(bin, file), "utf8")).trim().split("\n");
     }
 
+    function setupLogs(deploymentId: string) {
+        return db
+            .select({ text: deploymentLogs.text, metadata: deploymentLogs.metadata })
+            .from(deploymentLogs)
+            .where(eq(deploymentLogs.deploymentId, deploymentId))
+            .orderBy(deploymentLogs.id);
+    }
+
     it("creates the cluster first, sets it up in a job, and forgets its keys", async () => {
         const clusterId = await create();
         const [created] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
@@ -259,6 +267,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(listed.items.find((item) => item.id === clusterId)?.setup).toEqual({
             host: PUBLIC_HOST,
             status: "pending",
+            deploymentId: null,
         });
 
         const { cluster, deployment } = await attempt(clusterId);
@@ -288,9 +297,15 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect((await lines("ssh-calls"))[0]).toContain("root@93.184.216.34 grep -qs");
 
         const setup = await call(clusterRouter.getProvisioning, { clusterId }, { context });
-        const text = setup.logs.map((line) => line.text);
+        const text = (await setupLogs(deployment.id)).map((line) => line.text);
 
-        expect(setup).toMatchObject({ status: "ready", setup: null });
+        expect(setup).toEqual({
+            id: clusterId,
+            name: expect.any(String),
+            setup: null,
+            status: "ready",
+            deploymentId: deployment.id,
+        });
         expect(text).toContain("Image ghcr.io/stoat-labs/sidecar:latest on edge  Pulled");
         expect(text.some((line) => line.includes("Downloading ["))).toBe(false);
         // Caddy keeps the image uc machine init deployed.
@@ -329,35 +344,17 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(deployment.error).toContain("already belongs to an Uncloud cluster");
     });
 
-    it("shows the newest setup logs once there are more than the dialog keeps", async () => {
-        const clusterId = await create();
-        const deploymentId = await start(clusterId);
-
-        await db.$client.query(
-            `INSERT INTO deployment_logs (deployment_id, text, metadata, created_at)
-             SELECT $1, 'line ' || n, '{"level":"info"}', now() FROM generate_series(1, 2005) AS n`,
-            [deploymentId],
-        );
-
-        const { logs } = await call(clusterRouter.getProvisioning, { clusterId }, { context });
-
-        expect(logs).toHaveLength(2000);
-        expect(logs[0]?.text).toBe("line 6");
-        expect(logs.at(-1)?.text).toBe("line 2005");
-    });
-
     it("explains a rejected key and logs the error once", async () => {
         await writeFile(join(bin, "ssh-mode"), "rejected");
-        const clusterId = await create();
-        const { deployment } = await attempt(clusterId);
-        const { logs } = await call(clusterRouter.getProvisioning, { clusterId }, { context });
+        const { deployment } = await attempt(await create());
+        const logs = await setupLogs(deployment.id);
 
         expect(deployment.error).toBe(
             "The server rejected Stoat's key. Add the public key to ~/.ssh/authorized_keys for root, then retry.",
         );
-        expect(logs.filter((line) => line.level === "error").map((line) => line.text)).toEqual([
-            deployment.error,
-        ]);
+        expect(
+            logs.filter((line) => line.metadata.level === "error").map((line) => line.text),
+        ).toEqual([deployment.error]);
         expect(await lines("calls")).toEqual([]);
     });
 
@@ -512,9 +509,8 @@ describe("cluster provisioning (PostgreSQL)", () => {
 
     it("finishes setup when Uncloud can't point the apps' domain at the server", async () => {
         await writeFile(join(bin, "mode"), "unreachable");
-        const clusterId = await create();
-        const { deployment } = await attempt(clusterId);
-        const { logs } = await call(clusterRouter.getProvisioning, { clusterId }, { context });
+        const { deployment } = await attempt(await create());
+        const logs = await setupLogs(deployment.id);
 
         expect(deployment.status).toBe("ready");
         expect(

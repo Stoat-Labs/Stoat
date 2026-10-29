@@ -27,7 +27,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 
 ## Gotchas
 
-- Pre-release: breaking changes are NOT a big deal. No backfill, no backwards compatibility, data loss in migrations is fine. Prefer the clean schema over preserving unreleased data.
+- Post-release: breaking changes are a big deal. No backfill, no backwards compatibility, data loss in migrations is NOT fine.
 - Backend tests need Docker. Testcontainers starts one `postgres:18-alpine`, and `tests/setup.ts` overwrites `DATABASE_URL`, so the dev DB is never used.
 - Env is managed by varlock: `.env.schema` in `apps/web` and `packages/db`. `postinstall` / `pnpm env:generate` regenerates `apps/web/src/generated-env.ts` and `packages/db/src/env.ts`. Edit the schema instead of those generated files. Packages read `APP_SECRET`, `APP_URL` and `DATABASE_URL` through `@stoat/config/env`, never `process.env` directly.
 - Two drizzle-orm versions coexist: 0.45.2 for the app and a v1 RC for effect-mq in `@stoat/workflows`. Keep the `pnpm-workspace.yaml` overrides and `ssr.noExternal: ["drizzle-orm"]` in `apps/web/vite.config.ts`, or the runtime crashes.

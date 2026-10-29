@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { goto } from "$app/navigation";
     import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import ProvisionClusterDialog from "$lib/components/clusters/provision-cluster-dialog.svelte";
@@ -16,8 +17,17 @@
         AlertDialogHeader,
         AlertDialogTitle,
     } from "$lib/components/ui/alert-dialog";
-    import { Button } from "$lib/components/ui/button";
+    import {
+        Button,
+        buttonVariants,
+    } from "$lib/components/ui/button";
     import { DataTable } from "$lib/components/ui/data-table";
+    import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
     import {
         InputGroup,
         InputGroupAddon,
@@ -34,7 +44,9 @@
         listPageSize,
         pageParser,
     } from "$lib/params/query-params";
+    import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Plus from "@lucide/svelte/icons/plus";
+    import Ellipsis from "@lucide/svelte/icons/ellipsis";
     import Search from "@lucide/svelte/icons/search";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import {
@@ -125,11 +137,7 @@
             : `${(list.page.current - 1) * limit + 1}–${Math.min(list.page.current * limit, total)} of ${total}`,
     );
 
-    type ClusterItem = {
-        id: string;
-        name: string;
-        projectCount: number;
-    };
+    type ClusterItem = (typeof items)[number];
 
     const clusterToDelete = $derived(
         items.find(
@@ -188,6 +196,19 @@
         });
     }
 
+    // Clusters still being set up open their provisioning dialog instead.
+    function openCluster(cluster: ClusterItem) {
+        // A started setup is followed on its deployment page.
+        if (cluster.setup?.deploymentId)
+            void goto(`/deployments/${cluster.setup.deploymentId}`);
+        else if (cluster.setup)
+            void list.set({
+                dialog: "provision",
+                clusterId: cluster.id,
+            });
+        else void goto(`/clusters/${cluster.id}`);
+    }
+
     function confirmDelete() {
         if (!clusterToDelete || deleteMutationState.isPending) return;
         deleteMutationState.mutate({ clusterId: clusterToDelete.id });
@@ -217,15 +238,39 @@
             </InputGroupAddon>
         </InputGroup>
         {#if canManage}
-            <Button
-                size="sm"
-                disabled={!ready}
-                onclick={() =>
-                    void list.set({ dialog: "create-cluster" })}
-            >
-                <Plus class="size-4" aria-hidden="true" />
-                Create cluster
-            </Button>
+            <Menu>
+                <MenuTrigger
+                    class={buttonVariants({ size: "sm" })}
+                    disabled={!ready}
+                >
+                    <Plus class="size-4" aria-hidden="true" />
+                    Create cluster
+                    <ChevronDown
+                        class="size-3.5"
+                        aria-hidden="true"
+                    />
+                </MenuTrigger>
+                <MenuPopup align="end" class="min-w-44">
+                    <MenuItem
+                        onclick={() =>
+                            void list.set({
+                                dialog: "create-cluster",
+                                source: "connect",
+                            })}
+                    >
+                        Connect existing
+                    </MenuItem>
+                    <MenuItem
+                        onclick={() =>
+                            void list.set({
+                                dialog: "create-cluster",
+                                source: "server",
+                            })}
+                    >
+                        New server
+                    </MenuItem>
+                </MenuPopup>
+            </Menu>
         {/if}
     </div>
 {/snippet}
@@ -261,20 +306,21 @@
         >
             {#snippet header()}
                 <TableRow>
-                    <TableHead class="text-center">Status</TableHead>
+                    <TableHead class="w-px">Status</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead class="text-center">
-                        Projects
-                    </TableHead>
-                    <TableHead class="text-center">
+                    <TableHead class="text-right">Projects</TableHead>
+                    <TableHead class="w-10">
                         <span class="sr-only">Actions</span>
                     </TableHead>
                 </TableRow>
             {/snippet}
             {#snippet children()}
                 {#each items as cluster (cluster.id)}
-                    <TableRow class="group">
-                        <TableCell class="text-center">
+                    <TableRow
+                        class="group cursor-pointer"
+                        onclick={() => openCluster(cluster)}
+                    >
+                        <TableCell class="w-px">
                             {#if cluster.setup}
                                 <ProvisionStatusBadge
                                     status={cluster.setup.status}
@@ -286,15 +332,28 @@
                             {/if}
                         </TableCell>
                         <TableCell>
-                            {#if cluster.setup}
+                            {#if cluster.setup?.deploymentId}
+                                <a
+                                    href={`/deployments/${cluster.setup.deploymentId}`}
+                                    onclick={(event) =>
+                                        event.stopPropagation()}
+                                    class="block font-semibold hover:underline"
+                                >
+                                    {cluster.name}
+                                </a>
+                                <span
+                                    class="mt-0.5 block text-xs text-muted-foreground"
+                                >
+                                    {cluster.setup.host}
+                                </span>
+                            {:else if cluster.setup}
                                 <button
                                     type="button"
                                     class="block font-semibold hover:underline"
-                                    onclick={() =>
-                                        void list.set({
-                                            dialog: "provision",
-                                            clusterId: cluster.id,
-                                        })}
+                                    onclick={(event) => {
+                                        event.stopPropagation();
+                                        openCluster(cluster);
+                                    }}
                                 >
                                     {cluster.name}
                                 </button>
@@ -306,6 +365,8 @@
                             {:else}
                                 <a
                                     href={`/clusters/${cluster.id}`}
+                                    onclick={(event) =>
+                                        event.stopPropagation()}
                                     class="block font-semibold hover:underline"
                                 >
                                     {cluster.name}
@@ -319,23 +380,38 @@
                                 </span>
                             {/if}
                         </TableCell>
-                        <TableCell class="text-center">
+                        <TableCell class="text-right tabular-nums">
                             {cluster.projectCount}
                         </TableCell>
-                        <TableCell class="text-center">
+                        <TableCell class="w-10 text-right">
                             {#if canManage}
-                                <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    class="text-muted-foreground hover:text-destructive-foreground"
-                                    aria-label={`Delete ${cluster.name}`}
-                                    onclick={() => askDelete(cluster)}
-                                >
-                                    <Trash2
-                                        class="size-4"
-                                        aria-hidden="true"
-                                    />
-                                </Button>
+                                <Menu>
+                                    <MenuTrigger
+                                        aria-label={`Actions for ${cluster.name}`}
+                                        class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                                        onclick={(event) =>
+                                            event.stopPropagation()}
+                                    >
+                                        <Ellipsis
+                                            class="size-4"
+                                            aria-hidden="true"
+                                        />
+                                    </MenuTrigger>
+                                    <MenuPopup align="end">
+                                        <MenuItem
+                                            variant="destructive"
+                                            onclick={(event) => {
+                                                event.stopPropagation();
+                                                askDelete(cluster);
+                                            }}
+                                        >
+                                            <Trash2
+                                                aria-hidden="true"
+                                            />
+                                            Delete
+                                        </MenuItem>
+                                    </MenuPopup>
+                                </Menu>
                             {/if}
                         </TableCell>
                     </TableRow>
@@ -372,10 +448,7 @@
                 void list.set({ dialog: null, source: null });
         }
     }
-    bind:source={
-        () => list.source.current,
-        (source) => void list.set({ source })
-    }
+    source={list.source.current}
     onprovision={(clusterId) =>
         void list.set({
             dialog: "provision",

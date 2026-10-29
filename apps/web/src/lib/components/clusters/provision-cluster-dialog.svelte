@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { goto } from "$app/navigation";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
@@ -21,9 +22,7 @@
         createQuery,
     } from "@tanstack/svelte-query";
     import { parseAsString, useQueryStates } from "nuqs-svelte";
-    import { tick } from "svelte";
     import ConnectionField from "./connection-field.svelte";
-    import ProvisionStatusBadge from "./provision-status-badge.svelte";
 
     const params = useQueryStates(
         { dialog: parseAsString, clusterId: parseAsString },
@@ -42,11 +41,6 @@
         orpc.cluster.getProvisioning.queryOptions({
             input: { clusterId },
             enabled: open && Boolean(clusterId),
-            refetchInterval: (query) =>
-                query.state.data?.status === "queued" ||
-                query.state.data?.status === "running"
-                    ? 2000
-                    : false,
             retry: false,
         }),
     );
@@ -59,24 +53,14 @@
             : "",
     );
 
-    let viewport = $state<HTMLDivElement>();
-
-    let following = $state(true);
-
+    // Setup runs as a deployment, so its progress is followed on the deployment page.
     const startMutation = createMutation(() =>
         orpc.cluster.startProvisioning.mutationOptions({
-            onSuccess: async () => {
-                following = true;
-                await Promise.all([
-                    provisionQuery.refetch(),
-                    queryClient.invalidateQueries({
-                        queryKey:
-                            orpc.cluster.listClusters.queryKey(),
-                    }),
-                ]);
-
-                if (params.dialog.current === "reset-provision")
-                    void params.set({ dialog: "provision" });
+            onSuccess: async ({ deploymentId }) => {
+                void queryClient.invalidateQueries({
+                    queryKey: orpc.cluster.listClusters.queryKey(),
+                });
+                await goto(`/deployments/${deploymentId}`);
             },
         }),
     );
@@ -87,40 +71,6 @@
                   "Unable to start the setup."
             : "",
     );
-
-    // The cluster's row in the list follows the setup's outcome.
-    let lastStatus = "";
-
-    $effect(() => {
-        const status = provision?.status ?? "";
-
-        if (status === lastStatus) return;
-        lastStatus = status;
-
-        if (status === "ready" || status === "failed")
-            void queryClient.invalidateQueries({
-                queryKey: orpc.cluster.listClusters.queryKey(),
-            });
-    });
-
-    // Stick to the newest line while the user stays at the bottom.
-    $effect(() => {
-        const count = provision?.logs.length ?? 0;
-
-        if (!count || !following) return;
-        void tick().then(() => {
-            if (viewport) viewport.scrollTop = viewport.scrollHeight;
-        });
-    });
-
-    function onLogScroll() {
-        if (!viewport) return;
-        following =
-            viewport.scrollHeight -
-                viewport.scrollTop -
-                viewport.clientHeight <
-            24;
-    }
 
     function close() {
         startMutation.reset();
@@ -152,11 +102,8 @@
 >
     <DialogContent class="max-w-2xl">
         <DialogHeader>
-            <DialogTitle class="flex items-center gap-2">
+            <DialogTitle>
                 {provision?.name ?? "New server"}
-                {#if provision}
-                    <ProvisionStatusBadge status={provision.status} />
-                {/if}
             </DialogTitle>
             <DialogDescription>
                 {#if provision?.setup}
@@ -195,66 +142,24 @@
                         </AlertDescription>
                     </Alert>
                 {/if}
-                {#if provision.status === "pending"}
-                    <p class="text-sm text-muted-foreground">
-                        Authorize this key for <span
-                            class="font-mono text-foreground"
-                        >
-                            {provision.setup?.user}
-                        </span>
-                        and then start the setup. Stoat installs Docker
-                        and Uncloud, creates the cluster, and deploys its
-                        sidecar. The private key is deleted once the cluster
-                        is ready.
-                    </p>
-                    <ConnectionField
-                        label="Public key"
-                        value={provision.setup?.publicKey ?? ""}
-                    />
-                    <ConnectionField
-                        label="Or run this on the server"
-                        value={command}
-                    />
-                {:else}
-                    {#if provision.status === "failed" && provision.error}
-                        <Alert variant="error">
-                            <AlertDescription class="break-words">
-                                {provision.error}
-                            </AlertDescription>
-                        </Alert>
-                    {:else if provision.status === "ready"}
-                        <Alert variant="success">
-                            <AlertDescription>
-                                The cluster is ready.
-                            </AlertDescription>
-                        </Alert>
-                    {/if}
-                    <!-- svelte-ignore a11y_no_noninteractive_tabindex (The named scroll region must support keyboard scrolling.) -->
-                    <div
-                        bind:this={viewport}
-                        class="h-80 overflow-auto rounded-xl bg-code p-3 font-mono text-xs leading-5 text-code-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        tabindex="0"
-                        role="log"
-                        aria-label="Setup logs"
-                        onscroll={onLogScroll}
+                <p class="text-sm text-muted-foreground">
+                    Authorize this key for <span
+                        class="font-mono text-foreground"
                     >
-                        {#each provision.logs as line (line.id)}
-                            <div
-                                class={[
-                                    "whitespace-pre-wrap break-all",
-                                    line.level === "error" &&
-                                        "text-destructive-foreground",
-                                ]}
-                            >
-                                {line.text}
-                            </div>
-                        {:else}
-                            <p class="text-muted-foreground">
-                                Waiting for the worker...
-                            </p>
-                        {/each}
-                    </div>
-                {/if}
+                        {provision.setup?.user}
+                    </span>
+                    and then start the setup. Stoat installs Docker and
+                    Uncloud, creates the cluster, and deploys its sidecar.
+                    The private key is deleted once the cluster is ready.
+                </p>
+                <ConnectionField
+                    label="Public key"
+                    value={provision.setup?.publicKey ?? ""}
+                />
+                <ConnectionField
+                    label="Or run this on the server"
+                    value={command}
+                />
             {/if}
         </DialogPanel>
         <DialogFooter>
@@ -265,17 +170,6 @@
                     onclick={() => start()}
                 >
                     Start setup
-                </Button>
-            {:else if provision?.status === "failed"}
-                <Button
-                    loading={startMutation.isPending}
-                    onclick={() => start()}
-                >
-                    Retry
-                </Button>
-            {:else if provision?.status === "ready"}
-                <Button href={`/clusters/${provision.id}`}>
-                    Open cluster
                 </Button>
             {/if}
         </DialogFooter>
