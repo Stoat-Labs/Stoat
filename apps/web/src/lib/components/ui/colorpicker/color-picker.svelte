@@ -176,7 +176,7 @@
 
 <Popover>
     <PopoverTrigger>{@render marker(color)}</PopoverTrigger>
-    <PopoverPopup class="w-70 p-0">
+    <PopoverPopup class="w-70 **:data-[slot=popover-viewport]:p-0">
         <HueyRoot bind:color>{@render child()}</HueyRoot>
     </PopoverPopup>
 </Popover>
