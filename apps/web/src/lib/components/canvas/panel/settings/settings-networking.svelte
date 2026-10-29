@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { orpc } from "$lib/api/orpc";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
@@ -21,6 +22,7 @@
         type HttpIngress,
         type IngressEntry,
     } from "@stoat/workflows/ingress";
+    import { createQuery } from "@tanstack/svelte-query";
     import type { Component, Snippet } from "svelte";
     import type { CanvasResource, CanvasService } from "../../graph";
     import CanvasIngressDialog, {
@@ -98,9 +100,45 @@
         }
     }
 
+    // STOAT_DOMAIN and STOAT_PREFIX, to name the hostname Uncloud gives a hostless entry.
+    const systemQuery = createQuery(() =>
+        orpc.resources.listSystemVariables.queryOptions({
+            input: {
+                projectId: resource.projectId,
+                resourceId: resource.id,
+            },
+        }),
+    );
+
+    const systemValue = (key: string) =>
+        systemQuery.data?.find((variable) => variable.key === key)
+            ?.value;
+
+    // Uncloud publishes a hostless entry at `<prefixed service>.<cluster domain>`.
+    function httpHostname(entry: HttpIngress) {
+        if (entry.hostname) return entry.hostname;
+
+        const domain = systemValue("STOAT_DOMAIN");
+        const prefix = systemValue("STOAT_PREFIX");
+
+        return domain
+            ? `${prefix ? `${prefix}-` : ""}${entry.service}.${domain}`
+            : undefined;
+    }
+
+    function ingressUrl(entry: IngressEntry) {
+        if (entry.kind !== "http") return undefined;
+
+        const hostname = httpHostname(entry);
+
+        return hostname
+            ? `${entry.protocol}://${hostname}`
+            : undefined;
+    }
+
     function ingressLabel(entry: IngressEntry) {
         if (entry.kind === "http")
-            return entry.hostname ?? "Cluster default domain";
+            return httpHostname(entry) ?? "Cluster default domain";
 
         if (entry.kind === "host")
             return `${entry.bind ?? "*"}:${entry.hostPort}`;
@@ -220,10 +258,7 @@
         />
         <div class="mt-3 space-y-2">
             {#each ingressEntries as entry (entry.kind === "caddy" ? `caddy/${entry.service}` : `${entry.service}/${entry.raw}`)}
-                {@const url =
-                    entry.kind === "http" && entry.hostname
-                        ? `${entry.protocol}://${entry.hostname}`
-                        : undefined}
+                {@const url = ingressUrl(entry)}
                 {#snippet detail()}
                     {#if entry.kind === "caddy"}
                         Caddyfile routes
