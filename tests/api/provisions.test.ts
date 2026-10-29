@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
+import { cancelDeployment } from "@stoat/db/deployments";
 import { organizationHasInfrastructure } from "@stoat/db/organizations";
 import { clusters, deployments } from "@stoat/db/schema/index";
 import * as uncloud from "@stoat/uncloud";
@@ -362,6 +363,43 @@ describe("cluster provisioning (PostgreSQL)", () => {
             (await lines("calls")).filter((line) => line.startsWith("machine init")).at(-1),
         ).toContain("--yes");
         expect(await lines("ssh-calls")).toHaveLength(1);
+    });
+
+    it("keeps a setup cancelled right before it finishes cancelled, and retryable", async () => {
+        const clusterId = await create();
+        const deploymentId = await start(clusterId);
+
+        // An admin cancels while the job waits for the sidecar; the job's abort arrives later.
+        const cancelling = {
+            GET: async () => {
+                await cancelDeployment(db, deploymentId);
+
+                return { response: new Response(null, { status: 200 }) };
+            },
+        };
+
+        // SAFETY: provisioning only calls GET /readyz and reads the response status.
+        vi.mocked(uncloud.ucClient).mockReturnValueOnce(
+            cancelling as typeof cancelling & ReturnType<typeof uncloud.ucClient>,
+        );
+        await provisionCluster(db, deploymentId, new AbortController().signal);
+
+        const [cluster] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
+
+        const [deployment] = await db
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, deploymentId));
+
+        expect(deployment).toMatchObject({ status: "cancelled", error: "Cancelled by user." });
+        expect(cluster!.provisioning?.initState).toBe("done");
+        expect(cluster!.provisioningSecrets).not.toBeNull();
+
+        // Init is done, so the retry only redeploys the sidecar and finishes.
+        const retried = await attempt(clusterId);
+
+        expect(retried.deployment.status).toBe("ready");
+        expect(retried.cluster.provisioning).toBeNull();
     });
 
     it("remembers a half-created cluster when setup is interrupted", async () => {

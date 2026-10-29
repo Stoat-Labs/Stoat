@@ -463,7 +463,11 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
 
         log("Cluster is ready.");
         await pending;
-        await finishProvisioning(db, clusterId, deploymentId);
+
+        if (!(await finishProvisioning(db, clusterId, deploymentId)))
+            log(
+                "Setup was cancelled before Stoat saved the cluster. Retry to finish setting it up.",
+            );
     } catch (error) {
         // Interruption is not a failure: the job is released and runs again.
         if (signal.aborted) throw error;

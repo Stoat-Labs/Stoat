@@ -36,17 +36,27 @@ export async function setProvisioningInitState(
         .where(and(eq(clusters.id, clusterId), isNotNull(clusters.provisioning)));
 }
 
-/** Marks the setup finished and deletes its single-use keys, together with the job's success. */
+/**
+ * Marks the setup finished and deletes its single-use keys, together with the job's success.
+ * False when the job was cancelled meanwhile, which keeps the keys so the setup can be retried.
+ */
 export async function finishProvisioning(db: Database, clusterId: string, deploymentId: string) {
-    await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
+        // Takes the row lock, so a cancellation either lands first and is kept, or finds it finished.
+        const [finished] = await tx
+            .update(deployments)
+            .set({ status: "ready", error: null, finishedAt: new Date() })
+            .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "running")))
+            .returning({ id: deployments.id });
+
+        if (!finished) return false;
+
         await tx
             .update(clusters)
             .set({ provisioning: null, provisioningSecrets: null })
             .where(eq(clusters.id, clusterId));
-        await tx
-            .update(deployments)
-            .set({ status: "ready", error: null, finishedAt: new Date() })
-            .where(eq(deployments.id, deploymentId));
+
+        return true;
     });
 }
 
