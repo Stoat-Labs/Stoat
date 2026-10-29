@@ -209,9 +209,12 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
         );
         expect(events.every((event) => event.deployment.status === "ready")).toBe(true);
         expect(events[0]?.deployment).toMatchObject({ spec: "COMPOSE_SECRET" });
-        expect(await getDeploymentWithLogs(db, deployment.id)).toMatchObject({
-            spec: "COMPOSE_SECRET",
-        });
+        const snapshot = await getDeploymentWithLogs(db, deployment.id);
+        expect(snapshot).toMatchObject({ spec: "COMPOSE_SECRET" });
+        // A long log's snapshot keeps its end.
+        expect(snapshot?.logs.map((line) => line.id)).toEqual(
+            logs.slice(-2000).map((line) => line.id),
+        );
 
         const resumed = [];
 

@@ -11,6 +11,14 @@ const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcr
 const domainCard = (page: Page) =>
     page.locator("[data-slot=card]").filter({ hasText: "Cluster domain" });
 
+/** Opens the delete confirmation from a cluster row's actions menu. */
+async function askDelete(page: Page, name: string) {
+    await row(page, name)
+        .getByRole("button", { name: `Actions for ${name}` })
+        .click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+}
+
 let clusters = 0;
 
 /** A cluster on the fake sidecar with a name no other test uses. */
@@ -37,6 +45,7 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     const name = `Created ${Date.now()}`;
     await page.goto("/clusters");
     await page.getByRole("button", { name: "Create cluster" }).click();
+    await page.getByRole("menuitem", { name: "Connect existing" }).click();
 
     const create = dialog(page);
     await expect(create.getByRole("button", { name: "Create Cluster" })).toBeDisabled();
@@ -62,9 +71,7 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     await expect(page.getByText(MACHINE.name).first()).toBeVisible();
 
     await page.goto("/clusters");
-    await row(page, name)
-        .getByRole("button", { name: `Delete ${name}` })
-        .click();
+    await askDelete(page, name);
     await expect(dialog(page)).toContainText(`"${name}" will be permanently deleted`);
     await dialog(page).getByRole("button", { name: "Delete" }).click();
     // The modal hides the table from the accessibility tree, so wait for it to close first.
@@ -73,15 +80,16 @@ test("an admin creates a cluster in a dialog, sees it healthy, and deletes it", 
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
 });
 
-test("an admin sets up a server over SSH, sees why it failed, and deletes the cluster", async ({
+test("an admin sets up a server over SSH, follows it on its deployment page, retries, and deletes the cluster", async ({
     page,
 }) => {
+    test.setTimeout(3 * 60_000);
     const name = `Server ${Date.now()}`;
     await page.goto("/clusters");
     await page.getByRole("button", { name: "Create cluster" }).click();
+    await page.getByRole("menuitem", { name: "New server" }).click();
 
     const create = dialog(page);
-    await create.getByRole("tab", { name: "New server" }).click();
     await create.getByLabel("Name").fill(name);
     // .invalid names never resolve, so the setup fails without touching a real server.
     await create.getByLabel("Server address").fill("server.invalid");
@@ -121,22 +129,36 @@ test("an admin sets up a server over SSH, sees why it failed, and deletes the cl
         expect(body).not.toContain("enc:v1:");
     }
 
+    // Setup is followed on its deployment page.
     await setup.getByRole("button", { name: "Start setup" }).click();
-    await expect(setup.getByRole("button", { name: "Start setup" })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(setup).toHaveCount(0);
+    await expect(page).toHaveURL(/\/deployments\//u);
+    const firstAttempt = page.url();
+    const status = page.getByRole("status").first();
 
-    // The list follows the setup after its dialog closes.
-    await expect(row(page, name)).toContainText("Failed", { timeout: 45_000 });
+    await expect(status).toHaveText("Failed", { timeout: 45_000 });
+    await expect(page.getByRole("region", { name: "Condensed deployment logs" })).not.toBeEmpty();
+
+    // .invalid never connects, so nothing was created on the server and retrying needs no reset.
+    await page.getByRole("button", { name: "Retry setup" }).click();
+    await expect(page).not.toHaveURL(firstAttempt);
+    await expect(status).toHaveText("Failed", { timeout: 45_000 });
+
+    // A half-created cluster whose attempts were deleted still retries, after confirming the reset.
+    await sql(
+        `UPDATE clusters SET provisioning = jsonb_set(provisioning, '{initState}', '"partial"') WHERE id = $1`,
+        [clusterId],
+    );
+    await sql("DELETE FROM deployments WHERE cluster_id = $1", [clusterId]);
+    await page.goto("/clusters");
     await row(page, name).getByRole("button", { name, exact: true }).click();
-    await expect(setup.getByRole("button", { name: "Retry" })).toBeVisible();
-    await expect(setup.getByRole("log", { name: "Setup logs" })).not.toBeEmpty();
-    await page.keyboard.press("Escape");
-    await expect(setup).toHaveCount(0);
+    await setup.getByRole("button", { name: "Start setup" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Reset and retry" }).click();
+    await expect(page).toHaveURL(/\/deployments\//u);
+    await expect(status).toHaveText("Failed", { timeout: 45_000 });
 
-    await row(page, name)
-        .getByRole("button", { name: `Delete ${name}` })
-        .click();
+    await page.goto("/clusters");
+    await expect(row(page, name)).toContainText("Failed");
+    await askDelete(page, name);
     await dialog(page).getByRole("button", { name: "Delete" }).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, name)).toHaveCount(0);
@@ -187,9 +209,7 @@ test("deleting a cluster removes its projects", async ({ page }) => {
     await page.reload();
 
     await expect(row(page, cluster.name)).toContainText("1");
-    await row(page, cluster.name)
-        .getByRole("button", { name: `Delete ${cluster.name}` })
-        .click();
+    await askDelete(page, cluster.name);
     await expect(dialog(page)).toContainText("Its 1 project will also be removed.");
     await dialog(page).getByRole("button", { name: "Delete" }).click();
 
@@ -200,7 +220,7 @@ test("deleting a cluster removes its projects", async ({ page }) => {
 
 test("a cluster whose projects hold buckets is kept", async ({ page }) => {
     await page.goto("/clusters");
-    await row(page, "Main").getByRole("button", { name: "Delete Main" }).click();
+    await askDelete(page, "Main");
     await dialog(page).getByRole("button", { name: "Delete" }).click();
 
     await expect(dialog(page)).toContainText("Delete the S3 buckets");
@@ -286,7 +306,7 @@ test.describe("as a member", () => {
         await page.goto("/clusters");
         await expect(page.getByRole("link", { name: "Main" })).toBeVisible();
         await expect(page.getByRole("button", { name: "Create cluster" })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Delete Main" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Actions for Main" })).toHaveCount(0);
 
         for (const [path, input] of [
             ["cluster/createCluster", { name: "x", sidecarUrl: "http://x", sidecarToken: "x" }],

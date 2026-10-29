@@ -136,14 +136,15 @@ export async function getDeploymentWithLogs(db: Database, id: string) {
 
     if (!row) return null;
 
-    const logs = await db
+    // The newest lines, oldest first, so a long log still shows how it ends.
+    const newest = await db
         .select()
         .from(deploymentLogs)
         .where(eq(deploymentLogs.deploymentId, id))
-        .orderBy(asc(deploymentLogs.id))
+        .orderBy(desc(deploymentLogs.id))
         .limit(MAX_LOGS);
 
-    return { ...row, logs };
+    return { ...row, logs: newest.reverse() };
 }
 
 type ChangeSubscriber = {

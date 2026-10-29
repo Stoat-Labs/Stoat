@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Alert,
         AlertDescription,
@@ -28,7 +29,11 @@
         { shallow: true, scroll: false },
     );
 
-    const open = $derived(params.dialog.current === "provision");
+    // The reset confirmation opens on top of this dialog.
+    const open = $derived(
+        params.dialog.current === "provision" ||
+            params.dialog.current === "reset-provision",
+    );
 
     const clusterId = $derived(params.clusterId.current ?? "");
 
@@ -71,13 +76,27 @@
         startMutation.reset();
         void params.set({ dialog: null, clusterId: null });
     }
+
+    function start(reset = false) {
+        if (!provision || startMutation.isPending) return;
+
+        // A half-created cluster is only reset after an explicit confirmation.
+        if (provision.setup?.initState === "partial" && !reset) {
+            void params.set({ dialog: "reset-provision" });
+
+            return;
+        }
+
+        startMutation.mutate({ clusterId: provision.id, reset });
+    }
 </script>
 
 <Dialog
     bind:open={
         () => open,
         (value) => {
-            if (!value) close();
+            if (!value && params.dialog.current === "provision")
+                close();
         }
     }
 >
@@ -148,10 +167,7 @@
             {#if provision?.status === "pending"}
                 <Button
                     loading={startMutation.isPending}
-                    onclick={() =>
-                        startMutation.mutate({
-                            clusterId: provision.id,
-                        })}
+                    onclick={() => start()}
                 >
                     Start setup
                 </Button>
@@ -159,3 +175,18 @@
         </DialogFooter>
     </DialogContent>
 </Dialog>
+
+<ConfirmDialog
+    bind:open={
+        () => params.dialog.current === "reset-provision",
+        (value) => {
+            if (!value) void params.set({ dialog: "provision" });
+        }
+    }
+    title="Reset the server?"
+    description={`The last attempt created a cluster on ${provision?.setup?.host ?? "this server"} but didn't finish setting it up. Retrying resets Uncloud on the server and removes its containers.`}
+    confirmLabel="Reset and retry"
+    pending={startMutation.isPending}
+    error={startError}
+    onconfirm={() => start(true)}
+/>
