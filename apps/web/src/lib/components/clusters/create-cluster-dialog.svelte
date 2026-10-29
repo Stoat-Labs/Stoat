@@ -9,18 +9,12 @@
         DialogPanel,
         DialogTitle,
     } from "$lib/components/ui/dialog";
-    import {
-        Tabs,
-        TabsList,
-        TabsPanel,
-        TabsTab,
-    } from "$lib/components/ui/tabs";
     import CreateClusterForm from "./create-cluster-form.svelte";
     import ProvisionClusterForm from "./provision-cluster-form.svelte";
 
     let {
         open = $bindable(false),
-        source = $bindable("connect"),
+        source = "connect",
         onprovision,
     }: {
         open?: boolean;
@@ -28,7 +22,6 @@
         onprovision: (clusterId: string) => void;
     } = $props();
 
-    // Only the active tab's form is mounted, so both share these.
     let pending = $state(false);
 
     let canSubmit = $state(false);
@@ -37,46 +30,33 @@
 <Dialog bind:open>
     <DialogContent>
         <DialogHeader>
-            <DialogTitle>Create Cluster</DialogTitle>
+            <DialogTitle>
+                {source === "server"
+                    ? "Create Cluster on a New Server"
+                    : "Connect Existing Cluster"}
+            </DialogTitle>
             <DialogDescription>
                 Clusters run your projects' resources.
             </DialogDescription>
         </DialogHeader>
         <DialogPanel>
-            <Tabs
-                value={source}
-                onValueChange={(value) => {
-                    if (value === "connect" || value === "server")
-                        source = value;
-                }}
-            >
-                <TabsList class="mb-4 w-full">
-                    <TabsTab value="connect" disabled={pending}>
-                        Connect existing
-                    </TabsTab>
-                    <TabsTab value="server" disabled={pending}>
-                        New server
-                    </TabsTab>
-                </TabsList>
-                <TabsPanel value="connect">
-                    <CreateClusterForm
-                        formId="create-cluster-form"
-                        bind:pending
-                        bind:canSubmit
-                        oncreated={() => {
-                            open = false;
-                        }}
-                    />
-                </TabsPanel>
-                <TabsPanel value="server">
-                    <ProvisionClusterForm
-                        formId="provision-cluster-form"
-                        bind:pending
-                        bind:canSubmit
-                        oncreated={onprovision}
-                    />
-                </TabsPanel>
-            </Tabs>
+            {#if source === "server"}
+                <ProvisionClusterForm
+                    formId="provision-cluster-form"
+                    bind:pending
+                    bind:canSubmit
+                    oncreated={onprovision}
+                />
+            {:else}
+                <CreateClusterForm
+                    formId="create-cluster-form"
+                    bind:pending
+                    bind:canSubmit
+                    oncreated={() => {
+                        open = false;
+                    }}
+                />
+            {/if}
         </DialogPanel>
         <DialogFooter>
             <Button

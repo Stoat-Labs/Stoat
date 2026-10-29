@@ -16,8 +16,17 @@
         AlertDialogHeader,
         AlertDialogTitle,
     } from "$lib/components/ui/alert-dialog";
-    import { Button } from "$lib/components/ui/button";
+    import {
+        Button,
+        buttonVariants,
+    } from "$lib/components/ui/button";
     import { DataTable } from "$lib/components/ui/data-table";
+    import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
     import {
         InputGroup,
         InputGroupAddon,
@@ -34,6 +43,7 @@
         listPageSize,
         pageParser,
     } from "$lib/params/query-params";
+    import ChevronDown from "@lucide/svelte/icons/chevron-down";
     import Plus from "@lucide/svelte/icons/plus";
     import Search from "@lucide/svelte/icons/search";
     import Trash2 from "@lucide/svelte/icons/trash-2";
@@ -217,15 +227,39 @@
             </InputGroupAddon>
         </InputGroup>
         {#if canManage}
-            <Button
-                size="sm"
-                disabled={!ready}
-                onclick={() =>
-                    void list.set({ dialog: "create-cluster" })}
-            >
-                <Plus class="size-4" aria-hidden="true" />
-                Create cluster
-            </Button>
+            <Menu>
+                <MenuTrigger
+                    class={buttonVariants({ size: "sm" })}
+                    disabled={!ready}
+                >
+                    <Plus class="size-4" aria-hidden="true" />
+                    Create cluster
+                    <ChevronDown
+                        class="size-3.5"
+                        aria-hidden="true"
+                    />
+                </MenuTrigger>
+                <MenuPopup align="end" class="min-w-44">
+                    <MenuItem
+                        onclick={() =>
+                            void list.set({
+                                dialog: "create-cluster",
+                                source: "connect",
+                            })}
+                    >
+                        Connect existing
+                    </MenuItem>
+                    <MenuItem
+                        onclick={() =>
+                            void list.set({
+                                dialog: "create-cluster",
+                                source: "server",
+                            })}
+                    >
+                        New server
+                    </MenuItem>
+                </MenuPopup>
+            </Menu>
         {/if}
     </div>
 {/snippet}
@@ -372,10 +406,7 @@
                 void list.set({ dialog: null, source: null });
         }
     }
-    bind:source={
-        () => list.source.current,
-        (source) => void list.set({ source })
-    }
+    source={list.source.current}
     onprovision={(clusterId) =>
         void list.set({
             dialog: "provision",
