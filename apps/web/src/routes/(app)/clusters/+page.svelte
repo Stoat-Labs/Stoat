@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import { orpc, queryClient } from "$lib/api/orpc";
     import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import ProvisionClusterDialog from "$lib/components/clusters/provision-cluster-dialog.svelte";
@@ -23,30 +24,29 @@
     } from "$lib/components/ui/button";
     import { DataTable } from "$lib/components/ui/data-table";
     import {
+        InputGroup,
+        InputGroupAddon,
+        InputGroupInput,
+    } from "$lib/components/ui/input-group";
+    import {
         Menu,
         MenuItem,
         MenuPopup,
         MenuTrigger,
     } from "$lib/components/ui/menu";
     import {
-        InputGroup,
-        InputGroupAddon,
-        InputGroupInput,
-    } from "$lib/components/ui/input-group";
-    import {
         TableCell,
         TableHead,
         TableRow,
     } from "$lib/components/ui/table";
-    import { orpc, queryClient } from "$lib/api/orpc";
     import { formatDate } from "$lib/format";
     import {
         listPageSize,
         pageParser,
     } from "$lib/params/query-params";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Plus from "@lucide/svelte/icons/plus";
     import Ellipsis from "@lucide/svelte/icons/ellipsis";
+    import Plus from "@lucide/svelte/icons/plus";
     import Search from "@lucide/svelte/icons/search";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import {
@@ -258,7 +258,7 @@
                                 source: "connect",
                             })}
                     >
-                        Connect existing
+                        Connect existing cluster
                     </MenuItem>
                     <MenuItem
                         onclick={() =>
@@ -267,7 +267,7 @@
                                 source: "server",
                             })}
                     >
-                        New server
+                        New cluster
                     </MenuItem>
                 </MenuPopup>
             </Menu>
