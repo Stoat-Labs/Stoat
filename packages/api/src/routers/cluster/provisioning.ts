@@ -2,7 +2,11 @@ import { ORPCError } from "@orpc/server";
 import { latestProvisioningDeployments } from "@stoat/db/clusters";
 import { latestDeploymentLogs } from "@stoat/db/deployments";
 import { clusters, deployments, type ClusterProvisioning } from "@stoat/db/schema/index";
-import { provisionedSidecarUrl, provisioningCredentials } from "@stoat/workflows/provision-cluster";
+import {
+    provisionedSidecarUrl,
+    provisioningCredentials,
+    provisioningLock,
+} from "@stoat/workflows/provision-cluster";
 import { isAllowedServerAddress } from "@stoat/workflows/server-address";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -188,6 +192,16 @@ export const provisioningRouter = {
 
                 if (active)
                     throw new ORPCError("CONFLICT", { message: "Setup is already running." });
+
+                // A cancelled attempt keeps working until its worker notices, then writes its state.
+                const { rows } = await tx.execute<{ free: boolean }>(
+                    sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${provisioningLock(cluster.id)}, 0)) AS free`,
+                );
+
+                if (!rows[0]?.free)
+                    throw new ORPCError("CONFLICT", {
+                        message: "The last attempt is still stopping. Try again in a few seconds.",
+                    });
 
                 if (cluster.provisioning.initState === "partial") {
                     if (!input.reset)

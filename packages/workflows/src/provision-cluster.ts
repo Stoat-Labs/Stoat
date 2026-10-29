@@ -375,7 +375,11 @@ async function waitForSidecar(
     );
 }
 
-/** Runs one setup attempt, the `ProvisionCluster` deployment `deploymentId`. */
+/** The advisory lock a setup attempt holds while it runs, so two never work on one server. */
+export function provisioningLock(clusterId: string) {
+    return `stoat:provision:${clusterId}`;
+}
+
 // Like Caddy's metrics for monitoring, this never fails setup: stock Caddy still serves the cluster.
 async function deployClusterStorageCaddy(db: Database, clusterId: string, log: Log) {
     const { image, caddyfile } = CLUSTER_STORAGE_CADDY;
@@ -388,6 +392,7 @@ async function deployClusterStorageCaddy(db: Database, clusterId: string, log: L
     }
 }
 
+/** Runs one setup attempt, the `ProvisionCluster` deployment `deploymentId`. */
 export async function provisionCluster(db: Database, deploymentId: string, signal: AbortSignal) {
     const claimed = await db.$client.query<{ clusterId: string }>(
         `UPDATE deployments SET status = 'running', error = NULL, finished_at = NULL, updated_at = now()
@@ -412,8 +417,21 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
 
     const dir = await mkdtemp(join(tmpdir(), "stoat-provision-"));
     const workspace = { dir, config: join(dir, "config.yaml"), key: join(dir, "id_ed25519") };
+    const lock = await db.$client.connect();
+    let acquired = false;
 
     try {
+        const result = await lock.query<{ acquired: boolean }>(
+            "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
+            [provisioningLock(clusterId)],
+        );
+
+        acquired = result.rows[0]?.acquired === true;
+
+        // A cancelled attempt keeps going until its worker's next heartbeat.
+        if (!acquired)
+            throw new Error("An earlier attempt is still stopping. Retry in a few seconds.");
+
         const cluster = await db.query.clusters.findFirst({
             where: (row, { eq }) => eq(row.id, clusterId),
         });
@@ -481,5 +499,15 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
     } finally {
         await pending;
         await rm(dir, { recursive: true, force: true });
+
+        // Released last, so the next attempt only starts after this one's final writes.
+        try {
+            if (acquired)
+                await lock.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [
+                    provisioningLock(clusterId),
+                ]);
+        } finally {
+            lock.release();
+        }
     }
 }

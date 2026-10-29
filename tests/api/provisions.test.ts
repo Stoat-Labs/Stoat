@@ -419,6 +419,54 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(retried.cluster.provisioning).toBeNull();
     });
 
+    it("only retries a cancelled setup once its attempt has stopped", async () => {
+        await writeFile(join(bin, "mode"), "interrupted");
+        const clusterId = await create();
+        const deploymentId = await start(clusterId);
+        const controller = new AbortController();
+        const running = provisionCluster(db, deploymentId, controller.signal);
+
+        await vi.waitFor(() => expect(existsSync(join(bin, "interrupted"))).toBe(true), {
+            timeout: 5_000,
+        });
+
+        // The admin cancels during uc machine init; the worker only stops on its next heartbeat.
+        await cancelDeployment(db, deploymentId);
+        await expect(start(clusterId)).rejects.toThrow("still stopping");
+
+        controller.abort();
+        await expect(running).rejects.toThrow();
+
+        // Its final write is in before the retry reads it: init got far enough to need a reset.
+        await expect(start(clusterId)).rejects.toThrow("Confirm resetting the server");
+    });
+
+    it("never runs a setup attempt while another one holds the server", async () => {
+        const clusterId = await create();
+        const deploymentId = await start(clusterId);
+        const other = await db.$client.connect();
+
+        try {
+            await other.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
+                `stoat:provision:${clusterId}`,
+            ]);
+            await provisionCluster(db, deploymentId, new AbortController().signal).catch(() => {});
+        } finally {
+            other.release(true);
+        }
+
+        const [deployment] = await db
+            .select()
+            .from(deployments)
+            .where(eq(deployments.id, deploymentId));
+
+        expect(deployment).toMatchObject({
+            status: "failed",
+            error: expect.stringContaining("still stopping"),
+        });
+        expect(await lines("calls")).toEqual([]);
+    });
+
     it("remembers a half-created cluster when setup is interrupted", async () => {
         await writeFile(join(bin, "mode"), "interrupted");
         const clusterId = await create();
