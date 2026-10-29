@@ -75,7 +75,7 @@
     <SidebarInset
         class="min-h-0 bg-transparent! shadow-none! md:peer-data-[variant=inset]:peer-data-[state=collapsed]:my-0 md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-0.5"
     >
-        <header class="flex h-14 shrink-0 items-center gap-2 px-2">
+        <header class="relative flex h-14 shrink-0 items-center gap-2 px-2">
             <SidebarTrigger class="md:hidden" />
             <Menu>
                 <MenuTrigger

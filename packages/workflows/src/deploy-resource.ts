@@ -59,6 +59,13 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 signal.addEventListener("abort", cancel, { once: true });
 
                 try {
+                    // Old workers (before split locking) take the whole cluster exclusively. Taking
+                    // it shared still serializes against them during a rolling update, while newer
+                    // workers keep deploying different resources in parallel with each other.
+                    await lock.query("SELECT pg_advisory_lock_shared(hashtextextended($1, 0))", [
+                        `stoat:resource-deploy:${deployment.clusterId}`,
+                    ]);
+
                     for (const key of [...new Set(keys)].toSorted())
                         await lock.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
                             `stoat:resource-deploy:${deployment.clusterId}:${key}`,

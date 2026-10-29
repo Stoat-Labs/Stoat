@@ -697,6 +697,47 @@ describe("resource deployment worker", () => {
         return { otherId, id };
     }
 
+    it("waits for an old worker's exclusive cluster lock during a rolling update", async () => {
+        const key = `stoat:resource-deploy:${clusterId}`;
+        const legacy = await other.$client.connect();
+        let held = false;
+
+        try {
+            // What a worker from before split locking holds for its whole deployment.
+            await legacy.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [key]);
+            held = true;
+
+            const id = await snapshot();
+            const deploying = deployResource(db, id, new AbortController().signal);
+            void deploying.catch(() => {});
+
+            await expect
+                .poll(async () => {
+                    const result = await db.$client.query(
+                        `SELECT pid FROM pg_stat_activity
+                         WHERE datname = current_database() AND wait_event = 'advisory'`,
+                    );
+
+                    return result.rowCount;
+                })
+                .toBe(1);
+            expect((await getDeploymentWithLogs(db, id))?.status).toBe("queued");
+
+            await legacy.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [key]);
+            held = false;
+
+            await deploying;
+            expect((await getDeploymentWithLogs(db, id))?.status).toBe("ready");
+        } finally {
+            // Never hand a connection holding the lock back to the pool.
+            if (held)
+                await legacy
+                    .query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [key])
+                    .catch(() => {});
+            legacy.release();
+        }
+    });
+
     it("deploys different resources on one cluster in parallel", async () => {
         mode = "pause";
         const first = await snapshot();
