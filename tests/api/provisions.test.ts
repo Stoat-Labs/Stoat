@@ -329,6 +329,23 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(deployment.error).toContain("already belongs to an Uncloud cluster");
     });
 
+    it("shows the newest setup logs once there are more than the dialog keeps", async () => {
+        const clusterId = await create();
+        const deploymentId = await start(clusterId);
+
+        await db.$client.query(
+            `INSERT INTO deployment_logs (deployment_id, text, metadata, created_at)
+             SELECT $1, 'line ' || n, '{"level":"info"}', now() FROM generate_series(1, 2005) AS n`,
+            [deploymentId],
+        );
+
+        const { logs } = await call(clusterRouter.getProvisioning, { clusterId }, { context });
+
+        expect(logs).toHaveLength(2000);
+        expect(logs[0]?.text).toBe("line 6");
+        expect(logs.at(-1)?.text).toBe("line 2005");
+    });
+
     it("explains a rejected key and logs the error once", async () => {
         await writeFile(join(bin, "ssh-mode"), "rejected");
         const clusterId = await create();

@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { latestProvisioningDeployments } from "@stoat/db/clusters";
-import { getDeploymentWithLogs } from "@stoat/db/deployments";
+import { latestDeploymentLogs } from "@stoat/db/deployments";
 import { clusters, deployments, type ClusterProvisioning } from "@stoat/db/schema/index";
 import { provisionedSidecarUrl, provisioningCredentials } from "@stoat/workflows/provision-cluster";
 import { isAllowedServerAddress } from "@stoat/workflows/server-address";
@@ -130,7 +130,8 @@ export const provisioningRouter = {
             if (!cluster || (!cluster.provisioning && !attempt))
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 
-            const logs = attempt ? ((await getDeploymentWithLogs(db, attempt.id))?.logs ?? []) : [];
+            // Polled while setup runs, so the dialog always gets the newest lines.
+            const logs = attempt ? await latestDeploymentLogs(db, attempt.id) : [];
 
             return {
                 id: cluster.id,
