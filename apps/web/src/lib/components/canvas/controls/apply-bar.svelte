@@ -241,33 +241,32 @@
     }
 </script>
 
-<!-- Railway's staged-changes bar: what is saved but not live yet, and one button to ship it. -->
-<div
-    class="flex items-center gap-3 rounded-lg border border-foreground/14 bg-card py-1.5 ps-4 pe-1.5 text-sm shadow-md/10"
-    role="status"
->
+<!-- Railway's staged-changes bar: what is saved but not live yet, and one button to ship it.
+     It lives in the page header, so the resource panel never covers it. -->
+<div class="flex items-center gap-2 text-sm" role="status">
     <span
-        class="text-foreground"
+        class="text-muted-foreground max-md:hidden"
         title={changes
             .map(({ resource }) => resource.name)
             .join(", ")}
     >
-        Apply {changes.length}
+        {changes.length}
         {changes.length === 1 ? "change" : "changes"}
     </span>
     {#if error && !confirming}
         <span
-            class="max-w-60 truncate text-destructive-foreground"
+            class="max-w-60 truncate text-destructive-foreground max-md:hidden"
             title={error}
         >
             {error}
         </span>
     {/if}
     {#if isAdmin}
+        <!-- Narrow headers drop it; the details dialog can discard too. -->
         <Button
             size="sm"
             variant="ghost"
-            class="text-muted-foreground"
+            class="text-muted-foreground max-md:hidden"
             disabled={deploying || discarding}
             onclick={startDiscard}
         >
@@ -291,7 +290,7 @@
             Deploy
         </Button>
     {:else}
-        <span class="text-muted-foreground">
+        <span class="text-muted-foreground max-md:hidden">
             An admin can deploy these.
         </span>
     {/if}

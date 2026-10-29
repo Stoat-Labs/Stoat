@@ -1167,6 +1167,11 @@
 
 {#snippet headerActions()}
     <div class="flex items-center gap-2">
+        {#if changes.length}
+            <div class="border-e pe-2">
+                <ApplyBar {projectId} {changes} />
+            </div>
+        {/if}
         <Button
             size="sm"
             variant="ghost"
@@ -1402,13 +1407,6 @@
         class:hidden={narrow && selectedResource}
         style:right="{selectedResource ? panelWidth : 0}px"
     >
-        {#if changes.length && !moveNotice}
-            <div
-                class="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2"
-            >
-                <ApplyBar {projectId} {changes} />
-            </div>
-        {/if}
         {#if moveNotice}
             <div
                 class="pointer-events-auto absolute top-4 left-1/2 w-[min(32rem,90%)] -translate-x-1/2"
