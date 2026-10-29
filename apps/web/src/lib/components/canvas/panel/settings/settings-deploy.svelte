@@ -174,7 +174,8 @@
             aria-label="Prefix names"
             checked={prefixNames}
             disabled={savingPrefix || isInternal}
-            onCheckedChange={(checked) => void setPrefixNames(checked)}
+            onCheckedChange={(checked) =>
+                void setPrefixNames(checked)}
         />
     </div>
     {#if prefixError}

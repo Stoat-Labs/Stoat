@@ -529,7 +529,10 @@
                     class="ml-2 size-4"
                 />
             </PopoverTrigger>
-            <PopoverContent align="start" class="w-72 **:data-[slot=popover-viewport]:p-1">
+            <PopoverContent
+                align="start"
+                class="w-72 **:data-[slot=popover-viewport]:p-1"
+            >
                 <p
                     class="px-2 py-1 text-xs font-medium text-muted-foreground"
                 >
@@ -561,7 +564,10 @@
                         ? `${filters.services.current.length} selected`
                         : "All"}<ChevronDown class="ml-2 size-4" />
                 </PopoverTrigger>
-                <PopoverContent align="start" class="w-72 **:data-[slot=popover-viewport]:p-1">
+                <PopoverContent
+                    align="start"
+                    class="w-72 **:data-[slot=popover-viewport]:p-1"
+                >
                     <div
                         class="flex items-center justify-between px-2 py-1"
                     >
