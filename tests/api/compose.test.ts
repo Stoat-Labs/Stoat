@@ -2076,6 +2076,17 @@ describe("interpolateCompose", () => {
         expect(out).not.toContain("${");
     });
 
+    it("keeps single-quoted .env values literal, like Compose", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - PASS=${PASS}\n      - URL=${URL}\n      - DOUBLE=${DOUBLE}\n",
+            "HOST=a.b\nPASS='ab$n${HOST}'\nURL=https://${HOST}\nDOUBLE=\"x$n\"\n",
+        );
+
+        expect(out).toContain("PASS=ab$$n$${HOST}");
+        expect(out).toContain("URL=https://a.b");
+        expect(out).toContain("DOUBLE=x\n");
+    });
+
     it("inlines env_file: .env as environment, keeping explicit keys", () => {
         const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
 

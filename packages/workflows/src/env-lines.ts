@@ -83,13 +83,19 @@ function withoutLines(text: string, ranges: { start: number; end: number }[]) {
 
 /** Sets `key`, replacing its last assignment in place, or appending it. Earlier duplicates are dropped. */
 export function setEnvVariable(text: string, key: string, value: string, previousKey = key) {
-    const line = `${key}=${formatEnvValue(value)}`;
-
     const all = parseAllAssignments(text);
 
     const own = all.filter((entry) => entry.key === previousKey);
 
     const last = own.at(-1);
+
+    // Single quotes keep `$` literal at deploy, so an edit must not drop them.
+    const literal =
+        last &&
+        !value.includes("'") &&
+        assignment.exec(text.split("\n")[last.start] ?? "")?.[2]?.startsWith("'");
+
+    const line = `${key}=${literal ? `'${value}'` : formatEnvValue(value)}`;
 
     // A rename must not leave a second assignment of the new key behind.
     const stale = all.filter(
