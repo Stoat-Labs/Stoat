@@ -7,6 +7,8 @@
 export type EnvVariable = {
     key: string;
     value: string;
+    /** The quote around the value, if any; single quotes keep `$` literal at deploy. */
+    quote?: string;
     /** First and last line of the assignment; quoted values may span lines. */
     start: number;
     end: number;
@@ -40,7 +42,7 @@ function unquote(raw: string, lines: string[], index: number) {
 
     const value = text.slice(0, close);
 
-    return { value: quote === '"' ? value.replaceAll("\\n", "\n") : value, end };
+    return { value: quote === '"' ? value.replaceAll("\\n", "\n") : value, quote, end };
 }
 
 /** The variables Node's `parseEnv` would read, last assignment winning, in file order. */
@@ -90,12 +92,15 @@ export function setEnvVariable(text: string, key: string, value: string, previou
     const last = own.at(-1);
 
     // Single quotes keep `$` literal at deploy, so an edit must not drop them.
-    const literal =
-        last &&
-        !value.includes("'") &&
-        assignment.exec(text.split("\n")[last.start] ?? "")?.[2]?.startsWith("'");
+    const literal = last?.quote === "'";
 
-    const line = `${key}=${literal ? `'${value}'` : formatEnvValue(value)}`;
+    // Any other quoting would let `$` expand, silently changing the deployed value.
+    if (literal && value.includes("'") && value.includes("$"))
+        throw new Error(
+            "This value is single-quoted so its $ stays literal, so it can't also contain '.",
+        );
+
+    const line = `${key}=${literal && !value.includes("'") ? `'${value}'` : formatEnvValue(value)}`;
 
     // A rename must not leave a second assignment of the new key behind.
     const stale = all.filter(
@@ -131,8 +136,8 @@ export function removeEnvVariable(text: string, key: string) {
     );
 }
 
-/** Every assignment in order, duplicates included. */
-function parseAllAssignments(text: string) {
+/** Every assignment in order, duplicates included; lines inside a quoted value are skipped. */
+export function parseAllAssignments(text: string) {
     const lines = text.split("\n");
 
     const entries: EnvVariable[] = [];
@@ -142,9 +147,9 @@ function parseAllAssignments(text: string) {
 
         if (!match?.[1]) continue;
 
-        const { value, end } = unquote(match[2] ?? "", lines, index);
+        const { value, quote, end } = unquote(match[2] ?? "", lines, index);
 
-        entries.push({ key: match[1], value, start: index, end });
+        entries.push({ key: match[1], value, quote, start: index, end });
         index = end;
     }
 

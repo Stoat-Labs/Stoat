@@ -2087,6 +2087,15 @@ describe("interpolateCompose", () => {
         expect(out).toContain("DOUBLE=x\n");
     });
 
+    it("ignores assignment-like lines inside a multiline quoted value", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - URL=${URL}\n",
+            "HOST=a.b\nURL=https://${HOST}\nPAYLOAD=\"first\nURL='example'\nlast\"\n",
+        );
+
+        expect(out).toContain("URL=https://a.b\n");
+    });
+
     it("inlines env_file: .env as environment, keeping explicit keys", () => {
         const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
 

@@ -49,6 +49,8 @@ describe("setEnvVariable", () => {
     it("keeps single quotes so `$` stays literal", () => {
         expect(setEnvVariable("PASS='a$n'\n", "PASS", "b$n")).toBe("PASS='b$n'\n");
         expect(setEnvVariable("PASS='a$n'\n", "PASS", "it's")).toBe('PASS="it\'s"\n');
+        // Any other quoting would expand `$n`, so the edit is refused instead.
+        expect(() => setEnvVariable("PASS='a$n'\n", "PASS", "it's$n")).toThrow("single-quoted");
     });
 
     it("appends a new variable with a trailing newline", () => {

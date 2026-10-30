@@ -6,6 +6,7 @@ import type { Node } from "yaml";
 import { Predicate } from "effect";
 import { posix } from "node:path";
 import { parseEnv } from "node:util";
+import { parseAllAssignments } from "./env-lines";
 import { parseIngressComposeWith } from "./ingress";
 import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 
@@ -1162,13 +1163,11 @@ function composeEnvironment(
     // parseEnv returns keys sorted, so walk them in file order instead.
     const values = parseEnv(envText);
 
-    const fileOrder = [
-        ...envText.matchAll(/^[ \t]*(?:export[ \t]+)?([\w.-]+)[ \t]*=[ \t]*(')?/gmu),
-    ];
+    const fileOrder = parseAllAssignments(envText);
 
     // Like Compose, single-quoted values are literal; parseEnv drops the quotes, so the last
     // assignment of each key decides.
-    const literal = new Map(fileOrder.map(([, name = "", quote]) => [name, quote === "'"]));
+    const literal = new Map(fileOrder.map(({ key, quote }) => [key, quote === "'"]));
 
     // Keys the line scan misses still resolve, after the ordered ones.
     const names = new Set([...literal.keys(), ...Object.keys(values)]);
