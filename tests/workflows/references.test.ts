@@ -39,11 +39,11 @@ const postgres = target(
     "postgres",
     [
         "POSTGRES_USER=shop",
-        "POSTGRES_PASSWORD='pa$$word'",
+        "POSTGRES_PASSWORD=pa$$word",
         // Sorts before POSTGRES_USER: file order, not key order, decides what is defined.
         "DATABASE_URL=postgres://${POSTGRES_USER}@${DB_INTERNAL_HOST}:5432",
         "EMPTY=",
-        "LITERAL='$$HOME'",
+        "LITERAL=$$HOME",
         "MIXED=a\"b'c`d",
         "APP_URL=https://app.${STOAT_DOMAIN}",
         "UPSTREAM={{ " + REDIS_ID + ".URL }}",

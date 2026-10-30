@@ -7,7 +7,7 @@ import {
     getOrganizationGitOAuthProviders,
     GitOAuthError,
     requireGitOAuthAdmin,
-} from "@stoat/api/git-oauth";
+} from "@stoat/api/git/oauth";
 import { getAuth, getDb } from "../../../../services";
 
 export const POST: RequestHandler = async ({ request, cookies }) => {

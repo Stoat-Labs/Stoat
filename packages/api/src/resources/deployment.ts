@@ -18,8 +18,8 @@ import {
     formatComposeFile,
     resourceComposePrefix,
     resourceEnv,
-} from "./compose";
-import { readGitFiles, validateGitPath, type GitRepository } from "./git";
+} from "../compose";
+import { readGitFiles, validateGitPath, type GitRepository } from "../git";
 
 type Transaction = Pick<Database, "select" | "insert">;
 

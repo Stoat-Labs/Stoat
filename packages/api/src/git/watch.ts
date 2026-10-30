@@ -10,14 +10,14 @@ import {
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
-import { type GitFileSnapshot, readGitHead, readGitSources } from "./git";
+import { type GitFileSnapshot, readGitHead, readGitSources } from "./index";
 import {
     deploymentSource,
     insertResourceDeployment,
     readComposeConfigFiles,
-} from "./resource-deployment";
-import { getBoundGitRepository } from "./routers/connections";
-import { unpushedGitSource } from "./routers/resources/git";
+} from "../resources/deployment";
+import { getBoundGitRepository } from "../routers/connections";
+import { unpushedGitSource } from "../routers/resources/git";
 
 type Watched = {
     resource: typeof resources.$inferSelect;

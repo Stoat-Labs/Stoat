@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { JsonValue } from "../../packages/api/src/git-provider";
+import type { JsonValue } from "../../packages/api/src/git/provider";
 import { createDb, type Database } from "@stoat/db";
 import * as organizations from "@stoat/db/organizations";
 import type { Context } from "../../packages/api/src/context";
@@ -18,10 +18,10 @@ import {
     refreshGitOAuthCredentials,
     requireGitOAuthAdmin,
     type GitOAuthProvider,
-} from "../../packages/api/src/git-oauth";
-import * as gitOAuth from "../../packages/api/src/git-oauth";
-import * as gitProvider from "../../packages/api/src/git-provider";
-import { decryptGitCredentials } from "../../packages/api/src/git-secrets";
+} from "../../packages/api/src/git/oauth";
+import * as gitOAuth from "../../packages/api/src/git/oauth";
+import * as gitProvider from "../../packages/api/src/git/provider";
+import { decryptGitCredentials } from "../../packages/api/src/git/secrets";
 import { member } from "@stoat/db/schema/auth";
 import type { gitConnections } from "@stoat/db/schema/index";
 import type { PgTable } from "drizzle-orm/pg-core";

@@ -1,5 +1,5 @@
 import type { RequestHandler } from "@sveltejs/kit";
-import { receiveGitWebhook } from "@stoat/api/git-webhook";
+import { receiveGitWebhook } from "@stoat/api/git/webhook";
 import { getDb } from "../../../../services";
 
 // The signature covers the raw bytes, so the body is read before any parsing.

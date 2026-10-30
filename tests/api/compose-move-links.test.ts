@@ -8,7 +8,7 @@ import {
     ComposeMoveError,
     moveComposeService,
     retargetServiceReferences,
-} from "../../packages/api/src/compose-move";
+} from "../../packages/api/src/compose/move";
 import { buildProjectGraph } from "../../packages/api/src/project-graph";
 import {
     formatComposeFile,

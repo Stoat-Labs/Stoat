@@ -4,8 +4,8 @@ import * as v from "valibot";
 import YAML from "yaml";
 
 import { internalHostname, resourceComposePrefix, resourceEnv } from "./compose";
-import { composeConfigs, type GraphConfig } from "./compose-configs";
-import { NAMED_VOLUME, volumeMounts } from "./compose-volumes";
+import { composeConfigs, type GraphConfig } from "./compose/configs";
+import { NAMED_VOLUME, volumeMounts } from "./compose/volumes";
 import type { Template } from "./templates";
 
 const volumeSchema = v.union([

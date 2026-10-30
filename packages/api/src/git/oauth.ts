@@ -14,16 +14,16 @@ import { gitConnections, gitOAuthProviders, member } from "@stoat/db/schema/inde
 import { and, asc, eq } from "drizzle-orm";
 import * as v from "valibot";
 
-import type { Context } from "./context";
-import type { GitCredentials } from "./git";
+import type { Context } from "../context";
+import type { GitCredentials } from "./index";
 import {
     getGitAccount,
     gitProviderRequest,
     listGitRepositories,
     validateGitServerUrl,
-} from "./git-provider";
-import { encryptGitCredentials } from "./git-secrets";
-import { decryptGitOAuthClientSecret, encryptGitOAuthClientSecret } from "./git-oauth-secrets";
+} from "./provider";
+import { encryptGitCredentials } from "./secrets";
+import { decryptGitOAuthClientSecret, encryptGitOAuthClientSecret } from "./oauth-secrets";
 
 const providerSchema = v.strictObject({
     id: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,64}$/)),

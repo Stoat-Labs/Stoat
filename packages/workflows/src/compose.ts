@@ -6,6 +6,7 @@ import type { Node } from "yaml";
 import { Predicate } from "effect";
 import { posix } from "node:path";
 import { parseEnv } from "node:util";
+import { parseAllAssignments } from "./env-lines";
 import { parseIngressComposeWith } from "./ingress";
 import { referenceResourceId, VARIABLE_REFERENCE } from "./variable-reference";
 
@@ -1160,22 +1161,24 @@ function composeEnvironment(
 
     // Like Compose, .env values may reference variables defined above them.
     // parseEnv returns keys sorted, so walk them in file order instead.
-    // ponytail: parseEnv drops quotes, so single-quoted values expand too; Compose keeps them literal.
     const values = parseEnv(envText);
-    const fileOrder = envText.matchAll(/^[ \t]*(?:export[ \t]+)?([\w.-]+)[ \t]*=/gmu);
-    // Keys the line scan misses still resolve, after the ordered ones.
 
-    const names = new Set([
-        ...Array.from(fileOrder, ([, name = ""]) => name),
-        ...Object.keys(values),
-    ]);
+    const fileOrder = parseAllAssignments(envText);
+
+    // Like Compose, single-quoted values are literal; parseEnv drops the quotes, so the last
+    // assignment of each key decides.
+    const literal = new Map(fileOrder.map(({ key, quote }) => [key, quote === "'"]));
+
+    // Keys the line scan misses still resolve, after the ordered ones.
+    const names = new Set([...literal.keys(), ...Object.keys(values)]);
 
     // A lenient pass skips values that fail, e.g. `${WEB_PUBLIC_DOMAIN:?}` before domains are known.
     const resolve = (strict: boolean) => {
         env = Object.fromEntries(system.map((variable) => [variable.key, variable.value]));
 
         for (const name of names)
-            if (values[name] !== undefined)
+            if (values[name] !== undefined && literal.get(name)) env[name] = values[name];
+            else if (values[name] !== undefined)
                 try {
                     env[name] = expand(substitute(values[name])).replaceAll("$$", "$");
                 } catch (error) {

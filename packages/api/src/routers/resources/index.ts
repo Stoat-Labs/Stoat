@@ -77,13 +77,13 @@ import { resourceTransferRouter } from "./transfer";
 import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
 import { isMonitoringResource, resourceLogsRouter } from "./logs";
-import { removeResources } from "../../resource-removal";
+import { removeResources } from "../../resources/removal";
 import {
     configFilePath,
     deploymentSource,
     insertResourceDeployment,
     readComposeConfigFiles,
-} from "../../resource-deployment";
+} from "../../resources/deployment";
 import { pushGitFile, readGitHead } from "../../git";
 import { buildProjectGraph } from "../../project-graph";
 import { fetchDockerHubLogo, searchDockerHub } from "../../docker-hub";
@@ -95,7 +95,7 @@ import {
     nextVolumeName,
     remountVolume,
     removeVolume,
-} from "../../compose-volumes";
+} from "../../compose/volumes";
 import {
     addConfig,
     attachConfig,
@@ -105,14 +105,14 @@ import {
     removeConfig,
     setConfigContent,
     updateConfigMount,
-} from "../../compose-configs";
+} from "../../compose/configs";
 import {
     ComposeMoveError,
     moveComposeService,
     retargetServiceReferences,
     serviceConfigFiles,
     type ComposeMove,
-} from "../../compose-move";
+} from "../../compose/move";
 
 const volumeInput = {
     projectId: v.pipe(v.string(), v.uuid()),

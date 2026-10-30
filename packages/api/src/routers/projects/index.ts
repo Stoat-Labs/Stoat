@@ -16,7 +16,7 @@ import * as v from "valibot";
 import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure } from "../..";
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
-import { removeResources } from "../../resource-removal";
+import { removeResources } from "../../resources/removal";
 
 /** The first service's image, or null for an empty or unreadable spec. */
 /** Served by apps/web/src/routes/resource-icons; the version changes with the icon. */

@@ -10,7 +10,7 @@ import {
     remountVolume,
     removeVolume,
     volumeMounts,
-} from "../../packages/api/src/compose-volumes";
+} from "../../packages/api/src/compose/volumes";
 import { composeVolumes } from "../../packages/api/src/project-graph";
 
 const mountedBy = (text: string) =>

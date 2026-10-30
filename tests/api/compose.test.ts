@@ -2076,6 +2076,36 @@ describe("interpolateCompose", () => {
         expect(out).not.toContain("${");
     });
 
+    it("keeps single-quoted .env values literal, like Compose", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - PASS=${PASS}\n      - URL=${URL}\n      - DOUBLE=${DOUBLE}\n",
+            "HOST=a.b\nPASS='ab$n${HOST}'\nURL=https://${HOST}\nDOUBLE=\"x$n\"\n",
+        );
+
+        expect(out).toContain("PASS=ab$$n$${HOST}");
+        expect(out).toContain("URL=https://a.b");
+        expect(out).toContain("DOUBLE=x\n");
+    });
+
+    it("ignores assignment-like lines inside a multiline quoted value", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - URL=${URL}\n",
+            "HOST=a.b\nURL=https://${HOST}\nPAYLOAD=\"first\nURL='example'\nlast\"\n",
+        );
+
+        expect(out).toContain("URL=https://a.b\n");
+    });
+
+    it("keeps literal values and file order with CRLF line endings", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - PASS=${PASS}\n      - A_URL=${A_URL}\n",
+            "PASS='abc$n'\r\nZ_HOST=a.b\r\nA_URL=https://${Z_HOST}\r\n",
+        );
+
+        expect(out).toContain("PASS=abc$$n\n");
+        expect(out).toContain("A_URL=https://a.b\n");
+    });
+
     it("inlines env_file: .env as environment, keeping explicit keys", () => {
         const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
 
