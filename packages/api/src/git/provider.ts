@@ -8,7 +8,7 @@ import { ORPCError } from "@orpc/server";
 import { Predicate } from "effect";
 import * as v from "valibot";
 
-import { isBlockedAddress, validateGitBranch, validateGitUrl } from "./git";
+import { isBlockedAddress, validateGitBranch, validateGitUrl } from "./index";
 
 export type GitProvider = "github" | "forgejo" | "generic";
 

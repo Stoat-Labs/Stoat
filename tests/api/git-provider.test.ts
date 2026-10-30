@@ -118,8 +118,8 @@ import {
     gitProviderRequest,
     listGitRepositories,
     validateGitServerUrl,
-} from "../../packages/api/src/git-provider";
-import type { GitProvider } from "../../packages/api/src/git-provider";
+} from "../../packages/api/src/git/provider";
+import type { GitProvider } from "../../packages/api/src/git/provider";
 
 const github = {
     provider: "github" as const,
@@ -158,7 +158,7 @@ afterEach(() => {
 
 describe("Git server validation", () => {
     it("exports exactly the agreed runtime API", async () => {
-        expect(Object.keys(await import("../../packages/api/src/git-provider")).sort()).toEqual([
+        expect(Object.keys(await import("../../packages/api/src/git/provider")).sort()).toEqual([
             "ensureGitWebhook",
             "getGitAccount",
             "gitProviderRequest",

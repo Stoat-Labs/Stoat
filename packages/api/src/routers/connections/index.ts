@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
 import { organizationAdminProcedure, organizationProcedure, requireAuth } from "../..";
-import { gitWebhookSecret, gitWebhookUrl } from "../../git-webhook";
+import { gitWebhookSecret, gitWebhookUrl } from "../../git/webhook";
 import {
     type GitCredentials,
     inspectGitRemote,
@@ -23,7 +23,7 @@ import {
     validateGitServerUrl,
     type GitProvider,
     type GitDiscoveredRepository,
-} from "../../git-provider";
+} from "../../git/provider";
 import {
     createOrganizationGitOAuthProvider,
     getGitOAuthCallbackUrl,
@@ -31,8 +31,8 @@ import {
     getPublicOrganizationGitOAuthProviders,
     GitOAuthError,
     refreshGitOAuthCredentials,
-} from "../../git-oauth";
-import { decryptGitCredentials, encryptGitCredentials } from "../../git-secrets";
+} from "../../git/oauth";
+import { decryptGitCredentials, encryptGitCredentials } from "../../git/secrets";
 
 const id = v.pipe(v.string(), v.uuid());
 

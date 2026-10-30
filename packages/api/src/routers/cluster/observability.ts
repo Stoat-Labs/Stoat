@@ -14,7 +14,7 @@ import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
 import { isOrganizationAdmin, organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
-import { pinnedVolumeName } from "../../compose-volumes";
+import { pinnedVolumeName } from "../../compose/volumes";
 import {
     chartPoints,
     counterTotalQuery,

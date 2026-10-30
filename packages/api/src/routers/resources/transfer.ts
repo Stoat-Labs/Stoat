@@ -9,7 +9,7 @@ import * as v from "valibot";
 
 import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
-import { unpinVolumeNames } from "../../compose-move";
+import { unpinVolumeNames } from "../../compose/move";
 import { composeResourceTypes } from "../../databases";
 
 type Executor = Pick<Database, "select">;

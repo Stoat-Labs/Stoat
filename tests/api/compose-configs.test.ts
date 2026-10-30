@@ -11,7 +11,7 @@ import {
     removeConfig,
     setConfigContent,
     updateConfigMount,
-} from "../../packages/api/src/compose-configs";
+} from "../../packages/api/src/compose/configs";
 import { interpolateCompose } from "../../packages/workflows/src/compose";
 
 const compose = `services:

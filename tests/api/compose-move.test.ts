@@ -8,7 +8,7 @@ import {
     moveComposeService,
     serviceConfigFiles,
     unpinVolumeNames,
-} from "../../packages/api/src/compose-move";
+} from "../../packages/api/src/compose/move";
 
 const SOURCE_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 

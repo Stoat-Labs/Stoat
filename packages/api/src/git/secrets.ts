@@ -2,7 +2,7 @@ import { appSecret } from "@stoat/config/env";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import * as v from "valibot";
 
-import type { GitCredentials } from "./git";
+import type { GitCredentials } from "./index";
 
 type Scope = { organizationId: string; connectionId: string };
 

@@ -11,7 +11,7 @@ import * as v from "valibot";
 
 import { organizationAdminProcedure } from "../..";
 import { composeResourceTypes } from "../../databases";
-import { removeResources } from "../../resource-removal";
+import { removeResources } from "../../resources/removal";
 
 export const resourceDiscardRouter = {
     /**

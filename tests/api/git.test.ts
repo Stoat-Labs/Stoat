@@ -165,7 +165,7 @@ import {
     validateGitBranch,
 } from "../../packages/api/src/git";
 import type { GitRepository } from "../../packages/api/src/git";
-import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
+import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git/secrets";
 
 beforeEach(() => {
     network.addresses = [{ address: "93.184.216.34", family: 4 }];
@@ -199,7 +199,7 @@ describe("Git validation", () => {
             "validateGitPath",
             "validateGitUrl",
         ]);
-        expect(Object.keys(await import("../../packages/api/src/git-secrets")).sort()).toEqual([
+        expect(Object.keys(await import("../../packages/api/src/git/secrets")).sort()).toEqual([
             "decryptGitCredentials",
             "encryptGitCredentials",
         ]);

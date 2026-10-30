@@ -3,7 +3,7 @@ import * as v from "valibot";
 import YAML, { isMap, isScalar, isSeq, Scalar } from "yaml";
 import type { Document, Node, YAMLMap, YAMLSeq } from "yaml";
 
-import { NAMED_VOLUME } from "./compose-volumes";
+import { NAMED_VOLUME } from "./volumes";
 
 export class ComposeConfigError extends Error {}
 

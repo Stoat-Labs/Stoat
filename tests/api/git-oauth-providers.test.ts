@@ -22,13 +22,13 @@ import {
     createOrganizationGitOAuthProvider,
     getOrganizationGitOAuthProviders,
     readGitOAuthFlow,
-} from "../../packages/api/src/git-oauth";
+} from "../../packages/api/src/git/oauth";
 import {
     decryptGitOAuthClientSecret,
     encryptGitOAuthClientSecret,
-} from "../../packages/api/src/git-oauth-secrets";
-import * as gitProvider from "../../packages/api/src/git-provider";
-import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git-secrets";
+} from "../../packages/api/src/git/oauth-secrets";
+import * as gitProvider from "../../packages/api/src/git/provider";
+import { decryptGitCredentials, encryptGitCredentials } from "../../packages/api/src/git/secrets";
 import { connectionsRouter, getGitConnection } from "../../packages/api/src/routers/connections";
 import { POST } from "../../apps/web/src/routes/git/oauth/start/+server";
 import { GET } from "../../apps/web/src/routes/git/oauth/callback/+server";

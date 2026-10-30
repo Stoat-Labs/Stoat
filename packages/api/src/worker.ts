@@ -1,5 +1,5 @@
 import { startWorker } from "@stoat/workflows/lifecycle";
-import { watchGitSources } from "./git-watch";
+import { watchGitSources } from "./git/watch";
 import { appSecret, databaseUrl } from "@stoat/config/env";
 import { encryptLegacySidecarTokens } from "@stoat/db/clusters";
 import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
