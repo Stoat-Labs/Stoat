@@ -47,7 +47,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
 
     const postgresEnv = [
         "POSTGRES_USER=shop",
-        "POSTGRES_PASSWORD='s3cr$$t'",
+        "POSTGRES_PASSWORD=s3cr$$t",
         "DATABASE_URL=postgres://${POSTGRES_USER}@${DB_INTERNAL_HOST}:5432/shop",
         "PUBLIC_URL=https://shop.${STOAT_DOMAIN}",
     ].join("\n");

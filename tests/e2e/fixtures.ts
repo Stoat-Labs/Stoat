@@ -53,7 +53,7 @@ export const apiSpec =
 
 export const postgresEnv = [
     "POSTGRES_USER=shop",
-    "POSTGRES_PASSWORD='s3cr$$t'",
+    "POSTGRES_PASSWORD=s3cr$$t",
     "DATABASE_URL=postgres://${POSTGRES_USER}@${DB_INTERNAL_HOST}:5432/shop",
 ].join("\n");
 

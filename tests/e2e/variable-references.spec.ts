@@ -433,7 +433,7 @@ test.describe("deploying with references", () => {
     }) => {
         await sql(
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
-            [ids.postgres, "POSTGRES_PASSWORD='s3cr$$t'\nPUBLIC=https://db.${STOAT_DOMAIN}\n"],
+            [ids.postgres, "POSTGRES_PASSWORD=s3cr$$t\nPUBLIC=https://db.${STOAT_DOMAIN}\n"],
         );
         await sql(
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
