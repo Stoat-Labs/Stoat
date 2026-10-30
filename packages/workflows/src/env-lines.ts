@@ -138,7 +138,8 @@ export function removeEnvVariable(text: string, key: string) {
 
 /** Every assignment in order, duplicates included; lines inside a quoted value are skipped. */
 export function parseAllAssignments(text: string) {
-    const lines = text.split("\n");
+    // Like parseEnv, accept CRLF; splitting on `\n` either way keeps line numbers aligned for edits.
+    const lines = text.split(/\r?\n/u);
 
     const entries: EnvVariable[] = [];
 

@@ -2096,6 +2096,16 @@ describe("interpolateCompose", () => {
         expect(out).toContain("URL=https://a.b\n");
     });
 
+    it("keeps literal values and file order with CRLF line endings", () => {
+        const out = interpolateCompose(
+            "services:\n  web:\n    image: x\n    environment:\n      - PASS=${PASS}\n      - A_URL=${A_URL}\n",
+            "PASS='abc$n'\r\nZ_HOST=a.b\r\nA_URL=https://${Z_HOST}\r\n",
+        );
+
+        expect(out).toContain("PASS=abc$$n\n");
+        expect(out).toContain("A_URL=https://a.b\n");
+    });
+
     it("inlines env_file: .env as environment, keeping explicit keys", () => {
         const env = "SECRET=p$$w\nURL=https://${HOST}\nHOST=a.b\n";
 
