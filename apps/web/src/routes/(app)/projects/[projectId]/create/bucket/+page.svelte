@@ -192,7 +192,7 @@
     {:else if connectionsQuery.isPending}
         <Skeleton
             loading
-            loading-label="Loading S3 connections"
+            label="Loading S3 connections"
             class="mx-auto w-full max-w-2xl"
         >
             <Frame>

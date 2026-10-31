@@ -37,7 +37,7 @@
             {#if loading}
                 <Skeleton
                     loading
-                    loading-label="Loading Uncloud scrape health"
+                    label="Loading Uncloud scrape health"
                 >
                     <div class="h-40 sm:h-48">Loading timeline</div>
                 </Skeleton>

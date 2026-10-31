@@ -465,9 +465,8 @@
                     {#if !deployment}
                         <Skeleton
                             loading
-                            loading-label="Loading deployment"
-                            background-color="color-mix(in oklab, var(--foreground) 8%, transparent)"
-                            shimmer-color="color-mix(in oklab, var(--foreground) 6%, transparent)"
+                            label="Loading deployment"
+                            style="--skullet-base: color-mix(in oklab, var(--foreground) 8%, transparent); --skullet-highlight: color-mix(in oklab, var(--foreground) 6%, transparent)"
                         >
                             {#each [60, 85, 45, 70, 55] as width, index (index)}
                                 <p

@@ -112,7 +112,7 @@
         </CardHeader>
         <CardPanel class="space-y-4">
             {#if invitation.isPending}
-                <Skeleton loading loading-label="Loading invitation">
+                <Skeleton loading label="Loading invitation">
                     <Button class="w-full">Accept invitation</Button>
                 </Skeleton>
             {:else if wrongAccount}

@@ -4,6 +4,7 @@
     import { QueryClientProvider } from "@tanstack/svelte-query";
     import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
     import { NuqsAdapter } from "nuqs-svelte/adapters/svelte-kit";
+    import { SkulletProvider } from "skullet/svelte";
     import { ToastProvider } from "$lib/components/ui/toast";
     import "../app.css";
 
@@ -55,7 +56,10 @@
 <QueryClientProvider {client}>
     <NuqsAdapter>
         <ToastProvider>
-            {@render children()}
+            <!-- Sends skullet's server-render measuring script once a page instead of per skeleton. -->
+            <SkulletProvider>
+                {@render children()}
+            </SkulletProvider>
         </ToastProvider>
     </NuqsAdapter>
     <SvelteQueryDevtools />

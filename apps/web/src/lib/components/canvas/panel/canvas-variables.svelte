@@ -476,7 +476,7 @@
     {/if}
 
     {#if resourceQuery.isPending}
-        <Skeleton loading count={3} loading-label="Loading variables">
+        <Skeleton loading count={3} label="Loading variables">
             <div
                 class="flex h-10 items-center gap-4 px-4 font-mono text-sm"
             >

@@ -75,10 +75,7 @@
                         </Button>
                     {/if}
                 {:else}
-                    <Skeleton
-                        loading
-                        loading-label="Loading storage limit"
-                    >
+                    <Skeleton loading label="Loading storage limit">
                         <div class="space-y-1">
                             <h3 class="text-sm font-medium">
                                 No limit

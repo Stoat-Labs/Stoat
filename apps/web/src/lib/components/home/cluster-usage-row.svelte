@@ -128,10 +128,7 @@
                 {cluster.name}
             </a>
             {#if cluster.diagnosticsPending}
-                <Skeleton
-                    loading
-                    loading-label="Checking cluster health"
-                >
+                <Skeleton loading label="Checking cluster health">
                     <Badge variant="secondary">Checking</Badge>
                 </Skeleton>
             {:else if cluster.diagnostics?.status === "healthy"}
@@ -188,7 +185,7 @@
                         <dd>
                             <Skeleton
                                 loading={metricsQuery.isPending}
-                                loading-label={`Loading ${stat.label} usage`}
+                                label={`Loading ${stat.label} usage`}
                             >
                                 <p
                                     class="truncate text-sm font-medium tabular-nums"

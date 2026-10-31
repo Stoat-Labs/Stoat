@@ -164,7 +164,7 @@
             </AlertDescription>
         </Alert>
     {:else if !bucket}
-        <Skeleton loading count={6} loading-label="Loading variables">
+        <Skeleton loading count={6} label="Loading variables">
             <div
                 class="flex h-10 items-center gap-4 px-4 font-mono text-sm"
             >

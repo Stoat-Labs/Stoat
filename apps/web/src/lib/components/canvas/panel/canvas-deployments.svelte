@@ -475,7 +475,7 @@
                             <Skeleton
                                 loading
                                 count={2}
-                                loading-label="Loading containers"
+                                label="Loading containers"
                             >
                                 <div
                                     class="grid grid-cols-[16px_1fr_auto] gap-4 py-3 pr-3 pl-[96px] text-sm"
@@ -615,7 +615,7 @@
             </AlertDescription>
         </Alert>
     {:else if deploymentsQuery.isPending}
-        <Skeleton loading loading-label="Loading deployments">
+        <Skeleton loading label="Loading deployments">
             <div class="h-[126px] rounded-lg border"></div>
         </Skeleton>
     {:else if !items.length}

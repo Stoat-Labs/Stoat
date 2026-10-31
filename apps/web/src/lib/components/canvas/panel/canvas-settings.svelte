@@ -309,11 +309,7 @@
     </div>
 
     {#if resourceQuery.isPending}
-        <Skeleton
-            loading
-            loading-label="Loading settings"
-            class="px-7 pt-10"
-        >
+        <Skeleton loading label="Loading settings" class="px-7 pt-10">
             <div class="space-y-6 pl-16">
                 <p class="text-xl">Source</p>
                 <div class="h-16 rounded-md border"></div>

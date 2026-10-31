@@ -28,4 +28,11 @@ declare global {
     }
 }
 
+declare module "svelte/elements" {
+    interface HTMLAttributes<T> {
+        /** Tells skullet to draw nothing for this element while loading. */
+        "skullet-ignore"?: boolean;
+    }
+}
+
 export {};

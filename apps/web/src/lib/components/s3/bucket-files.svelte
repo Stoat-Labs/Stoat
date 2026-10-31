@@ -246,7 +246,7 @@
 >
     <div class="flex w-80 shrink-0 flex-col border-r">
         {#if status === "loading"}
-            <Skeleton loading loading-label="Loading files">
+            <Skeleton loading label="Loading files">
                 {#each { length: 8 }, index (index)}
                     <div class="px-3 py-1.5 text-sm">
                         file-name.txt
@@ -332,7 +332,7 @@
                         {previewQuery.error.message}
                     </p>
                 {:else}
-                    <Skeleton loading loading-label="Loading preview">
+                    <Skeleton loading label="Loading preview">
                         <div class="size-48"></div>
                     </Skeleton>
                 {/if}

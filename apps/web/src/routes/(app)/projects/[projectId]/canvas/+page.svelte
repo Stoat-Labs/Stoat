@@ -159,7 +159,7 @@
                     </svg>
                     <Skeleton
                         loading
-                        loading-label="Loading canvas"
+                        label="Loading canvas"
                         class="relative"
                     >
                         <div

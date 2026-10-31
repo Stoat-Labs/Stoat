@@ -362,7 +362,7 @@
 
 <div class="flex w-full flex-col gap-6 pt-6 xl:min-h-0 xl:flex-1">
     {#if projectQuery.isPending || resourceQuery.isPending}
-        <Skeleton loading loading-label="Loading ingress">
+        <Skeleton loading label="Loading ingress">
             <div class="space-y-6">
                 <Frame>
                     <FrameHeader>

@@ -168,7 +168,7 @@
 </script>
 
 {#if optionsQuery.isPending}
-    <Skeleton loading loading-label="Loading initialization options">
+    <Skeleton loading label="Loading initialization options">
         <div class="space-y-4">
             <div>
                 <Label>Machine</Label>

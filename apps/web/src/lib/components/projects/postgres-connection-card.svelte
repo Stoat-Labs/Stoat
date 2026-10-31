@@ -108,7 +108,7 @@
         </FramePanel>
     </Frame>
 {:else}
-    <Skeleton loading loading-label="Loading connection">
+    <Skeleton loading label="Loading connection">
         <Frame class="min-w-0">
             <FrameHeader>
                 <FrameTitle class="text-base">

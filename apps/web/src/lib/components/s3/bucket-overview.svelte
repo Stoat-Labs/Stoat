@@ -117,7 +117,7 @@
             </AlertDescription>
         </Alert>
     {:else if !bucket}
-        <Skeleton loading loading-label="Loading bucket">
+        <Skeleton loading label="Loading bucket">
             <div class="flex flex-col gap-6">
                 <div class="flex items-start gap-3">
                     <span

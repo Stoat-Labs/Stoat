@@ -576,7 +576,7 @@
             </AlertDescription>
         </Alert>{/if}
     {#if list.isPending || pending}
-        <Skeleton loading loading-label={`Loading ${title} metrics`}>
+        <Skeleton loading label={`Loading ${title} metrics`}>
             <div class="grid gap-4 lg:grid-cols-2">
                 {#each loadingTitles[view] as heading, index (heading)}
                     <Frame

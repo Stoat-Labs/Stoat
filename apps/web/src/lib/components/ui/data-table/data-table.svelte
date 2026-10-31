@@ -48,7 +48,7 @@
         emptyAction?: Snippet;
         /**
          * A data row filled with stand-in values. While loading it is
-         * repeated `loadingRows` times under Phantom UI, so the skeleton
+         * repeated `loadingRows` times under the skeleton, so the skeleton
          * has the exact shape and height of the real rows.
          */
         placeholderRow?: Snippet;
@@ -93,10 +93,10 @@
     </FrameHeader>
     <Skeleton
         loading={loading && placeholderRow !== undefined}
-        loading-label={`Loading ${title.toLowerCase()}`}
+        label={`Loading ${title.toLowerCase()}`}
     >
         <Table variant="card">
-            <TableHeader data-shimmer-ignore>
+            <TableHeader skullet-ignore>
                 {@render header()}
             </TableHeader>
             <TableBody>
@@ -120,7 +120,7 @@
                                 {/if}
                                 <Skeleton
                                     loading
-                                    loading-label="Loading table row"
+                                    label="Loading table row"
                                 >
                                     <div
                                         class="grid min-h-12 grid-cols-3 items-center gap-4 px-3"

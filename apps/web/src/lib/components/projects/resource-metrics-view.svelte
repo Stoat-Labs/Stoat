@@ -961,7 +961,7 @@
     {/if}
 
     {#if pending}
-        <Skeleton loading loading-label="Loading resource metrics">
+        <Skeleton loading label="Loading resource metrics">
             <div class="grid gap-4 lg:grid-cols-2">
                 {#each ["CPU", "Memory", "Network · receive", "Network · send"] as title (title)}<Frame
                         class="min-w-0"

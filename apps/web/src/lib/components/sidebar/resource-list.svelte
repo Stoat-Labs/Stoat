@@ -40,9 +40,9 @@
     <Skeleton
         loading
         count={2}
-        count-gap={8}
+        gap={8}
         class="mx-2"
-        loading-label="Loading resources"
+        label="Loading resources"
     >
         <div class="flex h-7 items-center gap-2 rounded-lg px-2">
             <Boxes class="size-4" aria-hidden="true" />

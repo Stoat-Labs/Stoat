@@ -262,7 +262,7 @@
         | "finishedAt"
     >;
 
-    // Stand-in values that give the Phantom UI skeleton a real row's shape.
+    // Stand-in values that give the skeleton a real row's shape.
     const placeholderDeployment: DeploymentRow = {
         id: "placeholder",
         status: "ready",

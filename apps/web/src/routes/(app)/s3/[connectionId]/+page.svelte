@@ -174,7 +174,7 @@
             </AlertDescription>
         </Alert>
     {:else if !connection}
-        <Skeleton loading loading-label="Loading connection">
+        <Skeleton loading label="Loading connection">
             <div class="flex flex-col gap-6">
                 <div class="flex items-start gap-3">
                     <span class="size-8 shrink-0 rounded-lg"></span>

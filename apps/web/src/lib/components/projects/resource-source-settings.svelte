@@ -94,7 +94,7 @@
 
     <div class="space-y-4 md:col-span-2">
         {#if savedSource && connectionsQuery.isPending}
-            <Skeleton loading loading-label="Loading source settings">
+            <Skeleton loading label="Loading source settings">
                 <div class="space-y-4">
                     <div class="h-9.5 w-64 rounded-lg bg-muted"></div>
                     <Card>

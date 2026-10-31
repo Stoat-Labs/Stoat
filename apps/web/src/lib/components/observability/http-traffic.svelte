@@ -634,10 +634,7 @@
 )}
     <div class="min-w-0 space-y-1 px-5 py-4">
         <p class="text-xs text-muted-foreground">{label}</p>
-        <Skeleton
-            loading={waiting}
-            loading-label={`Loading ${label}`}
-        >
+        <Skeleton loading={waiting} label={`Loading ${label}`}>
             <p class="truncate text-2xl font-semibold tabular-nums">
                 {value}
             </p>
@@ -722,7 +719,7 @@
         {/if}
     {/each}
     {#if pending}
-        <Skeleton loading loading-label="Loading HTTP traffic">
+        <Skeleton loading label="Loading HTTP traffic">
             <div class="space-y-4 sm:space-y-6">
                 <div class="h-28 rounded-2xl">Loading summary</div>
                 <div class="grid gap-4 lg:grid-cols-2">
@@ -817,10 +814,7 @@
                 </FrameHeader>
                 <FramePanel class="min-w-0 flex-1">
                     {#if loading("visitors") && !recordingVisitors}
-                        <Skeleton
-                            loading
-                            loading-label="Loading visitors"
-                        >
+                        <Skeleton loading label="Loading visitors">
                             <div class="h-40">Loading visitors</div>
                         </Skeleton>
                     {:else if !recordingVisitors}
@@ -854,10 +848,7 @@
                 </FrameHeader>
                 <FramePanel class="min-w-0 space-y-6">
                     {#if loading("visitors") && !recordingVisitors}
-                        <Skeleton
-                            loading
-                            loading-label="Loading visitors"
-                        >
+                        <Skeleton loading label="Loading visitors">
                             <div class="h-40">Loading visitors</div>
                         </Skeleton>
                     {:else if !recordingVisitors}
@@ -952,10 +943,7 @@
             </FrameHeader>
             <FramePanel class="min-w-0 overflow-x-auto p-0">
                 {#if loading("services") && !rows.length}
-                    <Skeleton
-                        loading
-                        loading-label="Loading services"
-                    >
+                    <Skeleton loading label="Loading services">
                         <div class="h-48">Loading services</div>
                     </Skeleton>
                 {:else}

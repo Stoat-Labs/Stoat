@@ -65,8 +65,8 @@
                 <Skeleton
                     loading
                     count={3}
-                    count-gap={16}
-                    loading-label="Loading connection details"
+                    gap={16}
+                    label="Loading connection details"
                 >
                     <ConnectionField
                         label="Connection endpoint"

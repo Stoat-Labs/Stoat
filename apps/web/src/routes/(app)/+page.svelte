@@ -447,7 +447,7 @@
             </div>
         </header>
         {#if projectsQuery.isPending}
-            <Skeleton loading loading-label="Loading projects">
+            <Skeleton loading label="Loading projects">
                 <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {#each { length: 3 }, index (index)}
                         <li class="min-w-0">
@@ -584,7 +584,7 @@
         </FrameHeader>
         <FramePanel class="overflow-hidden p-0">
             {#if clustersQuery.isPending}
-                <Skeleton loading loading-label="Loading clusters">
+                <Skeleton loading label="Loading clusters">
                     <div
                         class="grid gap-6 px-5 py-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]"
                     >

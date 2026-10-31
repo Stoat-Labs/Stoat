@@ -282,7 +282,7 @@
 
 <div class="w-full space-y-6 pt-6">
     {#if clusterQuery.isPending}
-        <Skeleton loading loading-label="Loading cluster">
+        <Skeleton loading label="Loading cluster">
             <div class="space-y-6">
                 <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {#each ["Health", "Machines", "Connections", "Deployments"] as label (label)}

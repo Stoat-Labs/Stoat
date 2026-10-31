@@ -100,12 +100,7 @@
 </script>
 
 {#snippet loading(label: string)}
-    <Skeleton
-        loading
-        count={8}
-        loading-label={label}
-        class="px-3 py-4"
-    >
+    <Skeleton loading count={8} {label} class="px-3 py-4">
         <div class="h-6 font-mono text-sm">services:</div>
     </Skeleton>
 {/snippet}

@@ -119,8 +119,8 @@
                 <Skeleton
                     loading
                     count={2}
-                    count-gap={16}
-                    loading-label="Loading setup"
+                    gap={16}
+                    label="Loading setup"
                 >
                     <ConnectionField
                         label="Public key"

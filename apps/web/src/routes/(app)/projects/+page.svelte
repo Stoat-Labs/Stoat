@@ -286,7 +286,7 @@
     </div>
 
     {#if projectsQuery.isPending}
-        <Skeleton loading loading-label="Loading projects">
+        <Skeleton loading label="Loading projects">
             <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {#each { length: 3 }, index (index)}
                     <li>

@@ -19,7 +19,7 @@
 </script>
 
 {#if health.isPending}
-    <Skeleton loading loading-label="Checking cluster health">
+    <Skeleton loading label="Checking cluster health">
         <Badge variant="secondary">Checking</Badge>
     </Skeleton>
 {:else if health.data?.status === "healthy"}

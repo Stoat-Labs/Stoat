@@ -82,11 +82,7 @@
         </AlertDescription>
     </Alert>
 {:else if !bucket}
-    <Skeleton
-        loading
-        loading-label="Loading bucket variables"
-        class="flex min-h-0 flex-1 flex-col"
-    >
+    <Skeleton loading label="Loading bucket variables" fill>
         <Frame class="min-h-0 min-w-0 w-full flex-1">
             <FrameHeader>
                 <h2 class="text-sm font-medium">.env</h2>

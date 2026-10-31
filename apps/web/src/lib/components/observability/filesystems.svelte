@@ -39,7 +39,7 @@
 <Frame class="min-w-0">
     <FrameHeader><FrameTitle>Filesystems</FrameTitle></FrameHeader>
     <FramePanel class="min-w-0 p-4">
-        <Skeleton {loading} loading-label="Loading filesystems">
+        <Skeleton {loading} label="Loading filesystems">
             <MetricChart
                 series={rows}
                 {start}

@@ -79,7 +79,7 @@ it("keeps the logs workspace skeleton until both queries are ready", () => {
         const body = renderLogs("", resourceLoaded, servicesLoaded ? noServices : null);
 
         if (!resourceLoaded || !servicesLoaded) {
-            expect(body).toContain('loading-label="Loading logs"');
+            expect(body).toContain('aria-busy="true"');
             expect(body).toContain('data-slot="frame"');
             expect(body).toContain('aria-label="Filter loaded logs"');
             expect(body).toContain('aria-label="Log activity"');
@@ -87,7 +87,7 @@ it("keeps the logs workspace skeleton until both queries are ready", () => {
             expect(body).not.toContain("No deployed services");
         } else {
             expect(body).toContain("No deployed services");
-            expect(body).not.toContain("<phantom-ui");
+            expect(body).not.toContain('aria-busy="true"');
         }
     }
 });
