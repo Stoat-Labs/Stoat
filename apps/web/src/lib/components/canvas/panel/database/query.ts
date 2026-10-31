@@ -89,7 +89,7 @@ export const tableListSql = `SELECT current_database(), n.nspname, c.relname,
          FROM pg_index i
          CROSS JOIN unnest(i.indkey) WITH ORDINALITY k(attnum, position)
          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-         WHERE i.indrelid = c.oid AND i.indisprimary),
+         WHERE i.indrelid = c.oid AND i.indisprimary AND k.position <= i.indnkeyatts),
         CASE c.relkind WHEN 'r' THEN 'ctid' WHEN 'm' THEN 'ctid' WHEN 'p' THEN 'tableoid, ctid' END
     )
 FROM pg_class c
