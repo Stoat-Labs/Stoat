@@ -5,15 +5,11 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
+    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import {
-        Table,
-        TableBody,
-        TableCell,
-        TableHead,
-        TableHeader,
-        TableRow,
-    } from "$lib/components/ui/table";
+    import ArrowDown from "@lucide/svelte/icons/arrow-down";
+    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import {
         createMutation,
         createQuery,
@@ -51,14 +47,91 @@
 
     const enabled = $derived(statementsEnabled === "t");
 
+    // This database's 100 costliest statements, whitespace collapsed and cut short to keep it light.
     const statements = createQuery(() => ({
         ...sqlQuery(
             input,
-            `SELECT query, calls, round(total_exec_time::numeric, 2), round(mean_exec_time::numeric, 2), rows
-             FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20`,
+            `SELECT left(regexp_replace(query, '\\s+', ' ', 'g'), 500), calls, rows,
+                total_exec_time, mean_exec_time, max_exec_time,
+                (SELECT stats_reset FROM pg_stat_statements_info), count(*) OVER ()
+             FROM pg_stat_statements
+             WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+             ORDER BY total_exec_time DESC LIMIT 100`,
         ),
         enabled,
     }));
+
+    const sortKeys = [
+        "calls",
+        "rows",
+        "total",
+        "mean",
+        "max",
+    ] as const;
+
+    const statementsSort = useQueryState(
+        "statementsSort",
+        parseAsStringLiteral(sortKeys)
+            .withDefault("total")
+            .withOptions({
+                history: "replace",
+                shallow: true,
+                scroll: false,
+            }),
+    );
+
+    const columns = [
+        { key: "calls", label: "Calls" },
+        { key: "rows", label: "Rows Returned" },
+        { key: "total", label: "Total" },
+        { key: "mean", label: "Mean" },
+        { key: "max", label: "Max" },
+    ] as const;
+
+    const statementRows = $derived(
+        (statements.data?.rows ?? [])
+            .map(([query, calls, rows, total, mean, max]) => ({
+                query: query ?? "",
+                calls: Number(calls),
+                rows: Number(rows),
+                total: Number(total),
+                mean: Number(mean),
+                max: Number(max),
+            }))
+            .toSorted(
+                (left, right) =>
+                    right[statementsSort.current] -
+                    left[statementsSort.current],
+            ),
+    );
+
+    const since = $derived(statements.data?.rows[0]?.[6]);
+
+    const statementCount = $derived(
+        Number(statements.data?.rows[0]?.[7] ?? 0),
+    );
+
+    let showAll = $state(false);
+
+    const shownStatements = $derived(
+        showAll ? statementRows : statementRows.slice(0, 3),
+    );
+
+    const duration = (ms: number) =>
+        ms >= 1000
+            ? `${(ms / 1000).toFixed(2)}s`
+            : `${ms.toFixed(1)}ms`;
+
+    let resetting = $state(false);
+
+    const reset = createMutation(() =>
+        orpc.resources.queryPostgres.mutationOptions({
+            onSuccess: async () => {
+                resetting = false;
+                await statements.refetch();
+            },
+        }),
+    );
 
     const enable = createMutation(() =>
         orpc.resources.enableQueryStatistics.mutationOptions({
@@ -155,6 +228,40 @@
                 >
                     Enable
                 </Button>
+            {:else}
+                <div class="flex items-center gap-2">
+                    {#if since}
+                        <span class="text-sm text-muted-foreground">
+                            Since {new Date(
+                                since,
+                            ).toLocaleDateString()}
+                        </span>
+                    {/if}
+                    <Button
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="Refresh query statistics"
+                        disabled={statements.isFetching}
+                        onclick={() => void statements.refetch()}
+                    >
+                        <RefreshCw
+                            class={statements.isFetching
+                                ? "animate-spin"
+                                : ""}
+                            aria-hidden="true"
+                        />
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onclick={() => {
+                            reset.reset();
+                            resetting = true;
+                        }}
+                    >
+                        Reset
+                    </Button>
+                </div>
             {/if}
         </div>
 
@@ -180,7 +287,13 @@
                 label="Loading query statistics"
                 class="mt-4"
             >
-                <div class="h-40 rounded-md border"></div>
+                <div class="space-y-3">
+                    {#each { length: 4 }, index (index)}
+                        <p class="font-mono text-xs">
+                            SELECT id, name FROM users WHERE id = $1
+                        </p>
+                    {/each}
+                </div>
             </Skeleton>
         {:else if enabled && statements.isError}
             <Alert variant="error" class="mt-4">
@@ -189,55 +302,124 @@
                 </AlertDescription>
             </Alert>
         {:else if enabled && statements.data}
-            <div class="mt-4 overflow-auto rounded-lg border">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Query</TableHead>
-                            <TableHead class="text-right">
-                                Calls
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Total ms
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Mean ms
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Rows
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {#each statements.data.rows as [query, ...numbers], index (index)}
-                            <TableRow>
-                                <TableCell
-                                    class="max-w-96 truncate font-mono text-xs"
-                                    title={query ?? ""}
+            <div class="mt-4 overflow-x-auto">
+                <table
+                    class="w-full min-w-[40rem] table-fixed text-sm"
+                >
+                    <thead>
+                        <tr class="border-b">
+                            <th
+                                class="py-2 pr-4 text-left font-medium"
+                            >
+                                Query
+                            </th>
+                            {#each columns as column (column.key)}
+                                <th
+                                    class={[
+                                        "py-2 pl-4 text-right font-medium whitespace-nowrap",
+                                        column.key === "rows"
+                                            ? "w-36"
+                                            : "w-24",
+                                    ]}
+                                    aria-sort={statementsSort.current ===
+                                    column.key
+                                        ? "descending"
+                                        : undefined}
                                 >
-                                    {query}
-                                </TableCell>
-                                {#each numbers as value, column (column)}
-                                    <TableCell
-                                        class="text-right tabular-nums"
+                                    <button
+                                        type="button"
+                                        class="inline-flex items-center gap-1 hover:text-foreground"
+                                        onclick={() =>
+                                            void statementsSort.set(
+                                                column.key,
+                                            )}
                                     >
-                                        {value}
-                                    </TableCell>
-                                {/each}
-                            </TableRow>
+                                        {#if statementsSort.current === column.key}
+                                            <ArrowDown
+                                                class="size-3.5"
+                                                aria-hidden="true"
+                                            />
+                                        {/if}
+                                        {column.label}
+                                    </button>
+                                </th>
+                            {/each}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each shownStatements as statement, index (index)}
+                            <tr class="border-b">
+                                <td
+                                    class="truncate py-3 pr-4 font-mono text-xs"
+                                    title={statement.query}
+                                >
+                                    {statement.query}
+                                </td>
+                                <td
+                                    class="py-3 pl-4 text-right tabular-nums"
+                                >
+                                    {statement.calls.toLocaleString()}
+                                </td>
+                                <td
+                                    class="py-3 pl-4 text-right tabular-nums"
+                                >
+                                    {statement.rows.toLocaleString()}
+                                </td>
+                                <td
+                                    class="py-3 pl-4 text-right tabular-nums"
+                                >
+                                    {duration(statement.total)}
+                                </td>
+                                <td
+                                    class="py-3 pl-4 text-right tabular-nums"
+                                >
+                                    {duration(statement.mean)}
+                                </td>
+                                <td
+                                    class="py-3 pl-4 text-right tabular-nums"
+                                >
+                                    {duration(statement.max)}
+                                </td>
+                            </tr>
                         {:else}
-                            <TableRow>
-                                <TableCell
-                                    colspan={5}
-                                    class="text-muted-foreground"
+                            <tr>
+                                <td
+                                    colspan={6}
+                                    class="py-3 text-muted-foreground"
                                 >
                                     No queries recorded yet.
-                                </TableCell>
-                            </TableRow>
+                                </td>
+                            </tr>
                         {/each}
-                    </TableBody>
-                </Table>
+                    </tbody>
+                </table>
             </div>
+            {#if statementRows.length > 3}
+                <Button
+                    variant="link"
+                    size="sm"
+                    class="mt-2 px-0"
+                    onclick={() => (showAll = !showAll)}
+                >
+                    {showAll
+                        ? "Show fewer"
+                        : `Show all ${statementCount.toLocaleString()} queries`}
+                </Button>
+            {/if}
         {/if}
     </section>
 {/if}
+
+<ConfirmDialog
+    bind:open={resetting}
+    title="Reset query statistics?"
+    description="Clears every recorded query for this database. Statistics start collecting again from now."
+    confirmLabel="Reset"
+    pending={reset.isPending}
+    error={reset.error?.message}
+    onconfirm={() =>
+        reset.mutate({
+            ...input,
+            query: "SELECT pg_stat_statements_reset()",
+        })}
+/>

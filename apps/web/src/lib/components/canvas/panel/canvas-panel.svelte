@@ -134,6 +134,7 @@
             active === "files" ||
             active === "settings" ||
             active === "config" ||
+            active === "tables" ||
             active === "compose",
     );
 
@@ -249,12 +250,13 @@
     </div>
 
     <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
-    <!-- Settings, logs and files run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
+    <!-- Settings, logs, files and tables run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
     <div
         class={[
             "min-h-0 flex-1",
             active === "logs" ||
             active === "files" ||
+            active === "tables" ||
             active === "compose"
                 ? "overflow-hidden"
                 : "overflow-y-auto",

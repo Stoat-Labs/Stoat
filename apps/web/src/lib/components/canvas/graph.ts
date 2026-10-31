@@ -1,7 +1,7 @@
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import type { Edge, Node, XYPosition } from "@xyflow/svelte";
 import { databaseExporterEngine, databaseServerEngine } from "@stoat/api/observability";
-import { imageIcon } from "$lib/resources/image-icons";
+import { engineIcon, imageIcon } from "$lib/resources/image-icons";
 
 export type CanvasResource = Awaited<
     ReturnType<AppRouterClient["resources"]["listResources"]>
@@ -711,7 +711,7 @@ export function buildCanvas(
                 data: {
                     resource,
                     service,
-                    icon: resource.icon ?? serviceIcon(service),
+                    icon: resource.icon ?? serviceIcon(service) ?? engineIcon(resource.engine),
                     draftOnly,
                     parseError: entry?.parseError ?? false,
                     grouped: false,
@@ -771,7 +771,7 @@ export function buildCanvas(
                 icon:
                     resource.icon ??
                     item.cards.map(({ service }) => serviceIcon(service)).find(Boolean) ??
-                    null,
+                    engineIcon(resource.engine),
                 serviceCount: item.cards.length,
                 dropTarget: false,
             },

@@ -306,6 +306,16 @@ html.dark {
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    /* An indeterminate progress bar's stripe sweeping across it. */
+    --animate-progress: progress 1s ease-in-out infinite;
+    @keyframes progress {
+        from {
+            transform: translateX(-100%);
+        }
+        to {
+            transform: translateX(300%);
+        }
+    }
     @keyframes caret-blink {
         0%,
         70%,

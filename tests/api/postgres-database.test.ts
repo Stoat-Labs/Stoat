@@ -44,7 +44,8 @@ describe("replacePostgresPassword", () => {
 });
 
 describe("preloadStatements", () => {
-    const command = (compose: string) => YAML.parse(preloadStatements(compose)).services.db.command;
+    const command = (compose: string, preloaded = "") =>
+        YAML.parse(preloadStatements(compose, preloaded)).services.db.command;
 
     it("adds a command, or extends one that is a list", () => {
         expect(command("services:\n  db:\n    image: postgres:18\n")).toEqual([
@@ -65,13 +66,22 @@ describe("preloadStatements", () => {
         ]);
     });
 
+    it("keeps the libraries the image already preloads, like TimescaleDB's", () => {
+        expect(
+            command(
+                "services:\n  db:\n    image: timescale/timescaledb:2.31.0-pg18\n",
+                "timescaledb",
+            ),
+        ).toEqual(["postgres", "-c", "shared_preload_libraries=timescaledb,pg_stat_statements"]);
+    });
+
     it("leaves an enabled command alone and refuses one it can't extend", () => {
         const enabled =
             "services:\n  db:\n    command: postgres -c shared_preload_libraries=pg_stat_statements\n";
 
-        expect(preloadStatements(enabled)).toBe(enabled);
+        expect(preloadStatements(enabled, "")).toBe(enabled);
         expect(() =>
-            preloadStatements("services:\n  db:\n    command: postgres -c fsync=off\n"),
+            preloadStatements("services:\n  db:\n    command: postgres -c fsync=off\n", ""),
         ).toThrow("own command");
     });
 });
@@ -151,20 +161,64 @@ describe("addConnectionPooler", () => {
             POSTGRES_DB: `{{ ${resourceId}.POSTGRES_DB }}`,
         });
 
-        // PgDog reads only its TOML files, so the Variables must land in the config content.
+        // The entrypoint writes PgDog's TOML from the environment, so a password is never raw TOML.
+        const password = 's3c"r\\et';
+
         const deployed = YAML.parse(
             interpolateCompose(
                 pooler.draftSpec!,
-                "POSTGRES_HOST=db.internal\nPOSTGRES_USER=postgres\nPOSTGRES_PASSWORD=s3cret\nPOSTGRES_DB=app",
+                `POSTGRES_HOST=db.internal\nPOSTGRES_USER=postgres\nPOSTGRES_PASSWORD='${password}'\nPOSTGRES_DB=app`,
             ),
-        );
+        ).services.pgdog;
 
-        expect(deployed.configs["pgdog-users"].content).toContain('password = "s3cret"');
-        expect(deployed.configs.pgdog.content).toContain('host = "db.internal"');
+        expect(deployed.environment).toMatchObject({ POSTGRES_PASSWORD: password });
+        expect(deployed.entrypoint.at(-1)).toContain("password = $$(toml POSTGRES_PASSWORD)");
 
         await expect(call(resourcesRouter.addConnectionPooler, input, { context })).rejects.toThrow(
             "already pools",
         );
+    });
+
+    it("refuses SQL and database changes from a member who isn't an owner or admin", async () => {
+        const organizationId = context.session!.session.activeOrganizationId;
+
+        await db.$client.query(
+            `INSERT INTO "user" (id, name, email) VALUES ('member', 'Member', 'member@example.test')`,
+        );
+        await db.$client.query(
+            `INSERT INTO member (id, organization_id, user_id, role, created_at)
+             VALUES ($1, $2, 'member', 'member', now())`,
+            [randomUUID(), organizationId],
+        );
+
+        // SAFETY: as above, with a plain member's identity.
+        const member = {
+            ...context,
+            session: {
+                user: { id: "member" },
+                session: { activeOrganizationId: organizationId },
+            },
+        } as Context;
+
+        const input = { clusterId, projectId, resourceId };
+
+        for (const procedure of [
+            resourcesRouter.renamePostgresRole,
+            resourcesRouter.regeneratePostgresPassword,
+            resourcesRouter.enableQueryStatistics,
+            resourcesRouter.addConnectionPooler,
+        ])
+            await expect(call(procedure, input, { context: member })).rejects.toThrow(
+                "owner or admin",
+            );
+
+        await expect(
+            call(
+                resourcesRouter.queryPostgres,
+                { ...input, query: "CREATE ROLE intruder SUPERUSER" },
+                { context: member },
+            ),
+        ).rejects.toThrow("owner or admin");
     });
 
     it("keeps the old password when the server can't take the new one", async () => {

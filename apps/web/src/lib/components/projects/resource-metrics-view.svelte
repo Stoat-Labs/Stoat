@@ -1065,9 +1065,11 @@
             <Alert variant="info">
                 <AlertDescription>
                     No database metrics yet. They appear once
-                    monitoring scrapes the {engine.exporter} service; clusters
-                    initialized before database metrics were added need
-                    monitoring re-initialized.
+                    monitoring scrapes the {engine.exporter} service. If
+                    the database's password or user changed since it was
+                    deployed, redeploy it so the exporter can log in again;
+                    clusters initialized before database metrics were added
+                    need monitoring re-initialized.
                 </AlertDescription>
             </Alert>
         {/if}

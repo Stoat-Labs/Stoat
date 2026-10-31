@@ -23,7 +23,7 @@ import { parseEnv } from "node:util";
 import * as v from "valibot";
 import YAML, { isSeq } from "yaml";
 
-import { organizationProcedure, resourceMiddleware, uncloudMiddleware } from "../..";
+import { organizationAdminProcedure, resourceMiddleware, uncloudMiddleware } from "../..";
 import { postgresService } from "../../compose";
 import { databaseEngine } from "../../databases";
 import { composeServices } from "../../project-graph";
@@ -32,37 +32,64 @@ type Resource = typeof resources.$inferSelect;
 
 const PGDOG_IMAGE = "ghcr.io/pgdogdev/pgdog";
 
-// Configs, since PgDog reads only TOML files; `${...}` resolves from the pooler's Variables at deploy.
+// PgDog reads only TOML files, so its entrypoint writes them from the pooler's Variables, each
+// escaped as a TOML string: a raw `${...}` in TOML would break on a `"` or `\` in a password.
+// `$$` keeps `$` from Compose interpolation.
 const pgdogCompose = `services:
     pgdog:
         image: ${PGDOG_IMAGE}:v0.1.61
         restart: unless-stopped
-        configs:
-            - source: pgdog
-              target: /pgdog/pgdog.toml
-            - source: pgdog-users
-              target: /pgdog/users.toml
+        environment:
+            POSTGRES_HOST: \${POSTGRES_HOST}
+            POSTGRES_USER: \${POSTGRES_USER}
+            POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+            POSTGRES_DB: \${POSTGRES_DB}
+        entrypoint:
+            - sh
+            - -c
+            - |
+              toml() {
+                  name="$$1" awk 'BEGIN {
+                      value = ENVIRON[ENVIRON["name"]]
+                      gsub(/\\\\/, "\\\\\\\\", value)
+                      gsub(/"/, "\\\\\\"", value)
+                      gsub(/\\n/, "\\\\n", value)
+                      gsub(/\\r/, "\\\\r", value)
+                      printf "\\"%s\\"", value
+                  }'
+              }
+              cat > /pgdog/pgdog.toml <<TOML
+              [general]
+              host = "0.0.0.0"
+              port = 6432
 
-configs:
-    pgdog:
-        content: |
-            [general]
-            host = "0.0.0.0"
-            port = 6432
-
-            [[databases]]
-            name = "\${POSTGRES_DB}"
-            host = "\${POSTGRES_HOST}"
-            port = 5432
-    pgdog-users:
-        content: |
-            [[users]]
-            name = "\${POSTGRES_USER}"
-            database = "\${POSTGRES_DB}"
-            password = "\${POSTGRES_PASSWORD}"
+              [[databases]]
+              name = $$(toml POSTGRES_DB)
+              host = $$(toml POSTGRES_HOST)
+              port = 5432
+              TOML
+              cat > /pgdog/users.toml <<TOML
+              [[users]]
+              name = $$(toml POSTGRES_USER)
+              database = $$(toml POSTGRES_DB)
+              password = $$(toml POSTGRES_PASSWORD)
+              TOML
+              exec pgdog
 `;
 
-const STATEMENTS_LIBRARY = "shared_preload_libraries=pg_stat_statements";
+/**
+ * The setting that preloads pg_stat_statements next to what `preloaded` (the server's
+ * shared_preload_libraries) already loads: images like TimescaleDB preload their own library
+ * in postgresql.conf, and a `-c` flag replaces that list instead of adding to it.
+ */
+export function statementsLibrary(preloaded: string) {
+    const libraries = preloaded
+        .split(",")
+        .map((library) => library.trim())
+        .filter((library) => library && library !== "pg_stat_statements");
+
+    return `shared_preload_libraries=${[...libraries, "pg_stat_statements"].join(",")}`;
+}
 
 const postgresInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
@@ -261,7 +288,8 @@ export function replacePostgresPassword(envText: string, password: string) {
 }
 
 /** Adds pg_stat_statements to the first service's `command`, keeping any arguments it has. */
-export function preloadStatements(compose: string) {
+export function preloadStatements(compose: string, preloaded: string) {
+    const library = statementsLibrary(preloaded);
     const document = YAML.parseDocument(compose);
     const service = postgresService(compose);
 
@@ -270,7 +298,7 @@ export function preloadStatements(compose: string) {
     const command = document.getIn(path, true);
 
     if (command === undefined) {
-        document.setIn(path, document.createNode(["postgres", "-c", STATEMENTS_LIBRARY]));
+        document.setIn(path, document.createNode(["postgres", "-c", library]));
 
         return document.toString();
     }
@@ -282,18 +310,18 @@ export function preloadStatements(compose: string) {
 
     if (!isSeq(command) || args.some((arg) => String(arg).includes("shared_preload_libraries")))
         throw new Error(
-            `The service sets its own command. Add \`-c ${STATEMENTS_LIBRARY}\` to it in Compose.`,
+            `The service sets its own command. Add \`-c ${library}\` to it in Compose.`,
         );
 
     command.add("-c");
-    command.add(STATEMENTS_LIBRARY);
+    command.add(library);
 
     return document.toString();
 }
 
 export const resourcePostgresRouter = {
     /** Runs SQL as the database's own user, last statement's rows as text. */
-    queryPostgres: organizationProcedure
+    queryPostgres: organizationAdminProcedure
         .input(v.object({ ...postgresInput.entries, query: v.pipe(v.string(), v.minLength(1)) }))
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -305,7 +333,7 @@ export const resourcePostgresRouter = {
      * Renames the database's role to its POSTGRES_USER Variable. Deploys used to give template
      * databases the prefixed service name as their user; Variables and references said otherwise.
      */
-    renamePostgresRole: organizationProcedure
+    renamePostgresRole: organizationAdminProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -314,7 +342,7 @@ export const resourcePostgresRouter = {
         }),
 
     /** Changes the role's password on the server, then the Variable, rolling back if the server refuses. */
-    regeneratePostgresPassword: organizationProcedure
+    regeneratePostgresPassword: organizationAdminProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -379,7 +407,7 @@ export const resourcePostgresRouter = {
         ),
 
     /** Creates pg_stat_statements once the server preloads it, or stages the preload for the next deploy. */
-    enableQueryStatistics: organizationProcedure
+    enableQueryStatistics: organizationAdminProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -390,9 +418,9 @@ export const resourcePostgresRouter = {
                 input.clusterId,
                 resource,
                 "SHOW shared_preload_libraries",
-            ).then(({ rows }) => rows[0]?.[0]?.includes("pg_stat_statements") ?? false);
+            ).then(({ rows }) => rows[0]?.[0] ?? "");
 
-            if (preloaded) {
+            if (preloaded.includes("pg_stat_statements")) {
                 await queryPostgres(
                     db,
                     uc,
@@ -406,7 +434,7 @@ export const resourcePostgresRouter = {
 
             if (resource.gitSource)
                 throw new ORPCError("BAD_REQUEST", {
-                    message: `Add \`-c ${STATEMENTS_LIBRARY}\` to the PostgreSQL command in Git.`,
+                    message: `Add \`-c ${statementsLibrary(preloaded)}\` to the PostgreSQL command in Git.`,
                 });
 
             await db.transaction(async (tx) => {
@@ -421,7 +449,7 @@ export const resourcePostgresRouter = {
                 let draftSpec;
 
                 try {
-                    draftSpec = preloadStatements(compose ?? "");
+                    draftSpec = preloadStatements(compose ?? "", preloaded);
                 } catch (error) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: error instanceof Error ? error.message : "Compose can't be read.",
@@ -435,7 +463,7 @@ export const resourcePostgresRouter = {
         }),
 
     /** Adds a draft PgDog resource that pools connections to this database through references. */
-    addConnectionPooler: organizationProcedure
+    addConnectionPooler: organizationAdminProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .handler(async ({ context: { db, resource }, input }) => {
@@ -501,7 +529,7 @@ export const resourcePostgresRouter = {
                         message: `"${existing.name}" already pools this database.`,
                     });
 
-                const name = `${resource.name} pooler`.slice(0, 100);
+                const name = "PgDog";
 
                 const [created] = await tx
                     .insert(resources)

@@ -1054,9 +1054,18 @@ export const resourcesRouter = {
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
                 env: v.string(),
+                // The Variables the edit started from; a save over someone else's change is refused.
+                expectedEnv: v.optional(v.string()),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
+            const scope = and(
+                eq(resources.id, input.resourceId),
+                eq(resources.projectId, input.projectId),
+                inArray(resources.type, composeResourceTypes),
+                sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
+            );
+
             const [resource] = await db
                 .update(resources)
                 .set({
@@ -1064,13 +1073,23 @@ export const resourcesRouter = {
                 })
                 .where(
                     and(
-                        eq(resources.id, input.resourceId),
-                        eq(resources.projectId, input.projectId),
-                        inArray(resources.type, composeResourceTypes),
-                        sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
+                        scope,
+                        input.expectedEnv === undefined
+                            ? undefined
+                            : sql`coalesce(${resources.settings}->>'env', '') = ${input.expectedEnv}`,
                     ),
                 )
                 .returning();
+
+            if (!resource && input.expectedEnv !== undefined) {
+                const [exists] = await db.select({ id: resources.id }).from(resources).where(scope);
+
+                if (exists)
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "These Variables changed while you were editing. Copy your edits, reopen the editor and try again.",
+                    });
+            }
 
             if (!resource) {
                 throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });

@@ -58,6 +58,7 @@
         composeEnvironmentSections,
         setComposeEnvironment,
         splitRawEnvironment,
+        composeServiceNames,
     } from "./compose-environment";
     import type { CanvasResource } from "../graph";
 
@@ -231,13 +232,22 @@
     // What the raw editor opened with, so an untouched file can't be saved.
     let rawInitial = $state("");
 
+    // The Variables and Compose draft the raw editor opened from. Saving applies the edits to these
+    // and refuses if either changed meanwhile, instead of overwriting a teammate's change.
+    let rawEnv = "";
+
+    let rawCompose: string | null = null;
+
     // The Variables .env, then each Compose service's `environment` under a `# [service]` header.
     function openRaw() {
         error = "";
 
         try {
+            rawEnv = env;
+            rawCompose = resourceQuery.data?.draftSpec ?? null;
+
             const sections = composeEnvironmentSections(
-                resourceQuery.data?.draftSpec ?? "",
+                rawCompose ?? "",
             );
 
             rawInitial = sections
@@ -257,26 +267,60 @@
     }
 
     async function saveRaw() {
-        const { env: nextEnv, sections } =
-            splitRawEnvironment(rawText);
+        let split;
 
-        const envSaved =
-            nextEnv.trimEnd() === env.trimEnd() ||
-            (await save(() => nextEnv));
+        try {
+            split = splitRawEnvironment(
+                rawText,
+                composeServiceNames(rawCompose ?? ""),
+            );
+        } catch (cause) {
+            error =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not read the raw editor.";
+
+            return;
+        }
+
+        const { env: nextEnv, sections } = split;
+
+        const spec = applyComposeSections(rawCompose ?? "", sections);
+
+        // Check both before writing either, so a conflict saves nothing.
+        const current = await queryClient.fetchQuery(
+            orpc.resources.getResource.queryOptions({
+                input,
+                staleTime: 0,
+            }),
+        );
 
         if (
-            envSaved &&
-            (await saveCompose((current) =>
-                applyComposeSections(current, sections),
-            ))
-        )
+            v.parse(envSchema, current.settings).env !== rawEnv ||
+            current.draftSpec !== rawCompose
+        ) {
+            error =
+                "These Variables changed while you were editing. Copy your edits, reopen the editor and try again.";
+
+            return;
+        }
+
+        const envSaved =
+            nextEnv.trimEnd() === rawEnv.trimEnd() ||
+            (await save(() => nextEnv, rawEnv));
+
+        if (envSaved && (await saveCompose(() => spec, rawCompose)))
             rawOpen = false;
     }
 
     let rawView = $state<EditorView>();
 
     // Every write starts from the freshest saved file, so it only changes what was edited.
-    async function save(next: (current: string) => string) {
+    // With `expected`, the server refuses the write if the saved Variables are no longer that.
+    async function save(
+        next: (current: string) => string,
+        expected?: string,
+    ) {
         saving = true;
         error = "";
 
@@ -291,6 +335,7 @@
             const updated = await client.resources.updateVariables({
                 ...input,
                 env: next(v.parse(envSchema, current.settings).env),
+                expectedEnv: expected,
             });
 
             queryClient.setQueryData(
@@ -317,8 +362,12 @@
         }
     }
 
-    // Compose edits rewrite their entries in the freshest saved Compose file.
-    async function saveCompose(next: (current: string) => string) {
+    // Compose edits rewrite their entries in the freshest saved Compose file, or in `base`, the
+    // draft an edit started from: then the server refuses the write if the draft is no longer that.
+    async function saveCompose(
+        next: (current: string) => string,
+        base?: string | null,
+    ) {
         saving = true;
         error = "";
 
@@ -330,14 +379,18 @@
                 }),
             );
 
-            const spec = next(current.draftSpec ?? "");
+            const expectedSpec =
+                base === undefined ? current.draftSpec : base;
 
-            if (spec === (current.draftSpec ?? "")) return true;
+            const from = expectedSpec ?? "";
+            const spec = next(from);
+
+            if (spec === from) return true;
 
             const updated = await client.resources.updateComposeSpec({
                 ...input,
                 spec,
-                expectedSpec: current.draftSpec,
+                expectedSpec,
                 expectedSource:
                     current.gitConnectionId && current.gitSource
                         ? {

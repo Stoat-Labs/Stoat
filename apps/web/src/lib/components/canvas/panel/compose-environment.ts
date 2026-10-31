@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { formatEnvValue, parseEnvLines } from "@stoat/workflows/env-lines";
+import { formatEnvValue, parseAllAssignments, parseEnvLines } from "@stoat/workflows/env-lines";
 import { isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 
 const scalar = v.pipe(v.union([v.string(), v.number(), v.boolean()]), v.transform(String));
@@ -18,6 +18,15 @@ const composeSchema = v.object({
         {},
     ),
 });
+
+/** Every Compose service's name, whether or not it sets `environment`. */
+export function composeServiceNames(compose: string) {
+    try {
+        return new Set(Object.keys(v.parse(composeSchema, parse(compose)).services));
+    } catch {
+        return new Set<string>();
+    }
+}
 
 /** The `environment` entries each Compose service sets itself; pass-through keys without a value are left out. */
 export function composeEnvironment(compose: string) {
@@ -93,25 +102,52 @@ export function composeEnvironmentSections(compose: string) {
         .join("\n\n");
 }
 
-/** Splits raw-editor text into the Variables `.env` (before the first header) and each service's section. */
-export function splitRawEnvironment(text: string) {
+/**
+ * Splits raw-editor text into the Variables `.env` (before the first header) and each service's
+ * section. Only a `# [service]` naming one of `services` is a header, and never a line inside a
+ * quoted multi-line value, so `.env` comments like `# [secrets]` stay Variables. Throws on a
+ * header after the first that names no service, or one service twice, instead of guessing.
+ */
+export function splitRawEnvironment(text: string, services: ReadonlySet<string>) {
     const lines = text.split("\n");
 
-    const first = lines.findIndex((line) => sectionHeader.test(line));
+    const quoted = new Set(
+        parseAllAssignments(text).flatMap(({ start, end }) =>
+            Array.from({ length: end - start }, (_, index) => start + index + 1),
+        ),
+    );
+
+    const headerAt = (index: number) =>
+        quoted.has(index) ? undefined : sectionHeader.exec(lines[index] ?? "")?.[1];
+
+    const first = lines.findIndex((_, index) => {
+        const header = headerAt(index);
+
+        return header !== undefined && services.has(header);
+    });
 
     const sections = new Map<string, string>();
 
     let service = "";
 
-    for (const line of first === -1 ? [] : lines.slice(first)) {
-        const header = sectionHeader.exec(line)?.[1];
+    for (let index = Math.max(first, 0); first !== -1 && index < lines.length; index += 1) {
+        const header = headerAt(index);
 
         if (header === undefined) {
-            sections.set(service, `${sections.get(service) ?? ""}${line}\n`);
-        } else {
-            service = header;
-            sections.set(service, sections.get(service) ?? "");
+            sections.set(service, `${sections.get(service) ?? ""}${lines[index]}\n`);
+            continue;
         }
+
+        if (!services.has(header))
+            throw new Error(
+                `"# [${header}]" names no Compose service. Rename or remove that line.`,
+            );
+
+        if (sections.has(header))
+            throw new Error(`"# [${header}]" appears twice. Merge its variables under one header.`);
+
+        service = header;
+        sections.set(service, "");
     }
 
     const env = first === -1 ? text : lines.slice(0, first).join("\n");
