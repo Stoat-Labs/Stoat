@@ -87,7 +87,7 @@ test("an admin sets up a server over SSH, follows it on its deployment page, ret
     const name = `Server ${Date.now()}`;
     await page.goto("/clusters");
     await page.getByRole("button", { name: "Create cluster" }).click();
-    await page.getByRole("menuitem", { name: "New server" }).click();
+    await page.getByRole("menuitem", { name: "New cluster" }).click();
 
     const create = dialog(page);
     await create.getByLabel("Name").fill(name);
