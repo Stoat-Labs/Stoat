@@ -209,6 +209,27 @@ describe("buildProjectGraph domains", () => {
         ]);
     });
 
+    it("lists hostless HTTP ports at the prefixed service on the cluster domain", () => {
+        const { resources } = buildProjectGraph(
+            [
+                {
+                    id: api,
+                    slug: "graph-k3f9x2",
+                    projectId: project,
+                    deployed: null,
+                    attempted: null,
+                    spec: "services:\n  web:\n    image: nginx\n    x-ports:\n      - 80/https\n",
+                    draftSpec: null,
+                    settings: null,
+                },
+            ],
+            [],
+            "abc123.uncld.dev",
+        );
+
+        expect(resources[0]?.services[0]?.domains).toEqual(["graph-k3f9x2-web.abc123.uncld.dev"]);
+    });
+
     it("lists x-caddy site addresses resolved through the .env", () => {
         const { resources } = buildProjectGraph(
             [
@@ -228,6 +249,33 @@ describe("buildProjectGraph domains", () => {
 
         expect(resources[0]?.services.map((service) => service.domains)).toEqual([
             ["files.example.com"],
+        ]);
+    });
+
+    it("resolves volume mounts through the .env", () => {
+        const { resources } = buildProjectGraph(
+            [
+                {
+                    id: api,
+                    slug: "graph-k3f9x2",
+                    projectId: project,
+                    deployed: null,
+                    attempted: null,
+                    spec: 'services:\n  db:\n    image: mariadb\n    volumes:\n      - "${DB_VOLUME:-/opt/db}:/var/lib/mysql"\nvolumes:\n  db-data: {}\n',
+                    draftSpec: null,
+                    settings: { env: "DB_VOLUME=db-data\n" },
+                },
+            ],
+            [],
+        );
+
+        expect(resources[0]?.services[0]?.volumes).toEqual(["db-data"]);
+        expect(resources[0]?.volumes).toEqual([
+            {
+                name: "db-data",
+                services: ["db"],
+                mounts: [{ service: "db", target: "/var/lib/mysql" }],
+            },
         ]);
     });
 });

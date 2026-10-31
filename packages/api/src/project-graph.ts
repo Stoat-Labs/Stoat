@@ -1,3 +1,4 @@
+import { interpolateCompose } from "@stoat/workflows/compose";
 import { parseIngressCompose } from "@stoat/workflows/ingress";
 import { referencedResourceIds } from "@stoat/workflows/references";
 import * as v from "valibot";
@@ -217,8 +218,23 @@ function deployedServiceNames(spec: string | null) {
     }
 }
 
+/** The Compose resolved through the `.env` like a deploy, so `${DB_VOLUME:-db}:/data` mounts `db`. */
+function resolveCompose(compose: string, row: GraphResourceInput) {
+    try {
+        return interpolateCompose(
+            compose,
+            resourceEnv(row),
+            resourceComposePrefix(row),
+            "stoat-domain.invalid",
+        );
+    } catch {
+        // An unresolvable `.env` keeps the raw entries; `${VAR}` mounts just stay hidden.
+        return compose;
+    }
+}
+
 /** Hostnames each service publishes via `x-ports` or `x-caddy`; `.env` fills in `${VAR}` hostnames. */
-function serviceDomains(compose: string, row: GraphResourceInput) {
+function serviceDomains(compose: string, row: GraphResourceInput, clusterDomain?: string) {
     const domains = new Map<string, string[]>();
     let env = "";
 
@@ -237,7 +253,16 @@ function serviceDomains(compose: string, row: GraphResourceInput) {
     };
 
     for (const entry of entries) {
-        if (entry.kind === "http" && entry.hostname) add(entry.service, entry.hostname);
+        if (entry.kind !== "http") continue;
+
+        // Uncloud publishes a hostless entry at `<prefixed service>.<cluster domain>`.
+        const prefix = resourceComposePrefix(row);
+
+        const host =
+            entry.hostname ??
+            (clusterDomain && `${prefix ? `${prefix}-` : ""}${entry.service}.${clusterDomain}`);
+
+        if (host) add(entry.service, host);
     }
 
     // Site addresses of `x-caddy` blocks, already resolved through the `.env`.
@@ -251,7 +276,11 @@ function serviceDomains(compose: string, row: GraphResourceInput) {
  * The deployed spec wins over the draft, and a broken spec never fails the whole graph.
  * Logos are sent once per template rather than once per service.
  */
-export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTemplate[]) {
+export function buildProjectGraph(
+    rows: GraphResourceInput[],
+    templates: GraphTemplate[],
+    clusterDomain?: string,
+) {
     const ids = new Set(rows.map((row) => row.id));
     const images = templateImages(templates);
     const logos: Record<string, string> = {};
@@ -267,10 +296,11 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
 
         if (compose) {
             try {
-                const domains = serviceDomains(compose, row);
+                const domains = serviceDomains(compose, row, clusterDomain);
+                const resolved = resolveCompose(compose, row);
 
                 configs = safeConfigs(compose);
-                services = composeServices(compose).map((service) => ({
+                services = composeServices(resolved).map((service) => ({
                     ...service,
                     configs: configs.flatMap((config) =>
                         config.services.includes(service.name) ? [config.name] : [],
@@ -284,7 +314,7 @@ export function buildProjectGraph(rows: GraphResourceInput[], templates: GraphTe
                             ? internalHostname(service.name, row.deployed.prefix || undefined)
                             : null,
                 }));
-                volumes = composeVolumes(compose);
+                volumes = composeVolumes(resolved);
             } catch {
                 parseError = true;
             }

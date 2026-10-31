@@ -1213,6 +1213,28 @@ export const resourcesRouter = {
         .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
             await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
 
+            const [cluster] = await db
+                .select({
+                    sidecarUrl: clusters.sidecarUrl,
+                    sidecarToken: clusters.sidecarToken,
+                    sidecarCertificate: clusters.sidecarCertificate,
+                })
+                .from(projects)
+                .innerJoin(clusters, eq(projects.clusterId, clusters.id))
+                .where(eq(projects.id, input.projectId))
+                .limit(1);
+
+            // Hostless `x-ports` live on the cluster domain, left out while the sidecar is unreachable.
+            const domain = cluster
+                ? await ucClient(cluster.sidecarUrl, {
+                      token: cluster.sidecarToken,
+                      certificate: cluster.sidecarCertificate,
+                  })
+                      .GET("/api/v1/cluster/domain", { signal: AbortSignal.timeout(5_000) })
+                      .then(({ data }) => data?.domain)
+                      .catch(() => undefined)
+                : undefined;
+
             // What each resource last deployed with, to tell which saved edits are not live yet.
             const lastDeploy = db
                 .selectDistinctOn([deployments.resourceId], {
@@ -1310,6 +1332,7 @@ export const resourcesRouter = {
                     }),
                 ),
                 templates,
+                domain,
             );
         }),
 
