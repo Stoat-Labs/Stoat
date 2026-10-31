@@ -1,6 +1,8 @@
 import { ORPCError } from "@orpc/client";
 import {
+    hasMysqlExporter,
     hasPostgresExporter,
+    isMysqlExporter,
     isPostgresExporter,
     histogramQuantile,
     hostGroups,
@@ -68,6 +70,9 @@ it("detects Postgres metrics from a Postgres server and postgres-exporter in any
         ),
     ).toBe(true);
     expect(hasPostgresExporter(services("postgres:18", "wrouesnel/postgres_exporter"))).toBe(true);
+    expect(
+        hasPostgresExporter(services("timescale/timescaledb:2.31.0-pg18", "postgres-exporter")),
+    ).toBe(true);
     expect(hasPostgresExporter(services("postgres:18-alpine"))).toBe(false);
     expect(hasPostgresExporter(services("mysql:9", "postgres-exporter"))).toBe(false);
     expect(
@@ -506,4 +511,23 @@ it("assembles per-procedure queries into cluster data, filling charts as metrics
     );
 
     expect(uninitialized.reason).toBe("uninitialized");
+});
+
+it("detects MySQL metrics from a MySQL or MariaDB server and mysqld-exporter in any services", () => {
+    const services = (...images: string[]) =>
+        images.map((image, index) => ({
+            id: `s${index}`,
+            name: `service-${index}`,
+            resource: null,
+            containers: [container({ image })],
+        }));
+
+    expect(hasMysqlExporter(services("mariadb:13.0", "prom/mysqld-exporter:v0.21.0"))).toBe(true);
+    expect(hasMysqlExporter(services("mysql:9", "quay.io/prometheus/mysqld-exporter"))).toBe(true);
+    expect(hasMysqlExporter(services("mariadb:13.0"))).toBe(false);
+    expect(hasMysqlExporter(services("postgres:18", "prom/mysqld-exporter"))).toBe(false);
+    expect(services("mariadb:13.0", "prom/mysqld-exporter").map(isMysqlExporter)).toEqual([
+        false,
+        true,
+    ]);
 });

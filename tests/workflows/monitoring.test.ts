@@ -23,6 +23,7 @@ const config: ClusterInitializationConfiguration = {
 it("pins the monitoring template to its MONITORING_VERSION", () => {
     const versions: Record<number, string> = {
         1: "17e27cf7c8be042d2b70b2ee270ca80b25ef25d3f07a3b427d8e49b48ae8d4f2",
+        2: "d68af3e5a5ba727e2d9db16145950964cc3997af57f3193c4c28a1796aaf0454",
     };
 
     expect(createHash("sha256").update(template).digest("hex")).toBe(versions[MONITORING_VERSION]);
@@ -372,7 +373,7 @@ it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identit
     expect(compose.configs.alloy_config.content).toContain('sys.env("UNCLOUD_MACHINE_ID")');
 });
 
-it("scrapes exporters by their `-metrics` service name or postgres-exporter's port", () => {
+it("scrapes exporters by their `-metrics` service name or a database exporter's port", () => {
     const alloy = parse(template).configs.alloy_config.content;
 
     const [, pattern] =
@@ -386,6 +387,8 @@ it("scrapes exporters by their `-metrics` service name or postgres-exporter's po
     expect(matches("/a1b2c3d4-e5f6a7b8-postgres-metrics-k3j9")).toBe(true);
     expect(matches("/a1b2c3d4-e5f6a7b8-postgres-metrics-k3j9", "9187")).toBe(true);
     expect(matches("/a1b2c3d4-e5f6a7b8-postgres-exporter-k3j9", "9187")).toBe(true);
+    expect(matches("/a1b2c3d4-e5f6a7b8-mysqld-exporter-k3j9", "9104")).toBe(true);
     expect(matches("/a1b2c3d4-e5f6a7b8-postgres-k3j9", "5432")).toBe(false);
+    expect(matches("/a1b2c3d4-e5f6a7b8-mariadb-k3j9", "3306")).toBe(false);
     expect(matches("/a1b2c3d4-e5f6a7b8-postgres-metrics-pre-deploy-k3j9")).toBe(false);
 });

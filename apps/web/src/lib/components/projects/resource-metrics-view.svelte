@@ -7,6 +7,7 @@
     import RangeControls from "$lib/components/observability/range-controls.svelte";
     import { useObservabilityRange } from "$lib/components/observability/range";
     import ServicesTable from "$lib/components/observability/services-table.svelte";
+    import AddDatabaseMetrics from "./add-database-metrics.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
@@ -48,9 +49,14 @@
     } from "$lib/observability";
     import { orpc } from "$lib/api/orpc";
     import {
+        databaseExporterEngine,
+        databaseServerEngine,
+        hasMysqlExporter,
         hasPostgresExporter,
         httpMetricNames,
+        isMysqlExporter,
         isPostgresExporter,
+        mysqlMetricNames,
         postgresMetricNames,
         type MetricSeries,
     } from "@stoat/api/observability";
@@ -152,27 +158,87 @@
         ),
     );
 
-    const exporterServices = $derived(
+    const referrerServices = $derived(
         (services.data ?? []).filter(
             (service) =>
                 service.resource?.projectId === projectId &&
-                referrers.has(service.resource.resourceId) &&
-                isPostgresExporter(service),
+                referrers.has(service.resource.resourceId),
         ),
     );
 
-    // Any resource running Postgres next to postgres-exporter, not only database resources.
-    const hasPostgres = $derived(
-        hasPostgresExporter([
-            ...resourceServices,
-            ...exporterServices,
-        ]),
+    // Both engines list their metrics in the same order: connections, max connections,
+    // throughput, cache hit ratio, size.
+    const engines = {
+        postgres: {
+            label: "PostgreSQL",
+            exporter: "postgres-exporter",
+            throughput: "Transactions",
+            names: postgresMetricNames,
+            isExporter: isPostgresExporter,
+            hasExporter: hasPostgresExporter,
+        },
+        mysql: {
+            label: "MySQL",
+            exporter: "mysqld-exporter",
+            throughput: "Queries",
+            names: mysqlMetricNames,
+            isExporter: isMysqlExporter,
+            hasExporter: hasMysqlExporter,
+        },
+    };
+
+    // An exporter referencing this resource scrapes it, whatever the image (timescaledb, postgis...).
+    // Otherwise, any resource running the server next to its exporter.
+    const engine = $derived(
+        Object.values(engines).find(
+            (item) =>
+                referrerServices.some(item.isExporter) ||
+                item.hasExporter(resourceServices),
+        ),
     );
 
+    // A database server not scraped yet: offered an exporter, or told one is on its way.
+    const pendingEngine = $derived.by(() => {
+        const entries = graph.data?.resources ?? [];
+
+        // The graph resolves `${DB_IMAGE:-mariadb:13}` to its default; running containers report
+        // the image a set variable picked.
+        const server = [
+            ...(entries.find((entry) => entry.id === resourceId)
+                ?.services ?? []),
+            ...resourceServices.flatMap(
+                (service) => service.containers,
+            ),
+        ]
+            .map(
+                (item) =>
+                    item.image && databaseServerEngine(item.image),
+            )
+            .find(Boolean);
+
+        const planned = entries.some(
+            (entry) =>
+                (entry.id === resourceId ||
+                    entry.references.includes(resourceId)) &&
+                entry.services.some(
+                    (service) =>
+                        service.image &&
+                        databaseExporterEngine(service.image) ===
+                            server,
+                ),
+        );
+
+        return server && !engine
+            ? { ...engines[server], planned }
+            : undefined;
+    });
+
     // Alloy tags exporter series with the exporter's own service ID.
-    const postgresServiceIds = $derived([
+    const databaseServiceIds = $derived([
         ...serviceIds,
-        ...exporterServices.map((service) => service.id),
+        ...referrerServices
+            .filter((service) => engine?.isExporter(service))
+            .map((service) => service.id),
     ]);
 
     const metrics = createQueries(() => ({
@@ -207,18 +273,18 @@
         ),
     }));
 
-    const postgres = createQueries(() => ({
-        queries: postgresMetricNames.map((name) =>
+    const database = createQueries(() => ({
+        queries: (engine?.names ?? []).map((name) =>
             orpc.cluster.getObservabilityMetric.queryOptions({
                 input: {
                     clusterId,
                     name,
                     range: range.value,
-                    serviceIds: postgresServiceIds,
+                    serviceIds: databaseServiceIds,
                 },
                 select: unpackMetric,
                 ...options,
-                enabled: options.enabled && hasPostgres,
+                enabled: options.enabled && engine !== undefined,
             }),
         ),
     }));
@@ -404,53 +470,60 @@
     });
 
     // One line per metric: a moved exporter leaves per-machine series that never overlap in time.
-    const postgresPoints = $derived(
-        Object.fromEntries(
-            postgresMetricNames.map((name, index) => [
-                name,
-                sumPoints(
-                    (postgres[index]?.data?.series ?? []).map(
-                        (item) => item.points,
-                    ),
-                ),
-            ]),
+    const databasePoints = $derived(
+        database.map((query) =>
+            sumPoints(
+                (query.data?.series ?? []).map((item) => item.points),
+            ),
         ),
     );
 
     // `not-collecting` means no exporter was scraped yet; an empty result means not this one.
-    const postgresCollecting = $derived(
-        postgres[0]?.data?.status === "ok" &&
-            postgresPoints.postgresConnections.length > 0,
+    const databaseCollecting = $derived(
+        database[0]?.data?.status === "ok" &&
+            (databasePoints[0]?.length ?? 0) > 0,
     );
 
-    const postgresLatest = (
-        name: (typeof postgresMetricNames)[number],
-    ) => current(postgresPoints[name], cluster.end, cluster.step);
+    const databaseLatest = (index: number) =>
+        current(
+            databasePoints[index] ?? [],
+            cluster.end,
+            cluster.step,
+        );
 
-    const postgresCharts = $derived(
+    const databaseCharts = $derived(
         (
             [
-                ["Connections", "count", "postgresConnections"],
-                ["Transactions", "perSecond", "postgresTransactions"],
-                ["Cache hit ratio", "percent", "postgresCacheHit"],
-                ["Database size", "bytes", "postgresSize"],
+                ["Connections", "count", 0],
+                [engine?.throughput ?? "", "perSecond", 2],
+                ["Cache hit ratio", "percent", 3],
+                ["Database size", "bytes", 4],
             ] as const
-        ).map(([title, unit, name]) => ({
-            title,
-            unit,
-            total: { count, perSecond, percent, bytes }[unit](
-                postgresLatest(name),
-            ),
-            series: [
+        ).flatMap(([title, unit, index]) => {
+            const points = databasePoints[index] ?? [];
+
+            // mysqld-exporter only reports sizes with `--collect.info_schema.schema_size`.
+            if (index === 4 && points.length === 0) return [];
+
+            return [
                 {
-                    key: name,
-                    machineKey: name,
-                    label: "PostgreSQL",
-                    color: "var(--chart-1)",
-                    points: postgresPoints[name] ?? [],
+                    title,
+                    unit,
+                    total: { count, perSecond, percent, bytes }[unit](
+                        databaseLatest(index),
+                    ),
+                    series: [
+                        {
+                            key: title,
+                            machineKey: title,
+                            label: engine?.label ?? "",
+                            color: "var(--chart-1)",
+                            points,
+                        },
+                    ],
                 },
-            ],
-        })),
+            ];
+        }),
     );
 
     // Services without traffic report gaps, so HTTP totals skip them instead of blanking the sum.
@@ -536,11 +609,9 @@
 
         const cpu = sum(rows.map((row) => row.cpu));
         const memory = sum(rows.map((row) => row.memory));
-        const connections = postgresLatest("postgresConnections");
+        const connections = databaseLatest(0);
 
-        const maxConnections = postgresLatest(
-            "postgresMaxConnections",
-        );
+        const maxConnections = databaseLatest(1);
 
         return [
             {
@@ -601,7 +672,7 @@
                       },
                   ]
                 : []),
-            ...(postgresCollecting
+            ...(databaseCollecting
                 ? [
                       {
                           label: "Connections",
@@ -668,7 +739,7 @@
 
     const fetching = $derived(
         services.isFetching ||
-            [...metrics, ...http, ...postgres].some(
+            [...metrics, ...http, ...database].some(
                 (query) => query.isFetching,
             ),
     );
@@ -783,7 +854,7 @@
                     for (const query of [
                         ...metrics,
                         ...http,
-                        ...postgres,
+                        ...database,
                     ])
                         void query.refetch();
                 }}
@@ -961,17 +1032,39 @@
             {#if httpStatus === "ok"}{#each httpCharts as chart (chart.title)}{@render chartFrame(
                         chart,
                     )}{/each}{/if}
-            {#if postgresCollecting}{#each postgresCharts as chart (chart.title)}{@render chartFrame(
+            {#if databaseCollecting}{#each databaseCharts as chart (chart.title)}{@render chartFrame(
                         chart,
                     )}{/each}{/if}
         </div>
-        {#if hasPostgres && postgres[0]?.isSuccess && !postgresCollecting}
+        {#if pendingEngine?.planned}
+            <Alert variant="info">
+                <AlertDescription>
+                    {pendingEngine.label} metrics appear once its
+                    {pendingEngine.exporter} resource is deployed and running.
+                </AlertDescription>
+            </Alert>
+        {:else if pendingEngine}
+            <AddDatabaseMetrics
+                {projectId}
+                {resourceId}
+                label={pendingEngine.label}
+            />
+        {/if}
+        {#if engine && database[0]?.isError}
+            <Alert variant="error">
+                <AlertDescription>
+                    Could not load {engine.label} metrics: {database[0]
+                        .error?.message}
+                </AlertDescription>
+            </Alert>
+        {/if}
+        {#if engine && database[0]?.isSuccess && !databaseCollecting}
             <Alert variant="info">
                 <AlertDescription>
                     No database metrics yet. They appear once
-                    monitoring scrapes the postgres-exporter service;
-                    clusters initialized before database metrics were
-                    added need monitoring re-initialized.
+                    monitoring scrapes the {engine.exporter} service; clusters
+                    initialized before database metrics were added need
+                    monitoring re-initialized.
                 </AlertDescription>
             </Alert>
         {/if}

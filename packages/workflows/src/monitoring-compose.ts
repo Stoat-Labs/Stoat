@@ -13,7 +13,7 @@ export const MONITORING_DATABASE = "monitoring";
  * version out to every initialized cluster, and never a lower one. The pinned-hash test in
  * tests/workflows/monitoring.test.ts fails until this is bumped alongside a template edit.
  */
-export const MONITORING_VERSION = 1;
+export const MONITORING_VERSION = 2;
 
 export const GREPTIME_USERNAME = "stoat";
 
