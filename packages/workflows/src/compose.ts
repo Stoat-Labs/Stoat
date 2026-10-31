@@ -681,17 +681,15 @@ export function interpolateCompose(
 
 /** Each service's image in an `interpolateCompose` result, as the cluster will pull it. */
 export function composeImages(compose: string) {
-    const services = YAML.parseDocument(compose).get("services", true);
+    // Plain values, so `image: *alias` and `<<: *base` resolve as Uncloud reads them.
+    const config: unknown = YAML.parse(compose, { merge: true, maxAliasCount: 100 });
     const images: Record<string, string> = {};
 
-    if (!isMap(services)) return images;
+    if (!Predicate.isObject(config) || !Predicate.isObject(config.services)) return images;
 
-    for (const { key, value: service } of services.items) {
-        const image = isMap(service) ? service.get("image") : undefined;
-
-        if (isScalar(key) && Predicate.isString(key.value) && Predicate.isString(image))
-            images[key.value] = image.replaceAll("$$", "$");
-    }
+    for (const [name, service] of Object.entries(config.services))
+        if (Predicate.isObject(service) && Predicate.isString(service.image))
+            images[name] = service.image.replaceAll("$$", "$");
 
     return images;
 }
