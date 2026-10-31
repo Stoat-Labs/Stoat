@@ -28,20 +28,38 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Textarea } from "$lib/components/ui/textarea";
+    import { goto } from "$app/navigation";
+    import { page } from "$app/state";
+    import {
+        createCanvasModeQuery,
+        projectHref,
+    } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import {
         createMutation,
         createQuery,
     } from "@tanstack/svelte-query";
+    import { parseAsString, useQueryStates } from "nuqs-svelte";
     import { watch } from "runed";
 
     let { open = $bindable(false) }: { open?: boolean } = $props();
 
-    let name = $state("");
-
-    let description = $state("");
+    // The draft lives in the URL so the cluster detour can bring it back.
+    const draft = useQueryStates(
+        {
+            projectName: parseAsString.withDefault(""),
+            projectDescription: parseAsString.withDefault(""),
+        },
+        { shallow: true, scroll: false },
+    );
 
     let clusterId = $state("");
+
+    const canvasModeQuery = createCanvasModeQuery();
+
+    const connectClusterHref = $derived(
+        `/clusters?dialog=create-cluster&next=${encodeURIComponent(page.url.pathname + page.url.search)}`,
+    );
 
     const clustersQuery = createQuery(() =>
         orpc.cluster.listClusters.queryOptions({
@@ -62,7 +80,16 @@
     watch(
         () => open,
         (isOpen, wasOpen) => {
-            if (isOpen && wasOpen !== true) resetForm();
+            if (isOpen && wasOpen !== true) {
+                clusterId = "";
+                createMutationState.reset();
+            }
+
+            if (!isOpen && wasOpen)
+                void draft.set({
+                    projectName: null,
+                    projectDescription: null,
+                });
         },
     );
 
@@ -106,20 +133,18 @@
         },
     );
 
-    function resetForm() {
-        name = "";
-        description = "";
-        clusterId = "";
-        createMutationState.reset();
-    }
-
     const createMutationState = createMutation(() =>
         orpc.projects.createProject.mutationOptions({
-            onSuccess: async () => {
+            onSuccess: async (project) => {
                 await queryClient.invalidateQueries({
                     queryKey: orpc.projects.key(),
                 });
-                open = false;
+                await goto(
+                    projectHref(
+                        project.id,
+                        canvasModeQuery.data.canvasMode,
+                    ),
+                );
             },
         }),
     );
@@ -132,7 +157,7 @@
     );
 
     const canSubmit = $derived(
-        Boolean(name.trim()) &&
+        Boolean(draft.projectName.current.trim()) &&
             Boolean(clusterId) &&
             !createMutationState.isPending,
     );
@@ -142,8 +167,9 @@
 
         if (createMutationState.isPending || !clusterId) return;
         createMutationState.mutate({
-            name: name.trim(),
-            description: description.trim() || undefined,
+            name: draft.projectName.current.trim(),
+            description:
+                draft.projectDescription.current.trim() || undefined,
             clusterId,
         });
     }
@@ -176,7 +202,13 @@
                     <Label for="project-name" required>Name</Label>
                     <Input
                         id="project-name"
-                        bind:value={name}
+                        bind:value={
+                            () => draft.projectName.current,
+                            (projectName) =>
+                                void draft.set({
+                                    projectName: projectName || null,
+                                })
+                        }
                         placeholder="My website"
                         required
                         maxlength={100}
@@ -189,7 +221,14 @@
                     </Label>
                     <Textarea
                         id="project-description"
-                        bind:value={description}
+                        bind:value={
+                            () => draft.projectDescription.current,
+                            (projectDescription) =>
+                                void draft.set({
+                                    projectDescription:
+                                        projectDescription || null,
+                                })
+                        }
                         placeholder="What is this project for?"
                         maxlength={500}
                         rows={3}
@@ -226,16 +265,24 @@
                                 />
                             </SelectTrigger>
                         </Select>
-                        <FieldDescription>
-                            No clusters yet.
-                            <a
-                                href="/clusters"
-                                onclick={() => (open = false)}
-                                class="underline underline-offset-4 hover:text-primary"
+                        {#if page.data.isOrganizationAdmin}
+                            <FieldDescription>
+                                Projects run on a cluster. Your draft
+                                is kept while you connect one.
+                            </FieldDescription>
+                            <Button
+                                size="sm"
+                                class="mt-2 w-fit"
+                                href={connectClusterHref}
                             >
-                                Set up a cluster first
-                            </a>
-                        </FieldDescription>
+                                Connect a cluster
+                            </Button>
+                        {:else}
+                            <FieldDescription>
+                                Projects run on a cluster. Ask an
+                                organization admin to connect one.
+                            </FieldDescription>
+                        {/if}
                     {:else}
                         <Select
                             bind:value={clusterId}

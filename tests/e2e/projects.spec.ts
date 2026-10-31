@@ -74,8 +74,7 @@ test.describe("projects", () => {
         await dialog(page).getByRole("button", { name: "Create Project" }).click();
         await expect(dialog(page)).toHaveCount(0);
 
-        await page.getByRole("link", { name }).first().click();
-        // Projects open on the canvas by default.
+        // Creating a project opens it, on the canvas by default.
         await page.getByRole("link", { name: "List view" }).click();
         await expect(breadcrumb(page)).toContainText(name);
         await expect(page.getByRole("main").getByText("No resources yet")).toBeVisible();

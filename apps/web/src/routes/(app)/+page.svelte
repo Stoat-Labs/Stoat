@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import {
         createCanvasModeQuery,
         resourceHref,
@@ -164,6 +165,10 @@
             diagnosticsPending:
                 healthQueries[index]?.isPending ?? true,
         })),
+    );
+
+    const needsCluster = $derived(
+        clustersQuery.isSuccess && clusters.length === 0,
     );
 
     const clusterItems = $derived([
@@ -431,18 +436,37 @@
                     </EmptyMedia>
                     <EmptyTitle>No projects yet</EmptyTitle>
                     <EmptyDescription>
-                        Create your first project to get started.
+                        {!needsCluster
+                            ? "Create your first project to get started."
+                            : page.data.isOrganizationAdmin
+                              ? "Projects run on a cluster. Connect one first, then create your project."
+                              : "Projects run on a cluster. Ask an organization admin to connect one."}
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                    <Button
-                        size="sm"
-                        disabled={!ready}
-                        onclick={openCreate}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        Create project
-                    </Button>
+                    {#if needsCluster}
+                        {#if page.data.isOrganizationAdmin}<Button
+                                size="sm"
+                                href="/clusters?dialog=create-cluster&next={encodeURIComponent(
+                                    '/?dialog=create-project',
+                                )}"
+                            >
+                                <Plus
+                                    class="size-4"
+                                    aria-hidden="true"
+                                />
+                                Connect a cluster
+                            </Button>{/if}
+                    {:else}
+                        <Button
+                            size="sm"
+                            disabled={!ready}
+                            onclick={openCreate}
+                        >
+                            <Plus class="size-4" aria-hidden="true" />
+                            Create project
+                        </Button>
+                    {/if}
                 </EmptyContent>
             </Empty>
         {:else if filtered.length === 0}

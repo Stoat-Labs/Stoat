@@ -16,10 +16,12 @@
         open = $bindable(false),
         source = "connect",
         onprovision,
+        onconnect,
     }: {
         open?: boolean;
         source?: "connect" | "server";
         onprovision: (clusterId: string) => void;
+        onconnect?: () => void;
     } = $props();
 
     let pending = $state(false);
@@ -53,7 +55,8 @@
                     bind:pending
                     bind:canSubmit
                     oncreated={() => {
-                        open = false;
+                        if (onconnect) onconnect();
+                        else open = false;
                     }}
                 />
             {/if}

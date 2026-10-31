@@ -65,7 +65,7 @@
                 method: "POST",
                 body,
                 headers: { accept: "application/json" },
-            });
+            }).catch(() => undefined);
         }
 
         // A full navigation picks up the new organization in the session.
