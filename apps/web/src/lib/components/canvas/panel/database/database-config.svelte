@@ -127,6 +127,38 @@
 
     let pooling = $state(false);
 
+    // Both are already cached by the canvas around this panel.
+    const graph = createQuery(() =>
+        orpc.resources.getProjectGraph.queryOptions({
+            input: { projectId: input.projectId },
+        }),
+    );
+
+    const projectResources = createQuery(() =>
+        orpc.resources.listResources.queryOptions({
+            input: { projectId: input.projectId },
+        }),
+    );
+
+    // A PgDog resource that references this database, like the one Add PgDog creates.
+    const existingPooler = $derived.by(() => {
+        const entry = graph.data?.resources.find(
+            (item) =>
+                item.references.includes(input.resourceId) &&
+                item.services.some((service) =>
+                    service.image?.startsWith(
+                        "ghcr.io/pgdogdev/pgdog",
+                    ),
+                ),
+        );
+
+        return entry
+            ? projectResources.data?.find(
+                  (item) => item.id === entry.id,
+              )
+            : undefined;
+    });
+
     const pooler = createMutation(() =>
         orpc.resources.addConnectionPooler.mutationOptions({
             onSuccess: async () => {
@@ -227,11 +259,23 @@
         Add PgDog as a connection pooler to reduce connection overhead
         and improve performance.
     </p>
-    {#if pooler.data}
+    {#if existingPooler}
+        <p class="text-sm" role="status">
+            {existingPooler.name} pools this database. Connect your apps
+            to it on port 6432{existingPooler.deploymentStatus ===
+            "ready"
+                ? ""
+                : " once it is deployed"}.
+        </p>
+    {:else if pooler.data}
         <p class="text-sm" role="status">
             Added {pooler.data.name}. Deploy it, then connect your
             apps to it on port 6432.
         </p>
+    {:else if graph.isPending}
+        <Skeleton loading label="Checking for a pooler">
+            <div class="h-8 w-28 rounded-lg border"></div>
+        </Skeleton>
     {:else}
         <Button
             variant="outline"
