@@ -439,7 +439,7 @@ secrets:
 });
 
 describe("formatComposeFile environment", () => {
-    it("rewrites service hostnames in list and map environment values", () => {
+    it("leaves environment values as written: other services are reached through references", () => {
         const formatted = formatComposeFile(
             `services:
   web:
@@ -467,17 +467,13 @@ describe("formatComposeFile environment", () => {
             "a1b2c3d4-e5f6a7b8",
         );
 
-        expect(formatted.yaml).toContain(
-            "DATABASE_URL=postgres://stoat:secret@a1b2c3d4-e5f6a7b8-db:5432/app",
-        );
-        expect(formatted.yaml).toContain("REDIS_URL=redis://:pass@a1b2c3d4-e5f6a7b8-cache:6379/0");
-        expect(formatted.yaml).toContain("DB_HOST=a1b2c3d4-e5f6a7b8-db");
+        expect(formatted.yaml).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
+        expect(formatted.yaml).toContain("REDIS_URL=redis://:pass@cache:6379/0");
+        expect(formatted.yaml).toContain("DB_HOST=db");
         expect(formatted.yaml).toContain("APP_URL=https://stoat.example.com");
         expect(formatted.yaml).toContain("GREETING=hello-db");
         expect(formatted.yaml).toContain("BARE_KEY");
-        expect(formatted.yaml).toContain(
-            "DATABASE_URL: postgres://stoat:secret@a1b2c3d4-e5f6a7b8-db:5432/app",
-        );
+        expect(formatted.yaml).toContain("DATABASE_URL: postgres://stoat:secret@db:5432/app");
         expect(formatted.yaml).toContain("PORT: 3000");
     });
 
@@ -1844,7 +1840,7 @@ describe("formatComposeFile environment values", () => {
         expect(formatted.yaml).toContain("KEEP=keep");
     });
 
-    it("rewrites exact and URL values in list form", () => {
+    it("leaves exact and URL values in list form as written", () => {
         const formatted = formatComposeFile(
             `services:
   web:
@@ -1858,11 +1854,11 @@ describe("formatComposeFile environment values", () => {
             "a1b2c3d4-e5f6a7b8",
         );
 
-        expect(formatted.yaml).toContain("- DB_HOST=a1b2c3d4-e5f6a7b8-db");
-        expect(formatted.yaml).toContain("postgres://u:p@ss@a1b2c3d4-e5f6a7b8-db:5432/app");
+        expect(formatted.yaml).toContain("- DB_HOST=db");
+        expect(formatted.yaml).toContain("postgres://u:p@ss@db:5432/app");
     });
 
-    it("skips null and nested-map values in map form while rewriting strings", () => {
+    it("leaves map-form values, null and nested maps as written", () => {
         const formatted = formatComposeFile(
             `services:
   web:
@@ -1879,8 +1875,8 @@ describe("formatComposeFile environment values", () => {
             "a1b2c3d4-e5f6a7b8",
         );
 
-        expect(formatted.yaml).toContain("DB_HOST: a1b2c3d4-e5f6a7b8-db");
-        expect(formatted.yaml).toContain("http://a1b2c3d4-e5f6a7b8-db:3000/x?target=db");
+        expect(formatted.yaml).toContain("DB_HOST: db");
+        expect(formatted.yaml).toContain("http://db:3000/x?target=db");
         expect(formatted.yaml).toContain("EMPTY: null");
         expect(formatted.yaml).toContain("inner: db");
     });

@@ -53,8 +53,11 @@
         setEnvVariable,
     } from "@stoat/workflows/env-lines";
     import {
+        applyComposeSections,
         composeEnvironment,
+        composeEnvironmentSections,
         setComposeEnvironment,
+        splitRawEnvironment,
     } from "./compose-environment";
     import type { CanvasResource } from "../graph";
 
@@ -225,6 +228,51 @@
 
     let rawText = $state("");
 
+    // What the raw editor opened with, so an untouched file can't be saved.
+    let rawInitial = $state("");
+
+    // The Variables .env, then each Compose service's `environment` under a `# [service]` header.
+    function openRaw() {
+        error = "";
+
+        try {
+            const sections = composeEnvironmentSections(
+                resourceQuery.data?.draftSpec ?? "",
+            );
+
+            rawInitial = sections
+                ? `${env.trimEnd()}${env.trim() ? "\n\n" : ""}${sections}\n`
+                : env;
+        } catch (cause) {
+            error =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not open the raw editor.";
+
+            return;
+        }
+
+        rawText = rawInitial;
+        rawOpen = true;
+    }
+
+    async function saveRaw() {
+        const { env: nextEnv, sections } =
+            splitRawEnvironment(rawText);
+
+        const envSaved =
+            nextEnv.trimEnd() === env.trimEnd() ||
+            (await save(() => nextEnv));
+
+        if (
+            envSaved &&
+            (await saveCompose((current) =>
+                applyComposeSections(current, sections),
+            ))
+        )
+            rawOpen = false;
+    }
+
     let rawView = $state<EditorView>();
 
     // Every write starts from the freshest saved file, so it only changes what was edited.
@@ -269,12 +317,8 @@
         }
     }
 
-    // A Compose row's change rewrites its entry in the freshest saved Compose file.
-    async function saveCompose(
-        service: string,
-        key: string,
-        value?: string,
-    ) {
+    // Compose edits rewrite their entries in the freshest saved Compose file.
+    async function saveCompose(next: (current: string) => string) {
         saving = true;
         error = "";
 
@@ -286,14 +330,13 @@
                 }),
             );
 
+            const spec = next(current.draftSpec ?? "");
+
+            if (spec === (current.draftSpec ?? "")) return true;
+
             const updated = await client.resources.updateComposeSpec({
                 ...input,
-                spec: setComposeEnvironment(
-                    current.draftSpec ?? "",
-                    service,
-                    key,
-                    value,
-                ),
+                spec,
                 expectedSpec: current.draftSpec,
                 expectedSource:
                     current.gitConnectionId && current.gitSource
@@ -327,7 +370,14 @@
 
     function saveRow(row: Row, value?: string) {
         if (row.service !== undefined)
-            return saveCompose(row.service, row.key, value);
+            return saveCompose((current) =>
+                setComposeEnvironment(
+                    current,
+                    row.service ?? "",
+                    row.key,
+                    value,
+                ),
+            );
 
         return save((current) =>
             value === undefined
@@ -442,15 +492,7 @@
             search={search.current}
             onsearch={(value) => void search.set(value)}
         >
-            <Button
-                size="sm"
-                variant="ghost"
-                onclick={() => {
-                    rawText = env;
-                    error = "";
-                    rawOpen = true;
-                }}
-            >
+            <Button size="sm" variant="ghost" onclick={openRaw}>
                 <Braces class="size-4" aria-hidden="true" />
                 Raw Editor
             </Button>
@@ -745,7 +787,9 @@
         <DialogHeader>
             <DialogTitle>Raw Editor</DialogTitle>
             <DialogDescription>
-                Edit the .env file directly. Type {"{{"} to reference another
+                Edit the .env file directly; Compose variables sit
+                under their
+                {"# [service]"} header. Type {"{{"} to reference another
                 resource's variable.
             </DialogDescription>
         </DialogHeader>
@@ -784,12 +828,8 @@
             {#if !readOnly}
                 <Button
                     loading={saving}
-                    disabled={saving || rawText === env}
-                    onclick={async () => {
-                        const text = rawText;
-
-                        if (await save(() => text)) rawOpen = false;
-                    }}
+                    disabled={saving || rawText === rawInitial}
+                    onclick={saveRaw}
                 >
                     Update Variables
                 </Button>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
     buildCanvas,
+    foldExporters,
     frameRect,
     freeSlot,
     refitFrames,
@@ -202,5 +203,51 @@ describe("buildCanvas", () => {
         expect(height("sure:metrics")).toBe(144);
         // Config trays stack under the volume trays.
         expect(height("sure:redis")).toBe(240);
+    });
+});
+
+describe("foldExporters", () => {
+    const exporter = "prometheuscommunity/postgres-exporter:v0.20.1";
+
+    // SAFETY: folding only reads each entry's `id` and `references`, and its services' `name` and `image`.
+    const entry = (id: string, references: string[], ...images: string[]) =>
+        ({
+            id,
+            references,
+            services: images.map((image) => ({ name: image.split(":")[0], image })),
+        }) as never;
+
+    it("folds a database's exporter into a tray on its server", () => {
+        expect(
+            foldExporters([entry("db", [], "postgres:18-alpine", exporter)]).map(
+                ({ services }) => services,
+            ),
+        ).toEqual([
+            [
+                {
+                    name: "postgres",
+                    image: "postgres:18-alpine",
+                    exporters: ["prometheuscommunity/postgres-exporter"],
+                },
+            ],
+        ]);
+    });
+
+    it("folds a separate exporter resource into the database it references", () => {
+        const folded = foldExporters([
+            entry("db", [], "timescale/timescaledb:2.31.0-pg18"),
+            entry("metrics", ["db"], exporter),
+        ]);
+
+        expect(folded.map(({ id }) => id)).toEqual(["db"]);
+        expect(folded[0]?.services[0]).toMatchObject({
+            exporters: ["prometheuscommunity/postgres-exporter"],
+        });
+    });
+
+    it("leaves an exporter without a database server as a card", () => {
+        const graph = [entry("metrics", ["web"], exporter), entry("web", [], "nginx")];
+
+        expect(foldExporters(graph)).toEqual(graph);
     });
 });

@@ -568,8 +568,12 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
                 const regrouped = await storedResource(source.id);
 
-                expect(regrouped.draftSpec).toContain("REDIS_HOST: cache");
-                expect(regrouped.settings).toEqual({ ...settings, env });
+                expect(regrouped.draftSpec).toContain("REDIS_HOST: ${CACHE_SERVICE_NAME}");
+                // Deploys don't rewrite values, so the link becomes the cache's own built-in.
+                expect(regrouped.settings).toEqual({
+                    ...settings,
+                    env: "CACHE_URL=redis://${CACHE_SERVICE_NAME}:6379\n",
+                });
                 expect((await storedResource(reader.id)).settings).toEqual({
                     env: `HOST={{ ${source.id}.CACHE_INTERNAL_HOST }}\n`,
                 });

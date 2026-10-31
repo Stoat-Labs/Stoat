@@ -37,7 +37,7 @@ export function resourceComposePrefix(resource: {
 export const serviceVariable = (name: string): string =>
     name.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
 
-const prefixName = (name: string, prefix?: string): string => {
+export const prefixName = (name: string, prefix?: string): string => {
     if (!prefix) {
         return name;
     }
@@ -359,7 +359,6 @@ const prefixServiceFragment = (
     prefixServiceVolumesFrom(service, rename);
     prefixServiceNetworkMode(service, rename);
     prefixCaddyUpstreams(service, rename, serviceNames);
-    rewriteServiceEnvironment(service, serviceNames, rename);
 };
 
 /**
@@ -416,8 +415,8 @@ const prefixMergedAnchors = (
  * a service name (or `<service>.internal`), or a URL whose authority host is
  * one of those values. Substrings, external hosts, ports, paths, and
  * credentials are left byte-identical.
- * Exported so future deploy-time env merging (DB-backed vars, .env files)
- * can apply the same rename.
+ * Moving services between resources uses it to turn hostnames into references; deploys never
+ * rewrite environment values, which reach the container exactly as written.
  */
 export const rewriteComposeHostname = (
     value: string,
@@ -471,49 +470,6 @@ export const rewriteComposeHostname = (
     const hostStart = authorityStart + atIndex + 1 + hostWithPort.indexOf(host);
 
     return `${value.slice(0, hostStart)}${rename(serviceHost)}${internalSuffix}${value.slice(hostStart + host.length)}`;
-};
-
-const rewriteServiceEnvironment = (
-    service: YAMLMap,
-    serviceNames: ReadonlySet<string>,
-    rename: Rename,
-): void => {
-    const environment = service.get("environment", true);
-
-    if (isSeq(environment)) {
-        for (const item of environment.items) {
-            if (!isScalar(item) || !Predicate.isString(item.value)) {
-                continue;
-            }
-
-            // Bare `KEY` entries expose a host variable with no value to rewrite.
-            const separatorIndex = item.value.indexOf("=");
-
-            if (separatorIndex === -1) {
-                continue;
-            }
-
-            const rewritten = rewriteComposeHostname(
-                item.value.slice(separatorIndex + 1),
-                serviceNames,
-                rename,
-            );
-
-            if (rewritten !== item.value.slice(separatorIndex + 1)) {
-                item.value = `${item.value.slice(0, separatorIndex + 1)}${rewritten}`;
-            }
-        }
-
-        return;
-    }
-
-    if (isMap(environment)) {
-        for (const pair of environment.items) {
-            if (isScalar(pair.value) && Predicate.isString(pair.value.value)) {
-                pair.value.value = rewriteComposeHostname(pair.value.value, serviceNames, rename);
-            }
-        }
-    }
 };
 
 function transformComposeNames(compose: string, rename: Rename): FormattedCompose {

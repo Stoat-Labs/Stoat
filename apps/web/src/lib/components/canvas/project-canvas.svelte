@@ -334,6 +334,10 @@
             void regroup(nodeId, toResourceId),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
+        selectMetrics: (nodeId) => {
+            select(nodeId);
+            void tab.set("metrics");
+        },
         removeVolume: (nodeId) => dialogs?.askRemoveVolume(nodeId),
         disconnectVolume: (nodeId) =>
             void dialogs?.disconnectVolume(nodeId),

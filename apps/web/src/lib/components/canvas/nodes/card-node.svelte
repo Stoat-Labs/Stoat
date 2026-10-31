@@ -3,6 +3,7 @@
     import { Frame, FramePanel } from "$lib/components/ui/frame";
     import { cn } from "$lib/utils";
     import Box from "@lucide/svelte/icons/box";
+    import ChartLine from "@lucide/svelte/icons/chart-line";
     import FileCog from "@lucide/svelte/icons/file-cog";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
     import type { Node, NodeProps } from "@xyflow/svelte";
@@ -16,13 +17,13 @@
     import NodeHandles from "./node-handles.svelte";
     import ResourceStatus from "./resource-status.svelte";
 
-    let { data, selected }: NodeProps<Node<CardData, "card">> =
+    let { id, data, selected }: NodeProps<Node<CardData, "card">> =
         $props();
 
     const { resource, service, grouped, volume, config } =
         $derived(data);
 
-    // Volume trays first, then config trays, one stack under the card.
+    // Volume trays first, then config trays, then the database's metrics, one stack under the card.
     const trays = $derived([
         ...(service?.volumes ?? []).map((name) => ({
             kind: "volume",
@@ -30,6 +31,10 @@
         })),
         ...(service?.configs ?? []).map((name) => ({
             kind: "config",
+            name,
+        })),
+        ...(service?.exporters ?? []).map((name) => ({
+            kind: "metrics",
             name,
         })),
     ]);
@@ -243,7 +248,7 @@
             </FramePanel>
         </Frame>
 
-        <!-- One tray per volume and config, each tucked 24px under the one above it. -->
+        <!-- One tray per volume, config and exporter, each tucked 24px under the one above it. -->
         {#each trays as { kind, name }, index (`${kind}:${name}`)}
             <button
                 type="button"
@@ -262,6 +267,8 @@
                     event.stopPropagation();
                     if (kind === "config")
                         actions.selectConfig(resource.id, name);
+                    else if (kind === "metrics")
+                        actions.selectMetrics(id);
                     else actions.selectVolume(resource.id, name);
                 }}
             >
@@ -270,6 +277,11 @@
                 >
                     {#if kind === "config"}
                         <FileCog class="size-4" aria-hidden="true" />
+                    {:else if kind === "metrics"}
+                        <ChartLine
+                            class="size-4"
+                            aria-hidden="true"
+                        />
                     {:else}
                         <HardDrive
                             class="size-4"

@@ -64,7 +64,7 @@ services:
             TIME_ZONE: ${TIME_ZONE}
             JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
             NON_ROOT: "false"
-            SEAHUB_SERVICE_URL: http://server
+            SEAHUB_SERVICE_URL: http://${SERVER_INTERNAL_HOST}
         healthcheck:
             # nginx on :80 fronts the sdoc Node server on :7070; any HTTP reply means it is up.
             test: ["CMD", "curl", "-so", "/dev/null", "http://localhost:7070/"]

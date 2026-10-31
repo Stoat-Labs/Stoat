@@ -1,5 +1,6 @@
 import type { AppRouterClient } from "@stoat/api/routers/index";
 import type { Edge, Node, XYPosition } from "@xyflow/svelte";
+import { databaseExporterEngine, databaseServerEngine } from "@stoat/api/observability";
 import { imageIcon } from "$lib/resources/image-icons";
 
 export type CanvasResource = Awaited<
@@ -13,7 +14,10 @@ export type CanvasGraph = Awaited<
 /** Template app id to logo, shared by every service that runs that template's image. */
 export type CanvasLogos = Record<string, string>;
 
-export type CanvasService = CanvasGraph[number]["services"][number];
+export type CanvasService = CanvasGraph[number]["services"][number] & {
+    /** Exporter services folded into this database server's card; see `foldExporters`. */
+    exporters?: string[];
+};
 
 export type CanvasVolume = CanvasGraph[number]["volumes"][number];
 
@@ -125,9 +129,94 @@ export function parseNodeId(nodeId: string) {
     };
 }
 
-/** Volume trays, then config trays, each tucked under the one above. */
+/** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
 export function trayCount(service: CanvasService | undefined) {
-    return (service?.volumes.length ?? 0) + (service?.configs.length ?? 0);
+    return (
+        (service?.volumes.length ?? 0) +
+        (service?.configs.length ?? 0) +
+        (service?.exporters?.length ?? 0)
+    );
+}
+
+/** Adds `exporters` as trays on `server`, one of `entry`'s services. */
+function withExporters(
+    entry: CanvasGraph[number],
+    server: CanvasService,
+    exporters: string[],
+): CanvasGraph[number] {
+    return {
+        ...entry,
+        services: entry.services.map((service) =>
+            service === server
+                ? { ...service, exporters: [...(server.exporters ?? []), ...exporters] }
+                : service,
+        ),
+    };
+}
+
+/**
+ * A database's exporters become trays under the database server they scrape instead of cards,
+ * so a database with its metrics is one card, not a group. That holds for exporter services in
+ * the database's own Compose, and for a resource of only exporters referencing the database.
+ */
+export function foldExporters(graph: CanvasGraph): CanvasGraph {
+    const exporterEngine = (service: CanvasService) =>
+        service.image ? databaseExporterEngine(service.image) : undefined;
+
+    const serverOf = (entry: CanvasGraph[number], engine?: string) =>
+        entry.services.find((service) => {
+            const server = service.image ? databaseServerEngine(service.image) : undefined;
+
+            return server !== undefined && (engine === undefined || server === engine);
+        });
+
+    const byId = new Map(
+        graph.map((entry) => {
+            const server = serverOf(entry);
+            const exporters = entry.services.filter((service) => exporterEngine(service));
+
+            if (!server || exporters.length === 0) return [entry.id, entry];
+            const names = exporters.map((service) => service.name);
+
+            return [
+                entry.id,
+                withExporters(
+                    {
+                        ...entry,
+                        services: entry.services.filter((service) => !names.includes(service.name)),
+                    },
+                    server,
+                    names,
+                ),
+            ];
+        }),
+    );
+
+    for (const entry of graph) {
+        const engine = entry.services[0] && exporterEngine(entry.services[0]);
+
+        if (!engine || !entry.services.every((service) => exporterEngine(service) === engine))
+            continue;
+
+        const database = entry.references
+            .map((id) => byId.get(id))
+            .find((target) => target && serverOf(target, engine));
+
+        const server = database && serverOf(database, engine);
+
+        if (!database || !server) continue;
+        byId.set(
+            database.id,
+            withExporters(
+                database,
+                server,
+                entry.services.map((service) => service.name),
+            ),
+        );
+        byId.delete(entry.id);
+    }
+
+    return [...byId.values()];
 }
 
 function cardHeight(service: CanvasService | undefined) {
@@ -531,43 +620,50 @@ export function buildCanvas(
     const serviceIcon = (service: CanvasService | undefined) =>
         (service?.template ? logos[service.template] : undefined) ?? imageIcon(service?.image);
 
-    const byId = new Map(graph.map((node) => [node.id, node]));
+    const folded = foldExporters(graph);
+    const byId = new Map(folded.map((node) => [node.id, node]));
+    // Exporter resources folded into their database's card have no node of their own.
+    const hidden = new Set(graph.flatMap((node) => (byId.has(node.id) ? [] : [node.id])));
 
-    const blocks = resources.flatMap((resource) => [
-        block(resource, byId.get(resource.id)),
-        ...(byId.get(resource.id)?.volumes ?? []).flatMap((volume): Block[] =>
-            volume.services.length
-                ? []
-                : [
-                      {
-                          id: volumeNodeId(resource.id, volume.name),
-                          volume,
-                          resource,
-                          entry: byId.get(resource.id),
-                          width: CARD_WIDTH,
-                          height: VOLUME_CARD_HEIGHT,
-                          cards: [],
-                      },
-                  ],
-        ),
-        ...(byId.get(resource.id)?.configs ?? []).flatMap((config): Block[] =>
-            config.services.length
-                ? []
-                : [
-                      {
-                          id: configNodeId(resource.id, config.name),
-                          config,
-                          resource,
-                          entry: byId.get(resource.id),
-                          width: CARD_WIDTH,
-                          height: VOLUME_CARD_HEIGHT,
-                          cards: [],
-                      },
-                  ],
-        ),
-    ]);
+    const blocks = resources.flatMap((resource) =>
+        hidden.has(resource.id)
+            ? []
+            : [
+                  block(resource, byId.get(resource.id)),
+                  ...(byId.get(resource.id)?.volumes ?? []).flatMap((volume): Block[] =>
+                      volume.services.length
+                          ? []
+                          : [
+                                {
+                                    id: volumeNodeId(resource.id, volume.name),
+                                    volume,
+                                    resource,
+                                    entry: byId.get(resource.id),
+                                    width: CARD_WIDTH,
+                                    height: VOLUME_CARD_HEIGHT,
+                                    cards: [],
+                                },
+                            ],
+                  ),
+                  ...(byId.get(resource.id)?.configs ?? []).flatMap((config): Block[] =>
+                      config.services.length
+                          ? []
+                          : [
+                                {
+                                    id: configNodeId(resource.id, config.name),
+                                    config,
+                                    resource,
+                                    entry: byId.get(resource.id),
+                                    width: CARD_WIDTH,
+                                    height: VOLUME_CARD_HEIGHT,
+                                    cards: [],
+                                },
+                            ],
+                  ),
+              ],
+    );
 
-    const auto = autoLayout(blocks, columns(graph));
+    const auto = autoLayout(blocks, columns(folded));
     const frames: CanvasNode[] = [];
     const cards: CanvasNode[] = [];
 
@@ -686,7 +782,7 @@ export function buildCanvas(
 
     const nodes = [...frames, ...cards];
 
-    return { nodes, edges: buildEdges(nodes, graph) };
+    return { nodes, edges: buildEdges(nodes, folded) };
 }
 
 /** Dependency and reference edges, attached to the sides of each pair that face each other. */

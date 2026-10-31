@@ -319,9 +319,37 @@ html.dark {
     }
 }
 
+/* Scrolls without a visible bar, like a strip of tabs. */
+@utility no-scrollbar {
+    scrollbar-width: none;
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;
+    }
+    /* Minimal bars: a thin translucent thumb on no track, without arrow buttons. Chromium drops
+       its ::-webkit-scrollbar styles once scrollbar-width is set, so only others get those. */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        border-radius: 9999px;
+        background: color-mix(in oklab, var(--foreground) 16%, transparent);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: color-mix(in oklab, var(--foreground) 28%, transparent);
+    }
+    @supports not selector(::-webkit-scrollbar) {
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: color-mix(in oklab, var(--foreground) 16%, transparent) transparent;
+        }
     }
     body {
         @apply bg-background text-foreground;

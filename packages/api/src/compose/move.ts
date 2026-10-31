@@ -291,6 +291,8 @@ function variablesRead(service: YAMLMap, values: Record<string, string | undefin
 // Built-ins a service exposes to references, per `systemVariables` in @stoat/workflows.
 const SERVICE_BUILTINS = ["SERVICE_NAME", "INTERNAL_HOST", "PUBLIC_DOMAIN"] as const;
 
+type Builtin = (typeof SERVICE_BUILTINS)[number];
+
 const RESOURCE_BUILTINS = [
     "STOAT_PREFIX",
     "STOAT_DOMAIN",
@@ -403,14 +405,14 @@ class Links {
         this.#taken = new Set([...builtins, ...Object.keys(this.#values)]);
     }
 
-    /** `${KEY}` for a service of the other resource. */
-    placeholder(service: string) {
-        const known = this.#keys.get(service);
+    /** `${KEY}` for a built-in of a service of the other resource, its `SERVICE_NAME` by default. */
+    placeholder(service: string, builtin: Builtin = "SERVICE_NAME") {
+        const known = this.#keys.get(`${service}\n${builtin}`);
 
         if (known) return `\${${known}}`;
 
-        const value = this.reference(service);
-        const base = serviceNameKey(service);
+        const value = this.reference(service, builtin);
+        const base = `${serviceVariable(service)}_${builtin}`;
         let key = base;
 
         for (let suffix = 2; this.#values[key] !== value && this.#taken.has(key); suffix++)
@@ -421,35 +423,57 @@ class Links {
             this.#taken.add(key);
         }
 
-        this.#keys.set(service, key);
+        this.#keys.set(`${service}\n${builtin}`, key);
 
         return `\${${key}}`;
     }
 
-    /** `{{ <otherId>.<SERVICE>_SERVICE_NAME }}` for a service of the other resource. */
-    reference(service: string) {
+    /** `{{ <otherId>.<SERVICE>_<BUILTIN> }}` for a service of the other resource. */
+    reference(service: string, builtin: Builtin = "SERVICE_NAME") {
         assertOwnsBuiltins(this.otherNames, service);
 
-        return reference(this.otherId, serviceNameKey(service));
+        return reference(this.otherId, `${serviceVariable(service)}_${builtin}`);
     }
 
-    /** Points every linked hostname in `service` at a placeholder. */
+    /** Points `${<SERVICE>_<BUILTIN>}` of a linked service, which only its new resource sets, at `to`. */
+    #builtins(text: string, to: (service: string, builtin: Builtin) => string) {
+        return this.linked.reduce(
+            (out, service) =>
+                SERVICE_BUILTINS.reduce(
+                    (inner, builtin) =>
+                        inner.replaceAll(`\${${serviceVariable(service)}_${builtin}}`, () =>
+                            to(service, builtin),
+                        ),
+                    out,
+                ),
+            text,
+        );
+    }
+
+    /** Points every linked hostname and built-in in `service` at a placeholder. */
     rewriteService(service: YAMLMap) {
         const others = new Set(this.linked);
 
         mapServiceHosts(
             service,
-            (value) => rewriteComposeHostname(value, others, (name) => this.placeholder(name)),
+            (value) =>
+                this.#builtins(
+                    rewriteComposeHostname(value, others, (name) => this.placeholder(name)),
+                    (name, builtin) => this.placeholder(name, builtin),
+                ),
             (name) => (others.has(name) ? this.placeholder(name) : name),
         );
     }
 
-    /** Points linked hostnames in `.env` values at references. */
+    /** Points linked hostnames and built-ins in `.env` values at references. */
     rewriteEnv(envText: string) {
         const others = new Set(this.linked);
 
         return mapEnvValues(envText, (value) =>
-            rewriteComposeHostname(value, others, (name) => this.reference(name)),
+            this.#builtins(
+                rewriteComposeHostname(value, others, (name) => this.reference(name)),
+                (name, builtin) => this.reference(name, builtin),
+            ),
         );
     }
 }
@@ -470,51 +494,63 @@ export function retargetServiceReferences(
     );
 }
 
-/** A single reference to a service's name, the shape `Links` writes. */
+/** A single reference to a service's built-in, the shape `Links` writes. */
 function linkedService(value: string | undefined) {
     const match = /^\{\{\s*([^\s{}.]+)\.([^\s{}]+)\s*\}\}$/u.exec(value ?? "");
     const id = referenceResourceId(match?.[1] ?? "");
+    const key = match?.[2];
 
-    return id && match?.[2]?.endsWith("_SERVICE_NAME") ? { id, key: match[2] } : undefined;
+    return id && key && SERVICE_BUILTINS.some((builtin) => key.endsWith(`_${builtin}`))
+        ? { id, key }
+        : undefined;
 }
 
 /**
- * Once services share a resource again, its references to itself become plain names, the way
- * the Compose file was written before the split. Link variables that only named one of its own
- * services go, with each `${KEY}` they fed turned back into that name. Edits `doc` in place and
- * returns the new `.env` text.
+ * Once services share a resource again, its references to itself become its own built-ins:
+ * deploys never rewrite environment values, so a link `${KEY}` turns into the `${<SERVICE>_*}` it
+ * pointed at. Only x-caddy upstreams, which deploys do prefix, become plain names again. Link
+ * variables that only named one of its own services go. Edits `doc` in place and returns the
+ * new `.env` text.
  */
 function collapseSelfReferences(doc: Document, envText: string, resourceId: string) {
     const services = servicesOf(doc, "The Compose file");
     const names = serviceNames(services);
+    const own = builtinKeys(names);
     const values = parseEnv(envText);
-    const hosts = new Map<string, string>();
+    // Link key to the built-in it named, and to the service for a `SERVICE_NAME` one.
+    const links = new Map<string, { builtin: string; service: string | undefined }>();
 
     for (const [key, value] of Object.entries(values)) {
         const link = linkedService(value);
-        const service = link?.id === resourceId && serviceOfKey(names, link.key);
 
-        if (service) hosts.set(key, service);
+        if (link?.id === resourceId && own.has(link.key))
+            links.set(key, {
+                builtin: link.key,
+                service: serviceOfKey(names, link.key) || undefined,
+            });
     }
 
     const desugar = (text: string) =>
-        [...hosts].reduce((out, [key, service]) => out.replaceAll(`\${${key}}`, service), text);
+        [...links].reduce(
+            (out, [key, { builtin }]) => out.replaceAll(`\${${key}}`, `\${${builtin}}`),
+            text,
+        );
 
     for (const pair of services.items)
         if (isMap(pair.value))
-            mapServiceHosts(pair.value, desugar, (name) =>
-                name.startsWith("${") ? desugar(name) : name,
-            );
+            mapServiceHosts(pair.value, desugar, (name) => {
+                const link = links.get(/^\$\{(.+)\}$/u.exec(name)?.[1] ?? "");
+
+                return link?.service ?? name;
+            });
 
     const env = mapEnvValues(envText, (value) =>
-        desugar(value).replace(VARIABLE_REFERENCE, (match, id: string, key: string) => {
-            if (referenceResourceId(id) !== resourceId) return match;
-
-            return serviceOfKey(names, key) ?? `\${${key}}`;
-        }),
+        desugar(value).replace(VARIABLE_REFERENCE, (match, id: string, key: string) =>
+            referenceResourceId(id) === resourceId ? `\${${key}}` : match,
+        ),
     );
 
-    // A key still read somewhere else, like a `command`, stays with the plain name.
+    // A key still read somewhere else, like a `command`, stays, now pointing at the built-in.
     const serviceMaps = services.items.flatMap((pair) =>
         isMap(pair.value) ? [resolved(doc, pair.value)] : [],
     );
@@ -526,7 +562,13 @@ function collapseSelfReferences(doc: Document, envText: string, resourceId: stri
         envValues,
     );
 
-    return withoutEnvKeys(env, new Set([...hosts.keys()].filter((key) => !used.has(key))));
+    // A link named after its own built-in would only shadow it with itself.
+    return withoutEnvKeys(
+        env,
+        new Set(
+            [...links.keys()].filter((key) => !used.has(key) || key === links.get(key)?.builtin),
+        ),
+    );
 }
 
 /** Link variables no service of the resource reads any more. */

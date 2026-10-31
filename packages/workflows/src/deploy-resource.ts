@@ -12,6 +12,7 @@ import {
     resourceEnv,
     type ResourceIdentity,
 } from "./compose";
+import { composeDatabaseService } from "./database-engines";
 import { deployCompose, DeploymentError, environmentCredentials } from "./deploy-compose";
 import { referencedResourceIds, referenceTargets, resolveReferences } from "./references";
 import { deployedServiceNames, staleServices } from "./stale-services";
@@ -184,6 +185,17 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 throw new DeploymentError(reason);
             }
 
+            let engine: string | undefined;
+
+            try {
+                engine = composeDatabaseService(deployedSpec)?.engine;
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+
+                await log(reason, "error", "attempt-failed");
+                throw new DeploymentError(reason);
+            }
+
             await log(`Formatted ${compose.serviceCount} service(s).`);
 
             // Renamed, deleted or moved services would otherwise keep running beside their replacement,
@@ -294,13 +306,17 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     UPDATE deployments SET status = 'ready', progress = 100, error = NULL, finished_at = now(), updated_at = now()
                     WHERE id = $1 AND status = 'running' RETURNING resource_id
                 ), published AS (
-                    UPDATE resources SET spec = $2, updated_at = now()
+                    UPDATE resources SET spec = $2, updated_at = now(),
+                        -- x-stoat.engine forces the resource to be a database of that engine.
+                        type = CASE WHEN $3::text IS NULL THEN type ELSE 'database' END,
+                        settings = CASE WHEN $3::text IS NULL THEN settings
+                            ELSE coalesce(settings, '{}'::jsonb) || jsonb_build_object('engine', $3::text) END
                     WHERE id IN (SELECT resource_id FROM ready) RETURNING id
                 )
                 INSERT INTO deployment_logs (deployment_id, text, metadata, created_at)
                 SELECT $1, 'Resource deployment is ready.', '{"level":"info","event":"ready"}'::jsonb, now()
                 FROM published`,
-                [deploymentId, deployedSpec],
+                [deploymentId, deployedSpec, engine ?? null],
             );
         } finally {
             try {
