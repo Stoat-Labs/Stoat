@@ -1,6 +1,7 @@
 import { call } from "@orpc/server";
 import { createDb } from "@stoat/db";
 import { interpolateCompose } from "@stoat/workflows/compose";
+import { referenceTargets, resolveReferences } from "@stoat/workflows/references";
 import { clusters, projects, resources } from "@stoat/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -159,6 +160,8 @@ describe("addConnectionPooler", () => {
             POSTGRES_USER: `{{ ${resourceId}.POSTGRES_USER }}`,
             POSTGRES_PASSWORD: `{{ ${resourceId}.POSTGRES_PASSWORD }}`,
             POSTGRES_DB: `{{ ${resourceId}.POSTGRES_DB }}`,
+            DATABASE_URL:
+                "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/${POSTGRES_DB}",
         });
 
         // The entrypoint writes PgDog's TOML from the environment, so a password is never raw TOML.
@@ -173,6 +176,16 @@ describe("addConnectionPooler", () => {
 
         expect(deployed.environment).toMatchObject({ POSTGRES_PASSWORD: password });
         expect(deployed.entrypoint.at(-1)).toContain("password = $$(toml POSTGRES_PASSWORD)");
+
+        // An app connects through PgDog by referencing its DATABASE_URL, which itself references
+        // the database's credentials.
+        const app = `DATABASE_URL={{ ${pooler.id}.DATABASE_URL }}`;
+
+        expect(
+            resolveReferences(app, await referenceTargets(db, clusterId, [pooler.id]))[
+                `${pooler.id}.DATABASE_URL`
+            ],
+        ).toMatch(/^postgresql:\/\/postgres:secret@pgdog-\w+-pgdog\.internal:6432\/app$/u);
 
         await expect(call(resourcesRouter.addConnectionPooler, input, { context })).rejects.toThrow(
             "already pools",

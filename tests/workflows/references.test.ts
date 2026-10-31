@@ -237,7 +237,6 @@ describe("resolveReferences", () => {
         [ref(MISSING_ID, "KEY"), "points to a resource that does not exist on this cluster"],
         [ref(POSTGRES_ID, "NOPE"), 'Resource "postgres" has no variable NOPE.'],
         [ref(POSTGRES_ID, "postgres_user"), 'Resource "postgres" has no variable postgres_user.'],
-        [ref(POSTGRES_ID, "UPSTREAM"), '"postgres".UPSTREAM is itself a reference'],
     ])("rejects %s", (value, message) => {
         expect(() => resolveReferences(`A=${value}`, targets)).toThrow(ComposeVariableError);
         expect(() => resolveReferences(`A=${value}`, targets)).toThrow(message);
@@ -256,9 +255,24 @@ describe("resolveReferences", () => {
         );
     });
 
-    it("rejects reference cycles instead of looping", () => {
-        expect(() => resolveReferences("A=" + ref(REDIS_ID, "BACK"), targets)).toThrow(
-            "is itself a reference",
+    it("resolves a reference to a reference, through the resource it points at", () => {
+        expect(resolveReferences("A=" + ref(POSTGRES_ID, "UPSTREAM"), targets)).toEqual({
+            [`${POSTGRES_ID}.UPSTREAM`]: "redis://aaaaaaaa-66666666-cache.internal:6379",
+        });
+        // postgres and redis reference each other, but BACK only needs postgres's plain user.
+        expect(resolveReferences("A=" + ref(REDIS_ID, "BACK"), targets)).toEqual({
+            [`${REDIS_ID}.BACK`]: "shop",
+        });
+    });
+
+    it("rejects a value that leads back to itself instead of looping", () => {
+        const loop = [
+            target(POSTGRES_ID, "a", `X=${ref(REDIS_ID, "Y")}`, "services:\n  a:\n    image: a\n"),
+            target(REDIS_ID, "b", `Y=${ref(POSTGRES_ID, "X")}`, "services:\n  b:\n    image: b\n"),
+        ];
+
+        expect(() => resolveReferences("A=" + ref(POSTGRES_ID, "X"), loop)).toThrow(
+            "which references it in turn",
         );
     });
 
@@ -539,9 +553,15 @@ describe("Compose environment references", () => {
         expect(referenceVariables(worker).SHARED).toBe("from-variables");
     });
 
-    it("refuses a Compose value that is itself a reference", () => {
+    it("resolves a Compose value built from a reference", () => {
+        expect(
+            resolveReferences(`A=${ref(REDIS_ID, "FROM_REFERENCE")}`, [worker, postgres]),
+        ).toEqual({ [`${REDIS_ID}.FROM_REFERENCE`]: "shop" });
+    });
+
+    it("refuses a value that is a reference to a resource it can't reach", () => {
         expect(() => resolveReferences(`A=${ref(REDIS_ID, "FROM_REFERENCE")}`, [worker])).toThrow(
-            '"worker".FROM_REFERENCE is itself a reference, which cannot be referenced.',
+            "does not exist on this cluster",
         );
     });
 

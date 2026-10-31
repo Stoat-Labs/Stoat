@@ -496,6 +496,8 @@ export const resourcePostgresRouter = {
                 `POSTGRES_USER=${reference("POSTGRES_USER", "postgres")}`,
                 `POSTGRES_PASSWORD=${reference("POSTGRES_PASSWORD", "")}`,
                 `POSTGRES_DB=${reference("POSTGRES_DB", reference("POSTGRES_USER", "postgres"))}`,
+                // What apps reference to connect through the pooler: {{ PgDog.DATABASE_URL }}.
+                "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/${POSTGRES_DB}",
             ].join("\n");
 
             return db.transaction(async (tx) => {
