@@ -86,47 +86,58 @@ export const resourceMetricsRouter = {
             if ("error" in exporter)
                 throw new ORPCError("BAD_REQUEST", { message: exporter.error });
 
-            const siblings = await db
-                .select({
-                    name: resources.name,
-                    settings: resources.settings,
-                    spec: resources.spec,
-                    draftSpec: resources.draftSpec,
-                })
-                .from(resources)
-                .where(eq(resources.projectId, resource.projectId));
+            return db.transaction(async (tx) => {
+                // Locking the database serializes concurrent adds, so only one passes the duplicate check.
+                await tx
+                    .select({ id: resources.id })
+                    .from(resources)
+                    .where(eq(resources.id, resource.id))
+                    .for("update");
 
-            const existing = siblings.find((row) => exportsFrom(row, resource.id, exporter.engine));
+                const siblings = await tx
+                    .select({
+                        name: resources.name,
+                        settings: resources.settings,
+                        spec: resources.spec,
+                        draftSpec: resources.draftSpec,
+                    })
+                    .from(resources)
+                    .where(eq(resources.projectId, resource.projectId));
 
-            if (existing)
-                throw new ORPCError("CONFLICT", {
-                    message: `"${existing.name}" already exports this database's metrics.`,
-                });
+                const existing = siblings.find((row) =>
+                    exportsFrom(row, resource.id, exporter.engine),
+                );
 
-            // Fail here rather than at deploy, e.g. when the password is itself a reference.
-            try {
-                resolveReferences(exporter.env, [target], "stoat-domain.invalid");
-            } catch (error) {
-                if (!(error instanceof ComposeVariableError)) throw error;
+                if (existing)
+                    throw new ORPCError("CONFLICT", {
+                        message: `"${existing.name}" already exports this database's metrics.`,
+                    });
 
-                throw new ORPCError("BAD_REQUEST", { message: error.message });
-            }
+                // Fail here rather than at deploy, e.g. when the password is itself a reference.
+                try {
+                    resolveReferences(exporter.env, [target], "stoat-domain.invalid");
+                } catch (error) {
+                    if (!(error instanceof ComposeVariableError)) throw error;
 
-            const name = `${resource.name} metrics`.slice(0, 100);
+                    throw new ORPCError("BAD_REQUEST", { message: error.message });
+                }
 
-            const [created] = await db
-                .insert(resources)
-                .values({
-                    id: randomUUID(),
-                    name,
-                    slug: resourceSlug(name),
-                    type: "compose",
-                    projectId: resource.projectId,
-                    draftSpec: exporter.compose,
-                    settings: { prefixNames: true, env: exporter.env },
-                })
-                .returning();
+                const name = `${resource.name} metrics`.slice(0, 100);
 
-            return created!;
+                const [created] = await tx
+                    .insert(resources)
+                    .values({
+                        id: randomUUID(),
+                        name,
+                        slug: resourceSlug(name),
+                        type: "compose",
+                        projectId: resource.projectId,
+                        draftSpec: exporter.compose,
+                        settings: { prefixNames: true, env: exporter.env },
+                    })
+                    .returning();
+
+                return created!;
+            });
         }),
 };
