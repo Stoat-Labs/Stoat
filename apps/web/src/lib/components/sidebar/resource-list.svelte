@@ -3,6 +3,7 @@
     import Boxes from "@lucide/svelte/icons/boxes";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { orpc } from "$lib/api/orpc";
+    import { Button } from "$lib/components/ui/button";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         SidebarMenu,
@@ -48,6 +49,20 @@
             <span class="truncate text-sm">Resource service</span>
         </div>
     </Skeleton>
+{:else if resourcesQuery.isError}
+    <p
+        class="flex items-center justify-between gap-2 px-2 text-xs text-destructive-foreground group-data-[collapsible=icon]:hidden"
+    >
+        Unable to load resources.
+        <Button
+            size="xs"
+            variant="ghost"
+            loading={resourcesQuery.isFetching}
+            onclick={() => resourcesQuery.refetch()}
+        >
+            Retry
+        </Button>
+    </p>
 {:else if resources.length === 0}
     <p
         class="px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"

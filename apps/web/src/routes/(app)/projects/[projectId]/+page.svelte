@@ -9,6 +9,7 @@
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
+        AlertAction,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import {
@@ -247,6 +248,16 @@
                     Unable to load resources: {resourcesQuery.error
                         .message}
                 </AlertDescription>
+                <AlertAction>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        loading={resourcesQuery.isFetching}
+                        onclick={() => resourcesQuery.refetch()}
+                    >
+                        Retry
+                    </Button>
+                </AlertAction>
             </Alert>
         {:else if resources.length === 0}
             <Empty

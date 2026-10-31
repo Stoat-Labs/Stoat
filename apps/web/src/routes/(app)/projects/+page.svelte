@@ -6,6 +6,7 @@
     } from "$lib/components/projects/project-card.svelte";
     import {
         Alert,
+        AlertAction,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import {
@@ -299,6 +300,16 @@
             <AlertDescription>
                 Unable to load projects: {projectsQuery.error.message}
             </AlertDescription>
+            <AlertAction>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    loading={projectsQuery.isFetching}
+                    onclick={() => projectsQuery.refetch()}
+                >
+                    Retry
+                </Button>
+            </AlertAction>
         </Alert>
     {:else if all.length === 0}
         <Empty class="rounded-xl border border-dashed border-border">

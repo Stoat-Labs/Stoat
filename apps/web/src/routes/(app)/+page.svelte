@@ -15,6 +15,7 @@
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
+        AlertAction,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
@@ -425,6 +426,16 @@
                     Unable to load projects: {projectsQuery.error
                         .message}
                 </AlertDescription>
+                <AlertAction>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        loading={projectsQuery.isFetching}
+                        onclick={() => projectsQuery.refetch()}
+                    >
+                        Retry
+                    </Button>
+                </AlertAction>
             </Alert>
         {:else if projects.length === 0}
             <Empty
