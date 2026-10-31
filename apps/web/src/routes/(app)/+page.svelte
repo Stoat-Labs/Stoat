@@ -29,6 +29,7 @@
     } from "$lib/components/ui/empty";
     import {
         Frame,
+        FrameFooter,
         FrameHeader,
         FramePanel,
         FrameTitle,
@@ -55,6 +56,7 @@
         createQuery,
     } from "@tanstack/svelte-query";
     import {
+        parseAsBoolean,
         parseAsString,
         parseAsStringLiteral,
         useQueryStates,
@@ -64,6 +66,7 @@
     const params = useQueryStates(
         {
             q: parseAsString.withDefault(""),
+            attention: parseAsBoolean,
             dialog: parseAsString,
             cluster: parseAsString.withDefault("all"),
             sort: parseAsStringLiteral([
@@ -205,6 +208,28 @@
         ),
     );
 
+    // A large outage must not push everything else off Home: show the worst few until asked.
+    // Degraded clusters lead because they often explain the failed deployments.
+    const attentionLimit = 5;
+
+    // Home shows the projects to act on; the Projects page is the full directory.
+    const homeProjectLimit = 6;
+
+    const visibleDegradedClusters = $derived(
+        params.attention.current
+            ? degradedClusters
+            : degradedClusters.slice(0, attentionLimit),
+    );
+
+    const visibleFailedResources = $derived(
+        params.attention.current
+            ? failedResources
+            : failedResources.slice(
+                  0,
+                  attentionLimit - visibleDegradedClusters.length,
+              ),
+    );
+
     let ready = $state(false);
 
     useHeaderActions(homeActions);
@@ -275,7 +300,33 @@
             </FrameHeader>
             <FramePanel class="p-0">
                 <ul class="divide-y divide-border">
-                    {#each failedResources as item (item.resource.id)}
+                    {#each visibleDegradedClusters as cluster (cluster.id)}
+                        <li
+                            class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                        >
+                            <p class="min-w-0 text-sm">
+                                <span class="font-medium break-all">
+                                    {cluster.name}
+                                </span>
+                                <span
+                                    class="ml-2 text-warning-foreground"
+                                >
+                                    Cluster degraded
+                                </span>
+                            </p>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                href="/clusters/{cluster.id}"
+                            >
+                                View cluster <ArrowRight
+                                    class="size-4"
+                                    aria-hidden="true"
+                                />
+                            </Button>
+                        </li>
+                    {/each}
+                    {#each visibleFailedResources as item (item.resource.id)}
                         <li
                             class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                         >
@@ -305,34 +356,26 @@
                             </Button>
                         </li>
                     {/each}
-                    {#each degradedClusters as cluster (cluster.id)}
-                        <li
-                            class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                        >
-                            <p class="min-w-0 text-sm">
-                                <span class="font-medium break-all">
-                                    {cluster.name}
-                                </span>
-                                <span
-                                    class="ml-2 text-warning-foreground"
-                                >
-                                    Cluster degraded
-                                </span>
-                            </p>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                href="/clusters/{cluster.id}"
-                            >
-                                View cluster <ArrowRight
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </Button>
-                        </li>
-                    {/each}
                 </ul>
             </FramePanel>
+            {#if failedResources.length + degradedClusters.length > attentionLimit}
+                <FrameFooter class="py-2">
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onclick={() =>
+                            void params.set({
+                                attention: params.attention.current
+                                    ? null
+                                    : true,
+                            })}
+                    >
+                        {params.attention.current
+                            ? "Show fewer"
+                            : `Show all (${failedResources.length + degradedClusters.length})`}
+                    </Button>
+                </FrameFooter>
+            {/if}
         </Frame>
     {/if}
 
@@ -500,7 +543,7 @@
             </p>
         {:else}
             <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {#each filtered as project (project.id)}
+                {#each filtered.slice(0, homeProjectLimit) as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard
                             {project}
@@ -510,6 +553,18 @@
                     </li>
                 {/each}
             </ul>
+            {#if filtered.length > homeProjectLimit}
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    href="/projects{params.q.current
+                        ? `?q=${encodeURIComponent(params.q.current)}`
+                        : ''}"
+                >
+                    View all {filtered.length} projects
+                    <ArrowRight class="size-4" aria-hidden="true" />
+                </Button>
+            {/if}
         {/if}
     </section>
 
