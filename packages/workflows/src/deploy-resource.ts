@@ -5,6 +5,7 @@ import { parseEnv } from "node:util";
 import { YAMLParseError } from "yaml";
 import {
     ComposeVariableError,
+    composeImages,
     formatComposeFile,
     inlineComposeConfigs,
     interpolateCompose,
@@ -163,6 +164,13 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 await log(error.message, "error", "attempt-failed");
                 throw new DeploymentError(error.message);
             }
+
+            // History shows what shipped; Variables and referenced resources may change later.
+            await db.$client.query(
+                `UPDATE deployments SET metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('images', $2::jsonb)
+                 WHERE id = $1`,
+                [deploymentId, JSON.stringify(composeImages(spec))],
+            );
 
             const compose = formatComposeFile(
                 inlineComposeConfigs(spec, input.configFiles),

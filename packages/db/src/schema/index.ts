@@ -283,6 +283,8 @@ export type DeploymentMetadata = {
     source: "forgejo" | "github" | "git" | "docker";
     trigger: "manual" | "webhook" | "poll";
     commit?: { sha: string; message: string };
+    /** Each service's image with Variables and references resolved, saved by the worker. */
+    images?: Record<string, string>;
 };
 
 export const deployments = t.pgTable(

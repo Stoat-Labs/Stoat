@@ -49,7 +49,10 @@ const imagesSchema = v.object({
     services: v.record(v.string(), v.fallback(v.object({ image: v.optional(v.string()) }), {})),
 });
 
-/** Each service's image as deployed, with `${VAR:-default}` resolved from that deployment's Variables. */
+/**
+ * Each service's image, with `${VAR:-default}` resolved from that deployment's Variables. Only for
+ * deployments the worker hasn't resolved yet (queued, or from before it saved `metadata.images`).
+ */
 function deployedImages(spec: string | null, envText: string | null) {
     let compose;
 
@@ -313,7 +316,7 @@ export const deploymentsRouter = {
                 return {
                     items: items.map(({ env, ...item }) => ({
                         ...item,
-                        images: deployedImages(item.spec, env),
+                        images: item.metadata?.images ?? deployedImages(item.spec, env),
                     })),
                     total: row?.count ?? 0,
                 };

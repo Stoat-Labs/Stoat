@@ -233,6 +233,15 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         });
     });
 
+    it("saves the images it deployed with Variables and references resolved", async () => {
+        const { saved } = await deploy(
+            `TAG=2\nOWNER=${ref(postgresId, "POSTGRES_USER")}\nWEB_IMAGE=\${OWNER}/nginx:\${TAG}\n`,
+            "services:\n  api:\n    image: ${WEB_IMAGE}\n",
+        );
+
+        expect(saved?.metadata?.images).toEqual({ api: "shop/nginx:2" });
+    });
+
     it("resolves references to other projects on the same cluster", async () => {
         const { compose } = await deploy(
             `DATABASE_URL=${ref(workerId, "QUEUE")}\nPASSWORD=${ref(workerId, "JOBS_INTERNAL_HOST")}\n`,

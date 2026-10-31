@@ -679,6 +679,23 @@ export function interpolateCompose(
     return doc.toString();
 }
 
+/** Each service's image in an `interpolateCompose` result, as the cluster will pull it. */
+export function composeImages(compose: string) {
+    const services = YAML.parseDocument(compose).get("services", true);
+    const images: Record<string, string> = {};
+
+    if (!isMap(services)) return images;
+
+    for (const { key, value: service } of services.items) {
+        const image = isMap(service) ? service.get("image") : undefined;
+
+        if (isScalar(key) && Predicate.isString(key.value) && Predicate.isString(image))
+            images[key.value] = image.replaceAll("$$", "$");
+    }
+
+    return images;
+}
+
 const RESOURCE_ENV_FILE = /^(?:\.\/)?\.env$/u;
 
 /** A service's `env_file` entries: short form `- .env`, or long form `- path: .env` with an optional `required: false`. */
