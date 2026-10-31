@@ -73,7 +73,9 @@
                         Unsaved changes
                     </p>
                 {:else if saveStatus === "saved"}
-                    <p class="text-muted-foreground">Draft saved.</p>
+                    <p class="text-muted-foreground">
+                        Saved — not deployed
+                    </p>
                 {/if}
             </div>
             <PreviewComposeDialog {projectId} {resourceId} />

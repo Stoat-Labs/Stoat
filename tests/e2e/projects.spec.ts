@@ -123,7 +123,7 @@ test.describe("resources", () => {
 
         await replaceCompose(page, nginx);
         await expect(page.getByText("Unsaved changes")).toBeVisible();
-        await expect(page.getByText("Draft saved.")).toBeVisible();
+        await expect(page.getByText("Saved — not deployed")).toBeVisible();
         expect(await draftSpec(resourceId)).toBe(nginx);
 
         // The draft survives a reload and marks the deploy as pending.

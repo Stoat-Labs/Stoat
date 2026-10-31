@@ -297,6 +297,35 @@
             formattedComposeQuery.data.serviceCount > 0,
     );
 
+    // Why Deploy is disabled, shown on the button so it never just looks broken.
+    const deployBlocker = $derived.by(() => {
+        if (canDeploy || deployMutation.isPending || !draft.loaded)
+            return "";
+
+        if (draft.save.isPending) return "Saving changes…";
+
+        if (draft.isDirty) return "Save changes before deploying";
+
+        if (!draft.savedSpec?.trim())
+            return "Add a Compose file before deploying";
+
+        if (draft.busy) return "Another operation is in progress";
+
+        if (
+            formattedComposeQuery.isFetching ||
+            formattedComposeQuery.isPending
+        )
+            return "Validating configuration…";
+
+        if (formattedComposeQuery.isError)
+            return "Fix the Compose errors below";
+
+        if (formattedComposeQuery.data.serviceCount === 0)
+            return "Add at least one service";
+
+        return "Refreshing resource…";
+    });
+
     const saveStatus = $derived(
         draft.save.isPending
             ? "saving"
@@ -334,7 +363,7 @@
 
 {#snippet deployAction()}
     {#if !readOnly && resource?.type !== "bucket" && page.data.isOrganizationAdmin}
-        <Tooltip disabled={!hasUndeployedChanges}>
+        <Tooltip disabled={!deployBlocker && !hasUndeployedChanges}>
             <TooltipTrigger as="span" class="inline-flex">
                 <ButtonGroup>
                     <Button
@@ -355,6 +384,11 @@
                                 </span>
                                 <span class="sr-only">
                                     (undeployed changes)
+                                </span>
+                            {/if}
+                            {#if deployBlocker}
+                                <span class="sr-only">
+                                    ({deployBlocker})
                                 </span>
                             {/if}
                         </span>
@@ -380,7 +414,7 @@
                 </ButtonGroup>
             </TooltipTrigger>
             <TooltipPopup side="bottom" sideOffset={8}>
-                Undeployed changes
+                {deployBlocker || "Undeployed changes"}
             </TooltipPopup>
         </Tooltip>
     {/if}
