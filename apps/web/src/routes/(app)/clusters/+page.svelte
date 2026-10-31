@@ -432,7 +432,7 @@
                             })}
                     >
                         <Plus class="size-4" aria-hidden="true" />
-                        New cluster
+                        Create cluster
                     </Button>
                 {/if}
             {/snippet}

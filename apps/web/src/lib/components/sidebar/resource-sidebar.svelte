@@ -22,7 +22,9 @@
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import Braces from "@lucide/svelte/icons/braces";
     import Container from "@lucide/svelte/icons/container";
+    import FolderOpen from "@lucide/svelte/icons/folder-open";
     import Globe from "@lucide/svelte/icons/globe";
+    import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
     import Rocket from "@lucide/svelte/icons/rocket";
     import Settings from "@lucide/svelte/icons/settings-2";
     import ScrollText from "@lucide/svelte/icons/scroll-text";
@@ -188,6 +190,32 @@
         />
     </SidebarHeader>
     <SidebarContent class="overflow-x-hidden">
+        <!-- Global destinations stay reachable; the groups below are this resource's context. -->
+        <SidebarGroup>
+            <SidebarGroupContent>
+                <SidebarMenu>
+                    <SidebarNavLink
+                        href="/"
+                        title="Home"
+                        icon={LayoutDashboard}
+                        active={false}
+                        onclick={closeNavigation}
+                    >
+                        Home
+                    </SidebarNavLink>
+                    <SidebarNavLink
+                        href="/projects"
+                        title="Projects"
+                        icon={FolderOpen}
+                        active={false}
+                        onclick={closeNavigation}
+                    >
+                        Projects
+                    </SidebarNavLink>
+                </SidebarMenu>
+            </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarSeparator />
         <SidebarGroup>
             <SidebarGroupLabel class="truncate">
                 {projectName}

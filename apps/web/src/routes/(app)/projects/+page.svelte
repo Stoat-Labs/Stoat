@@ -35,6 +35,7 @@
     } from "$lib/components/ui/menu";
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
+    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         segmentedControlItemVariants,
         segmentedControlRootClassName,
@@ -136,6 +137,8 @@
 
     let ready = $state(false);
 
+    useHeaderActions(projectActions);
+
     onMount(() => {
         ready = true;
 
@@ -164,44 +167,44 @@
     }}
 />
 
-<div class="mx-auto w-full max-w-6xl space-y-6 pt-8">
-    <header class="flex flex-wrap items-center justify-between gap-4">
-        <h1 class="text-3xl tracking-tight">Projects</h1>
-        <div class="flex w-full items-center gap-3 sm:w-auto">
-            <InputGroup class="min-w-0 flex-1 sm:w-64 sm:flex-none">
-                <InputGroupInput
-                    bind:ref={search}
-                    value={params.q.current}
-                    oninput={(event) =>
-                        void params.set({
-                            q: event.currentTarget.value || null,
-                        })}
-                    placeholder="Search projects..."
-                    aria-label="Search projects"
-                />
-                <InputGroupAddon align="inline-start">
-                    <Search aria-hidden="true" />
-                </InputGroupAddon>
-                <InputGroupAddon
-                    align="inline-end"
-                    class="hidden sm:flex"
-                >
-                    <KbdGroup>
-                        <Kbd>Ctrl</Kbd>
-                        <Kbd>K</Kbd>
-                    </KbdGroup>
-                </InputGroupAddon>
-            </InputGroup>
-            <Button
-                disabled={!ready}
-                onclick={openCreate}
-                aria-label="New project"
+{#snippet projectActions()}
+    <div
+        class="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2"
+    >
+        <InputGroup class="w-40 sm:w-64">
+            <InputGroupInput
+                bind:ref={search}
+                value={params.q.current}
+                oninput={(event) =>
+                    void params.set({
+                        q: event.currentTarget.value || null,
+                    })}
+                placeholder="Search projects…"
+                aria-label="Search projects"
+            />
+            <InputGroupAddon align="inline-start">
+                <Search aria-hidden="true" />
+            </InputGroupAddon>
+            <InputGroupAddon
+                align="inline-end"
+                class="hidden sm:flex"
             >
-                <Plus class="size-4" aria-hidden="true" />
-                New
-            </Button>
-        </div>
-    </header>
+                <KbdGroup>
+                    <Kbd>Ctrl</Kbd>
+                    <Kbd>K</Kbd>
+                </KbdGroup>
+            </InputGroupAddon>
+        </InputGroup>
+        <Button size="sm" disabled={!ready} onclick={openCreate}>
+            <Plus class="size-4" aria-hidden="true" />
+            Create project
+        </Button>
+    </div>
+{/snippet}
+
+<div class="mx-auto w-full max-w-6xl space-y-6 pt-6">
+    <!-- The breadcrumb shows the title; actions live in the shared page header. -->
+    <h1 class="sr-only">Projects</h1>
 
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div
@@ -329,7 +332,7 @@
                     onclick={openCreate}
                 >
                     <Plus class="size-4" aria-hidden="true" />
-                    New project
+                    Create project
                 </Button>
             </EmptyContent>
         </Empty>

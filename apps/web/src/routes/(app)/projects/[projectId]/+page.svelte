@@ -147,7 +147,7 @@
     {#if project && !isInternal}
         <Button size="sm" href={createHref}>
             <Plus class="size-4" aria-hidden="true" />
-            New resource
+            Create resource
         </Button>
     {/if}
 {/snippet}
@@ -275,7 +275,7 @@
                 <EmptyContent>
                     <Button size="sm" href={createHref}>
                         <Plus class="size-4" aria-hidden="true" />
-                        New resource
+                        Create resource
                     </Button>
                 </EmptyContent>
             </Empty>

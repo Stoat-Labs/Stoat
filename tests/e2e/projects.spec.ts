@@ -110,7 +110,7 @@ test.describe("resources", () => {
         const name = unique("api");
         await page.goto(`/projects/${projectId}`);
 
-        await page.getByRole("link", { name: "New resource" }).first().click();
+        await page.getByRole("link", { name: "Create resource" }).first().click();
         await page
             .getByRole("link", { name: /^Compose\b/u })
             .first()
