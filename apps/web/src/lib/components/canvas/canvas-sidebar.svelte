@@ -71,7 +71,7 @@
 
     // Railway's rail: 40px squares with 20px icons, roomier than the regular icon sidebar.
     const railButton =
-        "group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-2.5! [&>svg]:size-5";
+        "group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-2.5! [&>svg]:size-5!";
 
     // The logo and the account menu, centred in the rail like its buttons.
     const edgeRow =

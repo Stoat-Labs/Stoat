@@ -1520,8 +1520,8 @@
         >
             <div
                 class={[
-                    "mx-auto h-full w-0.5 transition-colors group-hover:bg-border",
-                    resizingPanel && "bg-border",
+                    "absolute top-1/2 left-1/2 h-12 w-1 -translate-1/2 rounded-full bg-border transition-[height,background-color] group-hover:h-16 group-hover:bg-muted-foreground",
+                    resizingPanel && "h-16 bg-muted-foreground",
                 ]}
             ></div>
         </div>
