@@ -145,10 +145,7 @@
                             </AlertDescription>
                         </Alert>
                     {:else if !query?.data}
-                        <Skeleton
-                            loading
-                            loading-label="Loading changes"
-                        >
+                        <Skeleton loading label="Loading changes">
                             <div class="h-28 rounded-lg border"></div>
                         </Skeleton>
                     {:else}

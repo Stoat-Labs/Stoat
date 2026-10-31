@@ -576,7 +576,7 @@
             </AlertDescription>
         </Alert>{/if}
     {#if list.isPending || pending}
-        <Skeleton loading loading-label={`Loading ${title} metrics`}>
+        <Skeleton loading label={`Loading ${title} metrics`}>
             <div class="grid gap-4 lg:grid-cols-2">
                 {#each loadingTitles[view] as heading, index (heading)}
                     <Frame
@@ -588,7 +588,10 @@
                             <FrameTitle>{heading}</FrameTitle>
                         </FrameHeader>
                         <FramePanel class="min-w-0 p-4">
-                            <div class="h-40 min-w-0 w-full sm:h-48">
+                            <div
+                                skullet-block
+                                class="h-40 min-w-0 w-full sm:h-48"
+                            >
                                 Loading chart
                             </div>
                         </FramePanel>

@@ -160,11 +160,7 @@
     class="variables-page flex h-[calc(100dvh-7rem)] min-h-112 min-w-0 w-full flex-col gap-3 pt-3 xl:h-auto xl:min-h-0 xl:flex-1"
 >
     {#if projectQuery.isPending || resourceQuery.isPending}
-        <Skeleton
-            loading
-            loading-label="Loading resource variables"
-            class="flex min-h-0 flex-1 flex-col"
-        >
+        <Skeleton loading label="Loading resource variables" fill>
             <div class="flex min-h-0 flex-1 flex-col gap-3">
                 <Frame class="min-h-0 min-w-0 w-full flex-1">
                     <FrameHeader
@@ -184,7 +180,9 @@
                         <div
                             class="flex-1 bg-code p-4 font-mono text-sm text-muted-foreground"
                         >
-                            VARIABLE=********
+                            <p>DATABASE_URL=********</p>
+                            <p>API_KEY=********</p>
+                            <p>PORT=****</p>
                         </div>
                     </FramePanel>
                 </Frame>

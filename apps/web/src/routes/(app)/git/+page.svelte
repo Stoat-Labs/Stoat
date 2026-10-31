@@ -281,7 +281,7 @@
         {/key}
     {/if}
     {#if connectionsQuery.isPending}
-        <Skeleton loading loading-label="Loading connections">
+        <Skeleton loading label="Loading connections">
             <Frame>
                 <FrameHeader>
                     <FrameTitle>Connection name</FrameTitle>

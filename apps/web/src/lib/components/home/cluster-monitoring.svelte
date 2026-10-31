@@ -97,7 +97,7 @@
     </CardHeader>
     <CardPanel class="p-4 pt-0 sm:p-5 sm:pt-0">
         {#if metricsQuery.isPending}
-            <Skeleton loading loading-label="Loading cluster metrics">
+            <Skeleton loading label="Loading cluster metrics">
                 <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {#each ["Machines", "CPU", "Memory", "Disk (/)"] as label (label)}
                         <div class="rounded-lg border p-3">

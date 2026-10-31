@@ -286,7 +286,7 @@
 
 <div class="flex w-full flex-col gap-6 pt-6">
     {#if fromTemplate && templatesQuery.isPending}
-        <Skeleton loading loading-label="Loading template">
+        <Skeleton loading label="Loading template">
             <div class="flex flex-col gap-6">
                 <div class="flex items-center gap-3">
                     <span class="size-8 rounded-lg bg-muted"></span>

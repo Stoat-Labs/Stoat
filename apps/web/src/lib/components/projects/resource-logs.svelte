@@ -576,10 +576,9 @@
         {:else}
             <Skeleton
                 {loading}
-                loading-label="Loading logs"
-                class="flex min-h-0 min-w-0 flex-1 flex-col"
-                background-color="color-mix(in oklab, var(--foreground) 8%, transparent)"
-                shimmer-color="color-mix(in oklab, var(--foreground) 6%, transparent)"
+                label="Loading logs"
+                fill
+                class="min-w-0"
             >
                 <Frame
                     inert={loading}
@@ -640,7 +639,7 @@
                                 onToggleAll={toggleAllServices}
                             />
                             <span
-                                data-shimmer-ignore
+                                skullet-ignore
                                 class="min-w-0 flex-1 whitespace-nowrap text-xs text-muted-foreground sm:min-w-16"
                             ></span>
                             {#if view.logMode.current === "live" && (loading || selectedIds.length)}

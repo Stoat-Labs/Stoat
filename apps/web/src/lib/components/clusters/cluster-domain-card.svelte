@@ -85,10 +85,7 @@
     </CardHeader>
     <CardPanel class="p-4 pt-0 sm:p-5 sm:pt-0">
         {#if domainQuery.isPending}
-            <Skeleton
-                loading
-                loading-label="Loading the cluster domain"
-            >
+            <Skeleton loading label="Loading the cluster domain">
                 <p class="text-sm">Domain x9tx94.uncld.dev</p>
             </Skeleton>
         {:else if domainQuery.isError}

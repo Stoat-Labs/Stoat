@@ -82,17 +82,16 @@
         </AlertDescription>
     </Alert>
 {:else if !bucket}
-    <Skeleton
-        loading
-        loading-label="Loading bucket variables"
-        class="flex min-h-0 flex-1 flex-col"
-    >
+    <Skeleton loading label="Loading bucket variables" fill>
         <Frame class="min-h-0 min-w-0 w-full flex-1">
             <FrameHeader>
                 <h2 class="text-sm font-medium">.env</h2>
             </FrameHeader>
             <FramePanel class="flex-1 bg-code p-4 font-mono text-sm">
-                S3_ENDPOINT=placeholder
+                <p>S3_ENDPOINT=placeholder</p>
+                <p>S3_BUCKET=placeholder</p>
+                <p>S3_ACCESS_KEY_ID=********</p>
+                <p>S3_SECRET_ACCESS_KEY=********</p>
             </FramePanel>
         </Frame>
     </Skeleton>

@@ -259,7 +259,7 @@
 {/snippet}
 
 {#snippet loadingGrid(label: string)}
-    <Skeleton loading loading-label={label}>
+    <Skeleton loading {label}>
         <ul
             class="-me-px -mb-px grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
         >

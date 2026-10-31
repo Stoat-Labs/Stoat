@@ -200,8 +200,8 @@
                     <Skeleton
                         loading
                         count={2}
-                        count-gap={1}
-                        loading-label="Loading API keys"
+                        gap={1}
+                        label="Loading API keys"
                     >
                         <div
                             class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 p-3"

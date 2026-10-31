@@ -116,7 +116,7 @@
         <Skeleton
             loading
             count={8}
-            loading-label="Loading {file}"
+            label="Loading {file}"
             class="px-3 py-4"
         >
             <div class="h-6 font-mono text-sm">config</div>

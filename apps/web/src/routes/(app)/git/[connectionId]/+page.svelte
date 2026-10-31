@@ -129,7 +129,7 @@
             </AlertDescription>
         </Alert>
     {:else if connectionsQuery.isPending}
-        <Skeleton loading loading-label="Loading connection">
+        <Skeleton loading label="Loading connection">
             <Frame>
                 <FrameHeader>
                     <FrameTitle>Connection name</FrameTitle>
@@ -240,7 +240,7 @@
                 {:else}
                     <Skeleton
                         loading={repositoriesQuery.isPending}
-                        loading-label="Loading repositories"
+                        label="Loading repositories"
                     >
                         <Table>
                             <TableHeader>
@@ -329,7 +329,7 @@
                     {:else}
                         <Skeleton
                             loading={webhookQuery.isPending}
-                            loading-label="Loading webhook"
+                            label="Loading webhook"
                         >
                             <div class="grid gap-4 sm:grid-cols-2">
                                 <ConnectionField

@@ -41,13 +41,13 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 ## Docs
 
 - `DESIGN.md`: UI design contract. Reuse `apps/web/src/lib/components/ui` and follow the resource overview and Variables pages. Use the m3-svelte skill only if asked; this app uses shadcn-svelte components.
-- Loading states in `apps/web` use the shared Phantom UI-backed `Skeleton` component for every placeholder. Keep page-level loading layouts full height when the loaded view fills the page.
+- Loading states in `apps/web` use the shared skullet-backed `Skeleton` component (`$lib/components/ui/skeleton`) for every placeholder. Keep page-level loading layouts full height when the loaded view fills the page.
 
 ## Things you have to always follow as a clanker
 
 - use nuqs-svelte where possible instead of the usual $state, search params should be used godly.
 - keep it simple, minimal and follow best practices.
-- always use phantomui for skeletons.
+- always use skullet (https://skullet.lochie.me) through the shared `Skeleton` for skeletons.
 - the code should be readable by a human.
 - do your research before a medium+ sized change.
 - think like a senior engineer

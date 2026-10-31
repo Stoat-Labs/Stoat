@@ -76,7 +76,7 @@
             </AlertDescription>
         </Alert>
     {:else if listQuery.isPending}
-        <Skeleton loading loading-label="Loading connections">
+        <Skeleton loading label="Loading connections">
             <Frame>
                 <FrameHeader>
                     <FrameTitle class="text-base">

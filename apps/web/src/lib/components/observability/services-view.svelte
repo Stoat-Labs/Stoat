@@ -50,11 +50,10 @@
             </FrameHeader>
             <FramePanel class="flex min-w-0 flex-1 flex-col p-4">
                 {#if loading}
-                    <Skeleton
-                        loading
-                        loading-label="Loading service metrics"
-                    >
-                        <div class="h-40 sm:h-48">Loading chart</div>
+                    <Skeleton loading label="Loading service metrics">
+                        <div skullet-block class="h-40 sm:h-48">
+                            Loading chart
+                        </div>
                     </Skeleton>
                 {:else}
                     <MetricChart

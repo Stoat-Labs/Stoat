@@ -407,10 +407,14 @@ export function metricQueries(
     const gauge = (metric: string, extra = "") => `max by (machine_id) (${host(metric, extra)})`;
 
     // Per container (cAdvisor's `name` label); service totals are summed client-side.
+    // `max` first keeps one copy of each series when two collectors report the same container
+    // (they differ only in labels like `instance`); `interface` stays so per-NIC traffic still sums.
     const service = (metric: string, counter = false) => {
         const selector = host(metric, `,${services}`);
+        const value = counter ? `rate(${selector}[${window}])` : selector;
+        const container = "machine_id, container_label_uncloud_service_id, name";
 
-        return `sum by (machine_id, container_label_uncloud_service_id, name) (${counter ? `rate(${selector}[${window}])` : selector})`;
+        return `sum by (${container}) (max by (${container}, interface) (${value}))`;
     };
 
     // Exclude guest modes (already included in user/nice) and virtual host interfaces to avoid double counting.

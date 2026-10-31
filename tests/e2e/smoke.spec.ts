@@ -89,12 +89,13 @@ async function visit(page: Page, path: string) {
         await page.goto(path);
 
         // Let queries settle: a page is done once no placeholder is left.
-        await expect(page.locator("phantom-ui[loading]"))
+        await expect(page.locator("[skullet-reveal][aria-busy]"))
             .toHaveCount(0, { timeout: 10_000 })
             .catch(() => problems.push("still loading after 10s"));
 
         const links = await page
-            .locator("a[href]")
+            // Skip skeleton sample links; skullet keeps them in the DOM while the skeleton fades out.
+            .locator("a[href]:not([skullet-loading] a)")
             .evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href") ?? ""));
 
         for (const text of consoleErrors)

@@ -253,10 +253,8 @@
     {#if loading || (range && history.isPending && selectedIds.length)}
         <Skeleton
             loading
-            loading-label="Loading logs"
+            label="Loading logs"
             class="min-h-0 flex-1 p-6 font-mono text-xs leading-5"
-            background-color="color-mix(in oklab, var(--foreground) 8%, transparent)"
-            shimmer-color="color-mix(in oklab, var(--foreground) 6%, transparent)"
         >
             {#each [60, 85, 45, 70, 55, 80, 50, 65] as width, index (index)}
                 <p class="py-0.5" style:width={`${width}%`}>

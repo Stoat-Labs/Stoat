@@ -86,7 +86,7 @@
     </CardHeader>
     <CardPanel class="space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
         {#if caddyQuery.isPending}
-            <Skeleton loading loading-label="Loading Caddy settings">
+            <Skeleton loading label="Loading Caddy settings">
                 <p class="text-sm">Image caddy:2.10.2</p>
                 <p class="text-sm">Global Caddyfile not set</p>
             </Skeleton>

@@ -385,7 +385,7 @@
         </div>
     {/if}
 {:else if loading}
-    <Skeleton loading loading-label="Loading chart">
+    <Skeleton loading label="Loading chart">
         <div class={compact ? "h-8 w-24" : "h-40 sm:h-48"}>
             Loading chart
         </div>

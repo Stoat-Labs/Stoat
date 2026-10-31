@@ -192,7 +192,7 @@
         {/if}
 
         {#if projectQuery.isPending || resourcesQuery.isPending}
-            <Skeleton loading loading-label="Loading resources">
+            <Skeleton loading label="Loading resources">
                 <div class="space-y-4">
                     <ul
                         class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"

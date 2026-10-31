@@ -15,7 +15,6 @@
         "env:generate": "varlock codegen"
     },
     "dependencies": {
-        "@aejkatappaja/phantom-ui": "^1.6.1",
         "@better-auth/api-key": "catalog:",
         "@codemirror/lang-yaml": "^6.1.3",
         "@codemirror/language": "^6.12.4",
@@ -56,6 +55,7 @@
         "motion-sv": "^0.1.13",
         "nuqs-svelte": "^1.2.2",
         "runed": "0.37.1",
+        "skullet": "^0.0.3",
         "svelte-toolbelt": "^0.10.6",
         "valibot": "catalog:",
         "varlock": "catalog:",

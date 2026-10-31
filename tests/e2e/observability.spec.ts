@@ -18,7 +18,7 @@ async function problemsOn(page: Page, path: string) {
         if (response.status >= 400) problems.push(`RPC ${response.status} ${response.path}`);
     });
     await page.goto(path);
-    await expect(page.locator("phantom-ui[loading]")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator("[skullet-reveal][aria-busy]")).toHaveCount(0, { timeout: 15_000 });
 
     return problems;
 }

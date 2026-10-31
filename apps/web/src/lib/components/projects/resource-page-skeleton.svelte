@@ -11,7 +11,7 @@
     import ContainerRowSkeleton from "./container-row-skeleton.svelte";
 </script>
 
-<Skeleton loading loading-label="Loading resource">
+<Skeleton loading label="Loading resource">
     <div class="space-y-6">
         <div
             class="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-y-0"

@@ -92,8 +92,8 @@
                 <Skeleton
                     loading
                     count={2}
-                    count-gap={1}
-                    loading-label="Loading containers"
+                    gap={1}
+                    label="Loading containers"
                 >
                     <ContainerRowSkeleton />
                 </Skeleton>

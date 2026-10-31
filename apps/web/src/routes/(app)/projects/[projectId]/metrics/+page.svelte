@@ -224,16 +224,13 @@
             </AlertDescription>
         </Alert>{/if}
     {#if pending}
-        <Skeleton
-            loading
-            loading-label="Loading project observability"
-        >
+        <Skeleton loading label="Loading project observability">
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {#each charts as chart (chart.title)}<Frame>
                         <FrameHeader>
                             <FrameTitle>{chart.title}</FrameTitle>
                         </FrameHeader><FramePanel>
-                            <div class="h-40 sm:h-48">
+                            <div skullet-block class="h-40 sm:h-48">
                                 Loading chart
                             </div>
                         </FramePanel>
