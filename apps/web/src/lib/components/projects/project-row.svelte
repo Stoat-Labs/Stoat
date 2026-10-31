@@ -27,7 +27,7 @@
 
     const tiles = $derived(resources.slice(0, MAX_TILES));
 
-    const { deployed, dot } = $derived(projectStatus(resources));
+    const { summary, dot } = $derived(projectStatus(resources));
 </script>
 
 <article
@@ -78,7 +78,7 @@
                     {clusterName}
                     <span aria-hidden="true">·</span>
                 {/if}
-                {deployed}/{resources.length} deployed
+                {summary}
             {/if}
         </span>
     </p>

@@ -2,9 +2,10 @@ import { redirect } from "@sveltejs/kit";
 import { isOrganizationAdmin } from "@stoat/api";
 import { listUserOrganizations } from "@stoat/db/organizations";
 import { getUserSettings } from "@stoat/db/settings";
+import { SIDEBAR_COOKIE_NAME } from "$lib/components/ui/sidebar/constants";
 import { getAuth, getDb } from "../../services";
 
-export const load = async ({ url, request, depends, locals: { session } }) => {
+export const load = async ({ url, request, cookies, depends, locals: { session } }) => {
     depends("app:user-settings");
 
     // Come back here after logging in. The login page sends a fresh install on to /setup.
@@ -37,6 +38,8 @@ export const load = async ({ url, request, depends, locals: { session } }) => {
         organizations,
         canvasMode,
         activeOrganizationId,
+        // The sidebar writes this cookie when toggled; read it so reloads keep the layout.
+        sidebarOpen: cookies.get(SIDEBAR_COOKIE_NAME) !== "false",
         // Pages hide actions the API would refuse; the API still enforces them.
         isOrganizationAdmin: isOrganizationAdmin(
             organizations.find((organization) => organization.id === activeOrganizationId)?.role ??
