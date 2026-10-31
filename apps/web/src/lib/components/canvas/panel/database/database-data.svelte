@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { orpc, queryClient } from "$lib/api/orpc";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import {
@@ -127,16 +128,20 @@
     let search = $state("");
 
     const tableList = $derived(
-        (tables.data?.rows ?? []).map(([, schema, name, count]) => ({
-            key: `${schema}.${name}`,
-            schema: schema ?? "",
-            name: name ?? "",
-            label:
-                schema === "public"
-                    ? (name ?? "")
-                    : `${schema}.${name}`,
-            estimate: Number(count ?? 0),
-        })),
+        (tables.data?.rows ?? []).map(
+            ([, schema, name, count, unique]) => ({
+                key: `${schema}.${name}`,
+                schema: schema ?? "",
+                name: name ?? "",
+                // shortcut: views and foreign tables have no unique order, so their pages may shift.
+                unique,
+                label:
+                    schema === "public"
+                        ? (name ?? "")
+                        : `${schema}.${name}`,
+                estimate: Number(count ?? 0),
+            }),
+        ),
     );
 
     const visibleTables = $derived(
@@ -162,11 +167,15 @@
 
     const where = $derived(whereClause(filters));
 
-    const order = $derived(
-        sortColumn.current
-            ? `ORDER BY ${quoteIdent(sortColumn.current)} ${sortDesc.current ? "DESC" : "ASC"} NULLS LAST`
-            : "",
-    );
+    const order = $derived.by(() => {
+        const keys = [
+            sortColumn.current &&
+                `${quoteIdent(sortColumn.current)} ${sortDesc.current ? "DESC" : "ASC"} NULLS LAST`,
+            table?.unique,
+        ].filter(Boolean);
+
+        return keys.length ? `ORDER BY ${keys.join(", ")}` : "";
+    });
 
     const offset = $derived(
         (Math.max(page.current, 1) - 1) * PAGE_SIZE,
@@ -657,10 +666,11 @@
                         {#if sortColumn.current}
                             <MenuSeparator />
                             <MenuItem
-                                onclick={() =>
-                                    toggleSort(
-                                        sortColumn.current ?? "",
-                                    )}
+                                onclick={() => {
+                                    void sortColumn.set(null);
+                                    void sortDesc.set(null);
+                                    void page.set(null);
+                                }}
                             >
                                 Clear sort
                             </MenuItem>
@@ -787,7 +797,13 @@
                 <DatabaseSql
                     {input}
                     bind:sql
-                    onrun={() => void tables.refetch()}
+                    onrun={() =>
+                        void queryClient.invalidateQueries({
+                            queryKey:
+                                orpc.resources.queryPostgres.key({
+                                    input,
+                                }),
+                        })}
                 />
             {:else if tables.isError}
                 <p

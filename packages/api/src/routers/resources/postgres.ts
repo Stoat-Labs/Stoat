@@ -34,7 +34,8 @@ const PGDOG_IMAGE = "ghcr.io/pgdogdev/pgdog";
 
 // PgDog reads only TOML files, so its entrypoint writes them from the pooler's Variables, each
 // escaped as a TOML string: a raw `${...}` in TOML would break on a `"` or `\` in a password.
-// `$$` keeps `$` from Compose interpolation.
+// `$$` keeps `$` from Compose interpolation. Apps log in as `pgdog` with a generated hex password,
+// so DATABASE_URL never needs URL encoding; PgDog logs in to Postgres with the database's own.
 const pgdogCompose = `services:
     pgdog:
         image: ${PGDOG_IMAGE}:v0.1.61
@@ -44,6 +45,7 @@ const pgdogCompose = `services:
             POSTGRES_USER: \${POSTGRES_USER}
             POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
             POSTGRES_DB: \${POSTGRES_DB}
+            POOLER_PASSWORD: \${POOLER_PASSWORD}
         entrypoint:
             - sh
             - -c
@@ -64,15 +66,18 @@ const pgdogCompose = `services:
               port = 6432
 
               [[databases]]
-              name = $$(toml POSTGRES_DB)
+              name = "pgdog"
               host = $$(toml POSTGRES_HOST)
               port = 5432
+              database_name = $$(toml POSTGRES_DB)
               TOML
               cat > /pgdog/users.toml <<TOML
               [[users]]
-              name = $$(toml POSTGRES_USER)
-              database = $$(toml POSTGRES_DB)
-              password = $$(toml POSTGRES_PASSWORD)
+              name = "pgdog"
+              database = "pgdog"
+              password = $$(toml POOLER_PASSWORD)
+              server_user = $$(toml POSTGRES_USER)
+              server_password = $$(toml POSTGRES_PASSWORD)
               TOML
               exec pgdog
 `;
@@ -496,8 +501,9 @@ export const resourcePostgresRouter = {
                 `POSTGRES_USER=${reference("POSTGRES_USER", "postgres")}`,
                 `POSTGRES_PASSWORD=${reference("POSTGRES_PASSWORD", "")}`,
                 `POSTGRES_DB=${reference("POSTGRES_DB", reference("POSTGRES_USER", "postgres"))}`,
+                `POOLER_PASSWORD=${randomBytes(16).toString("hex")}`,
                 // What apps reference to connect through the pooler: {{ PgDog.DATABASE_URL }}.
-                "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/${POSTGRES_DB}",
+                "DATABASE_URL=postgresql://pgdog:${POOLER_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/pgdog",
             ].join("\n");
 
             return db.transaction(async (tx) => {

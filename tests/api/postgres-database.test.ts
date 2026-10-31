@@ -155,13 +155,15 @@ describe("addConnectionPooler", () => {
 
         expect(pooler.draftSpec).toContain("ghcr.io/pgdogdev/pgdog:");
         // SAFETY: the procedure always stores Variables as a string in `settings.env`.
-        expect(parseEnv((pooler.settings as { env: string }).env)).toEqual({
+        const env = parseEnv((pooler.settings as { env: string }).env);
+
+        expect(env).toEqual({
             POSTGRES_HOST: `{{ ${resourceId}.POSTGRES_INTERNAL_HOST }}`,
             POSTGRES_USER: `{{ ${resourceId}.POSTGRES_USER }}`,
             POSTGRES_PASSWORD: `{{ ${resourceId}.POSTGRES_PASSWORD }}`,
             POSTGRES_DB: `{{ ${resourceId}.POSTGRES_DB }}`,
-            DATABASE_URL:
-                "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/${POSTGRES_DB}",
+            POOLER_PASSWORD: expect.stringMatching(/^[0-9a-f]{32}$/u),
+            DATABASE_URL: "postgresql://pgdog:${POOLER_PASSWORD}@${PGDOG_INTERNAL_HOST}:6432/pgdog",
         });
 
         // The entrypoint writes PgDog's TOML from the environment, so a password is never raw TOML.
@@ -175,17 +177,24 @@ describe("addConnectionPooler", () => {
         ).services.pgdog;
 
         expect(deployed.environment).toMatchObject({ POSTGRES_PASSWORD: password });
-        expect(deployed.entrypoint.at(-1)).toContain("password = $$(toml POSTGRES_PASSWORD)");
+        expect(deployed.entrypoint.at(-1)).toContain(
+            "server_password = $$(toml POSTGRES_PASSWORD)",
+        );
 
-        // An app connects through PgDog by referencing its DATABASE_URL, which itself references
-        // the database's credentials.
+        // An app connects through PgDog by referencing its DATABASE_URL, whose generated hex
+        // password needs no URL encoding whatever the database's own password holds.
         const app = `DATABASE_URL={{ ${pooler.id}.DATABASE_URL }}`;
 
         expect(
             resolveReferences(app, await referenceTargets(db, clusterId, [pooler.id]))[
                 `${pooler.id}.DATABASE_URL`
             ],
-        ).toMatch(/^postgresql:\/\/postgres:secret@pgdog-\w+-pgdog\.internal:6432\/app$/u);
+        ).toMatch(
+            new RegExp(
+                `^postgresql://pgdog:${env.POOLER_PASSWORD}@pgdog-\\w+-pgdog\\.internal:6432/pgdog$`,
+                "u",
+            ),
+        );
 
         await expect(call(resourcesRouter.addConnectionPooler, input, { context })).rejects.toThrow(
             "already pools",

@@ -199,6 +199,13 @@
             to: parseAsString,
             logStart: parseAsString,
             logEnd: parseAsString,
+            dbTable: parseAsString,
+            dbView: parseAsString,
+            dbPage: parseAsString,
+            dbSort: parseAsString,
+            dbDesc: parseAsString,
+            dbFilters: parseAsString,
+            statementsSort: parseAsString,
         },
         { shallow: true, scroll: false },
     );

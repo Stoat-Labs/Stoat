@@ -78,10 +78,20 @@ export const compactCount = (count: number) =>
 
 /**
  * Every table and view with its estimated row count, plus the database's name, in one round trip.
- * Exact counts would scan every table; TimescaleDB's internal schemas are left out.
+ * Exact counts would scan every table; TimescaleDB's internal schemas are left out. The last
+ * column is a quoted, unique `ORDER BY` so pages never repeat or skip rows: the primary key, else
+ * the row's physical position.
  */
 export const tableListSql = `SELECT current_database(), n.nspname, c.relname,
-    CASE WHEN c.reltuples < 0 THEN coalesce(s.n_live_tup, 0) ELSE c.reltuples END::bigint
+    CASE WHEN c.reltuples < 0 THEN coalesce(s.n_live_tup, 0) ELSE c.reltuples END::bigint,
+    coalesce(
+        (SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY k.position)
+         FROM pg_index i
+         CROSS JOIN unnest(i.indkey) WITH ORDINALITY k(attnum, position)
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+         WHERE i.indrelid = c.oid AND i.indisprimary),
+        CASE c.relkind WHEN 'r' THEN 'ctid' WHEN 'm' THEN 'ctid' WHEN 'p' THEN 'tableoid, ctid' END
+    )
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid

@@ -47,20 +47,6 @@
 
     const enabled = $derived(statementsEnabled === "t");
 
-    // This database's 100 costliest statements, whitespace collapsed and cut short to keep it light.
-    const statements = createQuery(() => ({
-        ...sqlQuery(
-            input,
-            `SELECT left(regexp_replace(query, '\\s+', ' ', 'g'), 500), calls, rows,
-                total_exec_time, mean_exec_time, max_exec_time,
-                (SELECT stats_reset FROM pg_stat_statements_info), count(*) OVER ()
-             FROM pg_stat_statements
-             WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
-             ORDER BY total_exec_time DESC LIMIT 100`,
-        ),
-        enabled,
-    }));
-
     const sortKeys = [
         "calls",
         "rows",
@@ -79,6 +65,29 @@
                 scroll: false,
             }),
     );
+
+    const sortColumns = {
+        calls: "calls",
+        rows: "rows",
+        total: "total_exec_time",
+        mean: "mean_exec_time",
+        max: "max_exec_time",
+    } satisfies Record<(typeof sortKeys)[number], string>;
+
+    // This database's top 100 statements by the chosen column, whitespace collapsed and cut short to keep it light.
+    const statements = createQuery(() => ({
+        ...sqlQuery(
+            input,
+            `SELECT left(regexp_replace(query, '\\s+', ' ', 'g'), 500), calls, rows,
+                total_exec_time, mean_exec_time, max_exec_time,
+                (SELECT stats_reset FROM pg_stat_statements_info), count(*) OVER ()
+             FROM pg_stat_statements
+             WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+             ORDER BY ${sortColumns[statementsSort.current]} DESC LIMIT 100`,
+        ),
+        enabled,
+        placeholderData: (previous) => previous,
+    }));
 
     const columns = [
         { key: "calls", label: "Calls" },
@@ -403,7 +412,9 @@
                 >
                     {showAll
                         ? "Show fewer"
-                        : `Show all ${statementCount.toLocaleString()} queries`}
+                        : statementCount > statementRows.length
+                          ? `Show top ${statementRows.length} of ${statementCount.toLocaleString()} queries`
+                          : `Show all ${statementCount.toLocaleString()} queries`}
                 </Button>
             {/if}
         {/if}
@@ -420,6 +431,7 @@
     onconfirm={() =>
         reset.mutate({
             ...input,
-            query: "SELECT pg_stat_statements_reset()",
+            // Only this database's statements; other databases on the server keep theirs.
+            query: "SELECT pg_stat_statements_reset(dbid => oid) FROM pg_database WHERE datname = current_database()",
         })}
 />
