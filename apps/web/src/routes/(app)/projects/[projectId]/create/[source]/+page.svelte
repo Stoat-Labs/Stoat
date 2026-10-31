@@ -49,6 +49,7 @@
     import { cn } from "$lib/utils";
     import ArrowLeft from "@lucide/svelte/icons/arrow-left";
     import ImageIcon from "$lib/components/shared/image-icon.svelte";
+    import UnsavedChangesGuard from "$lib/components/shared/unsaved-changes-guard.svelte";
     import Container from "@lucide/svelte/icons/container";
     import GitBranch from "@lucide/svelte/icons/git-branch";
     import HardDrive from "@lucide/svelte/icons/hard-drive";
@@ -656,6 +657,12 @@
         </div>
     {/if}
 </div>
+
+<UnsavedChangesGuard
+    dirty={!pending &&
+        !createMutationState.isSuccess &&
+        Object.values(variables).some((value) => value.trim())}
+/>
 
 {#snippet templateContents(v: {
     services: {

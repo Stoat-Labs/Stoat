@@ -2,6 +2,7 @@
     import CodeEditor from "$lib/components/shared/code-editor.svelte";
     import BucketVariables from "$lib/components/s3/bucket-variables.svelte";
     import VariableReferencePicker from "$lib/components/variables/variable-reference-picker.svelte";
+    import UnsavedChangesGuard from "$lib/components/shared/unsaved-changes-guard.svelte";
     import {
         Alert,
         AlertDescription,
@@ -358,6 +359,8 @@
         </Frame>
     {/if}
 </div>
+
+<UnsavedChangesGuard dirty={isDirty} />
 
 <style>
     .env-editor-canvas > :global(div),
