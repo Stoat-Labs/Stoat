@@ -95,7 +95,9 @@
         <FramePanel class="min-w-0 p-4">
             {#if loading}
                 <Skeleton loading label="Loading DNS queries">
-                    <div class="h-40 sm:h-48">Loading chart</div>
+                    <div skullet-block class="h-40 sm:h-48">
+                        Loading chart
+                    </div>
                 </Skeleton>
             {:else}
                 <MetricChart

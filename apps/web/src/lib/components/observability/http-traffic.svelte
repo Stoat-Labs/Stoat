@@ -721,23 +721,28 @@
     {#if pending}
         <Skeleton loading label="Loading HTTP traffic">
             <div class="space-y-4 sm:space-y-6">
-                <div class="h-28 rounded-2xl">Loading summary</div>
+                <div skullet-block class="h-28 rounded-2xl">
+                    Loading summary
+                </div>
                 <div class="grid gap-4 lg:grid-cols-2">
-                    <div class="h-64 rounded-2xl">
+                    <div skullet-block class="h-64 rounded-2xl">
                         Loading countries
                     </div>
-                    <div class="h-64 rounded-2xl">
+                    <div skullet-block class="h-64 rounded-2xl">
                         Loading clients
                     </div>
                 </div>
                 <div class="grid gap-4 lg:grid-cols-2">
                     {#each chartGrid as item (item.title)}<div
+                            skullet-block
                             class="h-64 rounded-2xl"
                         >
                             Loading {item.title}
                         </div>{/each}
                 </div>
-                <div class="h-72 rounded-2xl">Loading services</div>
+                <div skullet-block class="h-72 rounded-2xl">
+                    Loading services
+                </div>
             </div>
         </Skeleton>
     {:else if !selection.length}
@@ -815,7 +820,9 @@
                 <FramePanel class="min-w-0 flex-1">
                     {#if loading("visitors") && !recordingVisitors}
                         <Skeleton loading label="Loading visitors">
-                            <div class="h-40">Loading visitors</div>
+                            <div skullet-block class="h-40">
+                                Loading visitors
+                            </div>
                         </Skeleton>
                     {:else if !recordingVisitors}
                         {@render visitorsUnavailable()}
@@ -849,7 +856,9 @@
                 <FramePanel class="min-w-0 space-y-6">
                     {#if loading("visitors") && !recordingVisitors}
                         <Skeleton loading label="Loading visitors">
-                            <div class="h-40">Loading visitors</div>
+                            <div skullet-block class="h-40">
+                                Loading visitors
+                            </div>
                         </Skeleton>
                     {:else if !recordingVisitors}
                         {@render visitorsUnavailable()}
@@ -944,7 +953,9 @@
             <FramePanel class="min-w-0 overflow-x-auto p-0">
                 {#if loading("services") && !rows.length}
                     <Skeleton loading label="Loading services">
-                        <div class="h-48">Loading services</div>
+                        <div skullet-block class="h-48">
+                            Loading services
+                        </div>
                     </Skeleton>
                 {:else}
                     <Table>

@@ -463,11 +463,7 @@
                     onscroll={onStepsScroll}
                 >
                     {#if !deployment}
-                        <Skeleton
-                            loading
-                            label="Loading deployment"
-                            style="--skullet-base: color-mix(in oklab, var(--foreground) 8%, transparent); --skullet-highlight: color-mix(in oklab, var(--foreground) 6%, transparent)"
-                        >
+                        <Skeleton loading label="Loading deployment">
                             {#each [60, 85, 45, 70, 55] as width, index (index)}
                                 <p
                                     class="py-0.5"

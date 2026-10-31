@@ -180,7 +180,9 @@
                         <div
                             class="flex-1 bg-code p-4 font-mono text-sm text-muted-foreground"
                         >
-                            VARIABLE=********
+                            <p>DATABASE_URL=********</p>
+                            <p>API_KEY=********</p>
+                            <p>PORT=****</p>
                         </div>
                     </FramePanel>
                 </Frame>

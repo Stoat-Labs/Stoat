@@ -32,6 +32,8 @@ declare module "svelte/elements" {
     interface HTMLAttributes<T> {
         /** Tells skullet to draw nothing for this element while loading. */
         "skullet-ignore"?: boolean;
+        /** Tells skullet to draw this element as one block while loading. */
+        "skullet-block"?: boolean;
     }
 }
 

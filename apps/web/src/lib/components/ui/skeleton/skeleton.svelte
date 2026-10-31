@@ -11,7 +11,6 @@
         gap = 0,
         fill = false,
         class: className,
-        style,
         children,
     }: {
         loading?: boolean;
@@ -23,7 +22,6 @@
         /** Fills a flex column, so a `flex-1` child keeps filling the space. */
         fill?: boolean;
         class?: string;
-        style?: string;
         children: Snippet;
     } = $props();
 </script>
@@ -31,7 +29,6 @@
 <Skeleton
     {loading}
     {label}
-    {style}
     class={cn(
         fill && "skeleton-fill flex min-h-0 flex-1 flex-col",
         className,
@@ -49,6 +46,11 @@
 </Skeleton>
 
 <style>
+    /* Long sample lines would otherwise widen the page while loading. */
+    :global(.skeleton-fill) {
+        contain: inline-size;
+    }
+
     /* Skullet nests the content a few divs deep; each passes the fill down. */
     :global(
         .skeleton-fill > [skullet-pane],

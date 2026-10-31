@@ -588,7 +588,10 @@
                             <FrameTitle>{heading}</FrameTitle>
                         </FrameHeader>
                         <FramePanel class="min-w-0 p-4">
-                            <div class="h-40 min-w-0 w-full sm:h-48">
+                            <div
+                                skullet-block
+                                class="h-40 min-w-0 w-full sm:h-48"
+                            >
                                 Loading chart
                             </div>
                         </FramePanel>

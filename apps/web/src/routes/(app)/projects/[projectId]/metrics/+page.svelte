@@ -230,7 +230,7 @@
                         <FrameHeader>
                             <FrameTitle>{chart.title}</FrameTitle>
                         </FrameHeader><FramePanel>
-                            <div class="h-40 sm:h-48">
+                            <div skullet-block class="h-40 sm:h-48">
                                 Loading chart
                             </div>
                         </FramePanel>

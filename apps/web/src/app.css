@@ -80,6 +80,9 @@ html.dark {
     --radius: 0.625rem;
     --background: var(--color-white);
     --foreground: var(--color-neutral-800);
+    /* Skeleton fill and shimmer for skullet; tinted from the foreground so dark mode follows the .dark class. */
+    --skullet-base: color-mix(in oklab, var(--foreground) 8%, transparent);
+    --skullet-highlight: color-mix(in oklab, var(--foreground) 6%, transparent);
     --card: var(--color-white);
     --card-foreground: var(--color-neutral-800);
     --popover: var(--color-white);

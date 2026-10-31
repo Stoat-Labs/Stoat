@@ -187,3 +187,23 @@
         </FrameFooter>
     {/if}
 </Frame>
+
+<style>
+    /* skullet draws any cell with a background as one solid block, so while
+       loading the card surface moves from the cells to the table. */
+    :global(
+        [skullet-loading]
+            [data-slot="table-container"][data-variant="card"]
+    ) {
+        border-radius: var(--radius-xl);
+        background: var(--card);
+    }
+
+    :global(
+        [skullet-loading]
+            [data-variant="card"]
+            [data-slot="table-cell"]
+    ) {
+        background: none !important;
+    }
+</style>

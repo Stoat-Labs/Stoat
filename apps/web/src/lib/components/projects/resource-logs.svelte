@@ -579,7 +579,6 @@
                 label="Loading logs"
                 fill
                 class="min-w-0"
-                style="--skullet-base: color-mix(in oklab, var(--foreground) 8%, transparent); --skullet-highlight: color-mix(in oklab, var(--foreground) 6%, transparent)"
             >
                 <Frame
                     inert={loading}
