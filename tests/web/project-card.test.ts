@@ -79,3 +79,15 @@ it("shows an empty project as having no resources", () => {
     expect(body).toContain("No resources");
     expect(body).not.toContain("deployed");
 });
+
+it("spells out failed and deploying resources, since the dot is decorative", () => {
+    const body = card({
+        resources: [...resources, { ...resources[1]!, id: "worker", status: "running" }],
+    });
+
+    expect(body).toContain("1 failed · 1 deploying · 1/3 deployed");
+});
+
+it("renders no stray script text", () => {
+    expect(card()).not.toContain("const ");
+});

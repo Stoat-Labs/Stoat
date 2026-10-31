@@ -31,27 +31,40 @@
         status: null,
     }));
 
-    /** How many resources are deployed, and the dot for the most urgent state, as on Railway. */
+    /** A text summary like "1 failed · 2 deploying · 3/6 deployed", and a decorative dot for the most urgent state. */
     export function projectStatus(resources: ProjectCardResource[]) {
         const deployed = resources.filter(
             (resource) => resource.status === "ready",
         ).length;
 
-        const dot = resources.some(
+        const failed = resources.filter(
             (resource) => resource.status === "failed",
-        )
+        ).length;
+
+        const deploying = resources.filter(
+            (resource) =>
+                resource.status === "running" ||
+                resource.status === "queued",
+        ).length;
+
+        // The dot is aria-hidden, so the text alone must tell failures and deploys apart.
+        const summary = [
+            failed && `${failed} failed`,
+            deploying && `${deploying} deploying`,
+            `${deployed}/${resources.length} deployed`,
+        ]
+            .filter(Boolean)
+            .join(" · ");
+
+        const dot = failed
             ? "bg-destructive"
-            : resources.some(
-                    (resource) =>
-                        resource.status === "running" ||
-                        resource.status === "queued",
-                )
+            : deploying
               ? "animate-pulse bg-warning"
               : resources.length > 0 && deployed === resources.length
                 ? "bg-success"
                 : "bg-muted-foreground/50";
 
-        return { deployed, dot };
+        return { summary, dot };
     }
 </script>
 
@@ -92,7 +105,7 @@
 
     const hidden = $derived(resources.length - tiles.length);
 
-    const { deployed, dot } = $derived(projectStatus(resources));
+    const { summary, dot } = $derived(projectStatus(resources));
 </script>
 
 <Frame class="group h-full min-w-0">
@@ -154,7 +167,7 @@
                         {clusterName}
                         <span aria-hidden="true">·</span>
                     {/if}
-                    {deployed}/{resources.length} deployed
+                    {summary}
                 {/if}
             </span>
         </p>

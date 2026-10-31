@@ -274,6 +274,10 @@
             status={stream.status}
         />
     {/if}
+    {#if stream.status === "failed" && resourceHref}
+        <!-- The resource page is where a failed deployment gets fixed and redeployed. -->
+        <Button size="sm" href={resourceHref}>Open resource</Button>
+    {/if}
     {#if deployment?.spec}
         <Button
             variant="outline"

@@ -679,6 +679,21 @@ export function interpolateCompose(
     return doc.toString();
 }
 
+/** Each service's image in an `interpolateCompose` result, as the cluster will pull it. */
+export function composeImages(compose: string) {
+    // Plain values, so `image: *alias` and `<<: *base` resolve as Uncloud reads them.
+    const config: unknown = YAML.parse(compose, { merge: true, maxAliasCount: 100 });
+    const images: Record<string, string> = {};
+
+    if (!Predicate.isObject(config) || !Predicate.isObject(config.services)) return images;
+
+    for (const [name, service] of Object.entries(config.services))
+        if (Predicate.isObject(service) && Predicate.isString(service.image))
+            images[name] = service.image.replaceAll("$$", "$");
+
+    return images;
+}
+
 const RESOURCE_ENV_FILE = /^(?:\.\/)?\.env$/u;
 
 /** A service's `env_file` entries: short form `- .env`, or long form `- path: .env` with an optional `required: false`. */

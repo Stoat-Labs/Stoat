@@ -40,6 +40,9 @@ import {
     metricQueries,
     metricWindow,
     parseMetricSeries,
+    mysqlMetricNames,
+    mysqlMetricQueries,
+    mysqlMetricTables,
     postgresMetricNames,
     postgresMetricQueries,
     postgresMetricTables,
@@ -52,6 +55,7 @@ import {
     type ChartPoints,
     type ObservabilityRange,
     type PackedMetricSeries,
+    type MysqlMetricName,
     type PostgresMetricName,
     type VolumeMetricName,
     volumeMetricNames,
@@ -228,7 +232,7 @@ type MetricResponse = {
     totals?: PackedMetricSeries[];
     /**
      * HTTP metrics: whether the services have ingress hostnames and Alloy is recording traffic.
-     * Postgres metrics: whether any exporter has been scraped yet.
+     * Database metrics: whether any exporter of that engine has been scraped yet.
      */
     status: "ok" | "no-routes" | "not-collecting";
 };
@@ -238,6 +242,7 @@ type ObservabilityMetricName =
     | HttpMetricName
     | DnsMetricName
     | PostgresMetricName
+    | MysqlMetricName
     | VolumeMetricName;
 
 function isHttpMetric(name: ObservabilityMetricName): name is HttpMetricName {
@@ -311,25 +316,34 @@ function isPostgresMetric(name: ObservabilityMetricName): name is PostgresMetric
     return postgresMetricNames.some((item) => item === name);
 }
 
-async function postgresMetric(
+function isMysqlMetric(name: ObservabilityMetricName): name is MysqlMetricName {
+    return mysqlMetricNames.some((item) => item === name);
+}
+
+async function databaseMetric(
     cluster: MonitoringCluster,
     uc: UcClient,
-    name: PostgresMetricName,
+    name: PostgresMetricName | MysqlMetricName,
     range: ObservabilityRange,
     points: ChartPoints,
     serviceIds: string[],
 ): Promise<MetricResponse> {
     const { start, end, step } = metricWindow(range, points);
+    const engine = isPostgresMetric(name) ? "postgres" : "mysql";
 
     return swr(
-        `postgres:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${serviceIds.toSorted().join(",")}`,
+        `${engine}:${cluster.id}:${name}:${JSON.stringify(range)}:${points}:${serviceIds.toSorted().join(",")}`,
         end,
         async () => {
             try {
-                if (!(await collecting(cluster, uc, "postgres", postgresMetricTables)))
+                const tables = engine === "postgres" ? postgresMetricTables : mysqlMetricTables;
+
+                if (!(await collecting(cluster, uc, engine, tables)))
                     return { start, end, step, series: [], status: "not-collecting" as const };
 
-                const query = postgresMetricQueries(cluster.id, step, serviceIds)[name];
+                const query = isPostgresMetric(name)
+                    ? postgresMetricQueries(cluster.id, step, serviceIds)[name]
+                    : mysqlMetricQueries(cluster.id, step, serviceIds)[name];
 
                 return {
                     start,
@@ -691,7 +705,7 @@ export const observabilityRouter = {
         .handler(({ context: { cluster, uc }, input: { range, serviceIds } }) =>
             httpSummary(cluster, uc, range, serviceIds ?? []),
         ),
-    // HTTP, DNS, and Postgres metrics share this procedure to stay within tsc's router type serialization limit.
+    // HTTP, DNS, and database metrics share this procedure to stay within tsc's router type serialization limit.
     getObservabilityMetric: organizationProcedure
         .input(
             v.object({
@@ -702,6 +716,7 @@ export const observabilityRouter = {
                     ...httpTrafficMetricNames,
                     ...dnsMetricNames,
                     ...postgresMetricNames,
+                    ...mysqlMetricNames,
                     ...volumeMetricNames,
                 ]),
                 // Scopes service metrics to these services and returns full charts instead of cluster-table shapes.
@@ -770,13 +785,13 @@ export const observabilityRouter = {
                 }
 
                 // Exporter series are only meaningful per resource, so they require a service scope.
-                if (isPostgresMetric(name)) {
+                if (isPostgresMetric(name) || isMysqlMetric(name)) {
                     if (!serviceIds?.length)
                         throw new ORPCError("BAD_REQUEST", {
-                            message: "Postgres metrics need the services to scope them to.",
+                            message: "Database metrics need the services to scope them to.",
                         });
 
-                    return postgresMetric(cluster, uc, name, range, points, serviceIds);
+                    return databaseMetric(cluster, uc, name, range, points, serviceIds);
                 }
 
                 const window = metricWindow(range, points);

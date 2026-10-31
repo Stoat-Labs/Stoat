@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/state";
     import {
         createCanvasModeQuery,
         resourceHref,
@@ -14,6 +15,7 @@
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
+        AlertAction,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
@@ -27,6 +29,7 @@
     } from "$lib/components/ui/empty";
     import {
         Frame,
+        FrameFooter,
         FrameHeader,
         FramePanel,
         FrameTitle,
@@ -53,6 +56,7 @@
         createQuery,
     } from "@tanstack/svelte-query";
     import {
+        parseAsBoolean,
         parseAsString,
         parseAsStringLiteral,
         useQueryStates,
@@ -62,6 +66,7 @@
     const params = useQueryStates(
         {
             q: parseAsString.withDefault(""),
+            attention: parseAsBoolean,
             dialog: parseAsString,
             cluster: parseAsString.withDefault("all"),
             sort: parseAsStringLiteral([
@@ -166,6 +171,10 @@
         })),
     );
 
+    const needsCluster = $derived(
+        clustersQuery.isSuccess && clusters.length === 0,
+    );
+
     const clusterItems = $derived([
         { value: "all", label: "All clusters" },
         ...clusters.map((cluster) => ({
@@ -197,6 +206,28 @@
         clusters.filter(
             (cluster) => cluster.diagnostics?.status === "degraded",
         ),
+    );
+
+    // A large outage must not push everything else off Home: show the worst few until asked.
+    // Degraded clusters lead because they often explain the failed deployments.
+    const attentionLimit = 5;
+
+    // Home shows the projects to act on; the Projects page is the full directory.
+    const homeProjectLimit = 6;
+
+    const visibleDegradedClusters = $derived(
+        params.attention.current
+            ? degradedClusters
+            : degradedClusters.slice(0, attentionLimit),
+    );
+
+    const visibleFailedResources = $derived(
+        params.attention.current
+            ? failedResources
+            : failedResources.slice(
+                  0,
+                  attentionLimit - visibleDegradedClusters.length,
+              ),
     );
 
     let ready = $state(false);
@@ -269,7 +300,33 @@
             </FrameHeader>
             <FramePanel class="p-0">
                 <ul class="divide-y divide-border">
-                    {#each failedResources as item (item.resource.id)}
+                    {#each visibleDegradedClusters as cluster (cluster.id)}
+                        <li
+                            class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                        >
+                            <p class="min-w-0 text-sm">
+                                <span class="font-medium break-all">
+                                    {cluster.name}
+                                </span>
+                                <span
+                                    class="ml-2 text-warning-foreground"
+                                >
+                                    Cluster degraded
+                                </span>
+                            </p>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                href="/clusters/{cluster.id}"
+                            >
+                                View cluster <ArrowRight
+                                    class="size-4"
+                                    aria-hidden="true"
+                                />
+                            </Button>
+                        </li>
+                    {/each}
+                    {#each visibleFailedResources as item (item.resource.id)}
                         <li
                             class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                         >
@@ -299,34 +356,26 @@
                             </Button>
                         </li>
                     {/each}
-                    {#each degradedClusters as cluster (cluster.id)}
-                        <li
-                            class="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                        >
-                            <p class="min-w-0 text-sm">
-                                <span class="font-medium break-all">
-                                    {cluster.name}
-                                </span>
-                                <span
-                                    class="ml-2 text-warning-foreground"
-                                >
-                                    Cluster degraded
-                                </span>
-                            </p>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                href="/clusters/{cluster.id}"
-                            >
-                                View cluster <ArrowRight
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                            </Button>
-                        </li>
-                    {/each}
                 </ul>
             </FramePanel>
+            {#if failedResources.length + degradedClusters.length > attentionLimit}
+                <FrameFooter class="py-2">
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onclick={() =>
+                            void params.set({
+                                attention: params.attention.current
+                                    ? null
+                                    : true,
+                            })}
+                    >
+                        {params.attention.current
+                            ? "Show fewer"
+                            : `Show all (${failedResources.length + degradedClusters.length})`}
+                    </Button>
+                </FrameFooter>
+            {/if}
         </Frame>
     {/if}
 
@@ -420,6 +469,16 @@
                     Unable to load projects: {projectsQuery.error
                         .message}
                 </AlertDescription>
+                <AlertAction>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        loading={projectsQuery.isFetching}
+                        onclick={() => projectsQuery.refetch()}
+                    >
+                        Retry
+                    </Button>
+                </AlertAction>
             </Alert>
         {:else if projects.length === 0}
             <Empty
@@ -431,18 +490,37 @@
                     </EmptyMedia>
                     <EmptyTitle>No projects yet</EmptyTitle>
                     <EmptyDescription>
-                        Create your first project to get started.
+                        {!needsCluster
+                            ? "Create your first project to get started."
+                            : page.data.isOrganizationAdmin
+                              ? "Projects run on a cluster. Connect one first, then create your project."
+                              : "Projects run on a cluster. Ask an organization admin to connect one."}
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                    <Button
-                        size="sm"
-                        disabled={!ready}
-                        onclick={openCreate}
-                    >
-                        <Plus class="size-4" aria-hidden="true" />
-                        Create project
-                    </Button>
+                    {#if needsCluster}
+                        {#if page.data.isOrganizationAdmin}<Button
+                                size="sm"
+                                href="/clusters?dialog=create-cluster&next={encodeURIComponent(
+                                    '/?dialog=create-project',
+                                )}"
+                            >
+                                <Plus
+                                    class="size-4"
+                                    aria-hidden="true"
+                                />
+                                Connect a cluster
+                            </Button>{/if}
+                    {:else}
+                        <Button
+                            size="sm"
+                            disabled={!ready}
+                            onclick={openCreate}
+                        >
+                            <Plus class="size-4" aria-hidden="true" />
+                            Create project
+                        </Button>
+                    {/if}
                 </EmptyContent>
             </Empty>
         {:else if filtered.length === 0}
@@ -465,7 +543,7 @@
             </p>
         {:else}
             <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {#each filtered as project (project.id)}
+                {#each filtered.slice(0, homeProjectLimit) as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard
                             {project}
@@ -475,6 +553,18 @@
                     </li>
                 {/each}
             </ul>
+            {#if filtered.length > homeProjectLimit}
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    href="/projects{params.q.current
+                        ? `?q=${encodeURIComponent(params.q.current)}`
+                        : ''}"
+                >
+                    View all {filtered.length} projects
+                    <ArrowRight class="size-4" aria-hidden="true" />
+                </Button>
+            {/if}
         {/if}
     </section>
 

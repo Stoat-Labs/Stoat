@@ -74,8 +74,7 @@ test.describe("projects", () => {
         await dialog(page).getByRole("button", { name: "Create Project" }).click();
         await expect(dialog(page)).toHaveCount(0);
 
-        await page.getByRole("link", { name }).first().click();
-        // Projects open on the canvas by default.
+        // Creating a project opens it, on the canvas by default.
         await page.getByRole("link", { name: "List view" }).click();
         await expect(breadcrumb(page)).toContainText(name);
         await expect(page.getByRole("main").getByText("No resources yet")).toBeVisible();
@@ -111,7 +110,7 @@ test.describe("resources", () => {
         const name = unique("api");
         await page.goto(`/projects/${projectId}`);
 
-        await page.getByRole("link", { name: "New resource" }).first().click();
+        await page.getByRole("link", { name: "Create resource" }).first().click();
         await page
             .getByRole("link", { name: /^Compose\b/u })
             .first()
@@ -124,7 +123,7 @@ test.describe("resources", () => {
 
         await replaceCompose(page, nginx);
         await expect(page.getByText("Unsaved changes")).toBeVisible();
-        await expect(page.getByText("Draft saved.")).toBeVisible();
+        await expect(page.getByText("Saved — not deployed")).toBeVisible();
         expect(await draftSpec(resourceId)).toBe(nginx);
 
         // The draft survives a reload and marks the deploy as pending.

@@ -79,9 +79,13 @@
                 return;
             }
 
-            await authClient.organization.setActive({
-                organizationId: result.data.invitation.organizationId,
-            });
+            // The invitation is accepted now, so a failed switch must not read as a failed join.
+            await authClient.organization
+                .setActive({
+                    organizationId:
+                        result.data.invitation.organizationId,
+                })
+                .catch(() => undefined);
             window.location.assign("/");
         } catch {
             error = "Unable to connect. Try again.";

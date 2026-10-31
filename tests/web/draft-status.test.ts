@@ -69,7 +69,7 @@ it("restores the saved-draft message from loaded data without a successful save 
         try {
             const { body } = render(PageWithContext);
             expect(body).toContain("Docker Compose");
-            expect(body.includes("Draft saved.")).toBe(hasDraft);
+            expect(body.includes("Saved — not deployed")).toBe(hasDraft);
             expect(
                 cache
                     .getMutationCache()

@@ -212,7 +212,7 @@ test("commit and push sends the draft to the repository", async ({ page }) => {
     await page.goto(target.path);
 
     await replaceCompose(page, edited);
-    await expect(page.getByText("Draft saved.")).toBeVisible();
+    await expect(page.getByText("Saved — not deployed")).toBeVisible();
     await page.goto(`${target.path}/settings`);
     await panel(page).getByLabel("Commit message").fill("Pin nginx");
     await panel(page).getByRole("button", { name: "Commit & push" }).click();

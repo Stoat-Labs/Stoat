@@ -36,8 +36,6 @@
         parseAsString,
         useQueryState,
     } from "nuqs-svelte";
-    import { parse } from "yaml";
-    import * as v from "valibot";
     import { getCanvasClock } from "../context";
     import type { CanvasResource, CanvasService } from "../graph";
 
@@ -218,42 +216,13 @@
         },
     };
 
-    const composeSchema = v.fallback(
-        v.object({
-            services: v.fallback(
-                v.record(
-                    v.string(),
-                    v.fallback(
-                        v.object({ image: v.optional(v.string()) }),
-                        {},
-                    ),
-                ),
-                {},
-            ),
-        }),
-        { services: {} },
-    );
-
-    // The images a deployment shipped, from its Compose snapshot; the selected service's comes first.
-    function images(spec: string | null) {
-        let services: Record<string, { image?: string }> = {};
-
-        try {
-            services = v.parse(
-                composeSchema,
-                parse(spec ?? ""),
-            ).services;
-        } catch {
-            // An unreadable snapshot just falls back to the resource name.
-        }
-
+    // The images a deployment shipped, resolved with its Variables; the selected service's comes first.
+    function images(deployment: Deployment) {
         const selected = selectedService
-            ? services[selectedService]?.image
+            ? deployment.images[selectedService]
             : undefined;
 
-        const all = Object.values(services).flatMap(
-            (service) => service.image ?? [],
-        );
+        const all = Object.values(deployment.images);
 
         return [...new Set(selected ? [selected, ...all] : all)];
     }
@@ -266,7 +235,7 @@
 
         if (message) return message;
 
-        const [first, ...rest] = images(deployment.spec);
+        const [first, ...rest] = images(deployment);
 
         if (!first) return resource.name;
 
@@ -276,7 +245,7 @@
     }
 
     function avatar(deployment: Deployment) {
-        return icon ?? imageIcon(images(deployment.spec)[0]);
+        return icon ?? imageIcon(images(deployment)[0]);
     }
 
     let pending = $state<"redeploy" | "cancel" | "remove">();

@@ -16,5 +16,24 @@ services:
             retries: 5
             start_period: 20s
 
+    # Cluster monitoring scrapes services whose name ends in `-metrics`.
+    mariadb-metrics:
+        image: prom/mysqld-exporter:v0.21.0
+        restart: unless-stopped
+        command:
+            - --mysqld.address=${MARIADB_INTERNAL_HOST}:3306
+            - --mysqld.username=root
+            - --collect.info_schema.schema_size
+        environment:
+            MYSQLD_EXPORTER_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+        healthcheck:
+            test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9104/"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+        depends_on:
+            mariadb:
+                condition: service_healthy
+
 volumes:
     mariadb_data:

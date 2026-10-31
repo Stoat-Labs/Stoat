@@ -9,6 +9,7 @@
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
+        AlertAction,
         AlertDescription,
     } from "$lib/components/ui/alert";
     import {
@@ -146,7 +147,7 @@
     {#if project && !isInternal}
         <Button size="sm" href={createHref}>
             <Plus class="size-4" aria-hidden="true" />
-            New resource
+            Create resource
         </Button>
     {/if}
 {/snippet}
@@ -247,6 +248,16 @@
                     Unable to load resources: {resourcesQuery.error
                         .message}
                 </AlertDescription>
+                <AlertAction>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        loading={resourcesQuery.isFetching}
+                        onclick={() => resourcesQuery.refetch()}
+                    >
+                        Retry
+                    </Button>
+                </AlertAction>
             </Alert>
         {:else if resources.length === 0}
             <Empty
@@ -264,7 +275,7 @@
                 <EmptyContent>
                     <Button size="sm" href={createHref}>
                         <Plus class="size-4" aria-hidden="true" />
-                        New resource
+                        Create resource
                     </Button>
                 </EmptyContent>
             </Empty>

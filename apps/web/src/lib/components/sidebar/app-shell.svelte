@@ -297,6 +297,7 @@
 </script>
 
 <SidebarProvider
+    open={page.data.sidebarOpen ?? true}
     class={fullHeight ? "xl:h-dvh xl:min-h-0" : undefined}
 >
     {@render sidebar()}

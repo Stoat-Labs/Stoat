@@ -3,6 +3,7 @@ import { assembleCluster, chartSeries, machineList } from "../../apps/web/src/li
 import {
     dnsMetricNames,
     dnsMetricQueries,
+    mysqlMetricQueries,
     parseMetricSeries,
     postgresMetricQueries,
 } from "../../packages/api/src/observability";
@@ -102,4 +103,19 @@ it("scopes Postgres exporter metrics to the resource's services and skips templa
         `max by (machine_id) (pg_settings_max_connections{${scope}})`,
     );
     expect(queries.postgresTransactions).toContain("[60s]");
+});
+
+it("scopes MySQL exporter metrics to the resource's services", () => {
+    const queries = mysqlMetricQueries("cluster-id", 15, ["service-a", "service-b"]);
+
+    const scope =
+        'customer_id="cluster-id",container_label_uncloud_service_id=~"service-a|service-b"';
+
+    expect(queries.mysqlConnections).toBe(
+        `sum by (machine_id) (mysql_global_status_threads_connected{${scope}})`,
+    );
+    expect(queries.mysqlSize).toBe(
+        `sum by (machine_id) (mysql_info_schema_schema_size_bytes{${scope}})`,
+    );
+    expect(queries.mysqlQueries).toContain("[60s]");
 });

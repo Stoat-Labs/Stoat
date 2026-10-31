@@ -1,11 +1,13 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import { page } from "$app/state";
     import { orpc, queryClient } from "$lib/api/orpc";
     import ClusterHealthBadge from "$lib/components/clusters/cluster-health-badge.svelte";
     import CreateClusterDialog from "$lib/components/clusters/create-cluster-dialog.svelte";
     import ProvisionClusterDialog from "$lib/components/clusters/provision-cluster-dialog.svelte";
     import ProvisionStatusBadge from "$lib/components/clusters/provision-status-badge.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
+    import { safeNextPath } from "$lib/params/safe-next";
     import {
         Alert,
         AlertDescription,
@@ -69,6 +71,8 @@
             page: pageParser,
             dialog: parseAsString,
             clusterId: parseAsString,
+            // Where to return once a connected cluster unblocks that page.
+            next: parseAsString,
             source: parseAsStringLiteral([
                 "connect",
                 "server",
@@ -428,7 +432,7 @@
                             })}
                     >
                         <Plus class="size-4" aria-hidden="true" />
-                        New cluster
+                        Create cluster
                     </Button>
                 {/if}
             {/snippet}
@@ -445,10 +449,21 @@
                 !open &&
                 list.dialog.current === "create-cluster"
             )
-                void list.set({ dialog: null, source: null });
+                void list.set({
+                    dialog: null,
+                    source: null,
+                    next: null,
+                });
         }
     }
     source={list.source.current}
+    onconnect={() => {
+        if (list.next.current)
+            void goto(
+                safeNextPath(list.next.current, page.url.origin),
+            );
+        else void list.set({ dialog: null, source: null });
+    }}
     onprovision={(clusterId) =>
         void list.set({
             dialog: "provision",

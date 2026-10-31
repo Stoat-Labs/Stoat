@@ -9,6 +9,13 @@
     import { Button } from "$lib/components/ui/button";
     import { DataTable } from "$lib/components/ui/data-table";
     import {
+        Select,
+        SelectContent,
+        SelectItem,
+        SelectTrigger,
+        SelectValue,
+    } from "$lib/components/ui/select";
+    import {
         TableCell,
         TableHead,
         TableRow,
@@ -301,8 +308,41 @@
 <svelte:window bind:innerHeight={viewportHeight} />
 
 {#snippet statusFilters()}
+    <!-- Six buttons crowd a phone header, so small screens get one select. -->
+    <Select
+        items={filters}
+        bind:value={
+            () => list.status.current,
+            (status) => {
+                const filter = filters.find(
+                    (item) => item.value === status,
+                );
+
+                if (filter && list.status.current !== filter.value)
+                    void list.set(
+                        { status: filter.value, page: 1 },
+                        { history: "push" },
+                    );
+            }
+        }
+    >
+        <SelectTrigger
+            aria-label="Filter by status"
+            class="w-36 sm:hidden"
+        >
+            <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+            {#each filters as filter (filter.value)}<SelectItem
+                    value={filter.value}
+                    label={filter.label}
+                >
+                    {filter.label}
+                </SelectItem>{/each}
+        </SelectContent>
+    </Select>
     <div
-        class="flex max-w-full flex-wrap items-center gap-2"
+        class="hidden max-w-full flex-wrap items-center gap-2 sm:flex"
         role="group"
         aria-label="Filter by status"
     >
@@ -369,13 +409,19 @@
                 <TableRow>
                     <TableHead class="text-center">Status</TableHead>
                     <TableHead>Deployment</TableHead>
-                    <TableHead class="text-center">Cluster</TableHead>
+                    <TableHead
+                        class="hidden text-center sm:table-cell"
+                    >
+                        Cluster
+                    </TableHead>
                     <TableHead
                         class="hidden text-center md:table-cell"
                     >
                         Created
                     </TableHead>
-                    <TableHead class="text-center">
+                    <TableHead
+                        class="hidden text-center sm:table-cell"
+                    >
                         Duration
                     </TableHead>
                     {#if canDelete}<TableHead class="w-10" />{/if}
@@ -426,7 +472,7 @@
                     : deploymentLabel(deployment.name)}
             </a>
         </TableCell>
-        <TableCell class="text-center">
+        <TableCell class="hidden text-center sm:table-cell">
             <a
                 href={`/clusters/${deployment.clusterId}`}
                 onclick={(event) => event.stopPropagation()}
@@ -442,7 +488,7 @@
                     : ago(deployment.createdAt, now)}
             </span>
         </TableCell>
-        <TableCell class="text-center">
+        <TableCell class="hidden text-center sm:table-cell">
             <span class="text-sm text-muted-foreground">
                 {deploymentDuration(
                     deployment.createdAt,

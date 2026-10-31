@@ -9,10 +9,19 @@ import {
     watchDeployment,
     watchDeploymentChanges,
 } from "@stoat/db/deployments";
-import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
+import {
+    clusters,
+    deployments,
+    projects,
+    resourceDeploymentInputs,
+    resources,
+} from "@stoat/db/schema/index";
+import { interpolateComposeVariables } from "@stoat/workflows/ingress";
 import { cancelDeploymentJob } from "@stoat/workflows/runtime";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { parseEnv } from "node:util";
 import * as v from "valibot";
+import YAML from "yaml";
 import { organizationAdminProcedure, organizationProcedure } from "../..";
 import { cancellableStream } from "../../stream";
 
@@ -34,6 +43,36 @@ async function requireOrgCluster(db: Database, organizationId: string, clusterId
     if (!cluster) throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 
     return cluster;
+}
+
+const imagesSchema = v.object({
+    services: v.record(v.string(), v.fallback(v.object({ image: v.optional(v.string()) }), {})),
+});
+
+/**
+ * Each service's image, with `${VAR:-default}` resolved from that deployment's Variables. Only for
+ * deployments the worker hasn't resolved yet (queued, or from before it saved `metadata.images`).
+ */
+function deployedImages(spec: string | null, envText: string | null) {
+    let compose;
+
+    try {
+        compose = v.safeParse(imagesSchema, YAML.parse(spec ?? ""));
+    } catch {
+        // An unreadable snapshot has no images; the panel falls back to the resource name.
+        return {};
+    }
+
+    if (!compose.success) return {};
+
+    const env = parseEnv(envText ?? "");
+    const images: Record<string, string> = {};
+
+    for (const [service, definition] of Object.entries(compose.output.services))
+        if (definition.image)
+            images[service] = interpolateComposeVariables(definition.image, (name) => env[name]);
+
+    return images;
 }
 
 export const deploymentsRouter = {
@@ -251,11 +290,16 @@ export const deploymentsRouter = {
                         resourceName: resources.name,
                         projectId: projects.id,
                         projectName: projects.name,
+                        env: resourceDeploymentInputs.env,
                     })
                     .from(deployments)
                     .innerJoin(clusters, eq(deployments.clusterId, clusters.id))
                     .leftJoin(resources, eq(deployments.resourceId, resources.id))
                     .leftJoin(projects, eq(resources.projectId, projects.id))
+                    .leftJoin(
+                        resourceDeploymentInputs,
+                        eq(resourceDeploymentInputs.deploymentId, deployments.id),
+                    )
                     .where(where)
                     .orderBy(desc(deployments.createdAt))
                     .limit(limit)
@@ -268,7 +312,14 @@ export const deploymentsRouter = {
                     .leftJoin(resources, eq(deployments.resourceId, resources.id))
                     .where(where);
 
-                return { items, total: row?.count ?? 0 };
+                // The Variables never leave the server; only the images they resolve do.
+                return {
+                    items: items.map(({ env, ...item }) => ({
+                        ...item,
+                        images: item.metadata?.images ?? deployedImages(item.spec, env),
+                    })),
+                    total: row?.count ?? 0,
+                };
             };
 
             // New deployments expire the 15s window on their own, but status changes do not, so a

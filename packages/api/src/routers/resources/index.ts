@@ -73,6 +73,7 @@ import {
     validateCompose,
 } from "./git";
 import { resourceDiscardRouter } from "./discard";
+import { resourceMetricsRouter } from "./metrics";
 import { resourceTransferRouter } from "./transfer";
 import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
@@ -351,6 +352,7 @@ export const resourcesRouter = {
     ...resourceGitRouter,
     ...resourceTransferRouter,
     ...resourceDiscardRouter,
+    ...resourceMetricsRouter,
     ...resourceLogsRouter,
     deploy: organizationAdminProcedure
         .input(

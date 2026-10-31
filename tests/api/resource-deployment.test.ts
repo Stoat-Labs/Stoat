@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { Context } from "../../packages/api/src/context";
+import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { insertUserWithOrganization } from "../users";
 
@@ -176,6 +177,28 @@ describe("resource deployment API", () => {
         expect(results.find((result) => result.status === "rejected")).toMatchObject({
             reason: { code: "CONFLICT" },
         });
+    });
+
+    it("lists deployed images resolved with the Variables they were deployed with", async () => {
+        const input = await resource(
+            "services:\n  web:\n    image: ${WEB_IMAGE:-nginx}\n  cache:\n    image: ${CACHE_IMAGE:-valkey}\n",
+        );
+
+        const result = await call(resourcesRouter.deploy, input, { context });
+        await db
+            .update(resourceDeploymentInputs)
+            .set({ env: "WEB_IMAGE=caddy:2\nSECRET=hidden\n" })
+            .where(eq(resourceDeploymentInputs.deploymentId, result.id));
+
+        const { items } = await call(
+            clusterRouter.listAllDeployments,
+            { resourceId: input.resourceId },
+            { context },
+        );
+
+        expect(items).toHaveLength(1);
+        expect(items[0]?.images).toEqual({ web: "caddy:2", cache: "valkey" });
+        expect(JSON.stringify(items)).not.toContain("hidden");
     });
 
     it("rejects empty/invalid Compose, wrong projects, internal resources and non-admins", async () => {

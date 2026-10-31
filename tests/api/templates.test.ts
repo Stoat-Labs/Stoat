@@ -103,6 +103,31 @@ describe("templates", () => {
         });
     });
 
+    it("points the mariadb metrics exporter at the prefixed database service", () => {
+        const version = templates.find(({ appId }) => appId === "mariadb")?.versions["13.0"];
+        const env = expandSecrets(version!.env, "abc.uncld.dev");
+
+        const out = YAML.parse(
+            formatComposeFile(
+                interpolateCompose(version!.compose, env, "a1b2c3d4-e5f6a7b8", "abc.uncld.dev"),
+                "a1b2c3d4-e5f6a7b8",
+            ).yaml,
+        );
+
+        expect(Object.keys(out.services)).toEqual([
+            "a1b2c3d4-e5f6a7b8-mariadb",
+            "a1b2c3d4-e5f6a7b8-mariadb-metrics",
+        ]);
+        const exporter = out.services["a1b2c3d4-e5f6a7b8-mariadb-metrics"];
+
+        expect(exporter.command).toContain(
+            "--mysqld.address=a1b2c3d4-e5f6a7b8-mariadb.internal:3306",
+        );
+        expect(exporter.environment.MYSQLD_EXPORTER_PASSWORD).toBe(
+            out.services["a1b2c3d4-e5f6a7b8-mariadb"].environment.MARIADB_ROOT_PASSWORD,
+        );
+    });
+
     it("renders the jellyfin template with prefixed volumes and the cluster domain", () => {
         const version = templates.find(({ appId }) => appId === "jellyfin")?.versions.latest;
 

@@ -203,6 +203,50 @@ export function postgresMetricQueries(
     };
 }
 
+/** Same order as `postgresMetricNames`, so the metrics view charts either engine alike. */
+export const mysqlMetricNames = [
+    "mysqlConnections",
+    "mysqlMaxConnections",
+    "mysqlQueries",
+    "mysqlCacheHit",
+    "mysqlSize",
+] as const;
+
+export type MysqlMetricName = (typeof mysqlMetricNames)[number];
+
+/**
+ * Tables mysqld-exporter's default collectors create once Alloy scrapes the first sample.
+ * Schema sizes need `--collect.info_schema.schema_size`, so they are left out.
+ */
+export const mysqlMetricTables = [
+    "mysql_global_status_threads_connected",
+    "mysql_global_variables_max_connections",
+    "mysql_global_status_queries",
+    "mysql_global_status_innodb_buffer_pool_read_requests",
+    "mysql_global_status_innodb_buffer_pool_reads",
+] as const;
+
+/** mysqld-exporter series, scoped like `postgresMetricQueries`. */
+export function mysqlMetricQueries(
+    clusterId: string,
+    step: number,
+    serviceIds: string[],
+): Record<MysqlMetricName, string> {
+    const scope = `customer_id=${JSON.stringify(clusterId)},container_label_uncloud_service_id=~${JSON.stringify(serviceIds.join("|"))}`;
+    const window = `${Math.max(60, step * 2)}s`;
+
+    const rate = (metric: string) => `sum by (machine_id) (rate(${metric}{${scope}}[${window}]))`;
+
+    return {
+        mysqlConnections: `sum by (machine_id) (mysql_global_status_threads_connected{${scope}})`,
+        mysqlMaxConnections: `max by (machine_id) (mysql_global_variables_max_connections{${scope}})`,
+        mysqlQueries: rate("mysql_global_status_queries"),
+        // `innodb_buffer_pool_reads` are the logical reads that missed the pool and hit disk.
+        mysqlCacheHit: `100 * (1 - ${rate("mysql_global_status_innodb_buffer_pool_reads")} / ${rate("mysql_global_status_innodb_buffer_pool_read_requests")})`,
+        mysqlSize: `sum by (machine_id) (mysql_info_schema_schema_size_bytes{${scope}})`,
+    };
+}
+
 export function dnsMetricQueries(clusterId: string, step: number): Record<DnsMetricName, string> {
     const scope = `customer_id=${JSON.stringify(clusterId)},job="prometheus.scrape.uncloud"`;
     const window = Math.max(60, step * 2);
@@ -253,10 +297,40 @@ function imageRepository(image: string) {
     return reference.split("/").at(-1)?.split(":")[0] ?? "";
 }
 
+/** Server and exporter images per engine with database metrics, by repository name. */
+const databaseImages = {
+    postgres: {
+        servers: ["postgres", "timescaledb", "postgis"],
+        exporters: ["postgres-exporter", "postgres_exporter"],
+    },
+    mysql: {
+        servers: ["mysql", "mariadb", "percona-server"],
+        exporters: ["mysqld-exporter", "mysqld_exporter"],
+    },
+};
+
+export type MetricsEngine = keyof typeof databaseImages;
+
+const metricsEngines: MetricsEngine[] = ["postgres", "mysql"];
+
+/** The engine whose database server this image runs, e.g. `timescale/timescaledb:2` → `postgres`. */
+export function databaseServerEngine(image: string) {
+    return metricsEngines.find((engine) =>
+        databaseImages[engine].servers.includes(imageRepository(image)),
+    );
+}
+
+/** The engine whose exporter this image runs. */
+export function databaseExporterEngine(image: string) {
+    return metricsEngines.find((engine) =>
+        databaseImages[engine].exporters.includes(imageRepository(image)),
+    );
+}
+
 /** Whether the service runs postgres-exporter. */
 export function isPostgresExporter(service: ObservabilityService) {
-    return service.containers.some((container) =>
-        ["postgres-exporter", "postgres_exporter"].includes(imageRepository(container.image)),
+    return service.containers.some(
+        (container) => databaseExporterEngine(container.image) === "postgres",
     );
 }
 
@@ -264,8 +338,28 @@ export function isPostgresExporter(service: ObservabilityService) {
 export function hasPostgresExporter(services: ObservabilityService[]) {
     return (
         services.some((service) =>
-            service.containers.some((container) => imageRepository(container.image) === "postgres"),
+            service.containers.some(
+                (container) => databaseServerEngine(container.image) === "postgres",
+            ),
         ) && services.some(isPostgresExporter)
+    );
+}
+
+/** Whether the service runs mysqld-exporter. */
+export function isMysqlExporter(service: ObservabilityService) {
+    return service.containers.some(
+        (container) => databaseExporterEngine(container.image) === "mysql",
+    );
+}
+
+/** MySQL metrics exist when services run both a MySQL or MariaDB server and mysqld-exporter next to it. */
+export function hasMysqlExporter(services: ObservabilityService[]) {
+    return (
+        services.some((service) =>
+            service.containers.some(
+                (container) => databaseServerEngine(container.image) === "mysql",
+            ),
+        ) && services.some(isMysqlExporter)
     );
 }
 

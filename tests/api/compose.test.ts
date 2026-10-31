@@ -11,6 +11,7 @@ import {
 } from "../../packages/api/src/compose";
 import {
     composeConfigFiles,
+    composeImages,
     ComposeVariableError,
     inlineComposeConfigs,
     interpolateCompose,
@@ -2371,5 +2372,27 @@ describe("moveComposeEnvironment", () => {
         const compose = "services:\n  a:\n    environment:\n      - A=1\n  b:\n    image: nginx\n";
 
         expect(moveComposeEnvironment(compose, "")).toEqual({ compose, env: "" });
+    });
+});
+
+describe("composeImages", () => {
+    it("resolves images shared through aliases and merge keys", () => {
+        const spec = interpolateCompose(
+            [
+                "x-image: &image nginx:${TAG}",
+                "x-base: &base",
+                "  image: valkey:8",
+                "services:",
+                "  web:",
+                "    image: *image",
+                "  cache:",
+                "    <<: *base",
+                "  built:",
+                "    build: .",
+            ].join("\n"),
+            "TAG=2",
+        );
+
+        expect(composeImages(spec)).toEqual({ web: "nginx:2", cache: "valkey:8" });
     });
 });

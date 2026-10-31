@@ -16,6 +16,7 @@
         InputGroupInput,
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
+    import { safeNextPath } from "$lib/params/safe-next";
     import AtSign from "@lucide/svelte/icons/at-sign";
     import Lock from "@lucide/svelte/icons/lock";
     import User from "@lucide/svelte/icons/user";
@@ -52,28 +53,14 @@
         }[mode],
     );
 
-    // Only same-site paths, so a crafted link can't redirect off-site.
-    const next = $derived.by(() => {
-        if (mode === "setup") return "/setup";
-        const value = page.url.searchParams.get("next");
-
-        if (!value?.startsWith("/")) return "/";
-
-        // Browsers read "/\evil.com" as "//evil.com", so resolve the value first. Dot segments
-        // can also normalise to a "//host" path, which is off-site again once used on its own.
-        try {
-            const target = new URL(value, page.url.origin);
-
-            const path = `${target.pathname}${target.search}${target.hash}`;
-
-            return target.origin === page.url.origin &&
-                !path.startsWith("//")
-                ? path
-                : "/";
-        } catch {
-            return "/";
-        }
-    });
+    const next = $derived(
+        mode === "setup"
+            ? "/setup"
+            : safeNextPath(
+                  page.url.searchParams.get("next"),
+                  page.url.origin,
+              ),
+    );
 
     let name = $state("");
 
