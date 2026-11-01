@@ -50,7 +50,7 @@ describe("resource deployment worker", () => {
     const token = "different-sidecar-bearer-token";
     const sidecarError = `Cannot pull nginx:missing: manifest unknown (credential ${secret}).`;
     const httpError = `load compose file: service web references undefined volume assets. ${"diagnostic ".repeat(500)}Token ${token}; password ${secret}; end of diagnostic.`;
-    const spec = `services:\n  web:\n    image: nginx\n    environment:\n      DB_HOST: db\n      PASSWORD: ${secret}\n    depends_on: [db]\n  db:\n    image: postgres\n    volumes: [data:/data]\nvolumes:\n  data: {}\n`;
+    const spec = `services:\n  web:\n    image: nginx\n    environment:\n      DB_HOST: \${DB_SERVICE_NAME}\n      PASSWORD: ${secret}\n    depends_on: [db]\n  db:\n    image: postgres\n    volumes: [data:/data]\nvolumes:\n  data: {}\n`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let other: ReturnType<typeof createDb>;
@@ -793,6 +793,45 @@ describe("resource deployment worker", () => {
             finish.resolve();
             await db.delete(resources).where(eq(resources.id, otherId));
         }
+    });
+
+    it("makes the resource a database when a service sets x-stoat.engine", async () => {
+        const marked = spec.replace(
+            "    image: postgres\n",
+            "    image: postgres\n    x-stoat:\n      engine: postgres\n",
+        );
+
+        const id = await snapshot(marked);
+        await queueResourceDeployment(id);
+        expect((await terminal(id)).status).toBe("ready");
+        expect(
+            await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
+        ).toMatchObject({
+            type: "database",
+            settings: expect.objectContaining({ engine: "postgresql" }),
+        });
+
+        await db
+            .update(resources)
+            .set({ type: "compose", settings: null })
+            .where(eq(resources.id, resourceId));
+    });
+
+    it("fails before deploying an unknown x-stoat.engine", async () => {
+        const id = await snapshot(
+            spec.replace(
+                "    image: postgres\n",
+                "    image: postgres\n    x-stoat: { engine: oracle }\n",
+            ),
+        );
+
+        const count = requestCount;
+        await queueResourceDeployment(id);
+        const result = await terminal(id);
+
+        expect(result.status).toBe("failed");
+        expect(result.error).toContain(`x-stoat.engine "oracle"`);
+        expect(requestCount).toBe(count);
     });
 
     it("does not send invalid private Compose input to the sidecar", async () => {

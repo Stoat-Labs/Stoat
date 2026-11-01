@@ -318,7 +318,9 @@ describe("ungrouping the Seafile template", () => {
         );
         // Only the database still lives elsewhere.
         expect(referencedResourceIds(server.env)).toEqual([STACK]);
-        expect(YAML.parse(server.compose).services.server.environment.REDIS_HOST).toBe("cache");
+        expect(YAML.parse(server.compose).services.server.environment.REDIS_HOST).toBe(
+            "${CACHE_SERVICE_NAME}",
+        );
     });
 });
 
@@ -487,7 +489,7 @@ describe("hostnames across resources", () => {
         ).toThrow(ComposeMoveError);
     });
 
-    it("collapses a reference to the target into a name when the service joins it", () => {
+    it("collapses a reference to the target into its built-in when the service joins it", () => {
         const target = newId(9);
 
         const stacks: Stack[] = [
@@ -508,7 +510,9 @@ describe("hostnames across resources", () => {
 
         const merged = find(move(stacks, STACK, "cache", target), target);
 
-        expect(YAML.parse(merged.compose).services.web.environment.URL).toBe("redis://cache:6379");
+        expect(YAML.parse(merged.compose).services.web.environment.URL).toBe(
+            "redis://${CACHE_SERVICE_NAME}:6379",
+        );
         expect(merged.env).toBe(`OTHER={{ ${STACK}.EXTRA_SERVICE_NAME }}\n`);
     });
 });
@@ -546,7 +550,7 @@ describe("moves next to unrelated services", () => {
             targetEnv: `HOST={{ ${STACK}.CACHE_SERVICE_NAME }}\n`,
         });
 
-        expect(result.targetEnv).toBe("HOST=cache\n");
+        expect(result.targetEnv).toBe("HOST=${CACHE_SERVICE_NAME}\n");
         expect(YAML.parse(result.target).services.app.command).toEqual(["connect", "${HOST}"]);
     });
 });

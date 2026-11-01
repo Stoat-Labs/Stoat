@@ -51,7 +51,7 @@ services:
             - seafile_data:/shared
         environment:
             INIT_SEAFILE_MYSQL_ROOT_PASSWORD: ${INIT_SEAFILE_MYSQL_ROOT_PASSWORD}
-            SEAFILE_MYSQL_DB_HOST: db
+            SEAFILE_MYSQL_DB_HOST: ${DB_SERVICE_NAME}
             SEAFILE_MYSQL_DB_PORT: "3306"
             SEAFILE_MYSQL_DB_USER: seafile
             SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
@@ -71,7 +71,7 @@ services:
             ENABLE_SEADOC: "true"
             SEADOC_SERVER_URL: ${SEAFILE_SERVER_PROTOCOL}://${SEAFILE_SERVER_HOSTNAME}/sdoc-server
             CACHE_PROVIDER: redis
-            REDIS_HOST: cache
+            REDIS_HOST: ${CACHE_SERVICE_NAME}
             REDIS_PORT: "6379"
             REDIS_PASSWORD: ${REDIS_PASSWORD}
             ENABLE_NOTIFICATION_SERVER: "false"
@@ -106,7 +106,7 @@ services:
         volumes:
             - seadoc_data:/shared
         environment:
-            DB_HOST: db
+            DB_HOST: ${DB_SERVICE_NAME}
             DB_PORT: "3306"
             DB_USER: seafile
             DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD}
@@ -114,7 +114,7 @@ services:
             TIME_ZONE: ${TIME_ZONE}
             JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
             NON_ROOT: "false"
-            SEAHUB_SERVICE_URL: http://server
+            SEAHUB_SERVICE_URL: http://${SERVER_SERVICE_NAME}
         healthcheck:
             # nginx on :80 fronts the sdoc Node server on :7070; any HTTP reply means it is up.
             test: ["CMD", "curl", "-so", "/dev/null", "http://localhost:7070/"]

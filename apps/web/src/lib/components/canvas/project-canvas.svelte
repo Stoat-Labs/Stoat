@@ -199,6 +199,13 @@
             to: parseAsString,
             logStart: parseAsString,
             logEnd: parseAsString,
+            dbTable: parseAsString,
+            dbView: parseAsString,
+            dbPage: parseAsString,
+            dbSort: parseAsString,
+            dbDesc: parseAsString,
+            dbFilters: parseAsString,
+            statementsSort: parseAsString,
         },
         { shallow: true, scroll: false },
     );
@@ -334,6 +341,10 @@
             void regroup(nodeId, toResourceId),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
+        selectMetrics: (nodeId) => {
+            select(nodeId);
+            void tab.set("metrics");
+        },
         removeVolume: (nodeId) => dialogs?.askRemoveVolume(nodeId),
         disconnectVolume: (nodeId) =>
             void dialogs?.disconnectVolume(nodeId),

@@ -349,13 +349,16 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         );
     });
 
-    it("rejects chained references", async () => {
+    it("resolves a reference to a reference through both resources, like a pooler's", async () => {
         await db
             .update(resources)
             .set({ settings: { env: `CHAINED=${ref(workerId, "QUEUE")}\n` } })
             .where(eq(resources.id, postgresId));
 
-        await rejected(`DATABASE_URL=${ref(postgresId, "CHAINED")}\n`, "is itself a reference");
+        const { failure, compose } = await deploy(`DATABASE_URL=${ref(postgresId, "CHAINED")}\n`);
+
+        expect(failure).toBeUndefined();
+        expect(compose.services["p-api"].environment.DATABASE_URL).toBe("jobs");
     });
 
     it("names the referenced resource when its own variables are broken", async () => {

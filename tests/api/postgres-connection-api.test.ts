@@ -293,6 +293,30 @@ describe("external connection API", () => {
         expect(sidecarRequests).toBe(0);
     });
 
+    it("refuses a Variables save over Variables that changed since the edit began", async () => {
+        const { projectId, resourceId } = await resource();
+        const input = { projectId, resourceId };
+
+        await call(resourcesRouter.updateVariables, { ...input, env: "A=1\n" }, { context });
+
+        await expect(
+            call(
+                resourcesRouter.updateVariables,
+                { ...input, env: "B=2\n", expectedEnv: "" },
+                { context },
+            ),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+
+        const saved = await call(
+            resourcesRouter.updateVariables,
+            { ...input, env: "A=1\nB=2\n", expectedEnv: "A=1\n" },
+            { context },
+        );
+
+        // SAFETY: updateVariables always stores Variables as a string in `settings.env`.
+        expect((saved.settings as { env: string }).env).toBe("A=1\nB=2\n");
+    });
+
     it("edits database resources like Compose resources and keeps their engine", async () => {
         const { projectId, resourceId } = await resource();
 

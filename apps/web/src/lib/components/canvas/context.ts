@@ -34,6 +34,8 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     /** Railway's "Disconnect volume": unmounts it from its service, and it stays on the canvas. */
     disconnectVolume: (nodeId: string) => void;
     isVolumeMounted: (nodeId: string) => boolean;
+    /** Opens a database card's Metrics tab, from the tray its exporter folds into. */
+    selectMetrics: (nodeId: string) => void;
     /** Opens a config's pane, from its tray or its own card. */
     selectConfig: (resourceId: string, config: string) => void;
     /** Asks to delete a config; the canvas confirms it first. */

@@ -1,3 +1,4 @@
+import { composeDatabaseService } from "@stoat/workflows/database-engines";
 import { setEnvVariable } from "@stoat/workflows/env-lines";
 import * as v from "valibot";
 import YAML, { isMap, isScalar, isSeq } from "yaml";
@@ -58,12 +59,13 @@ function publishedTcpPort(spec: string, uncloud: boolean) {
     return [{ target: Number(parts.at(-1)), port, host: host === "0.0.0.0" ? undefined : host }];
 }
 
-/** First Compose service, and the TCP port it publishes for PostgreSQL. */
+/** The `x-stoat.engine` service, else the first one, and the TCP port it publishes for PostgreSQL. */
 export function postgresService(compose: string) {
-    const [name, service] =
-        Object.entries(v.parse(composeSchema, YAML.parse(compose)).services)[0] ?? [];
+    const services = v.parse(composeSchema, YAML.parse(compose)).services;
+    const name = composeDatabaseService(compose)?.name ?? Object.keys(services)[0];
 
     if (!name) return;
+    const service = services[name];
 
     const ports = [
         ...(service?.ports ?? []).flatMap((spec) => publishedTcpPort(spec, false)),

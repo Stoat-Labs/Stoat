@@ -53,8 +53,12 @@
         setEnvVariable,
     } from "@stoat/workflows/env-lines";
     import {
+        applyComposeSections,
         composeEnvironment,
+        composeEnvironmentSections,
         setComposeEnvironment,
+        splitRawEnvironment,
+        composeServiceNames,
     } from "./compose-environment";
     import type { CanvasResource } from "../graph";
 
@@ -225,10 +229,98 @@
 
     let rawText = $state("");
 
+    // What the raw editor opened with, so an untouched file can't be saved.
+    let rawInitial = $state("");
+
+    // The Variables and Compose draft the raw editor opened from. Saving applies the edits to these
+    // and refuses if either changed meanwhile, instead of overwriting a teammate's change.
+    let rawEnv = "";
+
+    let rawCompose: string | null = null;
+
+    // The Variables .env, then each Compose service's `environment` under a `# [service]` header.
+    function openRaw() {
+        error = "";
+
+        try {
+            rawEnv = env;
+            rawCompose = resourceQuery.data?.draftSpec ?? null;
+
+            const sections = composeEnvironmentSections(
+                rawCompose ?? "",
+            );
+
+            rawInitial = sections
+                ? `${env.trimEnd()}${env.trim() ? "\n\n" : ""}${sections}\n`
+                : env;
+        } catch (cause) {
+            error =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not open the raw editor.";
+
+            return;
+        }
+
+        rawText = rawInitial;
+        rawOpen = true;
+    }
+
+    async function saveRaw() {
+        let split;
+
+        try {
+            split = splitRawEnvironment(
+                rawText,
+                composeServiceNames(rawCompose ?? ""),
+            );
+        } catch (cause) {
+            error =
+                cause instanceof Error
+                    ? cause.message
+                    : "Could not read the raw editor.";
+
+            return;
+        }
+
+        const { env: nextEnv, sections } = split;
+
+        const spec = applyComposeSections(rawCompose ?? "", sections);
+
+        // Check both before writing either, so a conflict saves nothing.
+        const current = await queryClient.fetchQuery(
+            orpc.resources.getResource.queryOptions({
+                input,
+                staleTime: 0,
+            }),
+        );
+
+        if (
+            v.parse(envSchema, current.settings).env !== rawEnv ||
+            current.draftSpec !== rawCompose
+        ) {
+            error =
+                "These Variables changed while you were editing. Copy your edits, reopen the editor and try again.";
+
+            return;
+        }
+
+        const envSaved =
+            nextEnv.trimEnd() === rawEnv.trimEnd() ||
+            (await save(() => nextEnv, rawEnv));
+
+        if (envSaved && (await saveCompose(() => spec, rawCompose)))
+            rawOpen = false;
+    }
+
     let rawView = $state<EditorView>();
 
     // Every write starts from the freshest saved file, so it only changes what was edited.
-    async function save(next: (current: string) => string) {
+    // With `expected`, the server refuses the write if the saved Variables are no longer that.
+    async function save(
+        next: (current: string) => string,
+        expected?: string,
+    ) {
         saving = true;
         error = "";
 
@@ -243,6 +335,7 @@
             const updated = await client.resources.updateVariables({
                 ...input,
                 env: next(v.parse(envSchema, current.settings).env),
+                expectedEnv: expected,
             });
 
             queryClient.setQueryData(
@@ -269,11 +362,11 @@
         }
     }
 
-    // A Compose row's change rewrites its entry in the freshest saved Compose file.
+    // Compose edits rewrite their entries in the freshest saved Compose file, or in `base`, the
+    // draft an edit started from: then the server refuses the write if the draft is no longer that.
     async function saveCompose(
-        service: string,
-        key: string,
-        value?: string,
+        next: (current: string) => string,
+        base?: string | null,
     ) {
         saving = true;
         error = "";
@@ -286,15 +379,18 @@
                 }),
             );
 
+            const expectedSpec =
+                base === undefined ? current.draftSpec : base;
+
+            const from = expectedSpec ?? "";
+            const spec = next(from);
+
+            if (spec === from) return true;
+
             const updated = await client.resources.updateComposeSpec({
                 ...input,
-                spec: setComposeEnvironment(
-                    current.draftSpec ?? "",
-                    service,
-                    key,
-                    value,
-                ),
-                expectedSpec: current.draftSpec,
+                spec,
+                expectedSpec,
                 expectedSource:
                     current.gitConnectionId && current.gitSource
                         ? {
@@ -327,7 +423,14 @@
 
     function saveRow(row: Row, value?: string) {
         if (row.service !== undefined)
-            return saveCompose(row.service, row.key, value);
+            return saveCompose((current) =>
+                setComposeEnvironment(
+                    current,
+                    row.service ?? "",
+                    row.key,
+                    value,
+                ),
+            );
 
         return save((current) =>
             value === undefined
@@ -442,15 +545,7 @@
             search={search.current}
             onsearch={(value) => void search.set(value)}
         >
-            <Button
-                size="sm"
-                variant="ghost"
-                onclick={() => {
-                    rawText = env;
-                    error = "";
-                    rawOpen = true;
-                }}
-            >
+            <Button size="sm" variant="ghost" onclick={openRaw}>
                 <Braces class="size-4" aria-hidden="true" />
                 Raw Editor
             </Button>
@@ -745,7 +840,9 @@
         <DialogHeader>
             <DialogTitle>Raw Editor</DialogTitle>
             <DialogDescription>
-                Edit the .env file directly. Type {"{{"} to reference another
+                Edit the .env file directly; Compose variables sit
+                under their
+                {"# [service]"} header. Type {"{{"} to reference another
                 resource's variable.
             </DialogDescription>
         </DialogHeader>
@@ -784,12 +881,8 @@
             {#if !readOnly}
                 <Button
                     loading={saving}
-                    disabled={saving || rawText === env}
-                    onclick={async () => {
-                        const text = rawText;
-
-                        if (await save(() => text)) rawOpen = false;
-                    }}
+                    disabled={saving || rawText === rawInitial}
+                    onclick={saveRaw}
                 >
                     Update Variables
                 </Button>

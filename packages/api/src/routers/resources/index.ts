@@ -21,18 +21,13 @@ import {
     GREPTIME_USERNAME,
     MONITORING_DATABASE,
 } from "@stoat/workflows/monitoring-compose";
-import { composeSystemVariables, composeVariables } from "@stoat/workflows/compose";
-import {
-    referencedResourceIds,
-    referenceTargets,
-    referenceKeys,
-    resolveReferences,
-} from "@stoat/workflows/references";
+import { composeSystemVariables } from "@stoat/workflows/compose";
+import { referenceTargets, referenceKeys } from "@stoat/workflows/references";
 import { queueResourceDeployment } from "@stoat/workflows/runtime";
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual, parseEnv } from "node:util";
+import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
 
 import {
@@ -74,6 +69,7 @@ import {
 } from "./git";
 import { resourceDiscardRouter } from "./discard";
 import { resourceMetricsRouter } from "./metrics";
+import { postgresEnv, resourcePostgresRouter } from "./postgres";
 import { resourceTransferRouter } from "./transfer";
 import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
@@ -354,6 +350,7 @@ export const resourcesRouter = {
     ...resourceDiscardRouter,
     ...resourceMetricsRouter,
     ...resourceLogsRouter,
+    ...resourcePostgresRouter,
     deploy: organizationAdminProcedure
         .input(
             v.object({
@@ -1057,9 +1054,18 @@ export const resourcesRouter = {
                 projectId: v.pipe(v.string(), v.uuid()),
                 resourceId: v.pipe(v.string(), v.uuid()),
                 env: v.string(),
+                // The Variables the edit started from; a save over someone else's change is refused.
+                expectedEnv: v.optional(v.string()),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
+            const scope = and(
+                eq(resources.id, input.resourceId),
+                eq(resources.projectId, input.projectId),
+                inArray(resources.type, composeResourceTypes),
+                sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
+            );
+
             const [resource] = await db
                 .update(resources)
                 .set({
@@ -1067,13 +1073,23 @@ export const resourcesRouter = {
                 })
                 .where(
                     and(
-                        eq(resources.id, input.resourceId),
-                        eq(resources.projectId, input.projectId),
-                        inArray(resources.type, composeResourceTypes),
-                        sql`${resources.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
+                        scope,
+                        input.expectedEnv === undefined
+                            ? undefined
+                            : sql`coalesce(${resources.settings}->>'env', '') = ${input.expectedEnv}`,
                     ),
                 )
                 .returning();
+
+            if (!resource && input.expectedEnv !== undefined) {
+                const [exists] = await db.select({ id: resources.id }).from(resources).where(scope);
+
+                if (exists)
+                    throw new ORPCError("CONFLICT", {
+                        message:
+                            "These Variables changed while you were editing. Copy your edits, reopen the editor and try again.",
+                    });
+            }
 
             if (!resource) {
                 throw new ORPCError("NOT_FOUND", { message: "Compose resource not found." });
@@ -1862,33 +1878,7 @@ export const resourcesRouter = {
             if (!service) return null;
 
             const prefix = resourceComposePrefix(resource);
-            const envText = resourceEnv(resource);
-            let env: Record<string, string | undefined>;
-
-            // Resolved like a deploy would, so referenced and interpolated passwords are real.
-            try {
-                const ids = referencedResourceIds(envText);
-
-                const targets =
-                    ids.length > 0 ? await referenceTargets(db, input.clusterId, ids) : [];
-
-                const references = resolveReferences(envText, targets, undefined, resource.id);
-
-                const [project] = await db
-                    .select({ name: projects.name })
-                    .from(projects)
-                    .where(eq(projects.id, resource.projectId));
-
-                // `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` resolve like the deploy does.
-                env = composeVariables(resource.draftSpec, envText, prefix, undefined, references, {
-                    projectId: resource.projectId,
-                    projectName: project?.name ?? "",
-                    resourceId: resource.id,
-                    resourceName: resource.name,
-                });
-            } catch {
-                env = parseEnv(envText);
-            }
+            const env = await postgresEnv(db, input.clusterId, resource, resource.draftSpec);
 
             const url = (host: string, port: number) =>
                 `postgresql://${encodeURIComponent(env.POSTGRES_USER ?? "postgres")}:${encodeURIComponent(env.POSTGRES_PASSWORD ?? "")}@${host}:${port}/${encodeURIComponent(env.POSTGRES_DB ?? env.POSTGRES_USER ?? "postgres")}`;

@@ -19,6 +19,9 @@
     import { fly } from "svelte/transition";
     import type { CanvasResource, CanvasService } from "../graph";
     import CanvasCompose from "./canvas-compose.svelte";
+    import DatabaseConfig from "./database/database-config.svelte";
+    import DatabaseData from "./database/database-data.svelte";
+    import DatabaseStats from "./database/database-stats.svelte";
     import CanvasDeployments from "./canvas-deployments.svelte";
     import CanvasSettings from "./canvas-settings.svelte";
     import CanvasBucketVariables from "./canvas-bucket-variables.svelte";
@@ -55,6 +58,8 @@
     const tabs = [
         "files",
         "deployments",
+        "tables",
+        "config",
         "variables",
         "compose",
         "metrics",
@@ -65,6 +70,8 @@
     const labels: Record<(typeof tabs)[number], string> = {
         files: "Files",
         deployments: "Deployments",
+        tables: "Tables",
+        config: "Config",
         variables: "Variables",
         compose: "Compose",
         metrics: "Metrics",
@@ -74,11 +81,27 @@
 
     const isBucket = $derived(resource.type === "bucket");
 
+    const isPostgres = $derived(
+        resource.type === "database" &&
+            resource.engine === "postgresql",
+    );
+
+    const databaseInput = $derived({
+        clusterId,
+        projectId: resource.projectId,
+        resourceId: resource.id,
+    });
+
     // Buckets have no deployments, containers or logs of their own; only buckets hold files.
     const visibleTabs = $derived(
         isBucket
             ? (["files", "variables", "settings"] as const)
-            : tabs.filter((name) => name !== "files"),
+            : tabs.filter(
+                  (name) =>
+                      name !== "files" &&
+                      ((name !== "tables" && name !== "config") ||
+                          isPostgres),
+              ),
     );
 
     // Matches project-canvas, so Back steps through tabs and stacked logs.
@@ -110,6 +133,8 @@
         active === "logs" ||
             active === "files" ||
             active === "settings" ||
+            active === "config" ||
+            active === "tables" ||
             active === "compose",
     );
 
@@ -202,7 +227,7 @@
 
     <!-- Railway's tabs: 16px labels 32px apart, a 1px underline on the active one. -->
     <div
-        class="flex shrink-0 gap-8 overflow-x-auto border-b border-border px-12"
+        class="no-scrollbar flex shrink-0 gap-8 overflow-x-auto border-b border-border px-12"
         role="tablist"
         aria-label="{resource.name} sections"
     >
@@ -225,12 +250,13 @@
     </div>
 
     <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
-    <!-- Settings, logs and files run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
+    <!-- Settings, logs, files and tables run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
     <div
         class={[
             "min-h-0 flex-1",
             active === "logs" ||
             active === "files" ||
+            active === "tables" ||
             active === "compose"
                 ? "overflow-hidden"
                 : "overflow-y-auto",
@@ -252,6 +278,10 @@
                 {icon}
                 {changed}
             />
+        {:else if active === "tables"}
+            <DatabaseData input={databaseInput} />
+        {:else if active === "config"}
+            <DatabaseConfig input={databaseInput} />
         {:else if active === "variables" && isBucket}
             <CanvasBucketVariables {resource} />
         {:else if active === "variables"}
@@ -259,6 +289,11 @@
         {:else if active === "compose"}
             <CanvasCompose {resource} />
         {:else if active === "metrics"}
+            {#if isPostgres}
+                <div class="@container mb-10">
+                    <DatabaseStats input={databaseInput} />
+                </div>
+            {/if}
             <ResourceMetricsView
                 projectId={resource.projectId}
                 resourceId={resource.id}
