@@ -64,7 +64,7 @@ versions/16/
     compose.yaml   .env      # the database, created as its own resource
 ```
 
-Creating the template creates one canvas resource per folder, named `<resource name> <companion name>` (`Forgejo Database` here). `engine` makes the companion a `database` resource; omit it for a plain `compose` one. A version only ships the companions it needs, and a folder not named in `resources` is ignored.
+Creating the template creates one canvas resource per folder, named `<resource name> <companion name>` (`Forgejo Database` here), and puts the app and its companions in one canvas group named after the resource. The group only draws them together: each still has its own Compose file and deploys on its own. `engine` makes the companion a `database` resource; omit it for a plain `compose` one. A version only ships the companions it needs, and a folder not named in `resources` is ignored.
 
 Variables stay with the resource that owns them. The app's `.env` reads what it needs with `{{ db.NAME }}`, which becomes a reference to the created resource (`{{ <resourceId>.NAME }}`), so the canvas draws the edge and the secret lives only on the database:
 
@@ -73,7 +73,7 @@ DB_HOST={{ db.POSTGRES_INTERNAL_HOST }}
 DB_PASSWORD={{ db.POSTGRES_PASSWORD }}
 ```
 
-`NAME` is a variable in the companion's `.env` or one of its built-ins. Built-ins are named after the companion's Compose service key, so a service called `postgres` gives `{{ db.POSTGRES_INTERNAL_HOST }}`. References only work in `.env`, never in `compose.yaml`, so pass them to containers through a variable (`DB_HOST: ${DB_HOST}`). Required variables and secrets are collected across all the resources. A reference cannot point at another reference.
+`NAME` is a variable in the companion's `.env` or one of its built-ins. Built-ins are named after the companion's Compose service key, so a service called `postgres` gives `{{ db.POSTGRES_INTERNAL_HOST }}`. References only work in `.env`, never in `compose.yaml`, so pass them to containers through a variable (`DB_HOST: ${DB_HOST}`). Required variables and secrets are collected across all the resources. A reference may point at another reference (it resolves through each resource), but a cycle fails the deploy.
 
 Resources deploy independently, so `depends_on` cannot cross them: the app may start before its database is healthy and relies on `restart: unless-stopped` to retry.
 
@@ -111,7 +111,7 @@ Build public hostnames from `<SERVICE>_SERVICE_NAME`, not a fixed name, so two c
 
 `x-ports` follows Uncloud: `[hostname:]container_port/https` for HTTP(S) ingress, and `published:container/tcp@host` (or `/udp@host`) for raw TCP or UDP. Uncloud does not route TCP or UDP through ingress, so those ports need `@host`.
 
-For a `postgresql` database, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, and put the Postgres service first in `compose.yaml`. The service page builds:
+For a `postgresql` database, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, and put the Postgres service first in `compose.yaml` (or mark it with `x-stoat: { engine: postgres }`, which wins over order). The service page builds:
 
 - an **internal** URL at `<prefix>-<compose-service>.internal:5432`
 - an **external** URL only when that service publishes container port 5432 over TCP (`ports` or Uncloud `x-ports`)

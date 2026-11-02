@@ -1,5 +1,5 @@
 <script lang="ts" module>
-    export const edgeLayers = ["references", "dependencies"] as const;
+    export const edgeLayers = ["references"] as const;
 
     export type EdgeLayer = (typeof edgeLayers)[number];
 </script>
@@ -185,13 +185,6 @@
                         toggle("references", checked)}
                 >
                     Variable references
-                </MenuCheckboxItem>
-                <MenuCheckboxItem
-                    checked={!hidden.includes("dependencies")}
-                    onCheckedChange={(checked) =>
-                        toggle("dependencies", checked)}
-                >
-                    Service dependencies
                 </MenuCheckboxItem>
             </MenuGroup>
         </MenuPopup>

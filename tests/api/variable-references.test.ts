@@ -8,6 +8,7 @@ import {
     deployments,
     projects,
     resourceDeploymentInputs,
+    resourceGroups,
     resources,
 } from "@stoat/db/schema/index";
 import * as runtime from "@stoat/workflows/runtime";
@@ -427,6 +428,16 @@ describe("variable references API (PostgreSQL)", () => {
             );
 
             const [row] = await db.select().from(resources).where(eq(resources.id, app!.id));
+
+            // Both land in one canvas group named after the app.
+            const [group] = await db
+                .select()
+                .from(resourceGroups)
+                .where(eq(resourceGroups.id, row!.groupId!));
+
+            expect(group).toMatchObject({ projectId, name: "Git" });
+            expect(database?.groupId).toBe(row?.groupId);
+
             const env = parseEnv(resourceEnv({ settings: row?.settings }));
 
             expect(env.DB_HOST).toBe(ref(database!.id, "POSTGRES_INTERNAL_HOST"));

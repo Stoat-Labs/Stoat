@@ -23,15 +23,17 @@ export type CanvasVolume = CanvasGraph[number]["volumes"][number];
 
 export type CanvasConfig = CanvasGraph[number]["configs"][number];
 
+export type CanvasGroup = Awaited<ReturnType<AppRouterClient["resources"]["listGroups"]>>[number];
+
 export type CardData = {
     resource: CanvasResource;
-    /** Absent for buckets and resources without a readable Compose spec. */
-    service: CanvasService | undefined;
+    /** Every service of the resource's Compose; empty for buckets and unreadable specs. */
+    services: CanvasService[];
     icon: string | null;
     draftOnly: boolean;
     parseError: boolean;
-    /** Cards inside a group are named after their service; the group carries the resource name. */
-    grouped: boolean;
+    /** The group whose frame the card sits in. */
+    groupId: string | undefined;
     /** Set on a volume no service mounts: it stands alone on the canvas instead of in a tray. */
     volume: CanvasVolume | undefined;
     /** Set on a config no service mounts, like `volume`. */
@@ -39,14 +41,13 @@ export type CardData = {
 };
 
 export type GroupData = {
-    resource: CanvasResource;
+    group: CanvasGroup;
     icon: string | null;
-    serviceCount: number;
-    /** A dragged card from another resource hovers this frame and would move in on drop. */
+    /** A dragged card from outside hovers this frame and would join it on drop. */
     dropTarget: boolean;
-    /** Railway's "Hide contents": the frame shrinks to a card showing its services' icons. */
+    /** Railway's "Hide contents": the frame shrinks to a card showing its resources' icons. */
     collapsed: boolean;
-    services: { name: string; icon: string | null }[];
+    resources: { id: string; name: string; icon: string | null }[];
 };
 
 // Railway's collapsed group card.
@@ -82,13 +83,16 @@ export const COLUMN_GAP = 96;
 // Railway snaps to a 24px grid, so every auto-layout gap is a multiple of 24.
 const ROW_GAP = 48;
 
-// Stacks with more services than this wrap into two columns.
+// A resource with several services lists each one on its card, one row apiece.
+export const SERVICE_ROW = 32;
+
+// Groups with more cards than this wrap into two columns.
 const MAX_STACK = 4;
 
 // Target width:height of the auto layout, close to a desktop viewport.
 const ASPECT_RATIO = 16 / 9;
 
-/** `<resourceId>` for top-level nodes, `<resourceId>:<service>` for cards inside a group. */
+/** `<resourceId>:<service>` selects one service of a resource's card. */
 export function serviceNodeId(resourceId: string, service: string) {
     return `${resourceId}:${service}`;
 }
@@ -130,12 +134,17 @@ export function parseNodeId(nodeId: string) {
 }
 
 /** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
-export function trayCount(service: CanvasService | undefined) {
-    return (
-        (service?.volumes.length ?? 0) +
-        (service?.configs.length ?? 0) +
-        (service?.exporters?.length ?? 0)
-    );
+export function cardTrays(services: CanvasService[]) {
+    return services.flatMap((service) => [
+        ...service.volumes.map((name) => ({ kind: "volume" as const, name })),
+        ...service.configs.map((name) => ({ kind: "config" as const, name })),
+        ...(service.exporters ?? []).map((name) => ({ kind: "metrics" as const, name })),
+    ]);
+}
+
+/** The card without its trays: a lone service fits the header, more get a row each. */
+export function cardBodyHeight(services: CanvasService[]) {
+    return CARD_HEIGHT + (services.length > 1 ? services.length * SERVICE_ROW : 0);
 }
 
 /** Adds `exporters` as trays on `server`, one of `entry`'s services. */
@@ -219,8 +228,8 @@ export function foldExporters(graph: CanvasGraph): CanvasGraph {
     return [...byId.values()];
 }
 
-function cardHeight(service: CanvasService | undefined) {
-    return CARD_HEIGHT + trayCount(service) * (VOLUME_TRAY - VOLUME_OVERLAP);
+function cardHeight(services: CanvasService[]) {
+    return cardBodyHeight(services) + cardTrays(services).length * (VOLUME_TRAY - VOLUME_OVERLAP);
 }
 
 /**
@@ -275,10 +284,6 @@ export function frameRect(cards: Rect[]): Rect {
     };
 }
 
-/**
- * Where a card dropped into a frame should land: where it was dropped, unless that covers a card
- * already there, in which case the next free row under them.
- */
 /** Where a card joins a frame from elsewhere: under its lowest card, in line with its first column. */
 export function slotBelow(members: Rect[]): XYPosition {
     return {
@@ -287,6 +292,10 @@ export function slotBelow(members: Rect[]): XYPosition {
     };
 }
 
+/**
+ * Where a card dropped into a frame should land: where it was dropped, unless that covers a card
+ * already there, in which case the next free row under them.
+ */
 export function freeSlot(drop: Rect, members: Rect[]): XYPosition {
     const overlaps = members.some(
         (member) =>
@@ -311,7 +320,7 @@ export function freeSlot(drop: Rect, members: Rect[]): XYPosition {
  */
 export function repairOverlaps(nodes: CanvasNode[]) {
     const blocks = nodes.flatMap((node) =>
-        node.type === "stack" || !node.data.grouped
+        node.type === "stack" || !node.data.groupId
             ? [{ id: node.id, rect: nodeRect(node), frame: node.type === "stack" }]
             : [],
     );
@@ -335,7 +344,7 @@ export function repairOverlaps(nodes: CanvasNode[]) {
     for (const node of nodes) {
         if (node.type !== "card") continue;
 
-        const delta = shift.get(node.data.grouped ? node.data.resource.id : node.id) ?? 0;
+        const delta = shift.get(node.data.groupId ?? node.id) ?? 0;
 
         positions[node.id] = { x: node.position.x, y: node.position.y + delta };
     }
@@ -417,11 +426,10 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
     if (!dragged) return {};
 
     const blocks = nodes.filter(
-        (node) => !node.hidden && (node.type === "stack" || !node.data.grouped),
+        (node) => !node.hidden && (node.type === "stack" || !node.data.groupId),
     );
 
-    const ownFrame =
-        dragged.type === "card" && dragged.data.grouped ? dragged.data.resource.id : undefined;
+    const ownFrame = dragged.type === "card" ? dragged.data.groupId : undefined;
 
     const obstacles = [
         ...blocks.filter((node) => node.id !== draggedId && node.id !== ownFrame),
@@ -429,8 +437,7 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
             ? nodes.filter(
                   (node) =>
                       node.type === "card" &&
-                      node.data.grouped &&
-                      node.data.resource.id === ownFrame &&
+                      node.data.groupId === ownFrame &&
                       node.id !== draggedId,
               )
             : []),
@@ -443,10 +450,7 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
     for (const node of nodes) {
         const moves =
             node.id === draggedId ||
-            (dragged.type === "stack" &&
-                node.type === "card" &&
-                node.data.grouped &&
-                node.data.resource.id === draggedId);
+            (dragged.type === "stack" && node.type === "card" && node.data.groupId === draggedId);
 
         if (node.type === "card" && moves)
             positions[node.id] = { x: node.position.x + delta.x, y: node.position.y + delta.y };
@@ -464,9 +468,9 @@ export function refitFrames(nodes: CanvasNode[]) {
     const members = new Map<string, Rect[]>();
 
     for (const node of nodes)
-        if (node.type === "card" && node.data.grouped)
-            members.set(node.data.resource.id, [
-                ...(members.get(node.data.resource.id) ?? []),
+        if (node.type === "card" && node.data.groupId)
+            members.set(node.data.groupId, [
+                ...(members.get(node.data.groupId) ?? []),
                 nodeRect(node),
             ]);
 
@@ -487,61 +491,67 @@ export function refitFrames(nodes: CanvasNode[]) {
     });
 }
 
-type Block = {
+/** One card: a resource, or a volume or config no service mounts. */
+type Item = {
     /** The resource id, or the node id of a volume or config that stands alone. */
     id: string;
-    volume?: CanvasVolume;
-    config?: CanvasConfig;
     resource: CanvasResource;
     entry: CanvasGraph[number] | undefined;
+    volume?: CanvasVolume;
+    config?: CanvasConfig;
     width: number;
     height: number;
-    /** Card positions relative to the group; empty for a lone card. */
-    cards: { service: CanvasService; rect: Rect }[];
 };
 
-function block(resource: CanvasResource, entry: CanvasGraph[number] | undefined): Block {
-    const services = entry?.services ?? [];
+/** What the auto layout places: a group's frame with its cards, or a card on its own. */
+type Block = {
+    /** The group id for a frame, the card's own id otherwise. */
+    id: string;
+    group: CanvasGroup | undefined;
+    width: number;
+    height: number;
+    /** Card positions relative to the block. */
+    cards: { item: Item; rect: Rect }[];
+};
 
-    if (services.length < 2)
-        return {
-            id: resource.id,
-            resource,
-            entry,
-            width: CARD_WIDTH,
-            height: cardHeight(services[0]),
-            cards: [],
-        };
+function loneBlock(item: Item): Block {
+    return {
+        id: item.id,
+        group: undefined,
+        width: item.width,
+        height: item.height,
+        cards: [{ item, rect: { x: 0, y: 0, width: item.width, height: item.height } }],
+    };
+}
 
-    // Big stacks wrap into two columns instead of growing into a tower.
-    const columnCount = services.length > MAX_STACK ? 2 : 1;
+function groupBlock(group: CanvasGroup, items: Item[]): Block {
+    // Big groups wrap into two columns instead of growing into a tower.
+    const columnCount = items.length > MAX_STACK ? 2 : 1;
     const cards: Block["cards"] = [];
     let y = GROUP_HEADER;
 
-    for (let start = 0; start < services.length; start += columnCount) {
-        const row = services.slice(start, start + columnCount);
-        const rowHeight = Math.max(...row.map(cardHeight));
+    for (let start = 0; start < items.length; start += columnCount) {
+        const row = items.slice(start, start + columnCount);
 
-        row.forEach((service, column) =>
+        row.forEach((item, column) =>
             cards.push({
-                service,
+                item,
                 rect: {
                     x: GROUP_PADDING + column * (CARD_WIDTH + GROUP_PADDING),
                     y,
-                    width: CARD_WIDTH,
-                    // Its own height, not the row's: edges attach to the node's sides, so a card
-                    // without volumes beside one with them would get handles below its border.
-                    height: cardHeight(service),
+                    width: item.width,
+                    // Its own height, not the row's: edges attach to the node's sides, so a short
+                    // card beside a tall one would get handles below its border.
+                    height: item.height,
                 },
             }),
         );
-        y += rowHeight + GROUP_PADDING;
+        y += Math.max(...row.map((item) => item.height)) + GROUP_PADDING;
     }
 
     return {
-        id: resource.id,
-        resource,
-        entry,
+        id: group.id,
+        group,
         width: columnCount * CARD_WIDTH + (columnCount + 1) * GROUP_PADDING,
         height: y,
         cards,
@@ -552,7 +562,7 @@ function block(resource: CanvasResource, entry: CanvasGraph[number] | undefined)
  * Reference depth decides the column order; each depth then wraps into as many columns as
  * keep the whole canvas roughly landscape, like Railway's grid.
  */
-function autoLayout(blocks: Block[], depth: Map<string, number>) {
+function autoLayout(blocks: Block[], depthOf: (block: Block) => number) {
     const area = blocks.reduce(
         (total, item) => total + (item.width + COLUMN_GAP) * (item.height + ROW_GAP),
         0,
@@ -563,9 +573,7 @@ function autoLayout(blocks: Block[], depth: Map<string, number>) {
         Math.sqrt(area / ASPECT_RATIO),
     );
 
-    const depths = [...new Set(blocks.map((item) => depth.get(item.resource.id) ?? 0))].toSorted(
-        (a, b) => a - b,
-    );
+    const depths = [...new Set(blocks.map(depthOf))].toSorted((a, b) => a - b);
 
     const positions = new Map<string, XYPosition>();
     let x = 0;
@@ -575,7 +583,7 @@ function autoLayout(blocks: Block[], depth: Map<string, number>) {
         let columnWidth = 0;
 
         for (const item of blocks) {
-            if ((depth.get(item.resource.id) ?? 0) !== level) continue;
+            if (depthOf(item) !== level) continue;
 
             if (y > 0 && y + item.height > maxHeight) {
                 x += columnWidth + COLUMN_GAP;
@@ -612,172 +620,148 @@ function facingHandles(source: Rect, target: Rect) {
 export function buildCanvas(
     resources: CanvasResource[],
     graph: CanvasGraph,
+    groups: CanvasGroup[],
     logos: CanvasLogos,
     saved: Positions,
     collapsed: ReadonlySet<string> = new Set(),
 ) {
     // Uploaded resource icons win; otherwise a matching template logo, then a known image.
-    const serviceIcon = (service: CanvasService | undefined) =>
-        (service?.template ? logos[service.template] : undefined) ?? imageIcon(service?.image);
+    const serviceIcon = (service: CanvasService) =>
+        (service.template ? logos[service.template] : undefined) ?? imageIcon(service.image);
+
+    const resourceIcon = (resource: CanvasResource, services: CanvasService[]) =>
+        resource.icon ?? services.map(serviceIcon).find(Boolean) ?? engineIcon(resource.engine);
 
     const folded = foldExporters(graph);
     const byId = new Map(folded.map((node) => [node.id, node]));
     // Exporter resources folded into their database's card have no node of their own.
     const hidden = new Set(graph.flatMap((node) => (byId.has(node.id) ? [] : [node.id])));
 
-    const blocks = resources.flatMap((resource) =>
-        hidden.has(resource.id)
-            ? []
-            : [
-                  block(resource, byId.get(resource.id)),
-                  ...(byId.get(resource.id)?.volumes ?? []).flatMap((volume): Block[] =>
-                      volume.services.length
-                          ? []
-                          : [
-                                {
-                                    id: volumeNodeId(resource.id, volume.name),
-                                    volume,
-                                    resource,
-                                    entry: byId.get(resource.id),
-                                    width: CARD_WIDTH,
-                                    height: VOLUME_CARD_HEIGHT,
-                                    cards: [],
-                                },
-                            ],
-                  ),
-                  ...(byId.get(resource.id)?.configs ?? []).flatMap((config): Block[] =>
-                      config.services.length
-                          ? []
-                          : [
-                                {
-                                    id: configNodeId(resource.id, config.name),
-                                    config,
-                                    resource,
-                                    entry: byId.get(resource.id),
-                                    width: CARD_WIDTH,
-                                    height: VOLUME_CARD_HEIGHT,
-                                    cards: [],
-                                },
-                            ],
-                  ),
-              ],
+    const items = resources.flatMap((resource): Item[] => {
+        if (hidden.has(resource.id)) return [];
+
+        const entry = byId.get(resource.id);
+
+        const alone = { resource, entry, width: CARD_WIDTH, height: VOLUME_CARD_HEIGHT };
+
+        return [
+            {
+                id: resource.id,
+                resource,
+                entry,
+                width: CARD_WIDTH,
+                height: cardHeight(entry?.services ?? []),
+            },
+            ...(entry?.volumes ?? []).flatMap((volume) =>
+                volume.services.length
+                    ? []
+                    : [{ ...alone, id: volumeNodeId(resource.id, volume.name), volume }],
+            ),
+            ...(entry?.configs ?? []).flatMap((config) =>
+                config.services.length
+                    ? []
+                    : [{ ...alone, id: configNodeId(resource.id, config.name), config }],
+            ),
+        ];
+    });
+
+    // In resource order, a group taking the spot of its first card; a group nothing is in
+    // has no frame, and a resource whose group is unknown stands alone.
+    const blocks: Block[] = [];
+
+    for (const item of items) {
+        const group = groups.find((entry) => entry.id === item.resource.groupId);
+
+        if (!group) blocks.push(loneBlock(item));
+        else if (!blocks.some((block) => block.id === group.id))
+            blocks.push(
+                groupBlock(
+                    group,
+                    items.filter((other) => other.resource.groupId === group.id),
+                ),
+            );
+    }
+
+    const depth = columns(folded);
+
+    const auto = autoLayout(blocks, (block) =>
+        Math.min(...block.cards.map(({ item }) => depth.get(item.resource.id) ?? 0)),
     );
 
-    const auto = autoLayout(blocks, columns(folded));
     const frames: CanvasNode[] = [];
     const cards: CanvasNode[] = [];
 
-    for (const item of blocks) {
-        const { resource, entry } = item;
-        const draftOnly = entry?.draftOnly ?? false;
-        const origin = auto.get(item.id) ?? { x: 0, y: 0 };
+    for (const block of blocks) {
+        const origin = auto.get(block.id) ?? { x: 0, y: 0 };
+        const isCollapsed = block.group !== undefined && collapsed.has(block.group.id);
 
-        if (item.volume || item.config) {
-            cards.push({
-                id: item.id,
-                type: "card",
-                position: saved[item.id] ?? origin,
-                width: item.width,
-                height: item.height,
-                zIndex: 1,
-                data: {
-                    resource,
-                    service: undefined,
-                    icon: null,
-                    draftOnly,
-                    parseError: false,
-                    grouped: false,
-                    volume: item.volume,
-                    config: item.config,
-                },
-            });
-            continue;
-        }
-
-        if (item.cards.length === 0) {
-            const service = entry?.services[0];
-
-            cards.push({
-                id: resource.id,
-                type: "card",
-                // A stack that shrank to one service keeps that service's spot.
-                position:
-                    saved[resource.id] ??
-                    (service ? saved[serviceNodeId(resource.id, service.name)] : undefined) ??
-                    origin,
-                width: item.width,
-                height: item.height,
-                zIndex: 1,
-                data: {
-                    resource,
-                    service,
-                    icon: resource.icon ?? serviceIcon(service) ?? engineIcon(resource.engine),
-                    draftOnly,
-                    parseError: entry?.parseError ?? false,
-                    grouped: false,
-                    volume: undefined,
-                },
-            });
-            continue;
-        }
-
-        const members = item.cards.map(({ service, rect }) => {
-            const id = serviceNodeId(resource.id, service.name);
+        const members = block.cards.map(({ item, rect }): CanvasNode => {
+            const { resource, entry } = item;
+            const own = !item.volume && !item.config;
+            const services = own ? (entry?.services ?? []) : [];
+            const first = services[0];
 
             return {
-                id,
-                type: "card" as const,
-                position: saved[id] ?? { x: origin.x + rect.x, y: origin.y + rect.y },
+                id: item.id,
+                type: "card",
+                // A card that used to be a service in its resource's own frame keeps that spot.
+                position: saved[item.id] ??
+                    (own && first ? saved[serviceNodeId(resource.id, first.name)] : undefined) ?? {
+                        x: origin.x + rect.x,
+                        y: origin.y + rect.y,
+                    },
                 width: rect.width,
                 height: rect.height,
                 zIndex: 1,
+                // Hidden cards keep their positions, so showing the contents restores the layout.
+                hidden: isCollapsed,
                 data: {
                     resource,
-                    service,
-                    icon: serviceIcon(service),
-                    draftOnly,
-                    parseError: false,
-                    grouped: true,
-                    volume: undefined,
+                    services,
+                    icon: own ? resourceIcon(resource, services) : null,
+                    draftOnly: entry?.draftOnly ?? false,
+                    parseError: own && (entry?.parseError ?? false),
+                    groupId: block.group?.id,
+                    volume: item.volume,
+                    config: item.config,
                 },
             };
         });
 
-        const frame = frameRect(
-            members.map((member) => ({
-                ...member.position,
-                width: member.width,
-                height: member.height,
-            })),
-        );
+        cards.push(...members);
 
-        const isCollapsed = collapsed.has(resource.id);
+        if (!block.group) continue;
+
+        const frame = frameRect(members.map(nodeRect));
+
+        const shown = block.cards.flatMap(({ item }) =>
+            item.volume || item.config
+                ? []
+                : [
+                      {
+                          id: item.resource.id,
+                          name: item.resource.name,
+                          icon: resourceIcon(item.resource, item.entry?.services ?? []),
+                      },
+                  ],
+        );
 
         // Frames sit behind every card and edge, like Railway's; a collapsed one is a card itself.
         frames.push({
-            id: resource.id,
+            id: block.group.id,
             type: "stack",
             position: { x: frame.x, y: frame.y },
             width: isCollapsed ? COLLAPSED_WIDTH : frame.width,
             height: isCollapsed ? COLLAPSED_HEIGHT : frame.height,
             zIndex: isCollapsed ? 1 : -1,
             data: {
+                group: block.group,
                 collapsed: isCollapsed,
-                services: item.cards.map(({ service }) => ({
-                    name: service.name,
-                    icon: serviceIcon(service),
-                })),
-                resource,
-                icon:
-                    resource.icon ??
-                    item.cards.map(({ service }) => serviceIcon(service)).find(Boolean) ??
-                    engineIcon(resource.engine),
-                serviceCount: item.cards.length,
+                resources: shown,
+                icon: block.group.icon ?? null,
                 dropTarget: false,
             },
         });
-        // Hidden cards keep their positions, so showing the contents restores the layout.
-        cards.push(...members.map((member) => ({ ...member, hidden: isCollapsed })));
     }
 
     const nodes = [...frames, ...cards];
@@ -785,50 +769,40 @@ export function buildCanvas(
     return { nodes, edges: buildEdges(nodes, folded) };
 }
 
-/** Dependency and reference edges, attached to the sides of each pair that face each other. */
+/** Reference edges between cards, attached to the sides of each pair that face each other. */
 export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
-    // Cards hidden in a collapsed frame have no edges; references still reach the frame.
     const rects = new Map(
         nodes.flatMap((node) => (node.hidden ? [] : [[node.id, nodeRect(node)] as const])),
     );
 
-    const edges: Edge[] = [];
+    // A card hidden in a collapsed frame hands its references to the frame.
+    const frameOf = new Map(
+        nodes.flatMap((node) =>
+            node.type === "card" && node.data.groupId
+                ? [[node.id, node.data.groupId] as const]
+                : [],
+        ),
+    );
 
-    for (const entry of graph) {
-        for (const service of entry.services) {
-            for (const dependency of service.dependsOn) {
-                const source = serviceNodeId(entry.id, service.name);
-                const target = serviceNodeId(entry.id, dependency);
-                const from = rects.get(source);
-                const to = rects.get(target);
+    const shown = (id: string) => (rects.has(id) ? id : frameOf.get(id));
 
-                if (!from || !to) continue;
+    const edges = new Map<string, Edge>();
 
-                edges.push({
-                    id: `depends:${source}:${dependency}`,
-                    source,
-                    target,
-                    ...facingHandles(from, to),
-                });
-            }
+    for (const entry of graph)
+        for (const reference of entry.references) {
+            const source = shown(entry.id);
+            const target = shown(reference);
+            const from = source && rects.get(source);
+            const to = target && rects.get(target);
+
+            if (!source || !target || !from || !to || source === target) continue;
+
+            const id = `reference:${source}:${target}`;
+
+            edges.set(id, { id, source, target, ...facingHandles(from, to) });
         }
 
-        for (const target of entry.references) {
-            const from = rects.get(entry.id);
-            const to = rects.get(target);
-
-            if (!from || !to) continue;
-
-            edges.push({
-                id: `reference:${entry.id}:${target}`,
-                source: entry.id,
-                target,
-                ...facingHandles(from, to),
-            });
-        }
-    }
-
-    return edges;
+    return [...edges.values()];
 }
 
 function storageKey(projectId: string) {

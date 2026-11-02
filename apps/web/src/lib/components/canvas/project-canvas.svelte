@@ -1,6 +1,5 @@
 <script lang="ts">
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { allExited } from "$lib/resources/container-info";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
@@ -58,6 +57,7 @@
         type EdgeLayer,
     } from "./controls/canvas-controls.svelte";
     import GroupDialogs from "./controls/group-dialogs.svelte";
+    import MoveServiceDialog from "./controls/move-service-dialog.svelte";
     import {
         buildCanvas,
         buildEdges,
@@ -73,11 +73,13 @@
         refitFrames,
         repairOverlaps,
         saveCollapsed,
+        serviceNodeId,
         settle,
         slotBelow,
         volumeNodeId,
         volumeTargets,
         type CanvasGraph,
+        type CanvasGroup,
         type CanvasLogos,
         type CanvasNode,
         type CanvasResource,
@@ -104,6 +106,7 @@
         isInternal,
         resources,
         graph,
+        groups,
         logos,
         layout,
     }: {
@@ -113,6 +116,7 @@
         isInternal: boolean;
         resources: CanvasResource[];
         graph: CanvasGraph;
+        groups: CanvasGroup[];
         logos: CanvasLogos;
         layout: Positions;
     } = $props();
@@ -264,7 +268,7 @@
 
     let collapsed = $state.raw<ReadonlySet<string>>(new Set());
 
-    // A frame's ⋮ menu edit in progress, `<action>:<resourceId>`; in the URL like other dialogs.
+    // A menu's dialog in progress, `<action>:<groupId or resourceId>`; in the URL like other dialogs.
     const edit = useQueryState(
         "edit",
         parseAsString.withOptions({ shallow: true, scroll: false }),
@@ -278,15 +282,29 @@
                 "rename",
                 "icon-upload",
                 "icon-link",
+                "new-group",
+                "move-service",
                 "move",
                 "copy",
                 "duplicate",
             ].find((name): name is GroupAction => name === action),
+            group: groups.find((group) => group.id === resourceId),
             resource: resources.find(
                 (resource) => resource.id === resourceId,
             ),
         };
     });
+
+    // Only groups something is in have a frame, so only they are offered.
+    const framedGroups = $derived(
+        groups.flatMap((group) =>
+            resources.some(
+                (resource) => resource.groupId === group.id,
+            )
+                ? [{ id: group.id, name: group.name }]
+                : [],
+        ),
+    );
 
     setCanvasActions({
         edit: (action, resourceId) =>
@@ -337,8 +355,10 @@
                 ? "stopped"
                 : "running";
         },
-        regroup: (nodeId, toResourceId) =>
-            void regroup(nodeId, toResourceId),
+        setGroup: (resourceId, groupId) =>
+            void setGroup(resourceId, groupId),
+        selectService: (resourceId, service) =>
+            select(serviceNodeId(resourceId, service)),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
         selectMetrics: (nodeId) => {
@@ -379,7 +399,7 @@
                     ) ?? false
             );
         },
-        ungroup: (resourceId) => void ungroup(resourceId),
+        ungroup: (groupId) => void ungroup(groupId),
     });
 
     async function refreshGraph() {
@@ -389,6 +409,9 @@
             }),
             queryClient.invalidateQueries({
                 queryKey: orpc.resources.listResources.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listGroups.key(),
             }),
         ]);
     }
@@ -479,6 +502,7 @@
         const built = buildCanvas(
             resources,
             graph,
+            groups,
             logos,
             canvasLayout.positions,
             collapsed,
@@ -488,9 +512,12 @@
 
         if (untrack(() => drag)) return;
 
+        // A selected service lights up its resource's card.
         nodes = built.nodes.map((node) => ({
             ...node,
-            selected: node.id === current,
+            selected:
+                node.id === current ||
+                current?.startsWith(`${node.id}:`) === true,
         }));
         edges = styleEdges(built.edges, current, hidden.current);
     });
@@ -501,17 +528,9 @@
         current: string | null,
         hiddenLayers: EdgeLayer[],
     ) {
-        // Edge ids start with their kind: `reference:` or `depends:`.
-        const shown = plain.filter(
-            (edge) =>
-                !hiddenLayers.includes(
-                    edge.id.startsWith("reference:")
-                        ? "references"
-                        : "dependencies",
-                ),
-        );
+        if (hiddenLayers.includes("references")) return [];
 
-        return shown.map((edge) => {
+        return plain.map((edge) => {
             const active = [edge.source, edge.target].some(
                 (id) =>
                     id === current || id.startsWith(`${current}:`),
@@ -573,21 +592,11 @@
               ),
     );
 
-    // A tray volume or config isn't a flow node, so the camera focuses the first card showing it.
+    // A service or a tray volume or config isn't a flow node, so the camera focuses its card.
     const focusNodeId = $derived(
-        nodes.find(
-            (node) =>
-                node.id === selected.current ||
-                (node.type === "card" &&
-                    node.data.resource.id === selectedResourceId &&
-                    ((selectedNode?.volume !== undefined &&
-                        node.data.service?.volumes.includes(
-                            selectedNode.volume,
-                        )) ||
-                        (selectedNode?.config !== undefined &&
-                            node.data.service?.configs.includes(
-                                selectedNode.config,
-                            )))),
+        (
+            nodes.find((node) => node.id === selected.current) ??
+            nodes.find((node) => node.id === selectedResourceId)
         )?.id,
     );
 
@@ -715,8 +724,7 @@
         const moving = nodes.filter((node) =>
             dragged.type === "stack"
                 ? node.type === "card" &&
-                  node.data.grouped &&
-                  node.data.resource.id === dragged.id
+                  node.data.groupId === dragged.id
                 : node.id === dragged.id,
         );
 
@@ -746,9 +754,11 @@
               }
             : undefined;
 
-        // Railway's drop target: another resource's frame under the dragged card's centre.
+        // Railway's drop target: another group's frame under the pointer. Volumes and configs
+        // on their own follow their resource, so only a resource's card joins a group.
         const card =
-            dragged.type === "card" && dragged.data.service
+            dragged.type === "card" &&
+            dragged.id === dragged.data.resource.id
                 ? dragged
                 : undefined;
 
@@ -760,7 +770,7 @@
             ? nodes.find(
                   (node) =>
                       node.type === "stack" &&
-                      node.id !== card?.data.resource.id &&
+                      node.id !== card?.data.groupId &&
                       contains(
                           {
                               ...node.position,
@@ -835,24 +845,6 @@
         }),
     );
 
-    // Set when a whole resource is dropped onto a frame; merging removes it, so ask first.
-    let pendingMerge = $state<{
-        from: CanvasResource;
-        to: CanvasResource;
-        service: string;
-        restore: Restore;
-        landing: { x: number; y: number };
-    }>();
-
-    /** Where a dropped card goes back to if its move is cancelled or fails. */
-    type Restore = { id: string; position: { x: number; y: number } };
-
-    function restore({ id, position }: Restore) {
-        const next = { ...canvasLayout.positions, [id]: position };
-
-        canvasLayout.place(next);
-    }
-
     let moveNotice = $state<{
         message: string;
         warnings: string[];
@@ -888,10 +880,10 @@
         let next = withPositions(nodes, settle(nodes, id));
         const card = next.find((node) => node.id === id);
 
-        if (card?.type === "card" && card.data.grouped)
+        if (card?.type === "card" && card.data.groupId)
             next = withPositions(
                 next,
-                settle(next, card.data.resource.id),
+                settle(next, card.data.groupId),
             );
 
         nodes = next;
@@ -899,7 +891,6 @@
 
     function endDrag(dragged: CanvasNode) {
         const target = drag?.target;
-        const startedAt = drag?.starts.get(dragged.id);
 
         drag = undefined;
         frameStart = undefined;
@@ -908,70 +899,125 @@
 
         persistCards();
 
-        const service =
-            dragged.type === "card"
-                ? dragged.data.service
-                : undefined;
-
-        const to = resources.find(
-            (resource) => resource.id === target,
-        );
-
-        if (
-            !target ||
-            !to ||
-            !service ||
-            !startedAt ||
-            dragged.type !== "card"
-        )
-            return;
-
-        const from = dragged.data.resource;
-        const back = { id: dragged.id, position: startedAt };
+        if (!target || dragged.type !== "card") return;
 
         // Land in the target frame without covering its cards.
-        const landing = freeSlot(
-            nodeRect(dragged),
-            nodes.flatMap((node) =>
-                node.type === "card" &&
-                node.data.grouped &&
-                node.data.resource.id === to.id
-                    ? [nodeRect(node)]
-                    : [],
-            ),
-        );
-
-        // A lone card is the whole resource: moving its only service removes it.
-        if (!dragged.data.grouped) {
-            pendingMerge = {
-                from,
-                to,
-                service: service.name,
-                restore: back,
-                landing,
-            };
-
-            return;
-        }
-
-        void moveService(
-            from,
-            to,
-            service.name,
-            landing,
-            false,
-            back,
+        void setGroup(
+            dragged.data.resource.id,
+            target,
+            freeSlot(nodeRect(dragged), memberRects(target)),
         );
     }
 
+    // Cards of a group's frame, as rectangles.
+    function memberRects(groupId: string) {
+        return nodes.flatMap((node) =>
+            node.type === "card" && node.data.groupId === groupId
+                ? [nodeRect(node)]
+                : [],
+        );
+    }
+
+    // Frames and lone cards: what a card leaving a frame must not land on.
+    function blockRects() {
+        return nodes.flatMap((node) =>
+            node.type === "stack" || !node.data.groupId
+                ? [nodeRect(node)]
+                : [],
+        );
+    }
+
+    // Beside its old frame, clear of everything else.
+    function outsideFrame(card: CanvasNode, groupId: string) {
+        const frame = frameRect(memberRects(groupId));
+
+        return nearestFree(
+            {
+                ...nodeRect(card),
+                x: frame.x + frame.width + COLUMN_GAP,
+            },
+            blockRects(),
+        );
+    }
+
+    // Railway's "Group ›": into a group's frame, or out of it (null). Only the layout changes.
+    async function setGroup(
+        resourceId: string,
+        groupId: string | null,
+        landing?: { x: number; y: number },
+    ) {
+        const card = nodes.find((node) => node.id === resourceId);
+
+        if (card?.type !== "card" || card.data.groupId === groupId)
+            return;
+
+        const members = groupId ? memberRects(groupId) : [];
+
+        const spot =
+            landing ??
+            (groupId
+                ? members.length
+                    ? slotBelow(members)
+                    : card.position
+                : card.data.groupId
+                  ? outsideFrame(card, card.data.groupId)
+                  : card.position);
+
+        try {
+            await client.resources.setGroup({
+                projectId,
+                resourceId,
+                groupId,
+            });
+            canvasLayout.place({
+                ...canvasLayout.positions,
+                [resourceId]: spot,
+            });
+        } catch (error) {
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The resource could not be regrouped.",
+                warnings: [],
+            };
+        }
+
+        await refreshGraph();
+    }
+
+    // Railway's "Remove Group": the frame goes, its resources stay where they are.
+    async function ungroup(groupId: string) {
+        try {
+            await client.resources.deleteGroup({
+                projectId,
+                groupId,
+            });
+        } catch (error) {
+            moveNotice = {
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The group could not be removed.",
+                warnings: [],
+            };
+        }
+
+        await refreshGraph();
+    }
+
+    // Moving a resource's only service removes the resource, which the dialog warns about.
     async function moveService(
         from: CanvasResource,
-        to: CanvasResource,
         service: string,
-        droppedAt: { x: number; y: number },
-        removeEmptySource: boolean,
-        back: Restore,
+        toResourceId: string | null,
     ) {
+        const to = resources.find(
+            (resource) => resource.id === toResourceId,
+        );
+
+        const card = nodes.find((node) => node.id === from.id);
+
         moving = true;
         moveError = "";
 
@@ -979,23 +1025,36 @@
             const result = await client.resources.moveService({
                 projectId,
                 fromResourceId: from.id,
-                toResourceId: to.id,
+                toResourceId: to?.id,
                 service,
-                removeEmptySource,
+                removeEmptySource:
+                    graph.find((entry) => entry.id === from.id)
+                        ?.services.length === 1,
             });
 
-            // The card keeps the spot it was dropped on under its new id.
-            const next = {
-                ...canvasLayout.positions,
-                [`${to.id}:${service}`]: droppedAt,
-            };
+            // A new resource lands beside the card it came out of.
+            if (!to && card)
+                canvasLayout.place({
+                    ...canvasLayout.positions,
+                    [result.resourceId]: nearestFree(
+                        {
+                            ...nodeRect(card),
+                            x:
+                                card.position.x +
+                                (card.width ?? 0) +
+                                COLUMN_GAP,
+                        },
+                        blockRects(),
+                    ),
+                });
 
-            canvasLayout.place(next);
-            pendingMerge = undefined;
+            void edit.set(null);
             moveNotice = {
-                message: result.removedResourceId
-                    ? `Moved ${service} into ${to.name} and removed ${from.name}. Deploy ${to.name} to start it there.`
-                    : `Moved ${service} into ${to.name}. Deploy both to apply it.`,
+                message: !to
+                    ? `Moved ${service} into a resource of its own. Deploy to apply it.`
+                    : result.removedResourceId
+                      ? `Moved ${service} into ${to.name} and removed ${from.name}. Deploy ${to.name} to start it there.`
+                      : `Moved ${service} into ${to.name}. Deploy both to apply it.`,
                 warnings: result.warnings,
             };
             await refreshGraph();
@@ -1004,161 +1063,8 @@
                 error instanceof Error
                     ? error.message
                     : "The service could not be moved.";
-
-            // A failed merge keeps its dialog open with the error; anything else snaps back.
-            if (!pendingMerge) {
-                moveNotice = { message: moveError, warnings: [] };
-                restore(back);
-            }
         } finally {
             moving = false;
-        }
-    }
-
-    // Cards of a resource's frame, as rectangles.
-    function memberRects(resourceId: string) {
-        return nodes.flatMap((node) =>
-            node.type === "card" &&
-            node.data.grouped &&
-            node.data.resource.id === resourceId
-                ? [nodeRect(node)]
-                : [],
-        );
-    }
-
-    // Frames and lone cards: what a card split out of a frame must not land on.
-    function blockRects() {
-        return nodes.flatMap((node) =>
-            node.type === "stack" || !node.data.grouped
-                ? [nodeRect(node)]
-                : [],
-        );
-    }
-
-    // Railway's "Group ›" on a service: into another group, or out into a resource of its own.
-    async function regroup(
-        nodeId: string,
-        toResourceId: string | null,
-    ) {
-        const node = nodes.find((item) => item.id === nodeId);
-
-        if (node?.type !== "card" || !node.data.service) return;
-
-        const { resource: from, service, grouped } = node.data;
-
-        const back = { id: node.id, position: { ...node.position } };
-
-        if (toResourceId === null) {
-            if (grouped) await splitOut([nodeId]);
-
-            return;
-        }
-
-        const to = resources.find(
-            (resource) => resource.id === toResourceId,
-        );
-
-        if (!to || to.id === from.id) return;
-
-        const landing = slotBelow(memberRects(to.id));
-
-        // A lone card is the whole resource: moving its only service removes it, so confirm first.
-        if (!grouped) {
-            pendingMerge = {
-                from,
-                to,
-                service: service.name,
-                restore: back,
-                landing,
-            };
-
-            return;
-        }
-
-        await moveService(
-            from,
-            to,
-            service.name,
-            landing,
-            false,
-            back,
-        );
-    }
-
-    // Railway's "Remove Group": every service but the first leaves for a resource of its own.
-    async function ungroup(resourceId: string) {
-        const cards = nodes.filter(
-            (node) =>
-                node.type === "card" &&
-                node.data.grouped &&
-                node.data.resource.id === resourceId,
-        );
-
-        await splitOut(cards.slice(1).map((node) => node.id));
-    }
-
-    // Each card becomes its own resource and lands beside its old frame, clear of everything else.
-    async function splitOut(nodeIds: string[]) {
-        moving = true;
-        moveError = "";
-
-        const placed: Rect[] = [];
-
-        const next = { ...canvasLayout.positions };
-
-        const names: string[] = [];
-
-        const warnings: string[] = [];
-
-        try {
-            for (const nodeId of nodeIds) {
-                const node = nodes.find((item) => item.id === nodeId);
-
-                if (node?.type !== "card" || !node.data.service)
-                    continue;
-
-                const frame = frameRect(
-                    memberRects(node.data.resource.id),
-                );
-
-                const rect = {
-                    ...nodeRect(node),
-                    x: frame.x + frame.width + COLUMN_GAP,
-                };
-
-                const spot = nearestFree(rect, [
-                    ...blockRects(),
-                    ...placed,
-                ]);
-
-                const result = await client.resources.moveService({
-                    projectId,
-                    fromResourceId: node.data.resource.id,
-                    service: node.data.service.name,
-                });
-
-                next[result.resourceId] = spot;
-                placed.push({ ...rect, ...spot });
-                names.push(node.data.service.name);
-                warnings.push(...result.warnings);
-            }
-
-            moveNotice = {
-                message: `Moved ${names.join(", ")} into ${names.length === 1 ? "its own resource" : "resources of their own"}. Deploy to apply it.`,
-                warnings,
-            };
-        } catch (error) {
-            moveNotice = {
-                message:
-                    error instanceof Error
-                        ? error.message
-                        : "The service could not be moved out.",
-                warnings,
-            };
-        } finally {
-            canvasLayout.place(next);
-            moving = false;
-            await refreshGraph();
         }
     }
 
@@ -1255,7 +1161,7 @@
         if (
             event.key !== "Escape" ||
             !selected.current ||
-            pendingMerge ||
+            edit.current ||
             add.current ||
             typing
         )
@@ -1275,11 +1181,7 @@
     <CanvasContextMenu
         {projectId}
         target={menuTarget}
-        groups={nodes.flatMap((node) =>
-            node.type === "stack"
-                ? [{ id: node.id, name: node.data.resource.name }]
-                : [],
-        )}
+        groups={framedGroups}
         canAdd={!isInternal}
         canAddVolume={volumeTargetList.length > 0}
         onaddpage={(addPage) => void add.set(addPage)}
@@ -1311,6 +1213,12 @@
                 select(null);
             }}
             onnodecontextmenu={({ node, event }) => {
+                if (node.type === "stack") {
+                    menuTarget = { kind: "group", groupId: node.id };
+
+                    return;
+                }
+
                 // A volume or config in a service's tray has its own menu, like Railway's.
                 const tray =
                     event.target instanceof Element
@@ -1319,8 +1227,7 @@
                           )?.dataset
                         : undefined;
 
-                const resourceId =
-                    node.type === "card" ? node.data.resource.id : "";
+                const resourceId = node.data.resource.id;
 
                 menuTarget = {
                     kind: "node",
@@ -1329,6 +1236,8 @@
                         : tray?.volume
                           ? volumeNodeId(resourceId, tray.volume)
                           : node.id,
+                    groupId: node.data.groupId,
+                    services: node.data.services.length,
                 };
             }}
             onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
@@ -1561,41 +1470,31 @@
 
 <GroupDialogs
     {projectId}
+    group={editing.group}
     resource={editing.resource}
     action={editing.action}
     onclose={() => void edit.set(null)}
 />
 
-{#if pendingMerge}
-    <ConfirmDialog
-        bind:open={
-            () => pendingMerge !== undefined,
-            (open) => {
-                if (open || !pendingMerge || moving) return;
-
-                // Cancelled: the card goes back where the drag started.
-                restore(pendingMerge.restore);
-                pendingMerge = undefined;
-                moveError = "";
-            }
-        }
-        title={`Move ${pendingMerge.from.name} into ${pendingMerge.to.name}?`}
-        description={`Its service moves into the Compose draft of ${pendingMerge.to.name}, and ${pendingMerge.from.name} is removed now, stopping its containers. Volumes keep their data and stay on the machines. Deploy ${pendingMerge.to.name} to start the service there.`}
-        confirmLabel="Move and remove"
+{#if editing.action === "move-service" && editing.resource}
+    {@const from = editing.resource}
+    <MoveServiceDialog
+        resource={from}
+        services={(
+            graph.find((entry) => entry.id === from.id)?.services ??
+            []
+        ).map((service) => service.name)}
+        targets={resources.filter(
+            (resource) =>
+                resource.id !== from.id && resource.type !== "bucket",
+        )}
         pending={moving}
         error={moveError}
-        onconfirm={() => {
-            if (!pendingMerge) return;
-
-            const {
-                from,
-                to,
-                service,
-                restore: back,
-                landing,
-            } = pendingMerge;
-
-            void moveService(from, to, service, landing, true, back);
+        onmove={(service, toResourceId) =>
+            void moveService(from, service, toResourceId)}
+        onclose={() => {
+            moveError = "";
+            void edit.set(null);
         }}
     />
 {/if}

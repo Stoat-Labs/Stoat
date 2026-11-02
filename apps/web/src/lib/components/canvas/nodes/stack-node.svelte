@@ -2,9 +2,7 @@
     import {
         Menu,
         MenuItem,
-        MenuLinkItem,
         MenuPopup,
-        MenuSeparator,
         MenuSub,
         MenuSubPopup,
         MenuSubTrigger,
@@ -29,46 +27,36 @@
 
     const cluster = getCanvasCluster();
 
-    const ready = $derived(
-        data.resource.deploymentStatus === "ready",
-    );
-
-    // Same project-wide query as the cards, so a collapsed stack adds no polling.
+    // Same project-wide query as the cards, so a collapsed group adds no polling.
     const containersQuery = createQuery(() =>
         orpc.resources.getProjectContainers.queryOptions({
             input: {
                 clusterId: cluster.id,
-                projectId: data.resource.projectId,
+                projectId: data.group.projectId,
             },
-            enabled: cluster.id.length > 0 && ready,
+            enabled: cluster.id.length > 0,
             refetchInterval: 30_000,
         }),
     );
 
-    // A service is online while one of its containers runs and is not unhealthy.
-    const online = $derived.by(() => {
-        if (!ready) return 0;
+    // A resource is online while one of its containers runs and is not unhealthy.
+    const online = $derived(
+        data.resources.filter((resource) =>
+            (containersQuery.data?.[resource.id] ?? []).some(
+                ({ container }) => {
+                    const info = containerInfo(container);
 
-        const containers = containersQuery.data?.[data.resource.id];
-
-        if (!containers) return data.serviceCount;
-
-        const running = containers.flatMap(
-            ({ container, service }) => {
-                const info = containerInfo(container);
-
-                return info.status === "running" &&
-                    info.health !== "unhealthy"
-                    ? [service]
-                    : [];
-            },
-        );
-
-        return new Set(running).size;
-    });
+                    return (
+                        info.status === "running" &&
+                        info.health !== "unhealthy"
+                    );
+                },
+            ),
+        ).length,
+    );
 
     const allOnline = $derived(
-        online > 0 && online === data.serviceCount,
+        online > 0 && online === data.resources.length,
     );
 </script>
 
@@ -87,12 +75,12 @@
     {/if}
 {/snippet}
 
-<!-- Railway's group ⋮ menu, minus Colour and nesting, which Stoat resources don't have. -->
+<!-- Railway's group ⋮ menu, minus Colour and nesting. -->
 {#snippet menu()}
     <Menu>
         <MenuTrigger
             class="nodrag nopan flex size-[26px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="{data.resource.name} options"
+            aria-label="{data.group.name} options"
             onpointerdown={(event: PointerEvent) =>
                 event.stopPropagation()}
             onclick={(event: MouseEvent) => event.stopPropagation()}
@@ -104,8 +92,7 @@
         </MenuTrigger>
         <MenuPopup align="end" class="min-w-52">
             <MenuItem
-                onclick={() =>
-                    actions.edit("rename", data.resource.id)}
+                onclick={() => actions.edit("rename", data.group.id)}
             >
                 Rename
             </MenuItem>
@@ -116,64 +103,34 @@
                         onclick={() =>
                             actions.edit(
                                 "icon-upload",
-                                data.resource.id,
+                                data.group.id,
                             )}
                     >
                         Upload image
                     </MenuItem>
                     <MenuItem
                         onclick={() =>
-                            actions.edit(
-                                "icon-link",
-                                data.resource.id,
-                            )}
+                            actions.edit("icon-link", data.group.id)}
                     >
                         Use a link
                     </MenuItem>
                 </MenuSubPopup>
             </MenuSub>
             <MenuItem
-                onclick={() =>
-                    actions.toggleCollapsed(data.resource.id)}
+                onclick={() => actions.toggleCollapsed(data.group.id)}
             >
                 {data.collapsed ? "Show contents" : "Hide contents"}
             </MenuItem>
-            <!-- Railway's "Remove Group": the services stay, each as a resource of its own. -->
-            <MenuItem
-                onclick={() => actions.ungroup(data.resource.id)}
-            >
+            <!-- Railway's "Remove Group": the frame goes, its resources stay. -->
+            <MenuItem onclick={() => actions.ungroup(data.group.id)}>
                 Remove Group
             </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-                onclick={() =>
-                    actions.edit("duplicate", data.resource.id)}
-            >
-                Duplicate…
-            </MenuItem>
-            <MenuItem
-                onclick={() => actions.edit("move", data.resource.id)}
-            >
-                Move to Project…
-            </MenuItem>
-            <MenuItem
-                onclick={() => actions.edit("copy", data.resource.id)}
-            >
-                Copy to Project…
-            </MenuItem>
-            <MenuSeparator />
-            <MenuLinkItem
-                href="/projects/{data.resource.projectId}/{data
-                    .resource.id}"
-            >
-                Open resource page
-            </MenuLinkItem>
         </MenuPopup>
     </Menu>
 {/snippet}
 
 {#if data.collapsed}
-    <!-- Railway's collapsed group: 288×264, its services' icons in an inset box, a status line. -->
+    <!-- Railway's collapsed group: 288×264, its resources' icons in an inset box, a status line. -->
     <div
         class={cn(
             "flex size-full cursor-pointer flex-col justify-between rounded-xl border bg-card px-6 py-3 transition-[border-color,box-shadow]",
@@ -188,9 +145,9 @@
             {@render icon("size-6")}
             <span
                 class="min-w-0 flex-1 truncate text-base font-semibold"
-                title={data.resource.name}
+                title={data.group.name}
             >
-                {data.resource.name}
+                {data.group.name}
             </span>
             {@render menu()}
         </header>
@@ -200,14 +157,14 @@
             <div
                 class="flex flex-wrap items-center justify-center gap-2"
             >
-                {#each data.services as service (service.name)}
+                {#each data.resources as resource (resource.id)}
                     <span
                         class="flex size-10 items-center justify-center rounded-lg border border-white/10 bg-muted"
-                        title={service.name}
+                        title={resource.name}
                     >
-                        {#if service.icon}
+                        {#if resource.icon}
                             <img
-                                src={service.icon}
+                                src={resource.icon}
                                 alt=""
                                 aria-hidden="true"
                                 class="size-[19px] object-contain"
@@ -239,7 +196,7 @@
                     <circle cx="8" cy="8" r="3" fill="currentColor" />
                 </svg>
             {/if}
-            {online}/{data.serviceCount} services online
+            {online}/{data.resources.length} resources online
         </p>
     </div>
 {:else}
@@ -259,9 +216,9 @@
             {@render icon("size-5")}
             <span
                 class="min-w-0 flex-1 truncate text-base font-semibold"
-                title={data.resource.name}
+                title={data.group.name}
             >
-                {data.resource.name}
+                {data.group.name}
             </span>
             {@render menu()}
         </header>

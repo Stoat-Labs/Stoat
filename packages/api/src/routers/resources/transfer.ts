@@ -11,6 +11,7 @@ import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
 import { unpinVolumeNames } from "../../compose/move";
 import { composeResourceTypes } from "../../databases";
+import { deleteEmptyGroups } from "./groups";
 
 type Executor = Pick<Database, "select">;
 
@@ -130,11 +131,14 @@ export const resourceTransferRouter = {
                     if (issue) throw new ORPCError("CONFLICT", { message: issue });
                 }
 
+                // Groups belong to a project, so it arrives ungrouped.
                 const [moved] = await tx
                     .update(resources)
-                    .set({ projectId: to.id })
+                    .set({ projectId: to.id, groupId: null })
                     .where(eq(resources.id, resource.id))
                     .returning();
+
+                await deleteEmptyGroups(tx, from.id);
 
                 return moved!;
             }),
