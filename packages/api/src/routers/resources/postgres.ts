@@ -53,11 +53,15 @@ const pgdogCompose = `services:
               toml() {
                   name="$$1" awk 'BEGIN {
                       value = ENVIRON[ENVIRON["name"]]
-                      gsub(/\\\\/, "\\\\\\\\", value)
-                      gsub(/"/, "\\\\\\"", value)
-                      gsub(/\\n/, "\\\\n", value)
-                      gsub(/\\r/, "\\\\r", value)
-                      printf "\\"%s\\"", value
+                      # One character at a time: gsub replacement escapes differ between awks.
+                      for (i = 1; i <= length(value); i++) {
+                          c = substr(value, i, 1)
+                          if (c == "\\\\" || c == "\\"") c = "\\\\" c
+                          else if (c == "\\n") c = "\\\\n"
+                          else if (c == "\\r") c = "\\\\r"
+                          out = out c
+                      }
+                      printf "\\"%s\\"", out
                   }'
               }
               cat > /pgdog/pgdog.toml <<TOML
