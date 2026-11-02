@@ -72,7 +72,8 @@ COPY --from=build --chown=node:node /app/apps/web/drizzle.config.ts ./drizzle.co
 
 # adapter-node's build is self-contained; static assets are already in build.
 # Keep src because varlock uses its generated environment types at startup.
-RUN rm -rf static
+# drizzle-kit reads tsconfig.json when loading its config, and this one extends the unshipped .svelte-kit.
+RUN rm -rf static tsconfig.json
 
 USER node
 EXPOSE 3001

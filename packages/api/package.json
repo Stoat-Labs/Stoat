@@ -24,7 +24,7 @@
         "@stoat/s3": "workspace:*",
         "@stoat/uncloud": "workspace:*",
         "@stoat/workflows": "workspace:*",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "catalog:",
         "effect": "4.0.0-rc.116",
         "ofetch": "catalog:",
         "unstorage": "^1.17.5",

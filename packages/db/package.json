@@ -21,12 +21,12 @@
     },
     "dependencies": {
         "@stoat/config": "workspace:*",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "catalog:",
         "pg": "^8.23.0"
     },
     "devDependencies": {
         "@types/pg": "^8.23.1",
-        "drizzle-kit": "^0.31.10",
+        "drizzle-kit": "catalog:",
         "typescript": "catalog:",
         "varlock": "catalog:"
     }

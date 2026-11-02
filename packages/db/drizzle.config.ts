@@ -2,7 +2,7 @@ import { defineConfig } from "drizzle-kit";
 import "varlock/auto-load";
 
 export default defineConfig({
-    schema: ["./src/schema", "../workflows/src/schema.ts"],
+    schema: ["./src/schema/index.ts", "../workflows/src/schema.ts"],
     out: "./src/migrations",
     dialect: "postgresql",
     dbCredentials: {
