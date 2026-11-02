@@ -1,19 +1,19 @@
 services:
     qbittorrent:
-        image: lscr.io/linuxserver/qbittorrent:latest
+        image: lscr.io/linuxserver/qbittorrent:5.3.0
         environment:
             - PUID=${MEDIA_UID}
             - PGID=${MEDIA_GID}
             - TZ=${TZ}
             - WEBUI_PORT=8080
-            - TORRENTING_PORT=6881
+            - TORRENTING_PORT=${TORRENTING_PORT}
         volumes:
             - qbittorrent_data:/config
             - ${DOWNLOADS_PATH}:/downloads
         x-ports:
             - ${QBITTORRENT_HOST}:8080/https
-            - 6881:6881/tcp@host
-            - 6881:6881/udp@host
+            - ${TORRENTING_PORT}:${TORRENTING_PORT}/tcp@host
+            - ${TORRENTING_PORT}:${TORRENTING_PORT}/udp@host
         healthcheck:
             test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
             interval: 30s

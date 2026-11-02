@@ -1,6 +1,6 @@
 services:
     voidauth:
-        image: voidauth/voidauth:latest
+        image: voidauth/voidauth:1.18.0
         restart: unless-stopped
         x-ports:
             - ${VOIDAUTH_HOST}:3000/https

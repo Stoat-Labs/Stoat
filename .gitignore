@@ -65,3 +65,4 @@ temp
 
 .env.dev
 test-results
+.vitest/

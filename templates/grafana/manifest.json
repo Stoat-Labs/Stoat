@@ -1,6 +1,6 @@
 {
     "name": "Grafana",
-    "description": "Platform for data analytics and monitoring",
+    "description": "Dashboards and alerting for your metrics, logs, and traces.",
     "type": "compose",
-    "tags": ["observability", "dashboard"]
+    "tags": ["observability"]
 }

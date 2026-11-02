@@ -1,14 +1,23 @@
 services:
     ntfy:
-        image: binwiederhier/ntfy
+        image: binwiederhier/ntfy:v2.37.1
+        restart: unless-stopped
+        init: true
         command:
             - serve
         environment:
             TZ: ${TZ}
             NTFY_BASE_URL: https://${NTFY_HOST}
             NTFY_BEHIND_PROXY: "true"
+            NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+            NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+            # Add the first admin from the container shell: `ntfy user add --role=admin <name>`.
+            NTFY_AUTH_DEFAULT_ACCESS: ${NTFY_AUTH_DEFAULT_ACCESS}
         x-ports:
             - ${NTFY_HOST}:80/https
+        volumes:
+            - ntfy_cache:/var/cache/ntfy
+            - ntfy_data:/var/lib/ntfy
         healthcheck:
             test:
                 [
@@ -19,5 +28,7 @@ services:
             timeout: 10s
             retries: 3
             start_period: 40s
-        restart: unless-stopped
-        init: true
+
+volumes:
+    ntfy_cache:
+    ntfy_data:

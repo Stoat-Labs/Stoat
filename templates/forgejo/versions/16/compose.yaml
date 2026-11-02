@@ -4,7 +4,7 @@ services:
         restart: unless-stopped
         x-ports:
             - ${FORGEJO_HOST}:3000/https
-            - 2222:22/tcp@host
+            - ${FORGEJO_SSH_PORT}:22/tcp@host
         environment:
             USER_UID: ${USER_UID}
             USER_GID: ${USER_GID}
@@ -12,7 +12,7 @@ services:
             FORGEJO__server__DOMAIN: ${FORGEJO_HOST}
             FORGEJO__server__ROOT_URL: https://${FORGEJO_HOST}/
             FORGEJO__server__SSH_DOMAIN: ${FORGEJO_HOST}
-            FORGEJO__server__SSH_PORT: "2222"
+            FORGEJO__server__SSH_PORT: ${FORGEJO_SSH_PORT}
             FORGEJO__database__DB_TYPE: postgres
             FORGEJO__database__HOST: ${DB_HOST}:5432
             FORGEJO__database__NAME: ${DB_NAME}

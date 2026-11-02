@@ -1,6 +1,6 @@
 services:
     server:
-        image: seafileltd/seafile-pro-mc:13.0-latest
+        image: seafileltd/seafile-pro-mc:14.0.9
         restart: unless-stopped
         volumes:
             - seafile_data:/shared
@@ -31,6 +31,9 @@ services:
             REDIS_PASSWORD: ${REDIS_PASSWORD}
             ENABLE_NOTIFICATION_SERVER: "false"
             ENABLE_SEAFILE_AI: "false"
+            ENABLE_METADATA_MANAGEMENT: "false"
+            ENABLE_SEARCH: "false"
+            CSRF_TRUSTED_ORIGINS: ${SEAFILE_SERVER_PROTOCOL}://${SEAFILE_SERVER_HOSTNAME}
         x-caddy: |
             ${SEAFILE_SERVER_HOSTNAME} {
                 handle_path /socket.io/* {
@@ -51,7 +54,7 @@ services:
             start_period: 10s
 
     seadoc:
-        image: seafileltd/sdoc-server:2.0-latest
+        image: seafileltd/sdoc-server:2.0.11
         restart: unless-stopped
         volumes:
             - seadoc_data:/shared

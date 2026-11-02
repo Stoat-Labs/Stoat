@@ -129,14 +129,14 @@ describe("templates", () => {
     });
 
     it("renders the jellyfin template with prefixed volumes and the cluster domain", () => {
-        const version = templates.find(({ appId }) => appId === "jellyfin")?.versions.latest;
+        const version = templates.find(({ appId }) => appId === "jellyfin")?.versions["12.4"];
 
-        expect(version && summarizeVersion(version).required).toEqual([]);
+        expect(version && summarizeVersion(version).required).toEqual(["MEDIA_PATH"]);
 
         const out = formatComposeFile(
             interpolateCompose(
                 version!.compose,
-                version!.env,
+                `${version!.env}MEDIA_PATH=/srv/media\n`,
                 "a1b2c3d4-e5f6a7b8",
                 "abc.uncld.dev",
             ),
@@ -144,7 +144,8 @@ describe("templates", () => {
         ).yaml;
 
         expect(out).toContain("- a1b2c3d4-e5f6a7b8-jellyfin.abc.uncld.dev:8096/https");
-        expect(out).toContain("- a1b2c3d4-e5f6a7b8-jellyfin_media:/media\n");
+        expect(out).toContain("- a1b2c3d4-e5f6a7b8-jellyfin_config:/config\n");
+        expect(out).toContain("- /srv/media:/media\n");
         expect(out).toContain(
             "JELLYFIN_PublishedServerUrl: https://a1b2c3d4-e5f6a7b8-jellyfin.abc.uncld.dev",
         );

@@ -1,6 +1,6 @@
 {
     "name": "Ntfy",
-    "description": "Push notifications made easy.",
+    "description": "Send push notifications to your phone or desktop over HTTP.",
     "type": "compose",
-    "tags": ["notifications", "alerts"]
+    "tags": ["notifications"]
 }
