@@ -387,6 +387,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     type,
                     engine: null,
                     projectId,
+                    groupId: null,
                     gitBranch: gitSource?.branch ?? null,
                     createdAt,
                     updatedAt,

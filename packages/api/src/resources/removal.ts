@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
+import { deleteEmptyGroups } from "@stoat/db/groups";
 import {
     clusters,
     deployments,
@@ -136,4 +137,5 @@ export async function removeResources(tx: Transaction, clusterId: string, remove
     }
 
     await tx.delete(resources).where(inArray(resources.id, ids));
+    await deleteEmptyGroups(tx, [...new Set(removed.map((resource) => resource.projectId))]);
 }

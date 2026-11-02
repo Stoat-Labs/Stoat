@@ -39,6 +39,7 @@ it("restores the saved-draft message from loaded data without a successful save 
         cache.setQueryData(orpc.resources.getResource.queryKey({ input }), {
             id: input.resourceId,
             projectId: input.projectId,
+            groupId: null,
             name: "Resource",
             slug: "resource-abc123",
             description: null,

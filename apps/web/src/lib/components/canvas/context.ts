@@ -3,11 +3,23 @@ import { createContext } from "svelte";
 /** Shared clock so every card's "deployed 3m ago" ticks together. */
 export const [getCanvasClock, setCanvasClock] = createContext<{ now: number }>();
 
-/** What a frame's ⋮ menu can do; nodes are rendered by Svelte Flow, so this comes via context. */
-export type GroupAction = "rename" | "icon-upload" | "icon-link" | "move" | "copy" | "duplicate";
+/**
+ * Dialogs the canvas menus open. Rename and the icons act on a group; the rest on a resource,
+ * where "new-group" starts a group around it.
+ */
+export type GroupAction =
+    | "rename"
+    | "icon-upload"
+    | "icon-link"
+    | "new-group"
+    | "move-service"
+    | "move"
+    | "copy"
+    | "duplicate";
 
 export const [getCanvasActions, setCanvasActions] = createContext<{
-    edit: (action: GroupAction, resourceId: string) => void;
+    /** Opens a dialog for a group (rename, icons) or a resource (everything else). */
+    edit: (action: GroupAction, id: string) => void;
     /** Saves a name typed inline on a card. */
     rename: (resourceId: string, name: string) => Promise<void>;
     toggleCollapsed: (resourceId: string) => void;
@@ -25,8 +37,10 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     setRunning: (resourceId: string, running: boolean) => void;
     /** Undefined when there is nothing deployed to stop or start, like a bucket or a draft. */
     runState: (resourceId: string) => "running" | "stopped" | undefined;
-    /** Railway's "Group ›": moves a service card into another group, or out into its own (null). */
-    regroup: (nodeId: string, toResourceId: string | null) => void;
+    /** Railway's "Group ›": puts a resource's card into a group's frame, or out of any (null). */
+    setGroup: (resourceId: string, groupId: string | null) => void;
+    /** Opens the panel on one service of a resource with several. */
+    selectService: (resourceId: string, service: string) => void;
     /** Opens a volume's pane, from the tray under the service that mounts it. */
     selectVolume: (resourceId: string, volume: string) => void;
     /** Asks to delete a volume; the canvas confirms it first. */
@@ -43,8 +57,8 @@ export const [getCanvasActions, setCanvasActions] = createContext<{
     /** Unmounts a config from every service; it stays on the canvas as a card of its own. */
     disconnectConfig: (nodeId: string) => void;
     isConfigMounted: (nodeId: string) => boolean;
-    /** Railway's "Remove Group": every service but the first moves out into a resource of its own. */
-    ungroup: (resourceId: string) => void;
+    /** Railway's "Remove Group": the frame goes, its resources stay. */
+    ungroup: (groupId: string) => void;
 }>();
 
 /** The project's cluster, so cards can ask it how their containers are doing. */

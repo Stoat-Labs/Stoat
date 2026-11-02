@@ -7,6 +7,7 @@ import {
     deployments,
     gitConnections,
     projects,
+    resourceGroups,
     resources,
     resourceDeploymentInputs,
     s3Buckets,
@@ -70,6 +71,8 @@ import {
 import { resourceDiscardRouter } from "./discard";
 import { resourceMetricsRouter } from "./metrics";
 import { postgresEnv, resourcePostgresRouter } from "./postgres";
+import { assertProjectVisible, editableProject } from "./access";
+import { resourceGroupsRouter } from "./groups";
 import { resourceTransferRouter } from "./transfer";
 import { getBoundGitRepository, getGitConnection, gitMessage, gitText } from "../connections";
 import { machineName } from "../cluster/initialization";
@@ -239,50 +242,6 @@ async function resourceServiceNames(db: Database, resource: Resource) {
     return serviceNamesFor(resource, snapshot, monitoring);
 }
 
-// Internal projects are only visible to organization admins.
-async function assertProjectVisible(
-    db: Pick<Database, "select">,
-    organizationId: string,
-    organizationRole: string,
-    projectId: string,
-) {
-    const [project] = await db
-        .select({ id: projects.id, clusterId: projects.clusterId })
-        .from(projects)
-        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-        .where(
-            and(
-                eq(projects.id, projectId),
-                isOrganizationAdmin(organizationRole)
-                    ? undefined
-                    : sql`${projects.isInternal} is not true`,
-                eq(clusters.organizationId, organizationId),
-            ),
-        )
-        .limit(1);
-
-    if (!project) {
-        throw new ORPCError("NOT_FOUND", { message: "Project not found." });
-    }
-
-    return project;
-}
-
-/** The project, as a subquery, when it belongs to the organization and is not system-managed. */
-function editableProject(db: Pick<Database, "select">, organizationId: string, projectId: string) {
-    return db
-        .select({ id: projects.id })
-        .from(projects)
-        .innerJoin(clusters, eq(projects.clusterId, clusters.id))
-        .where(
-            and(
-                eq(projects.id, projectId),
-                sql`${projects.isInternal} is not true`,
-                eq(clusters.organizationId, organizationId),
-            ),
-        );
-}
-
 type Resource = typeof resources.$inferSelect;
 
 type DeployedSnapshot = { spec: string | null; prefix: string | null };
@@ -347,6 +306,7 @@ function serviceNamesFor(
 export const resourcesRouter = {
     ...resourceGitRouter,
     ...resourceTransferRouter,
+    ...resourceGroupsRouter,
     ...resourceDiscardRouter,
     ...resourceMetricsRouter,
     ...resourceLogsRouter,
@@ -753,6 +713,8 @@ export const resourcesRouter = {
                         slug: resourceSlug(to.name),
                         type: "compose",
                         projectId: input.projectId,
+                        // A split-out service stays in the frame it was drawn in.
+                        groupId: from.resource.groupId,
                         draftSpec: moved.target,
                         // A split keeps the stack's naming, so an unprefixed stack stays unprefixed.
                         settings: resourceComposePrefix(from.resource)
@@ -1204,6 +1166,7 @@ export const resourcesRouter = {
                     type: resources.type,
                     engine: sql<string | null>`${resources.settings}->>'engine'`,
                     projectId: resources.projectId,
+                    groupId: resources.groupId,
                     gitBranch: sql<string | null>`${resources.gitSource}->>'branch'`,
                     createdAt: resources.createdAt,
                     updatedAt: resources.updatedAt,
@@ -1697,41 +1660,58 @@ export const resourcesRouter = {
                 },
             );
 
-            const created = await db
-                .insert(resources)
-                .values([
-                    {
-                        ...source,
-                        ...(pasted && { draftSpec: pasted.compose, settings: { env: pasted.env } }),
-                        id: randomUUID(),
-                        name: input.name.trim(),
-                        slug: resourceSlug(input.name),
-                        description,
-                        icon,
-                        type: template?.type ?? input.type,
+            // A template and its companions start out in one group, drawn together on the canvas.
+            const groupId = companions.length > 0 ? randomUUID() : null;
+
+            const created = await db.transaction(async (tx) => {
+                if (groupId)
+                    await tx.insert(resourceGroups).values({
+                        id: groupId,
                         projectId: project.id,
-                        ...(template &&
-                            version && {
-                                icon: template.logo,
-                                draftSpec: expandSecrets(version.compose, domain),
-                                settings: {
-                                    ...(template.type === "database" && {
-                                        engine: template.engine,
-                                    }),
-                                    prefixNames: true,
-                                    env: fillVariables(
-                                        linkCompanions(
-                                            expandSecrets(version.env, domain),
-                                            companionIds,
-                                        ),
-                                        input.template?.variables ?? {},
-                                    ),
-                                },
+                        name: input.name.trim(),
+                        icon: template?.logo ?? null,
+                    });
+
+                return tx
+                    .insert(resources)
+                    .values([
+                        {
+                            groupId,
+                            ...source,
+                            ...(pasted && {
+                                draftSpec: pasted.compose,
+                                settings: { env: pasted.env },
                             }),
-                    },
-                    ...companions,
-                ])
-                .returning();
+                            id: randomUUID(),
+                            name: input.name.trim(),
+                            slug: resourceSlug(input.name),
+                            description,
+                            icon,
+                            type: template?.type ?? input.type,
+                            projectId: project.id,
+                            ...(template &&
+                                version && {
+                                    icon: template.logo,
+                                    draftSpec: expandSecrets(version.compose, domain),
+                                    settings: {
+                                        ...(template.type === "database" && {
+                                            engine: template.engine,
+                                        }),
+                                        prefixNames: true,
+                                        env: fillVariables(
+                                            linkCompanions(
+                                                expandSecrets(version.env, domain),
+                                                companionIds,
+                                            ),
+                                            input.template?.variables ?? {},
+                                        ),
+                                    },
+                                }),
+                        },
+                        ...companions.map((companion) => ({ ...companion, groupId })),
+                    ])
+                    .returning();
+            });
 
             return created[0];
         }),

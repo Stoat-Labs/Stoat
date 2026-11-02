@@ -46,26 +46,42 @@
         }),
     );
 
+    const groupsQuery = createQuery(() =>
+        orpc.resources.listGroups.queryOptions({
+            input: { projectId },
+            enabled: projectId.length > 0,
+        }),
+    );
+
     // Read every query's status and data on each run, like the project page does. Short-circuiting
-    // on `.data` left the canvas on its skeleton after some fresh loads, with all three queries done.
+    // on `.data` left the canvas on its skeleton after some fresh loads, with every query done.
     const loaded = $derived.by(() => {
-        const ready = [projectQuery, resourcesQuery, graphQuery].map(
-            (query) => query.isSuccess,
-        );
+        const ready = [
+            projectQuery,
+            resourcesQuery,
+            graphQuery,
+            groupsQuery,
+        ].map((query) => query.isSuccess);
 
         const project = projectQuery.data;
         const resources = resourcesQuery.data;
         const graph = graphQuery.data;
+        const groups = groupsQuery.data;
 
-        return ready.every(Boolean) && project && resources && graph
-            ? { project, resources, graph }
+        return ready.every(Boolean) &&
+            project &&
+            resources &&
+            graph &&
+            groups
+            ? { project, resources, graph, groups }
             : undefined;
     });
 
     const error = $derived(
         projectQuery.error ??
             resourcesQuery.error ??
-            graphQuery.error,
+            graphQuery.error ??
+            groupsQuery.error,
     );
 
     const watchToast = streamErrorToast();
@@ -125,6 +141,7 @@
                     isInternal={loaded.project.isInternal === true}
                     resources={loaded.resources}
                     graph={loaded.graph.resources}
+                    groups={loaded.groups}
                     logos={loaded.graph.logos}
                     layout={loaded.project.canvasLayout ?? {}}
                 />

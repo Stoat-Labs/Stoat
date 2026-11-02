@@ -2,12 +2,15 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
     buildCanvas,
+    cardTrays,
+    moveResourceCards,
     foldExporters,
     frameRect,
     freeSlot,
     refitFrames,
     repairOverlaps,
     settle,
+    type CanvasService,
 } from "../../apps/web/src/lib/components/canvas/graph";
 
 describe("frameRect", () => {
@@ -23,9 +26,7 @@ describe("frameRect", () => {
 
 describe("refitFrames", () => {
     it("follows a card dragged past the frame edge, instead of dropping it", () => {
-        const resource = { id: "r" };
-
-        // SAFETY: the canvas only reads `resource.id` and `grouped` while refitting.
+        // SAFETY: the canvas only reads `groupId` while refitting.
         const card = (id: string, x: number, y: number) =>
             ({
                 id,
@@ -33,7 +34,7 @@ describe("refitFrames", () => {
                 position: { x, y },
                 width: 288,
                 height: 144,
-                data: { resource, grouped: true },
+                data: { groupId: "r" },
             }) as never;
 
         const nodes = refitFrames([
@@ -46,8 +47,8 @@ describe("refitFrames", () => {
                 height: 1,
                 data: {},
             } as never,
-            card("r:a", 24, 48),
-            card("r:b", 1000, 900),
+            card("a", 24, 48),
+            card("b", 1000, 900),
         ]);
 
         expect(nodes[0]).toMatchObject({
@@ -77,17 +78,15 @@ describe("freeSlot", () => {
 });
 
 describe("repairOverlaps", () => {
-    const resource = { id: "stack" };
-
-    // SAFETY: repairOverlaps only reads ids, types, positions, sizes and `grouped`.
-    const card = (id: string, x: number, y: number, grouped = false) =>
+    // SAFETY: repairOverlaps only reads ids, types, positions, sizes and `groupId`.
+    const card = (id: string, x: number, y: number, groupId?: string) =>
         ({
             id,
             type: "card",
             position: { x, y },
             width: 288,
             height: 144,
-            data: { resource: grouped ? resource : { id }, grouped },
+            data: { groupId },
         }) as never;
 
     it("moves an overlapping card below the one above it, on the grid", () => {
@@ -108,22 +107,22 @@ describe("repairOverlaps", () => {
             data: {},
         } as never;
 
-        const moved = repairOverlaps([card("a", 0, 0), frame, card("stack:x", 24, 144, true)]);
+        const moved = repairOverlaps([card("a", 0, 0), frame, card("x", 24, 144, "stack")]);
 
-        expect(moved["stack:x"]).toEqual({ x: 24, y: 216 });
+        expect(moved.x).toEqual({ x: 24, y: 216 });
     });
 });
 
 describe("settle", () => {
-    // SAFETY: settle only reads ids, types, positions, sizes, `hidden` and `grouped`.
-    const card = (id: string, x: number, y: number, resource = id, grouped = false) =>
+    // SAFETY: settle only reads ids, types, positions, sizes, `hidden` and `groupId`.
+    const card = (id: string, x: number, y: number, groupId?: string) =>
         ({
             id,
             type: "card",
             position: { x, y },
             width: 288,
             height: 144,
-            data: { resource: { id: resource }, grouped },
+            data: { groupId },
         }) as never;
 
     it("leaves a card that covers nothing where it was dropped", () => {
@@ -157,52 +156,168 @@ describe("settle", () => {
     });
 
     it("keeps a card inside a frame off its siblings", () => {
-        const moved = settle([card("s:a", 0, 48, "s", true), card("s:b", 0, 48, "s", true)], "s:b");
+        const moved = settle([card("a", 0, 48, "s"), card("b", 0, 48, "s")], "b");
 
-        expect(moved["s:b"]).toEqual({ x: 24, y: 72 });
+        expect(moved.b).toEqual({ x: 24, y: 72 });
     });
 });
 
 describe("buildCanvas", () => {
-    it("sizes each stack card to itself, so a card beside a volume tray keeps its edges on its border", () => {
-        const service = (name: string, volumes: string[], configs: string[] = []) => ({
-            name,
-            image: null,
-            dependsOn: [],
-            volumes,
-            configs,
-            isNew: false,
-            domains: [],
-            internalHostname: null,
-        });
+    const service = (
+        name: string,
+        volumes: string[] = [],
+        configs: string[] = [],
+    ): CanvasService => ({
+        name,
+        image: undefined,
+        template: undefined,
+        dependsOn: [],
+        volumes,
+        configs,
+        isNew: false,
+        domains: [],
+        internalHostname: null,
+    });
 
-        // SAFETY: the layout only reads `id` and `icon` of the resource.
-        const resource = { id: "sure", icon: null } as never;
+    // SAFETY: the layout only reads `id`, `icon`, `engine` and `groupId` of a resource.
+    const resource = (id: string, groupId: string | null = null) =>
+        ({ id, icon: null, engine: null, groupId }) as never;
 
-        // SAFETY: the layout only reads the fields given here.
-        const graph = [
-            {
-                id: "sure",
-                draftOnly: true,
-                parseError: false,
-                references: [],
-                services: [
-                    service("web", ["storage"]),
-                    service("worker", ["storage"]),
-                    service("db", ["data"]),
-                    service("metrics", []),
-                    service("redis", ["cache"], ["redis.conf"]),
+    // SAFETY: the layout only reads these fields of a graph entry.
+    const entry = (id: string, references: string[] = [], services = [service("app")]) =>
+        ({
+            id,
+            draftOnly: false,
+            parseError: false,
+            references,
+            volumes: [],
+            configs: [],
+            services,
+        }) as never;
+
+    const group = (id: string) => ({ id, projectId: "p", name: id, icon: null });
+
+    it("draws a resource with several services as one card, a row per service and its trays under it", () => {
+        const { nodes } = buildCanvas(
+            [resource("sure")],
+            [
+                entry(
+                    "sure",
+                    [],
+                    [
+                        service("web", ["storage"]),
+                        service("worker", ["storage"]),
+                        service("db", ["data"]),
+                        service("metrics"),
+                        service("redis", ["cache"], ["redis.conf"]),
+                    ],
+                ),
+            ],
+            [],
+            {},
+            {},
+        );
+
+        expect(nodes.map((node) => node.id)).toEqual(["sure"]);
+        // 144 plus five 32px service rows, then four 48px trays: web and worker share storage.
+        expect(nodes[0]?.height).toBe(144 + 5 * 32 + 4 * 48);
+    });
+
+    it("shows a volume or config several services mount as one tray", () => {
+        expect(
+            cardTrays([
+                service("web", ["storage"], ["app.conf"]),
+                service("worker", ["storage", "cache"], ["app.conf"]),
+            ]),
+        ).toEqual([
+            { kind: "volume", name: "storage" },
+            { kind: "volume", name: "cache" },
+            { kind: "config", name: "app.conf" },
+        ]);
+    });
+
+    it("frames the resources of one group together and leaves the rest alone", () => {
+        const { nodes } = buildCanvas(
+            [resource("a", "g"), resource("b"), resource("c", "g")],
+            [entry("a"), entry("b"), entry("c")],
+            [group("g")],
+            {},
+            {},
+        );
+
+        const frame = nodes.find((node) => node.type === "stack");
+        const members = nodes.filter((node) => node.type === "card" && node.data.groupId === "g");
+
+        expect(frame?.id).toBe("g");
+        expect(members.map((node) => node.id)).toEqual(["a", "c"]);
+        expect(nodes.find((node) => node.id === "b")?.data).toMatchObject({ groupId: undefined });
+        expect({ ...frame?.position, width: frame?.width, height: frame?.height }).toEqual(
+            frameRect(members.map((node) => ({ ...node.position, width: 288, height: 144 }))),
+        );
+    });
+
+    it("draws no frame for a group nothing is in, and none for an unknown one", () => {
+        const { nodes } = buildCanvas(
+            [resource("a", "gone")],
+            [entry("a")],
+            [group("empty")],
+            {},
+            {},
+        );
+
+        expect(nodes.map((node) => [node.id, node.type])).toEqual([["a", "card"]]);
+        expect(Number.isFinite(nodes[0]?.position.x)).toBe(true);
+    });
+
+    it("keeps the spot a service had in its resource's old frame", () => {
+        const { nodes } = buildCanvas(
+            [resource("sure")],
+            [entry("sure", [], [service("web"), service("db")])],
+            [],
+            {},
+            { "sure:web": { x: 480, y: 600 } },
+        );
+
+        expect(nodes[0]?.position).toEqual({ x: 480, y: 600 });
+    });
+
+    it("hands a collapsed group's references to its frame, once, and drops those inside it", () => {
+        const { edges } = buildCanvas(
+            [resource("a", "g"), resource("b", "g"), resource("c")],
+            [entry("a", ["b", "c"]), entry("b", ["c"]), entry("c")],
+            [group("g")],
+            {},
+            {},
+            new Set(["g"]),
+        );
+
+        expect(edges.map((edge) => edge.id)).toEqual(["reference:g:c"]);
+    });
+});
+
+describe("moveResourceCards", () => {
+    // SAFETY: the helper only reads ids, types, positions and `resource.id`.
+    const card = (id: string, resource: string, x: number, y: number) =>
+        ({ id, type: "card", position: { x, y }, data: { resource: { id: resource } } }) as never;
+
+    it("takes a resource's own volume and config cards along, keeping their offset", () => {
+        expect(
+            moveResourceCards(
+                [
+                    card("r", "r", 0, 0),
+                    card("r/data", "r", 0, 192),
+                    card("r#app.conf", "r", 312, 0),
+                    card("other", "other", 600, 600),
                 ],
-            },
-        ] as never;
-
-        const { nodes } = buildCanvas([resource], graph, {}, {});
-        const height = (id: string) => nodes.find((node) => node.id === id)?.height;
-
-        expect(height("sure:db")).toBe(192);
-        expect(height("sure:metrics")).toBe(144);
-        // Config trays stack under the volume trays.
-        expect(height("sure:redis")).toBe(240);
+                "r",
+                { x: 0, y: 0 },
+                { x: 1000, y: 48 },
+            ),
+        ).toEqual({
+            r: { x: 1000, y: 48 },
+            "r/data": { x: 1000, y: 240 },
+            "r#app.conf": { x: 1312, y: 48 },
+        });
     });
 });
 

@@ -16,6 +16,7 @@ const timestamp = new Date("2026-10-06T00:00:00Z");
 const resource = {
     id: input.resourceId,
     projectId: input.projectId,
+    groupId: null,
     name: "Resource",
     slug: "resource-abc123",
     description: null,

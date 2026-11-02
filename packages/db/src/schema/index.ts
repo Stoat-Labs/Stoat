@@ -205,6 +205,25 @@ export type ResourceGitSource = {
     watchPath: string;
 };
 
+// Canvas frames around a project's resources. Layout only: deploys never read it.
+export const resourceGroups = t.pgTable(
+    "resource_groups",
+    {
+        id: t.uuid("id").primaryKey(),
+        projectId: t
+            .uuid("project_id")
+            .notNull()
+            .references(() => projects.id, { onDelete: "cascade" }),
+        name: t.text("name").notNull(),
+        icon: t.text("icon"),
+        createdAt: t
+            .timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .$defaultFn(() => new Date()),
+    },
+    (table) => [t.index("resource_groups_project_idx").on(table.projectId)],
+);
+
 export const resources = t.pgTable(
     "resources",
     {
@@ -236,6 +255,8 @@ export const resources = t.pgTable(
             .uuid("project_id")
             .notNull()
             .references(() => projects.id, { onDelete: "cascade" }),
+        // Always a group of the same project; the API checks it on every write.
+        groupId: t.uuid("group_id").references(() => resourceGroups.id, { onDelete: "set null" }),
         createdAt: t
             .timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -248,6 +269,7 @@ export const resources = t.pgTable(
     },
     (table) => [
         t.index("resources_project_idx").on(table.projectId),
+        t.index("resources_group_idx").on(table.groupId),
         t.index("resources_git_connection_idx").on(table.gitConnectionId),
         t.uniqueIndex("resources_slug_idx").on(table.slug),
     ],

@@ -17,21 +17,31 @@
     import { Input } from "$lib/components/ui/input";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import type { GroupAction } from "../context";
-    import type { CanvasResource } from "../graph";
+    import type { CanvasGroup, CanvasResource } from "../graph";
     import TransferDialog from "./transfer-dialog.svelte";
 
     let {
         projectId,
-        resource,
         action,
+        group,
+        resource,
         onclose,
     }: {
         projectId: string;
-        /** The frame whose ⋮ menu opened this; undefined closes every dialog. */
-        resource: CanvasResource | undefined;
+        /** Undefined closes every dialog. */
         action: GroupAction | undefined;
+        /** The frame whose menu opened rename or an icon dialog. */
+        group: CanvasGroup | undefined;
+        /** The card whose menu opened a new group or a transfer. */
+        resource: CanvasResource | undefined;
         onclose: () => void;
     } = $props();
+
+    // Rename edits the group's name; New group names the group it creates around the resource.
+    const naming = $derived(
+        (action === "rename" && group !== undefined) ||
+            (action === "new-group" && resource !== undefined),
+    );
 
     let name = $state("");
 
@@ -40,31 +50,54 @@
     let error = $state("");
 
     $effect(() => {
-        if (action === "rename" && resource) name = resource.name;
+        if (action === "rename" && group) name = group.name;
+        else if (action === "new-group") name = "";
     });
 
-    // updateDetails replaces all three fields, so the ones not being edited are sent unchanged.
-    async function update(changes: { name?: string; icon?: string }) {
-        if (!resource) return;
-
-        await client.resources.updateDetails({
-            projectId,
-            resourceId: resource.id,
-            name: changes.name ?? resource.name,
-            description: resource.description ?? undefined,
-            icon: changes.icon ?? resource.icon ?? undefined,
-        });
-        await queryClient.invalidateQueries({
-            queryKey: orpc.resources.listResources.key(),
-        });
+    async function refresh() {
+        await Promise.all([
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listGroups.key(),
+            }),
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listResources.key(),
+            }),
+        ]);
     }
 
-    async function rename() {
+    // updateGroup replaces both fields, so the one not being edited is sent unchanged.
+    async function updateIcon(icon: string) {
+        if (!group) return;
+
+        await client.resources.updateGroup({
+            projectId,
+            groupId: group.id,
+            name: group.name,
+            icon,
+        });
+        await refresh();
+    }
+
+    async function save() {
         saving = true;
         error = "";
 
         try {
-            await update({ name: name.trim() });
+            if (action === "rename" && group)
+                await client.resources.updateGroup({
+                    projectId,
+                    groupId: group.id,
+                    name: name.trim(),
+                    icon: group.icon ?? undefined,
+                });
+            else if (resource)
+                await client.resources.createGroup({
+                    projectId,
+                    name: name.trim(),
+                    resourceIds: [resource.id],
+                });
+
+            await refresh();
             onclose();
         } catch (cause) {
             error =
@@ -79,7 +112,7 @@
 
 <Dialog
     bind:open={
-        () => action === "rename" && resource !== undefined,
+        () => naming,
         (open) => {
             if (!open) onclose();
         }
@@ -90,16 +123,21 @@
             class="contents"
             onsubmit={(event) => {
                 event.preventDefault();
-                void rename();
+                void save();
             }}
         >
             <DialogHeader>
-                <DialogTitle>Rename {resource?.name}</DialogTitle>
+                <DialogTitle>
+                    {action === "rename"
+                        ? `Rename ${group?.name}`
+                        : "New group"}
+                </DialogTitle>
             </DialogHeader>
             <DialogPanel class="space-y-3">
                 <Input
                     bind:value={name}
-                    aria-label="Resource name"
+                    aria-label="Group name"
+                    placeholder="Backend"
                     maxlength={100}
                     autofocus
                 />
@@ -122,7 +160,7 @@
                     loading={saving}
                     disabled={saving || !name.trim()}
                 >
-                    Save
+                    {action === "rename" ? "Save" : "Create"}
                 </Button>
             </DialogFooter>
         </form>
@@ -143,21 +181,21 @@
 
 <ResourceIconUploadDialog
     bind:open={
-        () => action === "icon-upload" && resource !== undefined,
+        () => action === "icon-upload" && group !== undefined,
         (open) => {
             if (!open) onclose();
         }
     }
-    onselect={(icon) => update({ icon })}
+    onselect={updateIcon}
 />
 
 <ResourceIconLinkDialog
     bind:open={
-        () => action === "icon-link" && resource !== undefined,
+        () => action === "icon-link" && group !== undefined,
         (open) => {
             if (!open) onclose();
         }
     }
-    currentIcon={resource?.icon ?? ""}
-    onselect={(icon) => update({ icon })}
+    currentIcon={group?.icon ?? ""}
+    onselect={updateIcon}
 />
