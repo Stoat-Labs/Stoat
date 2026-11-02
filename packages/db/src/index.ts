@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import type { DatabaseConfig } from "./config";
-import * as schema from "./schema";
+import { relations } from "./relations";
 
 export function createDb(env: DatabaseConfig) {
     return drizzle({
@@ -12,7 +12,7 @@ export function createDb(env: DatabaseConfig) {
             idleTimeoutMillis: 5 * 60_000,
             keepAlive: true,
         },
-        schema,
+        relations,
     });
 }
 

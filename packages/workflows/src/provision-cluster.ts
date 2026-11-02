@@ -433,7 +433,7 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
             throw new Error("An earlier attempt is still stopping. Retry in a few seconds.");
 
         const cluster = await db.query.clusters.findFirst({
-            where: (row, { eq }) => eq(row.id, clusterId),
+            where: { id: clusterId },
         });
 
         if (!cluster?.provisioning || !cluster.provisioningSecrets)

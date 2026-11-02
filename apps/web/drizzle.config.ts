@@ -2,7 +2,7 @@ import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
     schema: [
-        "./node_modules/@stoat/db/src/schema",
+        "./node_modules/@stoat/db/src/schema/index.ts",
         "./node_modules/@stoat/workflows/src/schema.ts",
     ],
     out: "./node_modules/@stoat/db/src/migrations",

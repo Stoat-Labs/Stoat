@@ -97,12 +97,12 @@ export async function deployResource(db: Database, deploymentId: string, signal:
             await log(step);
 
             const input = await db.query.resourceDeploymentInputs.findFirst({
-                where: (input, { eq }) => eq(input.deploymentId, deploymentId),
+                where: { deploymentId },
             });
 
             const cluster = await db.query.clusters.findFirst({
                 columns: { sidecarUrl: true, sidecarToken: true, sidecarCertificate: true },
-                where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
+                where: { id: deployment.clusterId },
             });
 
             if (!input || !cluster || !deployment.spec) throw new Error(RESOURCE_FAILURE_MESSAGE);

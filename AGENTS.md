@@ -30,7 +30,7 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - Post-release: breaking changes are a big deal. No backfill, no backwards compatibility, data loss in migrations is NOT fine.
 - Backend tests need Docker. Testcontainers starts one `postgres:18-alpine`, and `tests/setup.ts` overwrites `DATABASE_URL`, so the dev DB is never used.
 - Env is managed by varlock: `.env.schema` in `apps/web` and `packages/db`. `postinstall` / `pnpm env:generate` regenerates `apps/web/src/generated-env.ts` and `packages/db/src/env.ts`. Edit the schema instead of those generated files. Packages read `APP_SECRET`, `APP_URL` and `DATABASE_URL` through `@stoat/config/env`, never `process.env` directly.
-- Two drizzle-orm versions coexist: 0.45.2 for the app and a v1 RC for effect-mq in `@stoat/workflows`. Keep the `pnpm-workspace.yaml` overrides and `ssr.noExternal: ["drizzle-orm"]` in `apps/web/vite.config.ts`, or the runtime crashes.
+- drizzle-orm and drizzle-kit are v1 RCs pinned in the `pnpm-workspace.yaml` catalog. `db.query` is RQBv2: relations live in `packages/db/src/relations.ts` (`defineRelations`), and `where` takes objects, not callbacks. Migrations are one folder per migration (`<timestamp>_<name>/migration.sql`).
 - Use `effect` only for effect-mq job and queue code in `packages/workflows` and the worker bootstrap. Don't add it elsewhere; existing `Match`/`Predicate` imports in `apps/web` and `packages/api` are legacy, not a pattern. It is pinned to `4.0.0-rc.116` (Effect v4, not v3 APIs).
 - oRPC is v2 beta, so load the `orpc` skill instead of relying on v1 knowledge.
 - `effect-mq` and `nuqs-svelte` are patched through `patches/`.

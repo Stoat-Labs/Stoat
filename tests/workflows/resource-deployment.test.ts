@@ -311,9 +311,10 @@ describe("resource deployment worker", () => {
         await queueResourceDeployment(id);
         const result = await terminal(id);
         expect(result.status).toBe("ready");
-        expect(
-            await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-        ).toMatchObject({ spec, draftSpec: spec });
+        expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject({
+            spec,
+            draftSpec: spec,
+        });
         expect(result.logs.at(-1)?.metadata).toEqual({ level: "info", event: "ready" });
         expect(result.logs).toContainEqual(
             expect.objectContaining({
@@ -408,7 +409,7 @@ describe("resource deployment worker", () => {
             try {
                 await received.promise;
                 expect(
-                    await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
+                    await db.query.resources.findFirst({ where: { id: resourceId } }),
                 ).toMatchObject({ spec: null, draftSpec: spec });
                 const draftSpec = "services:\n  next:\n    image: nginx:alpine\n";
                 await other
@@ -420,7 +421,7 @@ describe("resource deployment worker", () => {
                 finish.resolve();
                 await attempt;
                 expect(
-                    await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
+                    await db.query.resources.findFirst({ where: { id: resourceId } }),
                 ).toMatchObject({ spec: cancelled ? null : spec, draftSpec });
                 expect((await getDeploymentWithLogs(db, id))?.status).toBe(
                     cancelled ? "cancelled" : "ready",
@@ -445,18 +446,19 @@ describe("resource deployment worker", () => {
             const result = await getDeploymentWithLogs(db, id);
             expect(result?.status).toBe("running");
             expect(result?.logs.some((log) => log.metadata.event === "ready")).toBe(false);
-            expect(
-                await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-            ).toMatchObject({ spec: null, draftSpec: spec });
+            expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject(
+                { spec: null, draftSpec: spec },
+            );
         } finally {
             await db.$client.query("ALTER TABLE resources DROP CONSTRAINT reject_spec");
         }
 
         await deployResource(db, id, new AbortController().signal);
         expect((await getDeploymentWithLogs(db, id))?.status).toBe("ready");
-        expect(
-            await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-        ).toMatchObject({ spec, draftSpec: spec });
+        expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject({
+            spec,
+            draftSpec: spec,
+        });
     });
 
     it.each(["missing", "error", "progress-error", "trailing-error", "http-error"] as const)(
@@ -486,9 +488,9 @@ describe("resource deployment worker", () => {
             }[result];
 
             expect(outcome.error).toBe(reason);
-            expect(
-                await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-            ).toMatchObject({ spec: previousSpec, draftSpec: spec });
+            expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject(
+                { spec: previousSpec, draftSpec: spec },
+            );
             expect(outcome.logs.filter((log) => log.text === reason)).toHaveLength(1);
             expect(outcome.logs.at(-1)).toMatchObject({
                 text: "Deployment failed.",
@@ -553,9 +555,10 @@ describe("resource deployment worker", () => {
         await closed.promise;
         await deployResource(other, id, new AbortController().signal);
         expect((await getDeploymentWithLogs(db, id))?.status).toBe("cancelled");
-        expect(
-            await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-        ).toMatchObject({ spec: null, draftSpec: spec });
+        expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject({
+            spec: null,
+            draftSpec: spec,
+        });
     }, 10_000);
 
     it("does not pick up cancelled deployments or issue requests after an early abort", async () => {
@@ -804,9 +807,7 @@ describe("resource deployment worker", () => {
         const id = await snapshot(marked);
         await queueResourceDeployment(id);
         expect((await terminal(id)).status).toBe("ready");
-        expect(
-            await db.query.resources.findFirst({ where: eq(resources.id, resourceId) }),
-        ).toMatchObject({
+        expect(await db.query.resources.findFirst({ where: { id: resourceId } })).toMatchObject({
             type: "database",
             settings: expect.objectContaining({ engine: "postgresql" }),
         });

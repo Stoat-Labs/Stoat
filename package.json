@@ -50,7 +50,7 @@
         "@stoat/workflows": "workspace:*",
         "@testcontainers/postgresql": "^12.1.0",
         "@types/node": "^26.4.1",
-        "drizzle-orm": "^0.45.2",
+        "drizzle-orm": "catalog:",
         "effect": "4.0.0-rc.116",
         "oxlint": "1.81.0",
         "rolldown": "1.2.7",

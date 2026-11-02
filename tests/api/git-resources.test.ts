@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, ORPCError } from "@orpc/server";
 import { createDb } from "@stoat/db";
-import * as schema from "@stoat/db/schema/index";
+import { relations } from "@stoat/db/relations";
 import {
     clusters,
     deployments,
@@ -208,7 +208,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                 max: 1,
                 connectionTimeoutMillis: 2_000,
             },
-            schema,
+            relations,
         });
         await migrate(db, { migrationsFolder: resolve("packages/db/src/migrations") });
 

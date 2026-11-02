@@ -43,9 +43,6 @@ export default defineConfig({
     resolve: {
         alias: [{ find: /^@tanstack\/svelte-query$/, replacement: svelteQuery }],
     },
-    // effect-mq (via @stoat/workflows) needs drizzle v1 while the rest uses 0.45.2.
-    // Externalized, the bare import resolves to the hoisted 0.45.2 at runtime and crashes.
-    ssr: { noExternal: ["drizzle-orm"] },
     plugins: [
         monitoringWorker(),
         rpcSocket(),

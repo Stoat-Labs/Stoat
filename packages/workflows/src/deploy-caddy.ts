@@ -206,7 +206,7 @@ export async function deployCaddy(db: Database, deploymentId: string, signal: Ab
 
         const cluster = await db.query.clusters.findFirst({
             columns: { sidecarUrl: true, sidecarToken: true, sidecarCertificate: true },
-            where: (cluster, { eq }) => eq(cluster.id, deployment.clusterId),
+            where: { id: deployment.clusterId },
         });
 
         if (!cluster) throw new Error("Cluster not found.");
