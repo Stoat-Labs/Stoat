@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import type { Database } from "@stoat/db";
+import { deleteEmptyGroups } from "@stoat/db/groups";
 import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
 import { resourceSlug } from "@stoat/db/slug";
 import { referencedResourceIds } from "@stoat/workflows/references";
@@ -11,7 +12,6 @@ import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
 import { unpinVolumeNames } from "../../compose/move";
 import { composeResourceTypes } from "../../databases";
-import { deleteEmptyGroups } from "./groups";
 
 type Executor = Pick<Database, "select">;
 
@@ -138,7 +138,7 @@ export const resourceTransferRouter = {
                     .where(eq(resources.id, resource.id))
                     .returning();
 
-                await deleteEmptyGroups(tx, from.id);
+                await deleteEmptyGroups(tx, [from.id]);
 
                 return moved!;
             }),

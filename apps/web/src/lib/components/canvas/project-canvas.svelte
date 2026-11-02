@@ -67,6 +67,7 @@
         freeSlot,
         loadCollapsed,
         loadPositions,
+        moveResourceCards,
         nearestFree,
         nodeRect,
         parseNodeId,
@@ -891,6 +892,7 @@
 
     function endDrag(dragged: CanvasNode) {
         const target = drag?.target;
+        const startedAt = drag?.starts.get(dragged.id);
 
         drag = undefined;
         frameStart = undefined;
@@ -906,6 +908,7 @@
             dragged.data.resource.id,
             target,
             freeSlot(nodeRect(dragged), memberRects(target)),
+            startedAt,
         );
     }
 
@@ -945,6 +948,8 @@
         resourceId: string,
         groupId: string | null,
         landing?: { x: number; y: number },
+        // Where the card was before a drag moved it; its own cards keep their offset from there.
+        origin?: { x: number; y: number },
     ) {
         const card = nodes.find((node) => node.id === resourceId);
 
@@ -971,7 +976,12 @@
             });
             canvasLayout.place({
                 ...canvasLayout.positions,
-                [resourceId]: spot,
+                ...moveResourceCards(
+                    nodes,
+                    resourceId,
+                    origin ?? card.position,
+                    spot,
+                ),
             });
         } catch (error) {
             moveNotice = {

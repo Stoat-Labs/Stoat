@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { deleteEmptyGroups } from "./groups";
 import type { Database } from "./index";
 import {
     projects,
@@ -73,12 +74,16 @@ export async function markBucketFailed(
 export async function deleteBucketResource(db: Database, bucket: S3BucketRow) {
     await db.transaction(async (tx) => {
         const [locked] = await tx
-            .select({ resourceId: s3Buckets.resourceId })
+            .select({ resourceId: s3Buckets.resourceId, projectId: resources.projectId })
             .from(s3Buckets)
+            .innerJoin(resources, eq(resources.id, s3Buckets.resourceId))
             .where(current(bucket.resourceId, bucket.requestedAt, "deleting"))
-            .for("update");
+            .for("update", { of: s3Buckets });
 
-        if (locked) await tx.delete(resources).where(eq(resources.id, bucket.resourceId));
+        if (!locked) return;
+
+        await tx.delete(resources).where(eq(resources.id, bucket.resourceId));
+        await deleteEmptyGroups(tx, [locked.projectId]);
     });
 }
 

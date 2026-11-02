@@ -202,6 +202,26 @@ describe("resource groups API (PostgreSQL)", () => {
         expect(rows.every((row) => row.groupId === null)).toBe(true);
     });
 
+    it("deletes the group when its last resource is deleted", async () => {
+        const doomedId = randomUUID();
+
+        await db
+            .insert(resources)
+            .values({ id: doomedId, projectId, name: "doomed", draftSpec: spec });
+
+        const group = await create([doomedId]);
+
+        await call(
+            resourcesRouter.deleteResource,
+            { projectId, resourceIds: [doomedId] },
+            { context },
+        );
+
+        expect(
+            await db.select().from(resourceGroups).where(eq(resourceGroups.id, group.id)),
+        ).toEqual([]);
+    });
+
     it("drops the group when its resource moves to another project", async () => {
         const group = await create([apiId]);
 

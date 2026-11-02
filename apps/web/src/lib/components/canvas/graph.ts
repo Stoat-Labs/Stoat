@@ -135,11 +135,23 @@ export function parseNodeId(nodeId: string) {
 
 /** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
 export function cardTrays(services: CanvasService[]) {
-    return services.flatMap((service) => [
-        ...service.volumes.map((name) => ({ kind: "volume" as const, name })),
-        ...service.configs.map((name) => ({ kind: "config" as const, name })),
-        ...(service.exporters ?? []).map((name) => ({ kind: "metrics" as const, name })),
-    ]);
+    // Services of one resource can share a volume or config; its card shows it once.
+    const unique = (names: string[]) => [...new Set(names)];
+
+    return [
+        ...unique(services.flatMap((service) => service.volumes)).map((name) => ({
+            kind: "volume" as const,
+            name,
+        })),
+        ...unique(services.flatMap((service) => service.configs)).map((name) => ({
+            kind: "config" as const,
+            name,
+        })),
+        ...unique(services.flatMap((service) => service.exporters ?? [])).map((name) => ({
+            kind: "metrics" as const,
+            name,
+        })),
+    ];
 }
 
 /** The card without its trays: a lone service fits the header, more get a row each. */
@@ -457,6 +469,34 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
     }
 
     return positions;
+}
+
+/**
+ * New positions when a resource's card moves from `from` to `to`: its volumes and configs
+ * on cards of their own keep their offset from it, so they change frames with it.
+ */
+export function moveResourceCards(
+    nodes: CanvasNode[],
+    resourceId: string,
+    from: XYPosition,
+    to: XYPosition,
+) {
+    return Object.fromEntries([
+        [resourceId, to],
+        ...nodes.flatMap((node) =>
+            node.type === "card" && node.id !== resourceId && node.data.resource.id === resourceId
+                ? [
+                      [
+                          node.id,
+                          {
+                              x: node.position.x + to.x - from.x,
+                              y: node.position.y + to.y - from.y,
+                          },
+                      ] as const,
+                  ]
+                : [],
+        ),
+    ]);
 }
 
 export function nodeRect(node: CanvasNode): Rect {

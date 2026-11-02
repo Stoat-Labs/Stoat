@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
+import { deleteEmptyGroups } from "@stoat/db/groups";
 import { resourceGroups, resources } from "@stoat/db/schema/index";
-import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 
 import { organizationProcedure } from "../..";
@@ -14,26 +14,6 @@ const groupDetails = {
     name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
     icon: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(1_000_000))),
 };
-
-/** A group nothing is in any more has no frame to show, so it goes. */
-export async function deleteEmptyGroups(
-    db: Pick<Database, "delete" | "select">,
-    projectId: string,
-) {
-    await db
-        .delete(resourceGroups)
-        .where(
-            and(
-                eq(resourceGroups.projectId, projectId),
-                notExists(
-                    db
-                        .select({ id: resources.id })
-                        .from(resources)
-                        .where(eq(resources.groupId, resourceGroups.id)),
-                ),
-            ),
-        );
-}
 
 // Railway's groups: canvas frames around whole resources. Each resource keeps its own
 // Compose file and deploys on its own; a group only draws them together.
@@ -91,7 +71,7 @@ export const resourceGroupsRouter = {
                 if (moved.length !== ids.length)
                     throw new ORPCError("NOT_FOUND", { message: "Resource not found." });
 
-                await deleteEmptyGroups(tx, project.id);
+                await deleteEmptyGroups(tx, [project.id]);
 
                 return group!;
             }),
@@ -167,7 +147,7 @@ export const resourceGroupsRouter = {
                 if (!resource)
                     throw new ORPCError("NOT_FOUND", { message: "Resource or group not found." });
 
-                await deleteEmptyGroups(tx, input.projectId);
+                await deleteEmptyGroups(tx, [input.projectId]);
 
                 return resource;
             }),

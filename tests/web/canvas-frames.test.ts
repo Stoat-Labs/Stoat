@@ -2,12 +2,15 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
     buildCanvas,
+    cardTrays,
+    moveResourceCards,
     foldExporters,
     frameRect,
     freeSlot,
     refitFrames,
     repairOverlaps,
     settle,
+    type CanvasService,
 } from "../../apps/web/src/lib/components/canvas/graph";
 
 describe("frameRect", () => {
@@ -160,9 +163,14 @@ describe("settle", () => {
 });
 
 describe("buildCanvas", () => {
-    const service = (name: string, volumes: string[] = [], configs: string[] = []) => ({
+    const service = (
+        name: string,
+        volumes: string[] = [],
+        configs: string[] = [],
+    ): CanvasService => ({
         name,
-        image: null,
+        image: undefined,
+        template: undefined,
         dependsOn: [],
         volumes,
         configs,
@@ -211,8 +219,21 @@ describe("buildCanvas", () => {
         );
 
         expect(nodes.map((node) => node.id)).toEqual(["sure"]);
-        // 144 plus five 32px service rows, then five 48px trays.
-        expect(nodes[0]?.height).toBe(144 + 5 * 32 + 5 * 48);
+        // 144 plus five 32px service rows, then four 48px trays: web and worker share storage.
+        expect(nodes[0]?.height).toBe(144 + 5 * 32 + 4 * 48);
+    });
+
+    it("shows a volume or config several services mount as one tray", () => {
+        expect(
+            cardTrays([
+                service("web", ["storage"], ["app.conf"]),
+                service("worker", ["storage", "cache"], ["app.conf"]),
+            ]),
+        ).toEqual([
+            { kind: "volume", name: "storage" },
+            { kind: "volume", name: "cache" },
+            { kind: "config", name: "app.conf" },
+        ]);
     });
 
     it("frames the resources of one group together and leaves the rest alone", () => {
@@ -271,6 +292,32 @@ describe("buildCanvas", () => {
         );
 
         expect(edges.map((edge) => edge.id)).toEqual(["reference:g:c"]);
+    });
+});
+
+describe("moveResourceCards", () => {
+    // SAFETY: the helper only reads ids, types, positions and `resource.id`.
+    const card = (id: string, resource: string, x: number, y: number) =>
+        ({ id, type: "card", position: { x, y }, data: { resource: { id: resource } } }) as never;
+
+    it("takes a resource's own volume and config cards along, keeping their offset", () => {
+        expect(
+            moveResourceCards(
+                [
+                    card("r", "r", 0, 0),
+                    card("r/data", "r", 0, 192),
+                    card("r#app.conf", "r", 312, 0),
+                    card("other", "other", 600, 600),
+                ],
+                "r",
+                { x: 0, y: 0 },
+                { x: 1000, y: 48 },
+            ),
+        ).toEqual({
+            r: { x: 1000, y: 48 },
+            "r/data": { x: 1000, y: 240 },
+            "r#app.conf": { x: 1312, y: 48 },
+        });
     });
 });
 
