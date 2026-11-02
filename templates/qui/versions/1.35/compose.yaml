@@ -1,7 +1,6 @@
 services:
     qui:
-        image: ghcr.io/autobrr/qui:latest
-        pull_policy: always
+        image: ghcr.io/autobrr/qui:v1.35.0
         volumes:
             - qui_data:/config
         restart: unless-stopped

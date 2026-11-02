@@ -1,6 +1,6 @@
 {
     "name": "qBittorrent",
-    "description": "qBittorrent is a BitTorrent client programmed in C++ / Qt that uses libtorrent (sometimes called libtorrent-rasterbar) by Arvid Norberg.",
+    "description": "BitTorrent client with a web interface for managing downloads.",
     "type": "compose",
-    "tags": ["torrent", "isos"]
+    "tags": ["media", "downloads"]
 }

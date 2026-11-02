@@ -1,6 +1,6 @@
 {
     "name": "Basedbin",
-    "description": "A minimal pastebin which also accepts binary files like Images, PDFs and ships multiple clients.",
+    "description": "Minimal pastebin that also accepts binary files like images and PDFs.",
     "type": "compose",
-    "tags": ["storage", "paste"]
+    "tags": ["storage"]
 }

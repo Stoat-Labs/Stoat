@@ -1,6 +1,7 @@
 services:
     mealie:
-        image: ghcr.io/mealie-recipes/mealie:latest
+        image: ghcr.io/mealie-recipes/mealie:v3.30.0
+        restart: unless-stopped
         x-ports:
             - "${MEALIE_HOST}:9000/https"
         volumes:
@@ -11,7 +12,6 @@ services:
             PGID: ${MEDIA_GID}
             TZ: ${TZ}
             BASE_URL: https://${MEALIE_HOST}
-            ALLOW_PASSWORD_LOGIN: "false"
         healthcheck:
             test:
                 [

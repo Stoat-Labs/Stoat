@@ -1,6 +1,6 @@
 services:
     papra:
-        image: ghcr.io/papra-hq/papra:latest
+        image: ghcr.io/papra-hq/papra:26.7.1-rootless
         restart: unless-stopped
         x-ports:
             - ${PAPRA_HOST}:1221/https

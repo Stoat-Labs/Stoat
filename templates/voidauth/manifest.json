@@ -1,8 +1,8 @@
 {
     "name": "Voidauth",
-    "description": "VoidAuth is an open-source SSO authentication and user management provider that stands guard in front of your self-hosted applications. It is easy-to-use for admins and end-users, supports nice-to-have features like passkeys, user invitation, self-registration, email support, and more!",
+    "description": "SSO and user management for your self-hosted apps, with passkeys and invitations.",
     "type": "compose",
-    "tags": ["OIDC", "SSO", "authentication"],
+    "tags": ["auth"],
     "resources": {
         "db": {
             "name": "Database",

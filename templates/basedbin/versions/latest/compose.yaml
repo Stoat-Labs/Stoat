@@ -1,12 +1,13 @@
 services:
     basedbin:
         # No healthcheck: the image is FROM scratch, with no shell or HTTP client to probe with.
-        image: wantguns/bin
+        # Pinned by digest: the newest image has no version tag (`v1.0.0` is from 2021).
+        image: wantguns/bin@sha256:e6ab948f2284eca116c7e2a8c5b1cfb4800faddd478ab997d0dbf14f82467d08
+        restart: unless-stopped
         x-ports:
             - ${BASEDBIN_HOST}:6162/https
         environment:
             - BIN_LIMITS={form="32 MiB"}
-            - BIN_CLIENT_DESC=placeholder
         volumes:
             - basedbin:/upload # upload folder will have your pastes
 
