@@ -19,6 +19,16 @@ async function askDelete(page: Page, name: string) {
     await page.getByRole("menuitem", { name: "Delete" }).click();
 }
 
+/** A machine the fake sidecar reports next to MACHINE until it's removed or reset. */
+const WORKER = { id: "0f".repeat(16), name: "e2e-worker", state: "Down" };
+
+async function addWorker() {
+    await fetch(`${process.env.E2E_SIDECAR_URL}/__machines`, {
+        method: "POST",
+        body: JSON.stringify(WORKER),
+    });
+}
+
 let clusters = 0;
 
 /** A cluster on the fake sidecar with a name no other test uses. */
@@ -163,6 +173,94 @@ test("an admin sets up a server over SSH, follows it on its deployment page, ret
     await expect(dialog(page)).toHaveCount(0);
     await expect(row(page, name)).toHaveCount(0);
     expect(await sql("SELECT id FROM clusters WHERE name = $1", [name])).toEqual([]);
+});
+
+test("an admin adds a machine in a dialog, follows it on its deployment page, retries, and discards it", async ({
+    page,
+}) => {
+    test.setTimeout(3 * 60_000);
+    const { id } = await createCluster(page);
+    await page.goto(`/clusters/${id}`);
+    await page.getByRole("button", { name: "Add machine" }).click();
+
+    const add = page.getByRole("dialog", { name: "Add machine" });
+    await expect(add.getByRole("button", { name: "Continue" })).toBeDisabled();
+    // .invalid names never resolve, so adding fails without touching a real server.
+    await add.getByLabel("Server address").fill("worker.invalid");
+    await add.getByLabel("Machine name").fill("Worker-2");
+    await add.getByRole("button", { name: "Continue" }).click();
+
+    await expect(add.getByRole("textbox", { name: "Public key" })).toHaveValue(
+        /^ssh-ed25519 \S+ stoat-/,
+    );
+    await expect(add.getByRole("textbox", { name: "Or run this on the server" })).toHaveValue(
+        /authorized_keys$/,
+    );
+    expect(
+        await sql("SELECT pending_machine->>'name' AS name FROM clusters WHERE id = $1", [id]),
+    ).toEqual([{ name: "worker-2" }]);
+
+    // The private key never reaches the browser.
+    const pending = await page.request.post("/rpc/api/cluster/getPendingMachine", {
+        data: { clusterId: id },
+        headers: { origin: process.env.E2E_BASE_URL! },
+    });
+
+    const body = await pending.text();
+
+    expect(pending.ok()).toBe(true);
+    expect(body).not.toContain("PRIVATE KEY");
+    expect(body).not.toContain("enc:v1:");
+
+    // Adding is followed on its deployment page.
+    await add.getByRole("button", { name: "Add machine" }).click();
+    await expect(page).toHaveURL(/\/deployments\//u);
+    await expect(page.getByRole("heading", { name: "New machine" })).toBeVisible();
+    const firstAttempt = page.url();
+    const status = page.getByRole("status").first();
+
+    await expect(status).toHaveText("Failed", { timeout: 45_000 });
+    await expect(page.getByText(/resolve worker\.invalid/u).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page).not.toHaveURL(firstAttempt);
+    await expect(status).toHaveText("Failed", { timeout: 45_000 });
+
+    // The dialog picks the server up again, and discarding it deletes its key.
+    await page.goto(`/clusters/${id}?dialog=add-machine`);
+    await expect(add).toContainText("The last attempt failed.");
+    await add.getByRole("button", { name: "Discard" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Discard" }).click();
+    await expect(add.getByLabel("Server address")).toBeVisible();
+    expect(
+        await sql(
+            "SELECT pending_machine IS NULL AND pending_machine_key IS NULL AS gone FROM clusters WHERE id = $1",
+            [id],
+        ),
+    ).toEqual([{ gone: true }]);
+});
+
+test("an admin removes a machine, but not the one Stoat connects through", async ({ page }) => {
+    await addWorker();
+    const { id } = await createCluster(page);
+    await page.goto(`/clusters/${id}`);
+
+    await expect(row(page, MACHINE.name)).toContainText("Stoat connects through this machine");
+    await expect(page.getByRole("button", { name: `Actions for ${MACHINE.name}` })).toHaveCount(0);
+
+    await row(page, WORKER.name)
+        .getByRole("button", { name: `Actions for ${WORKER.name}` })
+        .click();
+    await page.getByRole("menuitem", { name: "Remove machine" }).click();
+
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText(`${WORKER.name} is down`);
+    await confirm.getByRole("button", { name: "Remove machine" }).click();
+
+    await expect(confirm).toBeHidden();
+    await expect(page.getByText(`Removed ${WORKER.name}`)).toBeVisible();
+    await expect(row(page, WORKER.name)).toHaveCount(0);
+    await expect(page).not.toHaveURL(/machine=/u);
 });
 
 test("an admin replaces the cluster's domain with their own, then removes it", async ({ page }) => {
@@ -326,6 +424,28 @@ test.describe("as a member", () => {
         await expect(breadcrumb(page)).toContainText("Lonely");
         await expect(page.getByRole("button", { name: "Initialize monitoring" })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Reinitialize" })).toHaveCount(0);
+    });
+
+    test("machines cannot be added or removed", async ({ page }) => {
+        await addWorker();
+        await page.goto(`/clusters/${ids.lonelyCluster}`);
+        await expect(page.getByText(WORKER.name).first()).toBeVisible();
+        await expect(page.getByRole("button", { name: "Add machine" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: `Actions for ${WORKER.name}` })).toHaveCount(
+            0,
+        );
+
+        for (const [path, input] of [
+            ["prepareMachine", { clusterId: ids.lonelyCluster, host: "worker.invalid" }],
+            ["removeMachine", { clusterId: ids.lonelyCluster, machineId: WORKER.id }],
+        ] as const) {
+            const response = await page.request.post(`/rpc/api/cluster/${path}`, {
+                data: input,
+                headers: { origin: process.env.E2E_BASE_URL! },
+            });
+
+            expect(response.status()).toBe(403);
+        }
     });
 
     test("the cluster domain is visible but cannot be changed", async ({ page }) => {

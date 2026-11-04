@@ -10,12 +10,14 @@ import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initi
 import { s3FailureMessage } from "@stoat/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
+import { addMachine } from "./add-machine";
 import { createInitializeClusterHandler } from "./initialize-cluster";
 import { MONITORING_VERSION } from "./monitoring-compose";
 import { CADDY_FAILURE_MESSAGE, deployCaddy } from "./deploy-caddy";
 import { deployResource, RESOURCE_FAILURE_MESSAGE } from "./deploy-resource";
 import { runHealthCheck } from "./health-check";
 import {
+    AddMachine,
     DeployCaddy,
     DeployResource,
     HealthCheck,
@@ -171,6 +173,15 @@ function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
                 ),
             { concurrency: 2 },
         ),
+        AddMachine.toLayer(
+            ({ deploymentId }) =>
+                attempt(
+                    (signal) => addMachine(db, deploymentId, signal),
+                    // addMachine records its own failure; uc's messages carry no secrets.
+                    (error) => error,
+                ),
+            { concurrency: 2 },
+        ),
         ReconcileBucket.toLayer(
             ({ resourceId, requestId }) =>
                 attempt(
@@ -247,6 +258,8 @@ function deploymentFailureMessage(name: string) {
 
     if (name === "ProvisionCluster") return "Setting up the cluster failed.";
 
+    if (name === "AddMachine") return "Adding the machine failed.";
+
     return RESOURCE_FAILURE_MESSAGE;
 }
 
@@ -282,7 +295,8 @@ async function recordFailureAsync(db: Database, failure: Worker.JobFailure) {
     if (
         failure.name === "DeployResource" ||
         failure.name === "DeployCaddy" ||
-        failure.name === "ProvisionCluster"
+        failure.name === "ProvisionCluster" ||
+        failure.name === "AddMachine"
     ) {
         if (!deployment || !["queued", "running"].includes(deployment.status)) return;
         const cause = Cause.squash(failure.cause);
@@ -331,6 +345,7 @@ function workerLive(db: Database) {
             health: { concurrency: 1 },
             git: { concurrency: 2 },
             provision: { concurrency: 2 },
+            machines: { concurrency: 2 },
         },
         lockDuration: "10 minutes",
         // effect-mq also delivers cross-process cancellation on this heartbeat.
@@ -347,6 +362,7 @@ function workerLive(db: Database) {
                 failure.name !== "DeployResource" &&
                 failure.name !== "DeployCaddy" &&
                 failure.name !== "ProvisionCluster" &&
+                failure.name !== "AddMachine" &&
                 failure.name !== "InitializeCluster"
             )
                 return Effect.void;
@@ -416,10 +432,17 @@ export async function cancelDeploymentJob(
         | "InitializeCluster"
         | "DeployResource"
         | "DeployCaddy"
-        | "ProvisionCluster" = "InitializeCluster",
+        | "ProvisionCluster"
+        | "AddMachine" = "InitializeCluster",
 ): Promise<void> {
     try {
-        const job = { InitializeCluster, DeployResource, DeployCaddy, ProvisionCluster }[name];
+        const job = {
+            InitializeCluster,
+            DeployResource,
+            DeployCaddy,
+            ProvisionCluster,
+            AddMachine,
+        }[name];
 
         const program = job
             .cancel(JobStore.JobId(`${name}/${jobId}`))
@@ -440,7 +463,7 @@ async function pollOutboxAsync(db: Database) {
 
     const queued = await db.$client.query<{ deploymentId: string; name: string }>(
         `SELECT id AS "deploymentId", name FROM deployments
-         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy', 'ProvisionCluster')`,
+         WHERE status = 'queued' AND name IN ('DeployResource', 'DeployCaddy', 'ProvisionCluster', 'AddMachine')`,
     );
 
     const buckets = await pendingBucketRequests(db);
@@ -455,37 +478,40 @@ async function pollOutboxAsync(db: Database) {
         buckets,
         monitoring,
         provisions: queued.rows.filter((row) => row.name === "ProvisionCluster"),
+        machines: queued.rows.filter((row) => row.name === "AddMachine"),
     };
 }
 
 // Sweep durable request rows, never deployment logs. Every job type is idempotent.
 export function pollInitializationOutbox(db: Database) {
     return Effect.promise(() => pollOutboxAsync(db)).pipe(
-        Effect.flatMap(({ initialization, resources, caddy, buckets, monitoring, provisions }) =>
-            Effect.forEach(
-                [
-                    ...initialization.map((row) =>
-                        enqueueInitialization(row.clusterId, row.requestedAt.toISOString()),
-                    ),
-                    ...resources.map(({ deploymentId }) =>
-                        DeployResource.enqueue({ deploymentId }),
-                    ),
-                    ...caddy.map(({ deploymentId }) => DeployCaddy.enqueue({ deploymentId })),
-                    ...buckets.map((row) =>
-                        ReconcileBucket.enqueue({
-                            resourceId: row.resourceId,
-                            requestId: row.requestedAt.toISOString(),
-                        }),
-                    ),
-                    ...monitoring.map(({ clusterId }) =>
-                        RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
-                    ),
-                    ...provisions.map(({ deploymentId }) =>
-                        ProvisionCluster.enqueue({ deploymentId }),
-                    ),
-                ],
-                (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
-            ),
+        Effect.flatMap(
+            ({ initialization, resources, caddy, buckets, monitoring, provisions, machines }) =>
+                Effect.forEach(
+                    [
+                        ...initialization.map((row) =>
+                            enqueueInitialization(row.clusterId, row.requestedAt.toISOString()),
+                        ),
+                        ...resources.map(({ deploymentId }) =>
+                            DeployResource.enqueue({ deploymentId }),
+                        ),
+                        ...caddy.map(({ deploymentId }) => DeployCaddy.enqueue({ deploymentId })),
+                        ...buckets.map((row) =>
+                            ReconcileBucket.enqueue({
+                                resourceId: row.resourceId,
+                                requestId: row.requestedAt.toISOString(),
+                            }),
+                        ),
+                        ...monitoring.map(({ clusterId }) =>
+                            RollOutMonitoring.enqueue({ clusterId, version: MONITORING_VERSION }),
+                        ),
+                        ...provisions.map(({ deploymentId }) =>
+                            ProvisionCluster.enqueue({ deploymentId }),
+                        ),
+                        ...machines.map(({ deploymentId }) => AddMachine.enqueue({ deploymentId })),
+                    ],
+                    (enqueue) => enqueue.pipe(Effect.catch(() => Effect.void)),
+                ),
         ),
         Effect.catch(() => Effect.void),
     );

@@ -106,7 +106,7 @@ async function waitForService(
 // Installed by the Stoat sidecar; Alloy bind-mounts its directory (see compose.yaml).
 const GEOIP_DATABASE = "/var/lib/stoat/geoip/country.mmdb";
 
-function bounded(signal: AbortSignal, ms: number) {
+export function bounded(signal: AbortSignal, ms: number) {
     return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
@@ -114,7 +114,7 @@ function bounded(signal: AbortSignal, ms: number) {
  * Alloy refuses to start without the GeoIP database, which the Stoat sidecar installs on every
  * machine. Returns the names of machines that lack it, e.g. because their sidecar is older.
  */
-async function machinesWithoutGeoip(
+export async function machinesWithoutGeoip(
     uc: UcClient,
     machines: readonly { id: string; name: string }[],
     signal: AbortSignal,

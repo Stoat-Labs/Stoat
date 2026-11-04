@@ -71,12 +71,12 @@ case "$1" in
 esac
 `;
 
-// Stands in for OpenSSH, which checks whether the server already belongs to a cluster.
+// Stands in for OpenSSH, which reads the ID of the cluster member a server already is.
 const fakeSsh = `#!/bin/sh
 dir=$(dirname "$0")
 echo "$*" >> "$dir/ssh-calls"
 case "$(cat "$dir/ssh-mode")" in
-    member) exit 0 ;;
+    member) echo '"ID": "c0ffee"'; exit 0 ;;
     rejected)
         echo "root@93.184.216.34: Permission denied (publickey)." >&2
         exit 255 ;;
@@ -294,7 +294,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(init).not.toContain("--no-dns");
         expect(init).toContain("database=0");
         expect(existsSync(dirname(join(home, "config.yaml")))).toBe(false);
-        expect((await lines("ssh-calls"))[0]).toContain("root@93.184.216.34 grep -qs");
+        expect((await lines("ssh-calls"))[0]).toContain("root@93.184.216.34 grep -o -m 1");
 
         const setup = await call(clusterRouter.getProvisioning, { clusterId }, { context });
         const text = (await setupLogs(deployment.id)).map((line) => line.text);

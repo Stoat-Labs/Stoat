@@ -11,6 +11,7 @@ import type {
     LogEvent,
     Machine,
     MachineExecResponse,
+    RemoveMachineResponse,
     Service,
     StatusResponse,
 } from "@stoat/uncloud";
@@ -97,6 +98,7 @@ type Reply =
     | DomainResponse
     | ErrorResponse
     | MachineExecResponse
+    | RemoveMachineResponse
     | StatusResponse
     | Service
     | { items: Machine[] | Service[] }
@@ -132,14 +134,17 @@ const monitoringSchema = v.object({
     form: v.optional(v.record(v.string(), v.string()), {}),
 });
 
+const machineSchema = v.object({ id: v.string(), name: v.string(), state: v.string() });
+
 /**
  * Just enough of the Uncloud sidecar for the app: cluster info, machines, a deploy stream
  * that records services, service lookups, and log streams. Unknown routes get a fast 404 so
  * nothing in the app hangs. `/__received` and `/__reset` let specs (in other processes)
- * inspect and clear what was deployed.
+ * inspect and clear what was deployed, and `/__machines` adds a machine next to MACHINE.
  */
 export async function startFakeSidecar() {
     let received: string[] = [];
+    let workers: Machine[] = [];
     const services = new Map<string, Service>();
     const reserved = { domain: SIDECAR_DOMAIN, reserved: true };
     let domain: { domain: string; reserved: boolean } | null = reserved;
@@ -243,8 +248,15 @@ export async function startFakeSidecar() {
             received = [];
             services.clear();
             domain = reserved;
+            workers = [];
 
             return json(response, 200, received);
+        }
+
+        if (request.method === "POST" && path === "/__machines") {
+            workers.push(v.parse(machineSchema, JSON.parse(Buffer.concat(chunks).toString())));
+
+            return json(response, 200, { status: "added" });
         }
 
         // Like Uncloud: one domain at a time, and DELETE releases a reserved one.
@@ -276,7 +288,7 @@ export async function startFakeSidecar() {
             const diagnostics: ClusterDiagnostics = {
                 status: "healthy",
                 issues: [],
-                machines: [MACHINE],
+                machines: [{ ...MACHINE, connected: true }, ...workers],
                 links: [],
                 versionDrift: false,
             };
@@ -290,7 +302,32 @@ export async function startFakeSidecar() {
         if (get && path === "/api/v1/caddy/configs")
             return json(response, 200, { items: [], drift: false });
 
-        if (get && path === "/api/v1/machines") return json(response, 200, { items: [MACHINE] });
+        if (get && path === "/api/v1/machines")
+            return json(response, 200, { items: [MACHINE, ...workers] });
+
+        const machine = /^\/api\/v1\/machines\/([^/]+)$/u.exec(path);
+
+        // Like the sidecar: it can't remove the machine it reaches Uncloud through.
+        if (request.method === "DELETE" && machine) {
+            const id = decodeURIComponent(machine[1]!);
+            const removed = workers.find((worker) => worker.id === id);
+
+            if (id === MACHINE.id)
+                return json(response, 422, {
+                    error: `the sidecar reaches Uncloud through machine "${MACHINE.name}", so it can't remove it`,
+                });
+
+            if (!removed) return json(response, 404, { error: "machine not found" });
+
+            workers = workers.filter((worker) => worker !== removed);
+
+            return json(response, 200, {
+                id: removed.id,
+                name: removed.name,
+                containers: 0,
+                reset: removed.state === "Up",
+            });
+        }
 
         // Initialization checks that the sidecar installed the GeoIP database on each machine.
         if (request.method === "POST" && /^\/api\/v1\/machines\/[^/]+\/exec$/u.test(path))

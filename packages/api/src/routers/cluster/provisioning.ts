@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import type { Database } from "@stoat/db";
 import { latestProvisioningDeployments } from "@stoat/db/clusters";
 import { clusters, deployments, type ClusterProvisioning } from "@stoat/db/schema/index";
 import {
@@ -15,7 +16,78 @@ import { organizationAdminProcedure } from "../..";
 
 const clusterInput = v.object({ clusterId: v.pipe(v.string(), v.uuid()) });
 
+// Why a cluster job can't start yet: one is queued or running, or a cancelled one still holds its lock.
+const busy = {
+    ProvisionCluster: {
+        running: "Setup is already running.",
+        stopping: "The last attempt is still stopping. Try again in a few seconds.",
+    },
+    AddMachine: {
+        running: "A machine is being added. Wait for it to finish, or cancel it.",
+        stopping: "A machine is still being added or removed. Try again in a few seconds.",
+    },
+};
+
+/** Refuses while a `job` attempt is queued or running, or `lock` is held, until the transaction ends. */
+export async function assertNoAttempt(
+    tx: Pick<Database, "select" | "execute">,
+    clusterId: string,
+    job: keyof typeof busy,
+    lock: string,
+) {
+    const [active] = await tx
+        .select({ id: deployments.id })
+        .from(deployments)
+        .where(
+            and(
+                eq(deployments.clusterId, clusterId),
+                eq(deployments.name, job),
+                inArray(deployments.status, ["queued", "running"]),
+            ),
+        )
+        .limit(1);
+
+    if (active) throw new ORPCError("CONFLICT", { message: busy[job].running });
+
+    const { rows } = await tx.execute<{ free: boolean }>(
+        sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${lock}, 0)) AS free`,
+    );
+
+    if (!rows[0]?.free) throw new ORPCError("CONFLICT", { message: busy[job].stopping });
+}
+
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i;
+
+/** A server Stoat reaches over SSH: its address, SSH port and user. */
+export const serverInput = {
+    host: v.pipe(
+        v.string(),
+        v.trim(),
+        v.maxLength(253),
+        v.check(
+            (host) => isIP(host) !== 0 || HOSTNAME.test(host),
+            "Enter a hostname or IP address.",
+        ),
+    ),
+    port: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(65535)), 22),
+    user: v.optional(
+        v.pipe(
+            v.string(),
+            v.trim(),
+            v.maxLength(32),
+            v.regex(/^[a-z_][a-z0-9_.-]*$/i, "Enter a valid Linux user name."),
+        ),
+        "root",
+    ),
+};
+
+/** Refuses loopback, link-local and reserved hosts; the worker checks what a hostname resolves to. */
+export function assertReachableHost(host: string) {
+    if (/^(.+\.)?localhost$/i.test(host) || (isIP(host) && !isAllowedServerAddress(host)))
+        throw new ORPCError("BAD_REQUEST", {
+            message: "Stoat doesn't connect to loopback, link-local or reserved addresses.",
+        });
+}
 
 /** Where a cluster Stoat creates over SSH is: waiting for its key, or its latest setup attempt. */
 export function provisioningStatus(
@@ -42,40 +114,12 @@ export const provisioningRouter = {
         .input(
             v.object({
                 name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
-                host: v.pipe(
-                    v.string(),
-                    v.trim(),
-                    v.maxLength(253),
-                    v.check(
-                        (host) => isIP(host) !== 0 || HOSTNAME.test(host),
-                        "Enter a hostname or IP address.",
-                    ),
-                ),
-                port: v.optional(
-                    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(65535)),
-                    22,
-                ),
-                user: v.optional(
-                    v.pipe(
-                        v.string(),
-                        v.trim(),
-                        v.maxLength(32),
-                        v.regex(/^[a-z_][a-z0-9_.-]*$/i, "Enter a valid Linux user name."),
-                    ),
-                    "root",
-                ),
+                ...serverInput,
                 caddyStorage: v.optional(v.boolean(), false),
             }),
         )
         .handler(async ({ context: { db, organizationId }, input }) => {
-            // The worker checks what a hostname resolves to before it connects.
-            if (
-                /^(.+\.)?localhost$/i.test(input.host) ||
-                (isIP(input.host) && !isAllowedServerAddress(input.host))
-            )
-                throw new ORPCError("BAD_REQUEST", {
-                    message: "Stoat doesn't connect to loopback, link-local or reserved addresses.",
-                });
+            assertReachableHost(input.host);
 
             const id = randomUUID();
             // The comment tells the user which authorized key to remove later.
@@ -170,30 +214,13 @@ export const provisioningRouter = {
                 if (!cluster.provisioning)
                     throw new ORPCError("CONFLICT", { message: "This cluster is already set up." });
 
-                const [active] = await tx
-                    .select({ id: deployments.id })
-                    .from(deployments)
-                    .where(
-                        and(
-                            eq(deployments.clusterId, cluster.id),
-                            eq(deployments.name, "ProvisionCluster"),
-                            inArray(deployments.status, ["queued", "running"]),
-                        ),
-                    )
-                    .limit(1);
-
-                if (active)
-                    throw new ORPCError("CONFLICT", { message: "Setup is already running." });
-
                 // A cancelled attempt keeps working until its worker notices, then writes its state.
-                const { rows } = await tx.execute<{ free: boolean }>(
-                    sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${provisioningLock(cluster.id)}, 0)) AS free`,
+                await assertNoAttempt(
+                    tx,
+                    cluster.id,
+                    "ProvisionCluster",
+                    provisioningLock(cluster.id),
                 );
-
-                if (!rows[0]?.free)
-                    throw new ORPCError("CONFLICT", {
-                        message: "The last attempt is still stopping. Try again in a few seconds.",
-                    });
 
                 if (cluster.provisioning.initState === "partial") {
                     if (!input.reset)

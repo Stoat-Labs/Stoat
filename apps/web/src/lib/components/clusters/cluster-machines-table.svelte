@@ -1,6 +1,10 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
     import {
+        Button,
+        buttonVariants,
+    } from "$lib/components/ui/button";
+    import {
         Empty,
         EmptyDescription,
         EmptyHeader,
@@ -12,6 +16,12 @@
         FrameTitle,
     } from "$lib/components/ui/frame";
     import {
+        Menu,
+        MenuItem,
+        MenuPopup,
+        MenuTrigger,
+    } from "$lib/components/ui/menu";
+    import {
         Table,
         TableBody,
         TableCell,
@@ -20,7 +30,10 @@
         TableRow,
     } from "$lib/components/ui/table";
     import Activity from "@lucide/svelte/icons/activity";
+    import Ellipsis from "@lucide/svelte/icons/ellipsis";
+    import Plus from "@lucide/svelte/icons/plus";
     import Server from "@lucide/svelte/icons/server";
+    import Trash2 from "@lucide/svelte/icons/trash-2";
     import type { AppRouterClient } from "@stoat/api/routers/index";
 
     type Machine = NonNullable<
@@ -31,7 +44,16 @@
         >["diagnostics"]
     >["machines"][number];
 
-    let { machines }: { machines: Machine[] } = $props();
+    // Without onadd and onremove, as for members, machines can't be added or removed.
+    let {
+        machines,
+        onadd,
+        onremove,
+    }: {
+        machines: Machine[];
+        onadd?: () => void;
+        onremove?: (machine: Machine) => void;
+    } = $props();
 
     function stateVariant(
         state: string,
@@ -64,9 +86,17 @@
                 Members reported by the Uncloud control plane.
             </FrameDescription>
         </div>
-        <Badge variant="secondary" class="shrink-0">
-            {machines.length}
-        </Badge>
+        <div class="flex shrink-0 items-center gap-2">
+            <Badge variant="secondary">
+                {machines.length}
+            </Badge>
+            {#if onadd}
+                <Button size="sm" onclick={onadd}>
+                    <Plus class="size-4" aria-hidden="true" />
+                    Add machine
+                </Button>
+            {/if}
+        </div>
     </FrameHeader>
     {#if machines.length === 0}
         <Empty class="p-8 md:py-8">
@@ -88,6 +118,11 @@
                     <TableHead class="text-center">
                         WireGuard
                     </TableHead>
+                    {#if onremove}
+                        <TableHead class="w-10">
+                            <span class="sr-only">Actions</span>
+                        </TableHead>
+                    {/if}
                 </TableRow>
             </TableHeader>
             <TableBody>
@@ -110,6 +145,14 @@
                                             class="mt-1 block text-xs break-words text-destructive-foreground"
                                         >
                                             {machine.error}
+                                        </span>
+                                    {/if}
+                                    {#if machine.connected}
+                                        <span
+                                            class="mt-1 block text-xs text-muted-foreground"
+                                        >
+                                            Stoat connects through
+                                            this machine
                                         </span>
                                     {/if}
                                 </span>
@@ -153,6 +196,41 @@
                                 </span>
                             {/if}
                         </TableCell>
+                        {#if onremove}
+                            <TableCell class="text-end">
+                                <!-- Stoat can't remove the machine it reaches the cluster through. -->
+                                {#if !machine.connected}
+                                    <Menu>
+                                        <MenuTrigger
+                                            class={buttonVariants({
+                                                variant: "ghost",
+                                                size: "icon-sm",
+                                            })}
+                                            aria-label={`Actions for ${machine.name}`}
+                                        >
+                                            <Ellipsis
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        </MenuTrigger>
+                                        <MenuPopup align="end">
+                                            <MenuItem
+                                                variant="destructive"
+                                                onclick={() =>
+                                                    onremove?.(
+                                                        machine,
+                                                    )}
+                                            >
+                                                <Trash2
+                                                    aria-hidden="true"
+                                                />
+                                                Remove machine
+                                            </MenuItem>
+                                        </MenuPopup>
+                                    </Menu>
+                                {/if}
+                            </TableCell>
+                        {/if}
                     </TableRow>
                 {/each}
             </TableBody>

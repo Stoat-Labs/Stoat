@@ -209,3 +209,23 @@ export const ProvisionCluster: Job.Job<
         },
     },
 });
+
+// Its own queue, so workers from before machines could be added never claim one.
+export const AddMachine: Job.Job<"AddMachine", typeof resourcePayload, Schema.Void, Schema.Never> =
+    Job.make("AddMachine", {
+        // Each attempt is its own `AddMachine` deployment of the cluster's pending machine.
+        payload: resourcePayload,
+        success: Schema.Void,
+        idempotencyKey: ({ deploymentId }) => deploymentId,
+        queue: "machines",
+        defaults: {
+            // No retries: SSH and server problems need the user.
+            attempts: 1,
+            // Installing Docker, then pulling the sidecar, Caddy and Alloy on the new machine.
+            timeout: "30 minutes",
+            keep: {
+                completed: { age: "1 day" },
+                failed: { age: "30 days" },
+            },
+        },
+    });

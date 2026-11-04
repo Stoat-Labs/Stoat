@@ -36,7 +36,7 @@ export function startWorker(
     globalThis.__stoatWorker = running;
     process.on("sveltekit:shutdown", running.stop);
     console.log(
-        "[worker] starting deployment worker (queues: initialize, deploy, buckets, health, git, provision)",
+        "[worker] starting deployment worker (queues: initialize, deploy, buckets, monitoring, health, git, provision, machines)",
     );
 
     // One interruptible parent owns both loops and waits for layer finalizers on shutdown.

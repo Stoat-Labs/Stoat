@@ -196,6 +196,29 @@ it("pairs replaced containers only with their own service on the same machine", 
     ]);
 });
 
+it("folds docker version output when Docker was already on the server", () => {
+    const steps = deploymentSteps(
+        lines([
+            [0, "⏳ Running Uncloud install script..."],
+            [0, "✓ Docker is already installed."],
+            [0, "Client: Docker Engine - Community"],
+            [0, " Version:           29.9.2"],
+            [0, "Server: Docker Engine - Community"],
+            [0, " containerd:"],
+            [1, "✓ Linux user and group 'uncloud' created."],
+            [1, "⏳ Installing uncloudd 0.21.0 (replacing none)..."],
+        ]),
+        false,
+    );
+
+    expect(steps.map((step) => step.title)).toEqual([
+        "Running Uncloud install script",
+        "Docker is already installed",
+        "Linux user and group 'uncloud' created",
+        "Installing uncloudd 0.21.0 (replacing none)",
+    ]);
+});
+
 it("condenses the uc CLI output of a cluster setup", () => {
     const steps = deploymentSteps(
         lines([
