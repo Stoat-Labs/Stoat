@@ -43,13 +43,18 @@
         shared && service ? service.name : (saving ?? resource.name),
     );
 
+    // Shared with the trays, so a selected card is outlined as one stack.
+    const borderClass = $derived(
+        selected
+            ? "border-primary"
+            : "border-foreground/14 hover:border-foreground/24",
+    );
+
     const frameClass = $derived(
         cn(
-            "border bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] transition-[border-color,box-shadow]",
+            "border bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] transition-colors",
             trays.length > 0 && "border-b-0 rounded-b-none",
-            selected
-                ? "border-foreground/24 shadow-[0_0_0_4px_--theme(--color-white/6%)]"
-                : "border-foreground/14 hover:border-foreground/24",
+            borderClass,
         ),
     );
 
@@ -241,7 +246,10 @@
         {#each trays as { kind, name }, index (`${kind}:${name}`)}
             <button
                 type="button"
-                class="group/volume absolute inset-x-0 flex cursor-pointer flex-col rounded-2xl border border-foreground/14 bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] text-left transition-colors hover:border-foreground/24 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                class={cn(
+                    "group/volume absolute inset-x-0 flex cursor-pointer flex-col rounded-2xl border bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                    borderClass,
+                )}
                 style:top="{CARD_HEIGHT -
                     VOLUME_OVERLAP +
                     index * (VOLUME_TRAY - VOLUME_OVERLAP)}px"
