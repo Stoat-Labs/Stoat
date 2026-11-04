@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -118,6 +119,33 @@ func TestUnixSpecs(t *testing.T) {
 		specs := UnixSpecs("/tmp/custom.sock")
 		require.Len(t, specs, 1)
 		assert.Equal(t, "/tmp/custom.sock", specs[0].Unix)
+	})
+}
+
+func TestDialer(t *testing.T) {
+	t.Run("SSH alone cannot be dialed", func(t *testing.T) {
+		assert.Nil(t, Dialer([]Spec{{SSH: "root@example.com"}}))
+	})
+
+	t.Run("falls back to the next socket", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "uncloud.sock")
+		listener, err := net.Listen("unix", path)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = listener.Close() })
+
+		dial := Dialer([]Spec{{SSH: "root@example.com"}, {Unix: path + ".missing"}, {Unix: path}})
+		require.NotNil(t, dial)
+
+		conn, err := dial(t.Context())
+		require.NoError(t, err)
+		_ = conn.Close()
+	})
+
+	t.Run("reports the last failure", func(t *testing.T) {
+		dial := Dialer([]Spec{{Unix: filepath.Join(t.TempDir(), "missing.sock")}})
+		_, err := dial(t.Context())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "missing.sock")
 	})
 }
 

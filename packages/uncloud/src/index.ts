@@ -1,5 +1,7 @@
+import { createServer } from "node:net";
+import type { Duplex } from "node:stream";
 import createClient from "openapi-fetch";
-import { Agent, fetch as pinnedFetch, Request as PinnedRequest } from "undici";
+import { Agent, fetch as pinnedFetch, Request as PinnedRequest, upgrade } from "undici";
 
 import { UcApiError } from "./errors";
 import type { paths } from "./generated/schema";
@@ -188,7 +190,7 @@ export function sidecarFetch(certificate?: string | null) {
  *
  * The returned object is an `openapi-fetch` client (`GET`/`POST`/`PATCH`/`DELETE`,
  * each returning `{ data, error, response }`) plus a `stream` namespace for the
- * four `text/event-stream` endpoints.
+ * `text/event-stream` endpoints.
  *
  * Construction is cheap — it allocates a closure and does no I/O — so calling it
  * per request is fine and avoids stale URLs.
@@ -324,6 +326,102 @@ export function ucClient(sidecarUrl: string, options: UcClientOptions = {}) {
                     options.signal,
                 );
             },
+
+            /** Starts a global service on the machines that have no container of it yet. */
+            spreadService(id: string, options: StreamOptions = {}) {
+                return readEvents<DeployComposeEvent>(
+                    client.POST("/api/v1/services/{id}/spread", {
+                        params: { path: { id } },
+                        headers: sseHeaders,
+                        parseAs: "stream",
+                        signal: options.signal,
+                    }),
+                    options.signal,
+                );
+            },
+        },
+    };
+}
+
+/** Closes `to` once `from` closes or fails. */
+function closeTogether(from: Duplex, to: Duplex) {
+    from.once("close", () => to.destroy());
+    from.on("error", () => to.destroy());
+}
+
+/** A Unix socket that relays every connection to the sidecar's Uncloud API. */
+export type UncloudSocket = {
+    /** Why the last relay failed to open, to explain a failed uc command. */
+    readonly error: Error | null;
+    close(): Promise<void>;
+};
+
+/** Serves the cluster's Uncloud API to uc on a Unix socket, which grants the token's access: keep it private. */
+export async function serveUncloudSocket(
+    sidecarUrl: string,
+    path: string,
+    options: Pick<UcClientOptions, "certificate"> & { token: string },
+): Promise<UncloudSocket> {
+    const url = `${normalizeSidecarUrl(sidecarUrl)}/api/v1/cluster/connect`;
+
+    // Its own pool, because an upgrade needs HTTP/1.1 and undici prefers HTTP/2 where it's offered.
+    const dispatcher = new Agent({
+        allowH2: false,
+        ...(options.certificate && { connect: { ca: options.certificate } }),
+    });
+
+    const open = new Set<Duplex>();
+    let error: Error | null = null;
+
+    const server = createServer((local) => {
+        open.add(local);
+        local.once("close", () => open.delete(local));
+
+        upgrade(url, {
+            dispatcher,
+            protocol: "uncloud",
+            headers: { authorization: `Bearer ${options.token}` },
+        }).then(
+            ({ socket }) => {
+                // uc hung up, or close() ran, while the upgrade was in flight.
+                if (local.destroyed) {
+                    socket.destroy();
+
+                    return;
+                }
+
+                open.add(socket);
+                socket.once("close", () => open.delete(socket));
+
+                closeTogether(local, socket);
+                closeTogether(socket, local);
+                local.pipe(socket).pipe(local);
+            },
+            (reason: Error) => {
+                error = reason;
+                local.destroy();
+            },
+        );
+    });
+
+    await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(path, () => {
+            server.off("error", reject);
+            resolve();
+        });
+    });
+
+    return {
+        get error() {
+            return error;
+        },
+        async close() {
+            const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+
+            for (const socket of open) socket.destroy();
+            await closed;
+            await dispatcher.close();
         },
     };
 }

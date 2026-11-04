@@ -78,6 +78,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cluster/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connect to the Uncloud API
+         * @description With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP.
+         */
+        get: operations["connectUncloud"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cluster/diagnostics": {
         parameters: {
             query?: never;
@@ -115,6 +135,26 @@ export interface paths {
          * @description Unsets an external domain or releases a domain reserved in Uncloud DNS. Uncloud DNS cannot give a released name back yet, so it only forgets it in the cluster store.
          */
         delete: operations["clearDomain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cluster/domain/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Point the cluster domain at its ingress machines
+         * @description Like uc after deploying Caddy: points the domain reserved in Uncloud DNS at the machines whose Caddy answers on their public IP. Returns 404 without a cluster domain, and 422 when the domain is managed externally or no machine answers, which leaves the records as they were.
+         */
+        put: operations["updateIngressRecords"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -216,7 +256,11 @@ export interface paths {
         get: operations["inspectMachine"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove a machine
+         * @description Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away.
+         */
+        delete: operations["removeMachine"];
         options?: never;
         head?: never;
         /** Rename a machine */
@@ -406,6 +450,26 @@ export interface paths {
         get: operations["serviceLogs"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/services/{id}/spread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a global service on machines that lack it
+         * @description Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself.
+         */
+        post: operations["spreadService"];
         delete?: never;
         options?: never;
         head?: never;
@@ -635,6 +699,11 @@ export interface components {
             machine: string;
             name: string;
         };
+        DNSRecordResponse: {
+            name: string;
+            type: string;
+            values: string[];
+        };
         DeployCaddyRequest: {
             /** @description Global Caddyfile prepended to the generated config. Empty removes it. */
             caddyfile: string;
@@ -693,6 +762,8 @@ export interface components {
             options?: components["schemas"]["DeployComposeOptions"];
         };
         DiagnosticMachineResponse: {
+            /** @description The machine this sidecar reaches Uncloud through, which it can't remove. */
+            connected?: boolean;
             daemonVersion?: string;
             dockerVersion?: string;
             error?: string;
@@ -738,6 +809,10 @@ export interface components {
             machineName?: string;
             remoteDigest?: string;
             updateAvailable?: boolean;
+        };
+        IngressRecordsResponse: {
+            domain: string;
+            records: components["schemas"]["DNSRecordResponse"][];
         };
         ItemResponseImageGroupResponse: {
             items: components["schemas"]["ImageGroupResponse"][];
@@ -847,6 +922,17 @@ export interface components {
             error?: string;
             machineId?: string;
             machineName?: string;
+        };
+        RemoveMachineResponse: {
+            /**
+             * Format: int64
+             * @description Service containers removed from the machine.
+             */
+            containers: number;
+            id: string;
+            name: string;
+            /** @description False when the machine didn't answer or refused the reset, so it keeps its cluster state. */
+            reset: boolean;
         };
         RenameMachineRequest: {
             name: string;
@@ -1186,6 +1272,110 @@ export interface operations {
             };
         };
     };
+    connectUncloud: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Must list Upgrade. */
+                Connection?: string;
+                /** @description Must be uncloud. */
+                Upgrade?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The connection now carries the Uncloud API's own traffic */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Upgrade Required */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     clusterDiagnostics: {
         parameters: {
             query?: never;
@@ -1414,6 +1604,71 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateIngressRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngressRecordsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1791,6 +2046,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MachineResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    removeMachine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveMachineResponse"];
                 };
             };
             /** @description Bad Request */
@@ -2789,6 +3111,73 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["LogEventResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    spreadService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent deployment events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["DeployComposeEvent"];
                 };
             };
             /** @description Bad Request */

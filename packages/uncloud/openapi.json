@@ -248,6 +248,25 @@
                 "required": ["machine", "name"],
                 "type": "object"
             },
+            "DNSRecordResponse": {
+                "additionalProperties": false,
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "values": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    }
+                },
+                "required": ["name", "type", "values"],
+                "type": "object"
+            },
             "DeployCaddyRequest": {
                 "additionalProperties": false,
                 "properties": {
@@ -402,6 +421,10 @@
             "DiagnosticMachineResponse": {
                 "additionalProperties": false,
                 "properties": {
+                    "connected": {
+                        "description": "The machine this sidecar reaches Uncloud through, which it can't remove.",
+                        "type": "boolean"
+                    },
                     "daemonVersion": {
                         "type": "string"
                     },
@@ -546,6 +569,22 @@
                     }
                 },
                 "required": ["localDigests"],
+                "type": "object"
+            },
+            "IngressRecordsResponse": {
+                "additionalProperties": false,
+                "properties": {
+                    "domain": {
+                        "type": "string"
+                    },
+                    "records": {
+                        "items": {
+                            "$ref": "#/components/schemas/DNSRecordResponse"
+                        },
+                        "type": "array"
+                    }
+                },
+                "required": ["domain", "records"],
                 "type": "object"
             },
             "ItemResponseImageGroupResponse": {
@@ -910,6 +949,28 @@
                         "type": "string"
                     }
                 },
+                "type": "object"
+            },
+            "RemoveMachineResponse": {
+                "additionalProperties": false,
+                "properties": {
+                    "containers": {
+                        "description": "Service containers removed from the machine.",
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "reset": {
+                        "description": "False when the machine didn't answer or refused the reset, so it keeps its cluster state.",
+                        "type": "boolean"
+                    }
+                },
+                "required": ["id", "name", "containers", "reset"],
                 "type": "object"
             },
             "RenameMachineRequest": {
@@ -1442,6 +1503,129 @@
                 "tags": ["cluster"]
             }
         },
+        "/api/v1/cluster/connect": {
+            "get": {
+                "description": "With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP.",
+                "operationId": "connectUncloud",
+                "parameters": [
+                    {
+                        "description": "Must list Upgrade.",
+                        "in": "header",
+                        "name": "Connection",
+                        "schema": {
+                            "description": "Must list Upgrade.",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Must be uncloud.",
+                        "in": "header",
+                        "name": "Upgrade",
+                        "schema": {
+                            "description": "Must be uncloud.",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "The connection now carries the Uncloud API's own traffic"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unprocessable Entity"
+                    },
+                    "426": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Upgrade Required"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    },
+                    "501": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Implemented"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Gateway"
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Service Unavailable"
+                    }
+                },
+                "summary": "Connect to the Uncloud API",
+                "tags": ["cluster"]
+            }
+        },
         "/api/v1/cluster/diagnostics": {
             "get": {
                 "operationId": "clusterDiagnostics",
@@ -1703,6 +1887,76 @@
                     }
                 },
                 "summary": "Set an externally managed cluster domain",
+                "tags": ["cluster"]
+            }
+        },
+        "/api/v1/cluster/domain/records": {
+            "put": {
+                "description": "Like uc after deploying Caddy: points the domain reserved in Uncloud DNS at the machines whose Caddy answers on their public IP. Returns 404 without a cluster domain, and 422 when the domain is managed externally or no machine answers, which leaves the records as they were.",
+                "operationId": "updateIngressRecords",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngressRecordsResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unprocessable Entity"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Point the cluster domain at its ingress machines",
                 "tags": ["cluster"]
             }
         },
@@ -2126,6 +2380,84 @@
             }
         },
         "/api/v1/machines/{id}": {
+            "delete": {
+                "description": "Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away.",
+                "operationId": "removeMachine",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RemoveMachineResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unprocessable Entity"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Remove a machine",
+                "tags": ["machines"]
+            },
             "get": {
                 "operationId": "inspectMachine",
                 "parameters": [
@@ -3511,6 +3843,86 @@
                     }
                 },
                 "summary": "Stream service logs",
+                "tags": ["services"]
+            }
+        },
+        "/api/v1/services/{id}/spread": {
+            "post": {
+                "description": "Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself.",
+                "operationId": "spreadService",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeployComposeEvent"
+                                }
+                            }
+                        },
+                        "description": "Server-Sent deployment events"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unprocessable Entity"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Run a global service on machines that lack it",
                 "tags": ["services"]
             }
         },

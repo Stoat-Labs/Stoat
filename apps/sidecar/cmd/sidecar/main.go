@@ -158,6 +158,7 @@ func run(ctx context.Context, opts options) error {
 		MachineID:      os.Getenv("UNCLOUD_MACHINE_ID"),
 		RequestTimeout: opts.requestTimeout,
 		ExecTimeout:    opts.execTimeout,
+		DialUncloud:    cluster.Dialer(specs),
 	})
 	if err != nil {
 		return fmt.Errorf("create HTTP API: %w", err)

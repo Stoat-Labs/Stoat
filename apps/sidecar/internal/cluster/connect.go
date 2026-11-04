@@ -141,6 +141,36 @@ func Connect(ctx context.Context, specs []Spec) (*client.Client, error) {
 	return nil, fmt.Errorf("all %d Uncloud connections failed; last error: %w", len(specs), lastErr)
 }
 
+// Dialer opens raw Uncloud API connections through the unix and TCP specs in order; nil if only SSH ones remain.
+func Dialer(specs []Spec) func(context.Context) (net.Conn, error) {
+	var direct []Spec
+	for _, spec := range specs {
+		if spec.Unix != "" || (spec.TCP != nil && spec.TCP.IsValid()) {
+			direct = append(direct, spec)
+		}
+	}
+	if len(direct) == 0 {
+		return nil
+	}
+
+	return func(ctx context.Context) (net.Conn, error) {
+		var dialer net.Dialer
+		var lastErr error
+		for _, spec := range direct {
+			network, address := "unix", spec.Unix
+			if spec.Unix == "" {
+				network, address = "tcp", spec.TCP.String()
+			}
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}
+
 func connectOne(ctx context.Context, spec Spec) (*client.Client, error) {
 	switch {
 	case spec.TCP != nil && spec.TCP.IsValid():

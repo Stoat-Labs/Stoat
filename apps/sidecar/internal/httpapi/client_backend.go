@@ -15,11 +15,14 @@ import (
 	"github.com/acarl005/stripansi"
 	composecli "github.com/compose-spec/compose-go/v2/cli"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/errdefs"
 	"github.com/psviderski/uncloud/api/pb"
 	"github.com/psviderski/uncloud/pkg/api"
 	"github.com/psviderski/uncloud/pkg/client"
 	"github.com/psviderski/uncloud/pkg/client/compose"
 	"github.com/psviderski/uncloud/pkg/client/deploy"
+	deployop "github.com/psviderski/uncloud/pkg/client/deploy/operation"
+	"github.com/psviderski/uncloud/pkg/client/deploy/scheduler"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -148,6 +151,10 @@ func (b *clientBackend) ClusterDiagnostics(ctx context.Context) (ClusterDiagnost
 	var baselineStoreVersion api.StoreVersion
 	nativeMembers := members.ToNative()
 	wireGuards := b.inspectWireGuard(ctx, nativeMembers)
+	var connectedID string
+	if connected, err := b.Client.MachineClient.Inspect(ctx, &emptypb.Empty{}); err == nil {
+		connectedID = connected.Id
+	}
 	for i, member := range nativeMembers {
 		diagnostic := DiagnosticMachineResponse{
 			ID: member.ID, Name: member.Name, State: member.State,
@@ -155,6 +162,7 @@ func (b *clientBackend) ClusterDiagnostics(ctx context.Context) (ClusterDiagnost
 			StoreVersion: detailsByID[member.ID],
 			WireGuard:    wireGuards[i].network,
 			Error:        wireGuards[i].err,
+			Connected:    member.ID == connectedID,
 		}
 		if member.State == "Down" {
 			issues = append(issues, fmt.Sprintf("%s is down", member.Name))
@@ -231,13 +239,17 @@ func (b *clientBackend) ListCaddyConfigs(ctx context.Context) (CaddyConfigsRespo
 	return CaddyConfigsResponse{Items: configs, Drift: len(hashes) > 1}, nil
 }
 
-// caddySpec returns the spec of the newest caddy container, which is the
-// service's latest desired state even mid-rollout.
+// caddySpec returns the spec of the newest caddy container.
 func (b *clientBackend) caddySpec(ctx context.Context) (api.ServiceSpec, error) {
 	svc, err := b.Client.InspectService(ctx, client.CaddyServiceName)
 	if err != nil {
 		return api.ServiceSpec{}, err
 	}
+	return newestSpec(svc)
+}
+
+// newestSpec returns the spec of the service's newest container, its latest desired state even mid-rollout.
+func newestSpec(svc api.Service) (api.ServiceSpec, error) {
 	if len(svc.Containers) == 0 {
 		return api.ServiceSpec{}, api.ErrNotFound
 	}
@@ -249,6 +261,123 @@ func (b *clientBackend) caddySpec(ctx context.Context) (api.ServiceSpec, error) 
 		}
 	}
 	return newest.ServiceSpec, nil
+}
+
+// SpreadService runs a global service on eligible machines without one, never touching existing containers.
+func (b *clientBackend) SpreadService(ctx context.Context, nameOrID string) (<-chan DeployComposeEvent, error) {
+	svc, answered, err := b.serviceOnMachines(ctx, nameOrID)
+	if err != nil {
+		return nil, err
+	}
+	if svc.Mode != api.ServiceModeGlobal {
+		return nil, status.Errorf(codes.FailedPrecondition, "service %q is not global, so it doesn't run on every machine", svc.Name)
+	}
+	spec, err := newestSpec(svc)
+	if err != nil {
+		return nil, err
+	}
+
+	state, err := scheduler.InspectClusterState(ctx, b.Client)
+	if err != nil {
+		return nil, fmt.Errorf("inspect cluster state: %w", err)
+	}
+	ops, err := spreadOperations(svc, spec, state, answered)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make(chan DeployComposeEvent, 16)
+	go func() {
+		defer close(events)
+		runOperations(ctx, b.Client, ops, events)
+	}()
+	return events, nil
+}
+
+// serviceOnMachines lists a service's containers like InspectService, and which machines answered.
+func (b *clientBackend) serviceOnMachines(ctx context.Context, nameOrID string) (api.Service, map[string]bool, error) {
+	machines, err := b.Client.ListMachines(ctx, nil)
+	if err != nil {
+		return api.Service{}, nil, fmt.Errorf("list machines: %w", err)
+	}
+	md := metadata.New(nil)
+	for _, m := range machines {
+		if state := m.State.String(); state == "UP" || state == "SUSPECT" {
+			md.Append("machines", m.Machine.Id)
+		}
+	}
+	machineContainers, err := b.Client.Docker.ListServiceContainers(
+		metadata.NewOutgoingContext(ctx, md), nameOrID, container.ListOptions{All: true},
+	)
+	if err != nil {
+		return api.Service{}, nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	svc := api.Service{}
+	answered := make(map[string]bool)
+	for _, mc := range machineContainers {
+		if mc.Metadata == nil || mc.Metadata.Error != "" {
+			continue
+		}
+		answered[mc.Metadata.MachineId] = true
+		for _, ctr := range mc.Containers {
+			svc.ID, svc.Name, svc.Mode = ctr.ServiceID(), ctr.ServiceName(), ctr.ServiceMode()
+			svc.Containers = append(svc.Containers, api.MachineServiceContainer{
+				MachineID: mc.Metadata.MachineId, MachineName: mc.Metadata.MachineName, Container: ctr,
+			})
+		}
+	}
+	if len(svc.Containers) == 0 {
+		return api.Service{}, nil, api.ErrNotFound
+	}
+	return svc, answered, nil
+}
+
+// spreadOperations plans a container and its named volumes on each eligible machine that answered without one.
+func spreadOperations(
+	svc api.Service, spec api.ServiceSpec, state *scheduler.ClusterState, answered map[string]bool,
+) ([]deployop.Operation, error) {
+	// Uncloud's volume constraint expects the options Compose sets, which a spec from elsewhere may lack.
+	scheduling := spec.Clone()
+	for i, volume := range scheduling.Volumes {
+		scheduling.Volumes[i] = volume.SetDefaults()
+	}
+
+	volumeScheduler, err := scheduler.NewVolumeScheduler(state, []api.ServiceSpec{scheduling})
+	if err != nil {
+		return nil, fmt.Errorf("init volume scheduler: %w", err)
+	}
+	// Also marks the volumes as scheduled in state, so their machines become eligible.
+	volumes, err := volumeScheduler.Schedule()
+	if err != nil {
+		return nil, fmt.Errorf("schedule volumes: %w", err)
+	}
+	machines, err := scheduler.NewServiceScheduler(state, scheduling).EligibleMachines()
+	if err != nil {
+		return nil, err
+	}
+
+	occupied := make(map[string]bool, len(svc.Containers))
+	for _, c := range svc.Containers {
+		occupied[c.MachineID] = true
+	}
+
+	var ops []deployop.Operation
+	for _, machine := range machines {
+		id := machine.Info.Id
+		if occupied[id] || !answered[id] {
+			continue
+		}
+		for _, volume := range volumes[id] {
+			ops = append(ops, &deployop.CreateVolumeOperation{
+				VolumeSpec: volume, MachineID: id, MachineName: machine.Info.Name,
+			})
+		}
+		ops = append(ops, &deployop.RunContainerOperation{
+			ServiceID: svc.ID, Spec: spec, MachineID: id, MachineName: machine.Info.Name,
+		})
+	}
+	return ops, nil
 }
 
 func (b *clientBackend) CaddySettings(ctx context.Context) (CaddySettingsResponse, error) {
@@ -611,6 +740,117 @@ func (b *clientBackend) RenameMachine(ctx context.Context, id, name string) (Mac
 		return MachineInfoResponse{}, errors.New("Uncloud returned an empty machine response")
 	}
 	return MachineInfoResponse{ID: machine.Id, Name: machine.Name}, nil
+}
+
+// machineProbeTimeout bounds each question to a machine being removed, so a silent one counts as unreachable.
+const machineProbeTimeout = 15 * time.Second
+
+// RemoveMachine does what `uc machine rm` does, and also drops the machine from the domain's records.
+func (b *clientBackend) RemoveMachine(ctx context.Context, machine api.MachineMember) (RemoveMachineResponse, error) {
+	connected, err := b.Client.MachineClient.Inspect(ctx, &emptypb.Empty{})
+	if err != nil {
+		return RemoveMachineResponse{}, fmt.Errorf("inspect the connected machine: %w", err)
+	}
+	if connected.Id == machine.ID {
+		return RemoveMachineResponse{}, status.Errorf(codes.FailedPrecondition,
+			"the sidecar reaches Uncloud through machine %q, so it can't remove it", machine.Name)
+	}
+
+	machineCtx := b.Client.ProxySingleMachineContext(ctx, machine.ID)
+	containers, reachable := b.machineContainers(machineCtx, machine)
+	if err := b.removeContainers(machineCtx, containers); err != nil {
+		return RemoveMachineResponse{}, fmt.Errorf("remove containers from machine %q: %w", machine.Name, err)
+	}
+	removed := RemoveMachineResponse{ID: machine.ID, Name: machine.Name, Containers: len(containers)}
+
+	// Resetting first stops the machine from writing to the cluster store, as uc does.
+	if reachable {
+		resetCtx, cancel := context.WithTimeout(machineCtx, machineProbeTimeout)
+		_, err := b.Client.MachineClient.Reset(resetCtx, &pb.ResetRequest{})
+		cancel()
+		removed.Reset = err == nil
+	}
+
+	if _, err := b.Client.RemoveMachine(ctx, &pb.RemoveMachineRequest{Id: machine.ID}); err != nil {
+		return RemoveMachineResponse{}, fmt.Errorf("remove machine %q from the cluster: %w", machine.Name, err)
+	}
+
+	// Best effort: without a reserved domain or an ingress that answers, the records stay as they were.
+	if machine.PublicIP.IsValid() {
+		_, _ = b.UpdateIngressRecords(ctx)
+	}
+	return removed, nil
+}
+
+// UpdateIngressRecords points the reserved cluster domain at the machines whose Caddy answers, as uc does.
+func (b *clientBackend) UpdateIngressRecords(ctx context.Context) (IngressRecordsResponse, error) {
+	domain, err := b.Client.GetDomain(ctx)
+	if err != nil {
+		return IngressRecordsResponse{}, err
+	}
+	if !domain.Reserved {
+		return IngressRecordsResponse{}, status.Errorf(codes.FailedPrecondition,
+			"cluster domain %q is managed outside Uncloud DNS", domain.Name)
+	}
+
+	records, err := b.Client.CreateIngressRecords(ctx, client.CaddyServiceName)
+	if errors.Is(err, client.ErrNoReachableMachines) {
+		return IngressRecordsResponse{}, status.Errorf(codes.FailedPrecondition,
+			"no machine running Caddy answered on its public IP, so %q still points where it did", domain.Name)
+	}
+	if err != nil {
+		return IngressRecordsResponse{}, err
+	}
+
+	response := IngressRecordsResponse{Domain: domain.Name, Records: make([]DNSRecordResponse, 0, len(records))}
+	for _, record := range records {
+		response.Records = append(response.Records, DNSRecordResponse{
+			Name: record.Name, Type: record.Type.String(), Values: record.Values,
+		})
+	}
+	return response, nil
+}
+
+// machineContainers lists the service containers on the machine ctx proxies to, and whether it answered.
+func (b *clientBackend) machineContainers(ctx context.Context, machine api.MachineMember) ([]api.ServiceContainer, bool) {
+	// The cluster already knows a down machine won't answer.
+	if machine.State == "Down" {
+		return nil, false
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, machineProbeTimeout)
+	defer cancel()
+
+	machineContainers, err := b.Client.Docker.ListServiceContainers(probeCtx, "", container.ListOptions{All: true})
+	if err != nil {
+		return nil, false
+	}
+	var containers []api.ServiceContainer
+	for _, mc := range machineContainers {
+		if mc.Metadata != nil && mc.Metadata.Error != "" {
+			return nil, false
+		}
+		containers = append(containers, mc.Containers...)
+	}
+	return containers, true
+}
+
+// removeContainers stops and removes the containers on the machine ctx proxies to, all at once like uc.
+func (b *clientBackend) removeContainers(ctx context.Context, containers []api.ServiceContainer) error {
+	var group errgroup.Group
+	for _, ctr := range containers {
+		group.Go(func() error {
+			err := b.Client.Docker.StopContainer(ctx, ctr.ID, container.StopOptions{})
+			if err == nil || errdefs.IsNotFound(err) {
+				// Anonymous volumes go with the container; named ones stay on the machine.
+				err = b.Client.Docker.RemoveServiceContainer(ctx, ctr.ID, container.RemoveOptions{RemoveVolumes: true})
+			}
+			if err != nil && !errdefs.IsNotFound(err) {
+				return fmt.Errorf("container %s: %w", strings.TrimPrefix(ctr.Name, "/"), err)
+			}
+			return nil
+		})
+	}
+	return group.Wait()
 }
 
 func (b *clientBackend) ExecMachine(ctx context.Context, machineID string, opts api.ExecOptions) (int, error) {

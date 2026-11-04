@@ -42,6 +42,8 @@ export type MachineExecResponse = Schemas["MachineExecResponse"];
 
 export type RenameMachineRequest = Schemas["RenameMachineRequest"];
 
+export type RemoveMachineResponse = Schemas["RemoveMachineResponse"];
+
 // Services
 export type Service = Schemas["ServiceResponse"];
 

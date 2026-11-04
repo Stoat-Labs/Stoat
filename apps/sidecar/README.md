@@ -42,7 +42,7 @@ When the sidecar runs as a global Uncloud service, `/ucinternal/metrics` proxies
 Requests are bounded so a stuck cluster RPC cannot pin a connection forever:
 
 - `--request-timeout` (default 60s) applies to everything that is neither a command execution nor an event stream.
-- `--exec-timeout` (default 5m) applies to container and host command execution, which detaches from the request deadline.
+- `--exec-timeout` (default 5m) applies to container and host command execution, and to removing a machine, which detach from the request deadline.
 
 Event streams are unbounded by design and instead emit a Server-Sent Event comment every 15 seconds. The heartbeat is load-bearing: fasthttp reports server shutdown but not client disconnects, so an idle stream would otherwise never notice its client is gone and would leak the upstream cluster stream.
 
@@ -66,6 +66,16 @@ The first endpoint waits for completion and returns JSON containing `stdout`, `s
 This feature executes with host-root-equivalent privileges on the selected machine. The global sidecar therefore needs `privileged: true`, `pid: host`, the read-only Uncloud socket mount, and the host root mounted at `/host`. The Uncloud service containing the target sidecars is `sidecar` by default; change it with `--host-service` if the service is renamed.
 
 `pid: host` is verified rather than assumed. Execution enters the namespaces of PID 1, which is the host's init only when the container shares the host PID namespace; without it, commands would silently run inside the container while reporting success. A target whose container is not in the host PID namespace is rejected with `422`.
+
+## Adding and removing machines
+
+`GET /api/v1/cluster/connect` with `Connection: Upgrade` and `Upgrade: uncloud` switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster with only the sidecar's URL and token. Stoat's worker serves it to `uc` on a private Unix socket to run `uc machine add`. Without the upgrade headers it answers `426`; a sidecar that reaches Uncloud over SSH answers `501`; at most 16 connections stay open at once. It grants nothing the token doesn't already: the token runs commands as root on every machine.
+
+Uncloud doesn't start global services on machines that join later. `POST /api/v1/services/{id}/spread` starts one on each eligible machine that has none and answered, with the spec of its newest container. It never touches existing containers, stopped ones included, so the sidecar can spread itself.
+
+`DELETE /api/v1/machines/{id}` does what `uc machine rm` does. When the machine answers, it stops and removes the machine's service containers and resets it to an uninitialised state, so it can join a cluster again; named volumes stay on it. Then it removes the machine from the cluster, which also drops the containers the cluster still lists for it. A machine that is down or doesn't answer within 15 seconds is only removed from the cluster, and the response says it wasn't reset. It refuses with `422` the machine the sidecar runs on or reaches Uncloud through, and `GET /api/v1/cluster/diagnostics` marks that one `connected`. Once started, a removal finishes even if the client goes away. Removing a machine with a public IP also updates the reserved domain's records, as below, so they stop pointing at it.
+
+`PUT /api/v1/cluster/domain/records` does what uc does after deploying Caddy: it points the domain reserved in Uncloud DNS at the machines whose Caddy answers on their public IP. Stoat calls it once Caddy runs on a new public machine, because it deploys Caddy itself (`uc machine add --no-caddy`), which skips uc's own update. It answers `404` without a cluster domain, and `422` for an external domain or when no machine answers, leaving the records as they were.
 
 ## Docker
 
