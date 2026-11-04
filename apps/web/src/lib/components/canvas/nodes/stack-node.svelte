@@ -17,7 +17,7 @@
     import { containerInfo } from "$lib/resources/container-info";
     import { createQuery } from "@tanstack/svelte-query";
     import { getCanvasActions, getCanvasCluster } from "../context";
-    import type { GroupData } from "../graph";
+    import { frameContainers, type GroupData } from "../graph";
     import NodeHandles from "./node-handles.svelte";
 
     let { id, data, selected }: NodeProps<Node<GroupData, "stack">> =
@@ -39,24 +39,26 @@
         }),
     );
 
-    // A resource is online while one of its containers runs and is not unhealthy.
-    const online = $derived(
-        data.resources.filter((resource) =>
-            (containersQuery.data?.[resource.resourceId] ?? []).some(
-                ({ container }) => {
-                    const info = containerInfo(container);
+    const counted = $derived(
+        frameContainers(data, containersQuery.data),
+    );
 
-                    return (
-                        info.status === "running" &&
-                        info.health !== "unhealthy"
-                    );
-                },
-            ),
+    // A resource or service is online while one of its containers runs and is not unhealthy.
+    const online = $derived(
+        counted.filter((containers) =>
+            containers.some(({ container }) => {
+                const info = containerInfo(container);
+
+                return (
+                    info.status === "running" &&
+                    info.health !== "unhealthy"
+                );
+            }),
         ).length,
     );
 
     const allOnline = $derived(
-        online > 0 && online === data.resources.length,
+        online > 0 && online === counted.length,
     );
 </script>
 
@@ -200,7 +202,7 @@
                     <circle cx="8" cy="8" r="3" fill="currentColor" />
                 </svg>
             {/if}
-            {online}/{data.resources.length}
+            {online}/{counted.length}
             {data.group ? "resources" : "services"} online
         </p>
     </div>

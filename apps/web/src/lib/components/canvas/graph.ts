@@ -143,8 +143,24 @@ export function cardTrays(service: CanvasService | undefined) {
     return [
         ...(service?.volumes ?? []).map((name) => ({ kind: "volume" as const, name })),
         ...(service?.configs ?? []).map((name) => ({ kind: "config" as const, name })),
-        ...(service?.exporters ?? []).map((name) => ({ kind: "metrics" as const, name })),
+        // Two exporter resources folded into one database can share a service name.
+        ...[...new Set(service?.exporters)].map((name) => ({ kind: "metrics" as const, name })),
     ];
+}
+
+/** The containers behind each entry of a frame's status line: a group's resources, or a resource's own services. */
+export function frameContainers<T extends { service: string }>(
+    data: GroupData,
+    containers: Record<string, T[]> | undefined,
+) {
+    if (data.group)
+        return [...new Set(data.resources.map(({ resourceId }) => resourceId))].map(
+            (resourceId) => containers?.[resourceId] ?? [],
+        );
+
+    return data.resources.map(({ resourceId, name }) =>
+        (containers?.[resourceId] ?? []).filter(({ service }) => service === name),
+    );
 }
 
 /** Adds `exporters` as trays on `server`, one of `entry`'s services. */
@@ -488,6 +504,46 @@ export function moveResourceCards(
                 : [],
         ),
     ]);
+}
+
+/**
+ * `moveResourceCards` for a move into a frame: if any of the moving cards would cover a member,
+ * they all shift together to the frame's next free row.
+ */
+export function landResourceCards(
+    nodes: CanvasNode[],
+    cardId: string,
+    from: XYPosition,
+    to: XYPosition,
+    members: Rect[],
+): Record<string, XYPosition> {
+    const moves = moveResourceCards(nodes, cardId, from, to);
+
+    const rects = nodes.flatMap((node) => {
+        const position = moves[node.id];
+
+        return position ? [{ ...nodeRect(node), ...position }] : [];
+    });
+
+    const left = Math.min(...rects.map((rect) => rect.x));
+    const top = Math.min(...rects.map((rect) => rect.y));
+
+    const free = freeSlot(
+        {
+            x: left,
+            y: top,
+            width: Math.max(...rects.map((rect) => rect.x + rect.width)) - left,
+            height: Math.max(...rects.map((rect) => rect.y + rect.height)) - top,
+        },
+        members,
+    );
+
+    return Object.fromEntries(
+        Object.entries(moves).map(([id, position]) => [
+            id,
+            { x: position.x + free.x - left, y: position.y + free.y - top },
+        ]),
+    );
 }
 
 export function nodeRect(node: CanvasNode): Rect {
@@ -876,7 +932,7 @@ export function buildCanvas(
 
     const nodes = [...frames, ...cards];
 
-    return { nodes, edges: buildEdges(nodes, folded) };
+    return { nodes, edges: buildEdges(nodes, graph) };
 }
 
 /** Reference edges between cards, attached to the sides of each pair that face each other. */
@@ -902,7 +958,9 @@ export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
             ? serviceNodeId(resourceId, entry.services[0].name)
             : resourceId;
 
-    const byId = new Map(graph.map((entry) => [entry.id, entry]));
+    // Folded here because the cards were: an exporter is a tray, not a service card to point at.
+    const folded = foldExporters(graph);
+    const byId = new Map(folded.map((entry) => [entry.id, entry]));
     const edges = new Map<string, Edge>();
 
     const connect = (kind: string, sourceId: string, targetId: string) => {
@@ -918,7 +976,7 @@ export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
         edges.set(id, { id, source, target, ...facingHandles(from, to) });
     };
 
-    for (const entry of graph) {
+    for (const entry of folded) {
         for (const reference of entry.references)
             connect("reference", cardOf(entry, entry.id), cardOf(byId.get(reference), reference));
 

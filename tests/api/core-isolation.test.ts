@@ -1664,12 +1664,15 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             settings: { prefixNames: false },
         });
 
+        const prefixed = await resource({ spec: "services:\n  worker:\n    image: nginx\n" });
+
         const broken = await resource({ spec: "services: [broken" });
 
         fetch.mockImplementation(async () =>
             Response.json({
                 items: [
                     { name: "web", containers: [{ id: "web-1" }] },
+                    { name: `${prefixed.slug}-worker`, containers: [{ id: "worker-1" }] },
                     { name: "unrelated", containers: [{ id: "other-1" }] },
                 ],
             }),
@@ -1678,6 +1681,8 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         const containers = await client.getProjectContainers({ clusterId, projectId });
 
         expect(containers[web.id]).toEqual([{ id: "web-1", service: "web" }]);
+        // Named as in the Compose, which is how the canvas knows its services.
+        expect(containers[prefixed.id]).toEqual([{ id: "worker-1", service: "worker" }]);
         // A spec that no longer parses shows no containers instead of failing the whole canvas.
         expect(containers[broken.id]).toEqual([]);
         expect(fetch).toHaveBeenCalledTimes(1);

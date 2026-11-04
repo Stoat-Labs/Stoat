@@ -64,10 +64,9 @@
         COLUMN_GAP,
         configNodeId,
         frameRect,
-        freeSlot,
+        landResourceCards,
         loadCollapsed,
         loadPositions,
-        moveResourceCards,
         nearestFree,
         nodeRect,
         parseNodeId,
@@ -907,11 +906,11 @@
 
         if (!target || dragged.type !== "card") return;
 
-        // Land in the target frame without covering its cards.
+        // setGroup lands it and its sibling cards without covering the frame's cards.
         void setGroup(
             dragged.data.resource.id,
             target,
-            freeSlot(nodeRect(dragged), memberRects(target)),
+            { ...dragged.position },
             startedAt,
             dragged,
         );
@@ -992,11 +991,12 @@
             });
             canvasLayout.place({
                 ...canvasLayout.positions,
-                ...moveResourceCards(
+                ...landResourceCards(
                     nodes,
                     card.id,
                     origin ?? card.position,
                     spot,
+                    members,
                 ),
             });
         } catch (error) {

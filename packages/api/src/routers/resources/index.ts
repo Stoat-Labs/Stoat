@@ -2007,7 +2007,7 @@ export const resourcesRouter = {
 
     // Containers of every resource in a project from one sidecar call, so the canvas polls once
     // instead of once per card. Keyed by resource id; a resource that does not parse has none.
-    // Each container carries its service name, so a collapsed stack can count its services.
+    // Each container carries its Compose service name, so a collapsed stack can count its services.
     getProjectContainers: organizationProcedure
         .input(
             v.object({
@@ -2067,12 +2067,19 @@ export const resourcesRouter = {
                         names = [];
                     }
 
+                    // Uncloud knows services by their prefixed names; the canvas by Compose's.
+                    const prefix =
+                        snapshots.get(resource.id)?.prefix ?? resourceComposePrefix(resource);
+
                     return [
                         resource.id,
                         names.flatMap((name) =>
                             (byName.get(name)?.containers ?? []).map((item) => ({
                                 ...item,
-                                service: name,
+                                service:
+                                    prefix && name.startsWith(`${prefix}-`)
+                                        ? name.slice(prefix.length + 1)
+                                        : name,
                             })),
                         ),
                     ];

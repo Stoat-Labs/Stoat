@@ -2,10 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
     buildCanvas,
+    buildEdges,
+    cardTrays,
     moveResourceCards,
     foldExporters,
+    frameContainers,
     frameRect,
     freeSlot,
+    landResourceCards,
     refitFrames,
     repairOverlaps,
     settle,
@@ -389,6 +393,123 @@ describe("moveResourceCards", () => {
             "r:web": { x: 1000, y: 48 },
             "r:db": { x: 1000, y: 240 },
         });
+    });
+});
+
+describe("landResourceCards", () => {
+    // SAFETY: the helper only reads ids, types, sizes, positions and `resource.id`.
+    const card = (id: string, x: number, y: number) =>
+        ({
+            id,
+            type: "card",
+            position: { x, y },
+            width: 288,
+            height: 144,
+            data: { resource: { id: "r" } },
+        }) as never;
+
+    const member = { x: 0, y: 48, width: 288, height: 144 };
+    const from = { x: 0, y: 0 };
+
+    it("keeps the drop when none of the moving cards covers a member", () => {
+        expect(
+            landResourceCards(
+                [card("r:web", 400, 48), card("r:db", 0, 192)],
+                "r:web",
+                from,
+                { x: 400, y: 48 },
+                [member],
+            ),
+        ).toEqual({ "r:web": { x: 400, y: 48 }, "r:db": { x: 400, y: 240 } });
+    });
+
+    it("moves every card to the next free row when only a sibling covers a member", () => {
+        expect(
+            landResourceCards(
+                [card("r:web", 400, 48), card("r:db", -400, 0)],
+                "r:web",
+                from,
+                { x: 400, y: 48 },
+                [member],
+            ),
+        ).toEqual({ "r:web": { x: 400, y: 216 }, "r:db": { x: 0, y: 216 } });
+    });
+});
+
+describe("frameContainers", () => {
+    const up = { service: "web" };
+    const down = { service: "worker" };
+
+    const cards = [
+        { id: "r:web", resourceId: "r", name: "web", icon: null },
+        { id: "r:worker", resourceId: "r", name: "worker", icon: null },
+    ];
+
+    // SAFETY: only `group` and `resources` are read.
+    const frame = (group: { id: string } | undefined) => ({ group, resources: cards }) as never;
+
+    it("checks each service of a resource's own frame separately", () => {
+        expect(frameContainers(frame(undefined), { r: [up] })).toEqual([[up], []]);
+        expect(frameContainers(frame(undefined), { r: [up, down] })).toEqual([[up], [down]]);
+    });
+
+    it("counts a group's resource once, however many cards it shows", () => {
+        expect(frameContainers(frame({ id: "g" }), { r: [up, down] })).toEqual([[up, down]]);
+    });
+});
+
+describe("exporter trays and edges", () => {
+    const service = (name: string, image?: string): CanvasService => ({
+        name,
+        image,
+        template: undefined,
+        dependsOn: [],
+        volumes: [],
+        configs: [],
+        isNew: false,
+        domains: [],
+        internalHostname: null,
+    });
+
+    // SAFETY: the layout only reads `id`, `name`, `projectId`, `icon`, `engine` and `groupId` of a resource.
+    const resource = (id: string) =>
+        ({ id, name: id, projectId: "p", icon: null, engine: null, groupId: null }) as never;
+
+    // SAFETY: the layout only reads these fields of a graph entry.
+    const entry = (id: string, references: string[], services: CanvasService[]) =>
+        ({
+            id,
+            draftOnly: false,
+            parseError: false,
+            references,
+            volumes: [],
+            configs: [],
+            services,
+        }) as never;
+
+    it("shows one tray for exporters sharing a name", () => {
+        expect(cardTrays({ ...service("db"), exporters: ["metrics", "metrics"] })).toEqual([
+            { kind: "metrics", name: "metrics" },
+        ]);
+    });
+
+    it("keeps references to a database with an exporter when rebuilt from the unfolded graph", () => {
+        const graph = [
+            entry("app", ["db"], [service("web", "nginx")]),
+            entry(
+                "db",
+                [],
+                [
+                    service("server", "postgres:18-alpine"),
+                    service("metrics", "prometheuscommunity/postgres-exporter"),
+                ],
+            ),
+        ];
+
+        const { nodes, edges } = buildCanvas([resource("app"), resource("db")], graph, [], {}, {});
+
+        expect(edges.map((edge) => edge.id)).toEqual(["reference:app:db"]);
+        expect(buildEdges(nodes, graph)).toEqual(edges);
     });
 });
 
