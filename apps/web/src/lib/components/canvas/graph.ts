@@ -27,13 +27,17 @@ export type CanvasGroup = Awaited<ReturnType<AppRouterClient["resources"]["listG
 
 export type CardData = {
     resource: CanvasResource;
-    /** Every service of the resource's Compose; empty for buckets and unreadable specs. */
-    services: CanvasService[];
+    /** The service this card shows; absent for buckets, unreadable specs, volumes and configs. */
+    service: CanvasService | undefined;
+    /** One of several services of its resource: the card carries the service's name. */
+    shared: boolean;
     icon: string | null;
     draftOnly: boolean;
     parseError: boolean;
-    /** The group whose frame the card sits in. */
+    /** The group the card's resource belongs to. */
     groupId: string | undefined;
+    /** The frame the card sits in: its group's, or its resource's own for several services outside one. */
+    frameId: string | undefined;
     /** Set on a volume no service mounts: it stands alone on the canvas instead of in a tray. */
     volume: CanvasVolume | undefined;
     /** Set on a config no service mounts, like `volume`. */
@@ -41,13 +45,17 @@ export type CardData = {
 };
 
 export type GroupData = {
-    group: CanvasGroup;
+    /** Absent on a resource's own frame around its services. */
+    group: CanvasGroup | undefined;
+    name: string;
+    projectId: string;
     icon: string | null;
     /** A dragged card from outside hovers this frame and would join it on drop. */
     dropTarget: boolean;
-    /** Railway's "Hide contents": the frame shrinks to a card showing its resources' icons. */
+    /** Railway's "Hide contents": the frame shrinks to a card showing its cards' icons. */
     collapsed: boolean;
-    resources: { id: string; name: string; icon: string | null }[];
+    /** One entry per card: a resource, or a service of one. */
+    resources: { id: string; resourceId: string; name: string; icon: string | null }[];
 };
 
 // Railway's collapsed group card.
@@ -83,16 +91,13 @@ export const COLUMN_GAP = 96;
 // Railway snaps to a 24px grid, so every auto-layout gap is a multiple of 24.
 const ROW_GAP = 48;
 
-// A resource with several services lists each one on its card, one row apiece.
-export const SERVICE_ROW = 32;
-
 // Groups with more cards than this wrap into two columns.
 const MAX_STACK = 4;
 
 // Target width:height of the auto layout, close to a desktop viewport.
 const ASPECT_RATIO = 16 / 9;
 
-/** `<resourceId>:<service>` selects one service of a resource's card. */
+/** `<resourceId>:<service>`: the card of one service of a resource with several. */
 export function serviceNodeId(resourceId: string, service: string) {
     return `${resourceId}:${service}`;
 }
@@ -134,29 +139,12 @@ export function parseNodeId(nodeId: string) {
 }
 
 /** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
-export function cardTrays(services: CanvasService[]) {
-    // Services of one resource can share a volume or config; its card shows it once.
-    const unique = (names: string[]) => [...new Set(names)];
-
+export function cardTrays(service: CanvasService | undefined) {
     return [
-        ...unique(services.flatMap((service) => service.volumes)).map((name) => ({
-            kind: "volume" as const,
-            name,
-        })),
-        ...unique(services.flatMap((service) => service.configs)).map((name) => ({
-            kind: "config" as const,
-            name,
-        })),
-        ...unique(services.flatMap((service) => service.exporters ?? [])).map((name) => ({
-            kind: "metrics" as const,
-            name,
-        })),
+        ...(service?.volumes ?? []).map((name) => ({ kind: "volume" as const, name })),
+        ...(service?.configs ?? []).map((name) => ({ kind: "config" as const, name })),
+        ...(service?.exporters ?? []).map((name) => ({ kind: "metrics" as const, name })),
     ];
-}
-
-/** The card without its trays: a lone service fits the header, more get a row each. */
-export function cardBodyHeight(services: CanvasService[]) {
-    return CARD_HEIGHT + (services.length > 1 ? services.length * SERVICE_ROW : 0);
 }
 
 /** Adds `exporters` as trays on `server`, one of `entry`'s services. */
@@ -240,8 +228,8 @@ export function foldExporters(graph: CanvasGraph): CanvasGraph {
     return [...byId.values()];
 }
 
-function cardHeight(services: CanvasService[]) {
-    return cardBodyHeight(services) + cardTrays(services).length * (VOLUME_TRAY - VOLUME_OVERLAP);
+function cardHeight(service: CanvasService | undefined) {
+    return CARD_HEIGHT + cardTrays(service).length * (VOLUME_TRAY - VOLUME_OVERLAP);
 }
 
 /**
@@ -332,7 +320,7 @@ export function freeSlot(drop: Rect, members: Rect[]): XYPosition {
  */
 export function repairOverlaps(nodes: CanvasNode[]) {
     const blocks = nodes.flatMap((node) =>
-        node.type === "stack" || !node.data.groupId
+        node.type === "stack" || !node.data.frameId
             ? [{ id: node.id, rect: nodeRect(node), frame: node.type === "stack" }]
             : [],
     );
@@ -356,7 +344,7 @@ export function repairOverlaps(nodes: CanvasNode[]) {
     for (const node of nodes) {
         if (node.type !== "card") continue;
 
-        const delta = shift.get(node.data.groupId ?? node.id) ?? 0;
+        const delta = shift.get(node.data.frameId ?? node.id) ?? 0;
 
         positions[node.id] = { x: node.position.x, y: node.position.y + delta };
     }
@@ -438,10 +426,10 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
     if (!dragged) return {};
 
     const blocks = nodes.filter(
-        (node) => !node.hidden && (node.type === "stack" || !node.data.groupId),
+        (node) => !node.hidden && (node.type === "stack" || !node.data.frameId),
     );
 
-    const ownFrame = dragged.type === "card" ? dragged.data.groupId : undefined;
+    const ownFrame = dragged.type === "card" ? dragged.data.frameId : undefined;
 
     const obstacles = [
         ...blocks.filter((node) => node.id !== draggedId && node.id !== ownFrame),
@@ -449,7 +437,7 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
             ? nodes.filter(
                   (node) =>
                       node.type === "card" &&
-                      node.data.groupId === ownFrame &&
+                      node.data.frameId === ownFrame &&
                       node.id !== draggedId,
               )
             : []),
@@ -462,7 +450,7 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
     for (const node of nodes) {
         const moves =
             node.id === draggedId ||
-            (dragged.type === "stack" && node.type === "card" && node.data.groupId === draggedId);
+            (dragged.type === "stack" && node.type === "card" && node.data.frameId === draggedId);
 
         if (node.type === "card" && moves)
             positions[node.id] = { x: node.position.x + delta.x, y: node.position.y + delta.y };
@@ -472,19 +460,22 @@ export function settle(nodes: CanvasNode[], draggedId: string) {
 }
 
 /**
- * New positions when a resource's card moves from `from` to `to`: its volumes and configs
- * on cards of their own keep their offset from it, so they change frames with it.
+ * New positions when one of a resource's cards moves from `from` to `to`: its other service,
+ * volume and config cards keep their offset from it, so they change frames with it.
  */
 export function moveResourceCards(
     nodes: CanvasNode[],
-    resourceId: string,
+    cardId: string,
     from: XYPosition,
     to: XYPosition,
 ) {
+    const card = nodes.find((node) => node.id === cardId);
+    const resourceId = card?.type === "card" ? card.data.resource.id : cardId;
+
     return Object.fromEntries([
-        [resourceId, to],
+        [cardId, to],
         ...nodes.flatMap((node) =>
-            node.type === "card" && node.id !== resourceId && node.data.resource.id === resourceId
+            node.type === "card" && node.id !== cardId && node.data.resource.id === resourceId
                 ? [
                       [
                           node.id,
@@ -508,9 +499,9 @@ export function refitFrames(nodes: CanvasNode[]) {
     const members = new Map<string, Rect[]>();
 
     for (const node of nodes)
-        if (node.type === "card" && node.data.groupId)
-            members.set(node.data.groupId, [
-                ...(members.get(node.data.groupId) ?? []),
+        if (node.type === "card" && node.data.frameId)
+            members.set(node.data.frameId, [
+                ...(members.get(node.data.frameId) ?? []),
                 nodeRect(node),
             ]);
 
@@ -531,23 +522,25 @@ export function refitFrames(nodes: CanvasNode[]) {
     });
 }
 
-/** One card: a resource, or a volume or config no service mounts. */
+/** One card: a service, a resource without one, or a volume or config no service mounts. */
 type Item = {
-    /** The resource id, or the node id of a volume or config that stands alone. */
+    /** The resource id, a service's node id, or the node id of a volume or config that stands alone. */
     id: string;
     resource: CanvasResource;
     entry: CanvasGraph[number] | undefined;
+    service?: CanvasService;
     volume?: CanvasVolume;
     config?: CanvasConfig;
     width: number;
     height: number;
 };
 
-/** What the auto layout places: a group's frame with its cards, or a card on its own. */
+/** What the auto layout places: a frame with its cards, or a card on its own. */
 type Block = {
-    /** The group id for a frame, the card's own id otherwise. */
+    /** The group id, the resource id for a resource's own frame, or the lone card's id. */
     id: string;
     group: CanvasGroup | undefined;
+    framed: boolean;
     width: number;
     height: number;
     /** Card positions relative to the block. */
@@ -558,14 +551,16 @@ function loneBlock(item: Item): Block {
     return {
         id: item.id,
         group: undefined,
+        framed: false,
         width: item.width,
         height: item.height,
         cards: [{ item, rect: { x: 0, y: 0, width: item.width, height: item.height } }],
     };
 }
 
-function groupBlock(group: CanvasGroup, items: Item[]): Block {
-    // Big groups wrap into two columns instead of growing into a tower.
+/** A group's frame, or (without `group`) a resource's own frame around its services. */
+function frameBlock(id: string, group: CanvasGroup | undefined, items: Item[]): Block {
+    // Big frames wrap into two columns instead of growing into a tower.
     const columnCount = items.length > MAX_STACK ? 2 : 1;
     const cards: Block["cards"] = [];
     let y = GROUP_HEADER;
@@ -590,8 +585,9 @@ function groupBlock(group: CanvasGroup, items: Item[]): Block {
     }
 
     return {
-        id: group.id,
+        id,
         group,
+        framed: true,
         width: columnCount * CARD_WIDTH + (columnCount + 1) * GROUP_PADDING,
         height: y,
         cards,
@@ -683,15 +679,32 @@ export function buildCanvas(
         const entry = byId.get(resource.id);
 
         const alone = { resource, entry, width: CARD_WIDTH, height: VOLUME_CARD_HEIGHT };
+        const services = entry?.services ?? [];
+
+        // Every service is a card of its own; a database's exporters were folded into its server.
+        const serviceCards =
+            services.length > 1
+                ? services.map((service) => ({
+                      id: serviceNodeId(resource.id, service.name),
+                      resource,
+                      entry,
+                      service,
+                      width: CARD_WIDTH,
+                      height: cardHeight(service),
+                  }))
+                : [
+                      {
+                          id: resource.id,
+                          resource,
+                          entry,
+                          service: services[0],
+                          width: CARD_WIDTH,
+                          height: cardHeight(services[0]),
+                      },
+                  ];
 
         return [
-            {
-                id: resource.id,
-                resource,
-                entry,
-                width: CARD_WIDTH,
-                height: cardHeight(entry?.services ?? []),
-            },
+            ...serviceCards,
             ...(entry?.volumes ?? []).flatMap((volume) =>
                 volume.services.length
                     ? []
@@ -709,13 +722,29 @@ export function buildCanvas(
     // has no frame, and a resource whose group is unknown stands alone.
     const blocks: Block[] = [];
 
+    // A card of one of several services; outside a group they get their resource's own frame.
+    const isService = (other: Item) =>
+        other.service !== undefined && other.id !== other.resource.id;
+
     for (const item of items) {
         const group = groups.find((entry) => entry.id === item.resource.groupId);
 
-        if (!group) blocks.push(loneBlock(item));
+        if (!group && isService(item)) {
+            if (!blocks.some((block) => block.id === item.resource.id))
+                blocks.push(
+                    frameBlock(
+                        item.resource.id,
+                        undefined,
+                        items.filter(
+                            (other) => other.resource.id === item.resource.id && isService(other),
+                        ),
+                    ),
+                );
+        } else if (!group) blocks.push(loneBlock(item));
         else if (!blocks.some((block) => block.id === group.id))
             blocks.push(
-                groupBlock(
+                frameBlock(
+                    group.id,
                     group,
                     items.filter((other) => other.resource.groupId === group.id),
                 ),
@@ -728,28 +757,52 @@ export function buildCanvas(
         Math.min(...block.cards.map(({ item }) => depth.get(item.resource.id) ?? 0)),
     );
 
+    const spots = new Map(
+        blocks.flatMap((block) => {
+            const origin = auto.get(block.id) ?? { x: 0, y: 0 };
+
+            return block.cards.map(
+                ({ item, rect }) =>
+                    [item.id, { x: origin.x + rect.x, y: origin.y + rect.y }] as const,
+            );
+        }),
+    );
+
+    // Where a card was saved under an older layout: a lone service under its service id, and
+    // a resource's one card, now split per service, anchoring its services' auto layout.
+    const legacySpot = (item: Item): XYPosition | undefined => {
+        if (!item.service) return undefined;
+
+        if (item.id === item.resource.id)
+            return saved[serviceNodeId(item.resource.id, item.service.name)];
+
+        const anchor = saved[item.resource.id];
+        const first = item.entry?.services[0];
+        const from = first && spots.get(serviceNodeId(item.resource.id, first.name));
+        const to = spots.get(item.id);
+
+        return anchor && from && to
+            ? { x: anchor.x + to.x - from.x, y: anchor.y + to.y - from.y }
+            : undefined;
+    };
+
     const frames: CanvasNode[] = [];
     const cards: CanvasNode[] = [];
 
     for (const block of blocks) {
-        const origin = auto.get(block.id) ?? { x: 0, y: 0 };
-        const isCollapsed = block.group !== undefined && collapsed.has(block.group.id);
+        const isCollapsed = block.framed && collapsed.has(block.id);
 
         const members = block.cards.map(({ item, rect }): CanvasNode => {
-            const { resource, entry } = item;
+            const { resource, entry, service } = item;
             const own = !item.volume && !item.config;
-            const services = own ? (entry?.services ?? []) : [];
-            const first = services[0];
+            const shared = item.id !== resource.id && service !== undefined;
 
             return {
                 id: item.id,
                 type: "card",
-                // A card that used to be a service in its resource's own frame keeps that spot.
                 position: saved[item.id] ??
-                    (own && first ? saved[serviceNodeId(resource.id, first.name)] : undefined) ?? {
-                        x: origin.x + rect.x,
-                        y: origin.y + rect.y,
-                    },
+                    legacySpot(item) ??
+                    spots.get(item.id) ?? { x: 0, y: 0 },
                 width: rect.width,
                 height: rect.height,
                 zIndex: 1,
@@ -757,11 +810,18 @@ export function buildCanvas(
                 hidden: isCollapsed,
                 data: {
                     resource,
-                    services,
-                    icon: own ? resourceIcon(resource, services) : null,
+                    service,
+                    shared,
+                    icon:
+                        shared && service
+                            ? (serviceIcon(service) ?? null)
+                            : own
+                              ? resourceIcon(resource, service ? [service] : [])
+                              : null,
                     draftOnly: entry?.draftOnly ?? false,
                     parseError: own && (entry?.parseError ?? false),
                     groupId: block.group?.id,
+                    frameId: block.framed ? block.id : undefined,
                     volume: item.volume,
                     config: item.config,
                 },
@@ -770,7 +830,9 @@ export function buildCanvas(
 
         cards.push(...members);
 
-        if (!block.group) continue;
+        const first = block.cards[0]?.item;
+
+        if (!block.framed || !first) continue;
 
         const frame = frameRect(members.map(nodeRect));
 
@@ -779,16 +841,20 @@ export function buildCanvas(
                 ? []
                 : [
                       {
-                          id: item.resource.id,
-                          name: item.resource.name,
-                          icon: resourceIcon(item.resource, item.entry?.services ?? []),
+                          id: item.id,
+                          resourceId: item.resource.id,
+                          name:
+                              item.id !== item.resource.id && item.service
+                                  ? item.service.name
+                                  : item.resource.name,
+                          icon: resourceIcon(item.resource, item.service ? [item.service] : []),
                       },
                   ],
         );
 
         // Frames sit behind every card and edge, like Railway's; a collapsed one is a card itself.
         frames.push({
-            id: block.group.id,
+            id: block.id,
             type: "stack",
             position: { x: frame.x, y: frame.y },
             width: isCollapsed ? COLLAPSED_WIDTH : frame.width,
@@ -796,9 +862,13 @@ export function buildCanvas(
             zIndex: isCollapsed ? 1 : -1,
             data: {
                 group: block.group,
+                name: block.group?.name ?? first.resource.name,
+                projectId: first.resource.projectId,
                 collapsed: isCollapsed,
                 resources: shown,
-                icon: block.group.icon ?? null,
+                icon: block.group
+                    ? (block.group.icon ?? null)
+                    : resourceIcon(first.resource, first.entry?.services ?? []),
                 dropTarget: false,
             },
         });
@@ -818,29 +888,49 @@ export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
     // A card hidden in a collapsed frame hands its references to the frame.
     const frameOf = new Map(
         nodes.flatMap((node) =>
-            node.type === "card" && node.data.groupId
-                ? [[node.id, node.data.groupId] as const]
+            node.type === "card" && node.data.frameId
+                ? [[node.id, node.data.frameId] as const]
                 : [],
         ),
     );
 
     const shown = (id: string) => (rects.has(id) ? id : frameOf.get(id));
 
+    // References belong to a resource; one split into service cards draws them from its first.
+    const cardOf = (entry: CanvasGraph[number] | undefined, resourceId: string) =>
+        entry && entry.services.length > 1 && entry.services[0]
+            ? serviceNodeId(resourceId, entry.services[0].name)
+            : resourceId;
+
+    const byId = new Map(graph.map((entry) => [entry.id, entry]));
     const edges = new Map<string, Edge>();
 
-    for (const entry of graph)
-        for (const reference of entry.references) {
-            const source = shown(entry.id);
-            const target = shown(reference);
-            const from = source && rects.get(source);
-            const to = target && rects.get(target);
+    const connect = (kind: string, sourceId: string, targetId: string) => {
+        const source = shown(sourceId);
+        const target = shown(targetId);
+        const from = source && rects.get(source);
+        const to = target && rects.get(target);
 
-            if (!source || !target || !from || !to || source === target) continue;
+        if (!source || !target || !from || !to || source === target) return;
 
-            const id = `reference:${source}:${target}`;
+        const id = `${kind}:${source}:${target}`;
 
-            edges.set(id, { id, source, target, ...facingHandles(from, to) });
-        }
+        edges.set(id, { id, source, target, ...facingHandles(from, to) });
+    };
+
+    for (const entry of graph) {
+        for (const reference of entry.references)
+            connect("reference", cardOf(entry, entry.id), cardOf(byId.get(reference), reference));
+
+        if (entry.services.length > 1)
+            for (const service of entry.services)
+                for (const dependency of service.dependsOn)
+                    connect(
+                        "depends",
+                        serviceNodeId(entry.id, service.name),
+                        serviceNodeId(entry.id, dependency),
+                    );
+    }
 
     return [...edges.values()];
 }

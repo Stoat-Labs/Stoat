@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
     buildCanvas,
-    cardTrays,
     moveResourceCards,
     foldExporters,
     frameRect,
@@ -26,7 +25,7 @@ describe("frameRect", () => {
 
 describe("refitFrames", () => {
     it("follows a card dragged past the frame edge, instead of dropping it", () => {
-        // SAFETY: the canvas only reads `groupId` while refitting.
+        // SAFETY: the canvas only reads `frameId` while refitting.
         const card = (id: string, x: number, y: number) =>
             ({
                 id,
@@ -34,7 +33,7 @@ describe("refitFrames", () => {
                 position: { x, y },
                 width: 288,
                 height: 144,
-                data: { groupId: "r" },
+                data: { frameId: "r" },
             }) as never;
 
         const nodes = refitFrames([
@@ -78,15 +77,15 @@ describe("freeSlot", () => {
 });
 
 describe("repairOverlaps", () => {
-    // SAFETY: repairOverlaps only reads ids, types, positions, sizes and `groupId`.
-    const card = (id: string, x: number, y: number, groupId?: string) =>
+    // SAFETY: repairOverlaps only reads ids, types, positions, sizes and `frameId`.
+    const card = (id: string, x: number, y: number, frameId?: string) =>
         ({
             id,
             type: "card",
             position: { x, y },
             width: 288,
             height: 144,
-            data: { groupId },
+            data: { frameId },
         }) as never;
 
     it("moves an overlapping card below the one above it, on the grid", () => {
@@ -114,15 +113,15 @@ describe("repairOverlaps", () => {
 });
 
 describe("settle", () => {
-    // SAFETY: settle only reads ids, types, positions, sizes, `hidden` and `groupId`.
-    const card = (id: string, x: number, y: number, groupId?: string) =>
+    // SAFETY: settle only reads ids, types, positions, sizes, `hidden` and `frameId`.
+    const card = (id: string, x: number, y: number, frameId?: string) =>
         ({
             id,
             type: "card",
             position: { x, y },
             width: 288,
             height: 144,
-            data: { groupId },
+            data: { frameId },
         }) as never;
 
     it("leaves a card that covers nothing where it was dropped", () => {
@@ -179,9 +178,9 @@ describe("buildCanvas", () => {
         internalHostname: null,
     });
 
-    // SAFETY: the layout only reads `id`, `icon`, `engine` and `groupId` of a resource.
+    // SAFETY: the layout only reads `id`, `name`, `projectId`, `icon`, `engine` and `groupId` of a resource.
     const resource = (id: string, groupId: string | null = null) =>
-        ({ id, icon: null, engine: null, groupId }) as never;
+        ({ id, name: id, projectId: "p", icon: null, engine: null, groupId }) as never;
 
     // SAFETY: the layout only reads these fields of a graph entry.
     const entry = (id: string, references: string[] = [], services = [service("app")]) =>
@@ -197,19 +196,44 @@ describe("buildCanvas", () => {
 
     const group = (id: string) => ({ id, projectId: "p", name: id, icon: null });
 
-    it("draws a resource with several services as one card, a row per service and its trays under it", () => {
+    it("frames a resource's services outside a group, each service its own card with its trays", () => {
         const { nodes } = buildCanvas(
             [resource("sure")],
             [
                 entry(
                     "sure",
                     [],
+                    [service("web", ["storage"]), service("redis", ["cache"], ["redis.conf"])],
+                ),
+            ],
+            [],
+            {},
+            {},
+        );
+
+        expect(nodes.map((node) => [node.id, node.type])).toEqual([
+            ["sure", "stack"],
+            ["sure:web", "card"],
+            ["sure:redis", "card"],
+        ]);
+        expect(nodes.slice(1).map((node) => node.height)).toEqual([144 + 48, 144 + 2 * 48]);
+        expect(nodes[0]?.data).toMatchObject({ group: undefined, name: "sure" });
+        expect(nodes[1]?.data).toMatchObject({ shared: true, groupId: undefined, frameId: "sure" });
+    });
+
+    it("keeps a database and its metrics exporter on one card, without a frame", () => {
+        const { nodes } = buildCanvas(
+            [resource("pg")],
+            [
+                entry(
+                    "pg",
+                    [],
                     [
-                        service("web", ["storage"]),
-                        service("worker", ["storage"]),
-                        service("db", ["data"]),
-                        service("metrics"),
-                        service("redis", ["cache"], ["redis.conf"]),
+                        { ...service("postgres"), image: "postgres:18-alpine" },
+                        {
+                            ...service("postgres-metrics"),
+                            image: "prometheuscommunity/postgres-exporter:v0.20.1",
+                        },
                     ],
                 ),
             ],
@@ -218,24 +242,69 @@ describe("buildCanvas", () => {
             {},
         );
 
-        expect(nodes.map((node) => node.id)).toEqual(["sure"]);
-        // 144 plus five 32px service rows, then four 48px trays: web and worker share storage.
-        expect(nodes[0]?.height).toBe(144 + 5 * 32 + 4 * 48);
+        expect(nodes.map((node) => [node.id, node.type])).toEqual([["pg", "card"]]);
     });
 
-    it("shows a volume or config several services mount as one tray", () => {
+    it("puts every service card of a grouped resource in the group's frame", () => {
+        const { nodes } = buildCanvas(
+            [resource("forgejo", "g"), resource("other")],
+            [entry("forgejo", [], [service("forgejo"), service("forgejo-db")]), entry("other")],
+            [group("g")],
+            {},
+            {},
+        );
+
         expect(
-            cardTrays([
-                service("web", ["storage"], ["app.conf"]),
-                service("worker", ["storage", "cache"], ["app.conf"]),
-            ]),
-        ).toEqual([
-            { kind: "volume", name: "storage" },
-            { kind: "volume", name: "cache" },
-            { kind: "config", name: "app.conf" },
+            nodes.flatMap((node) =>
+                node.type === "card" && node.data.groupId === "g" ? [node.id] : [],
+            ),
+        ).toEqual(["forgejo:forgejo", "forgejo:forgejo-db"]);
+        expect(nodes.filter((node) => node.type === "stack").map((node) => node.id)).toEqual(["g"]);
+    });
+
+    it("keeps the spot a lone service had in its resource's old frame", () => {
+        const { nodes } = buildCanvas(
+            [resource("sure")],
+            [entry("sure", [], [service("web")])],
+            [],
+            {},
+            { "sure:web": { x: 480, y: 600 } },
+        );
+
+        expect(nodes[0]?.position).toEqual({ x: 480, y: 600 });
+    });
+
+    it("lays a resource's services out from where its single card was saved", () => {
+        const { nodes } = buildCanvas(
+            [resource("sure")],
+            [entry("sure", [], [service("web"), service("db")])],
+            [],
+            {},
+            { sure: { x: 480, y: 600 } },
+        );
+
+        expect(nodes.slice(1).map((node) => node.position)).toEqual([
+            { x: 480, y: 600 },
+            { x: 480, y: 600 + 144 + 24 },
         ]);
     });
 
+    it("draws depends_on between service cards and references from a resource's first card", () => {
+        const web = { ...service("web"), dependsOn: ["db"] };
+
+        const { edges } = buildCanvas(
+            [resource("app"), resource("pg")],
+            [entry("app", ["pg"], [web, service("db")]), entry("pg")],
+            [],
+            {},
+            {},
+        );
+
+        expect(edges.map((edge) => edge.id)).toEqual([
+            "reference:app:web:pg",
+            "depends:app:web:app:db",
+        ]);
+    });
     it("frames the resources of one group together and leaves the rest alone", () => {
         const { nodes } = buildCanvas(
             [resource("a", "g"), resource("b"), resource("c", "g")],
@@ -267,18 +336,6 @@ describe("buildCanvas", () => {
 
         expect(nodes.map((node) => [node.id, node.type])).toEqual([["a", "card"]]);
         expect(Number.isFinite(nodes[0]?.position.x)).toBe(true);
-    });
-
-    it("keeps the spot a service had in its resource's old frame", () => {
-        const { nodes } = buildCanvas(
-            [resource("sure")],
-            [entry("sure", [], [service("web"), service("db")])],
-            [],
-            {},
-            { "sure:web": { x: 480, y: 600 } },
-        );
-
-        expect(nodes[0]?.position).toEqual({ x: 480, y: 600 });
     });
 
     it("hands a collapsed group's references to its frame, once, and drops those inside it", () => {
@@ -317,6 +374,20 @@ describe("moveResourceCards", () => {
             r: { x: 1000, y: 48 },
             "r/data": { x: 1000, y: 240 },
             "r#app.conf": { x: 1312, y: 48 },
+        });
+    });
+
+    it("lands a dragged service card where it was dropped and takes its siblings along", () => {
+        expect(
+            moveResourceCards(
+                [card("r:web", "r", 1000, 48), card("r:db", "r", 0, 192)],
+                "r:web",
+                { x: 0, y: 0 },
+                { x: 1000, y: 48 },
+            ),
+        ).toEqual({
+            "r:web": { x: 1000, y: 48 },
+            "r:db": { x: 1000, y: 240 },
         });
     });
 });

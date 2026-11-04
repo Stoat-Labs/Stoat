@@ -9,9 +9,8 @@
     import type { Node, NodeProps } from "@xyflow/svelte";
     import { getCanvasActions } from "../context";
     import {
-        cardBodyHeight,
+        CARD_HEIGHT,
         cardTrays,
-        SERVICE_ROW,
         VOLUME_OVERLAP,
         VOLUME_TRAY,
         type CardData,
@@ -22,22 +21,16 @@
     let { id, data, selected }: NodeProps<Node<CardData, "card">> =
         $props();
 
-    const { resource, services, volume, config } = $derived(data);
+    const { resource, service, shared, volume, config } =
+        $derived(data);
 
     // Volume trays first, then config trays, then the database's metrics, one stack under the card.
-    const trays = $derived(cardTrays(services));
-
-    const bodyHeight = $derived(cardBodyHeight(services));
-
-    // A resource with several services lists them, each opening its own view of the panel.
-    const listed = $derived(services.length > 1 ? services : []);
+    const trays = $derived(cardTrays(service));
 
     const actions = getCanvasActions();
 
     // Railway shows one domain under the name; the rest are on the ingress page.
-    const domain = $derived(
-        services.flatMap((service) => service.domains)[0],
-    );
+    const domain = $derived(service?.domains[0]);
 
     // The name being typed after a double-click; null when not editing.
     let draft = $state<string | null>(null);
@@ -45,7 +38,10 @@
     // Shown until the rename is saved and refetched, so the old name doesn't flash back.
     let saving = $state<string | null>(null);
 
-    const title = $derived(saving ?? resource.name);
+    // A card of one of several services is named after it; renaming it would rename the resource.
+    const title = $derived(
+        shared && service ? service.name : (saving ?? resource.name),
+    );
 
     const frameClass = $derived(
         cn(
@@ -136,11 +132,11 @@
         <!-- Railway's service card: 288×144, name on top and status pinned to the bottom. -->
         <Frame
             class={cn("absolute inset-x-0 top-0", frameClass)}
-            style="height: {bodyHeight}px; z-index: {trays.length +
+            style="height: {CARD_HEIGHT}px; z-index: {trays.length +
                 1}"
         >
             <FramePanel class="flex flex-1 flex-col justify-between">
-                {#if services.length === 1 && services[0]?.isNew}
+                {#if service?.isNew}
                     <!-- Railway's staged badge: in the draft, not deployed yet. -->
                     <span
                         class="absolute top-2.5 right-2.5 rounded-sm bg-success/24 px-1.5 py-0.5 text-[10px] font-semibold text-success-foreground"
@@ -196,11 +192,14 @@
                             <p
                                 class="truncate text-base font-semibold"
                                 {title}
-                                data-renamable
+                                data-renamable={shared
+                                    ? undefined
+                                    : ""}
                                 ondblclick={(event) => {
                                     // Keeps Svelte Flow from zooming in on the double-click.
                                     event.stopPropagation();
-                                    draft = resource.name;
+                                    if (!shared)
+                                        draft = resource.name;
                                 }}
                             >
                                 {title}
@@ -216,44 +215,6 @@
                         {/if}
                     </div>
                 </div>
-                {#if listed.length}
-                    <ul class="-mx-2 flex flex-col">
-                        {#each listed as service (service.name)}
-                            <li>
-                                <button
-                                    type="button"
-                                    class="flex w-full items-center gap-3 rounded-md px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                                    style:height="{SERVICE_ROW}px"
-                                    onclick={(event) => {
-                                        event.stopPropagation();
-                                        actions.selectService(
-                                            resource.id,
-                                            service.name,
-                                        );
-                                    }}
-                                >
-                                    <Box
-                                        class="size-4 shrink-0"
-                                        aria-hidden="true"
-                                    />
-                                    <span
-                                        class="min-w-0 flex-1 truncate"
-                                        title={service.name}
-                                    >
-                                        {service.name}
-                                    </span>
-                                    {#if service.isNew}
-                                        <span
-                                            class="rounded-sm bg-success/24 px-1.5 py-0.5 text-[10px] font-semibold text-success-foreground"
-                                        >
-                                            New
-                                        </span>
-                                    {/if}
-                                </button>
-                            </li>
-                        {/each}
-                    </ul>
-                {/if}
                 {#if actions.isPendingDelete(resource.id)}
                     <p
                         class="truncate text-sm text-destructive-foreground"
@@ -281,7 +242,7 @@
             <button
                 type="button"
                 class="group/volume absolute inset-x-0 flex cursor-pointer flex-col rounded-2xl border border-foreground/14 bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] text-left transition-colors hover:border-foreground/24 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                style:top="{bodyHeight -
+                style:top="{CARD_HEIGHT -
                     VOLUME_OVERLAP +
                     index * (VOLUME_TRAY - VOLUME_OVERLAP)}px"
                 style:height="{VOLUME_TRAY}px"
