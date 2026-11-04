@@ -95,6 +95,12 @@ function removalError(error: Error) {
     if (error.status === 404)
         return new ORPCError("NOT_FOUND", { message: "This machine is no longer in the cluster." });
 
+    // The sidecar is still removing a machine, which can outlast Stoat's wait for it.
+    if (error.status === 409)
+        return new ORPCError("CONFLICT", {
+            message: "Another machine is still being removed. Try again once it's gone.",
+        });
+
     return new ORPCError(error.status < 500 ? "BAD_REQUEST" : "BAD_GATEWAY", {
         message: error.message,
     });

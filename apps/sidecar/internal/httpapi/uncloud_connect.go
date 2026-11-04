@@ -34,6 +34,10 @@ func (s *Server) connectUncloud(ctx context.Context, input *connectUncloudInput)
 	if s.dialUncloud == nil {
 		return nil, huma.Error501NotImplemented("this sidecar reaches Uncloud over SSH, which it cannot relay")
 	}
+	// uc would add a machine to the cluster mid-removal.
+	if s.removing.Load() {
+		return nil, errRemovingMachine()
+	}
 	if !listsToken(input.Connection, "upgrade") || !strings.EqualFold(strings.TrimSpace(input.Upgrade), uncloudProtocol) {
 		return nil, huma.ErrorWithHeaders(
 			huma.NewError(http.StatusUpgradeRequired, "send Connection: Upgrade and Upgrade: "+uncloudProtocol),

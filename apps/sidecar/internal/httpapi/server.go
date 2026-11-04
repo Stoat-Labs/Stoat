@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	scalargo "github.com/bdpiprava/scalar-go"
@@ -195,6 +196,8 @@ type Server struct {
 	dialUncloud    func(context.Context) (net.Conn, error)
 	// uncloudConnections holds a slot per open /api/v1/cluster/connect connection.
 	uncloudConnections chan struct{}
+	// removing is set while a machine is removed, until the removal ends even if its client left.
+	removing atomic.Bool
 }
 
 // New creates a Fiber server backed by Uncloud's typed client bindings.
@@ -534,9 +537,11 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 		Summary: "Connect to the Uncloud API", Tags: []string{"cluster"}, DefaultStatus: http.StatusSwitchingProtocols,
 		Description: "With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API " +
 			"the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. " +
-			"Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP.",
+			"Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP. " +
+			"Answers 409 while a machine is being removed.",
 		Errors: []int{
-			http.StatusUpgradeRequired, http.StatusNotImplemented, http.StatusBadGateway, http.StatusServiceUnavailable,
+			http.StatusUpgradeRequired, http.StatusConflict, http.StatusNotImplemented, http.StatusBadGateway,
+			http.StatusServiceUnavailable,
 		},
 		Responses: map[string]*huma.Response{
 			"101": {Description: "The connection now carries the Uncloud API's own traffic"},
@@ -586,8 +591,9 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 			"to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only " +
 			"removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. " +
 			"Refuses the machine the sidecar runs on or reaches Uncloud through. " +
-			"Once started, removal finishes within the exec timeout even if the client goes away.",
-		Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity},
+			"Once started, removal finishes within the exec timeout even if the client goes away, and until then this, " +
+			"connecting to Uncloud and spreading services answer 409.",
+		Errors: []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
 	}, s.removeMachine)
 	register(humaAPI, huma.Operation{
 		OperationID: "execMachine", Method: http.MethodPost, Path: "/api/v1/machines/{id}/exec",
@@ -644,8 +650,8 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 		Summary: "Run a global service on machines that lack it", Tags: []string{"services"},
 		Description: "Uncloud doesn't start global services on machines that join later. This starts one with the spec " +
 			"of the newest container on each eligible machine that has none and answered, and never touches existing " +
-			"containers, stopped ones included, so a service can spread itself.",
-		Errors:    []int{http.StatusUnprocessableEntity},
+			"containers, stopped ones included, so a service can spread itself. Answers 409 while a machine is being removed.",
+		Errors:    []int{http.StatusConflict, http.StatusUnprocessableEntity},
 		Responses: eventStreamResponse(humaAPI, "Server-Sent deployment events", DeployComposeEvent{}),
 	}, s.spreadService)
 	register(humaAPI, huma.Operation{
@@ -881,6 +887,11 @@ func (s *Server) clearDomain(ctx context.Context, _ *struct{}) (*bodyOutput[Stat
 	return reply(StatusResponse{Status: "cleared"}), nil
 }
 
+// errRemovingMachine refuses a machine change while another machine is being removed.
+func errRemovingMachine() error {
+	return huma.Error409Conflict("a machine is being removed from the cluster; try again once it's gone")
+}
+
 func (s *Server) updateIngressRecords(ctx context.Context, _ *struct{}) (*bodyOutput[IngressRecordsResponse], error) {
 	records, err := s.backend.UpdateIngressRecords(ctx)
 	if err != nil {
@@ -939,6 +950,12 @@ func (s *Server) removeMachine(ctx context.Context, input *idInput) (*bodyOutput
 			fmt.Sprintf("this sidecar runs on machine %q, so it can't remove it", machine.Name),
 		)
 	}
+
+	// The flag outlives a client that stops waiting, so nothing joins or spreads mid-removal.
+	if !s.removing.CompareAndSwap(false, true) {
+		return nil, errRemovingMachine()
+	}
+	defer s.removing.Store(false)
 
 	// Stopping halfway would leave the machine in the cluster without its containers.
 	removeCtx, cancel := s.execContext(ctx)
@@ -1072,6 +1089,10 @@ func (s *Server) stopService(ctx context.Context, input *idInput) (*bodyOutput[S
 }
 
 func (s *Server) spreadService(ctx context.Context, input *idInput) (*huma.StreamResponse, error) {
+	if s.removing.Load() {
+		return nil, errRemovingMachine()
+	}
+
 	streamCtx, cancel := streamContext(ctx)
 	events, err := s.backend.SpreadService(streamCtx, input.ID)
 	if err != nil {

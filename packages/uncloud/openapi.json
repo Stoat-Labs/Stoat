@@ -1505,7 +1505,7 @@
         },
         "/api/v1/cluster/connect": {
             "get": {
-                "description": "With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP.",
+                "description": "With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP. Answers 409 while a machine is being removed.",
                 "operationId": "connectUncloud",
                 "parameters": [
                     {
@@ -1560,6 +1560,16 @@
                             }
                         },
                         "description": "Not Found"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Conflict"
                     },
                     "422": {
                         "content": {
@@ -2381,7 +2391,7 @@
         },
         "/api/v1/machines/{id}": {
             "delete": {
-                "description": "Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away.",
+                "description": "Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away, and until then this, connecting to Uncloud and spreading services answer 409.",
                 "operationId": "removeMachine",
                 "parameters": [
                     {
@@ -2433,6 +2443,16 @@
                             }
                         },
                         "description": "Not Found"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Conflict"
                     },
                     "422": {
                         "content": {
@@ -3848,7 +3868,7 @@
         },
         "/api/v1/services/{id}/spread": {
             "post": {
-                "description": "Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself.",
+                "description": "Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself. Answers 409 while a machine is being removed.",
                 "operationId": "spreadService",
                 "parameters": [
                     {
@@ -3900,6 +3920,16 @@
                             }
                         },
                         "description": "Not Found"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Conflict"
                     },
                     "422": {
                         "content": {

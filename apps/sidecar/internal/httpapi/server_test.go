@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -77,6 +78,9 @@ type fakeBackend struct {
 
 	removeMachineErr error
 	removedMachines  []string
+	// When set, RemoveMachine closes started, then waits for release.
+	removeMachineStarted chan struct{}
+	removeMachineRelease chan struct{}
 
 	ingressRecords    IngressRecordsResponse
 	ingressRecordsErr error
@@ -143,6 +147,10 @@ func (f *fakeBackend) RenameMachine(_ context.Context, id, name string) (Machine
 }
 
 func (f *fakeBackend) RemoveMachine(ctx context.Context, machine api.MachineMember) (RemoveMachineResponse, error) {
+	if f.removeMachineStarted != nil {
+		close(f.removeMachineStarted)
+		<-f.removeMachineRelease
+	}
 	f.removedMachines = append(f.removedMachines, machine.ID)
 	f.lastRemoveMachineCtx = ctx
 	if f.removeMachineErr != nil {
@@ -588,6 +596,36 @@ func TestRemoveMachineRefusesTheSidecarsOwnMachine(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
 	assert.Contains(t, readBody(t, response), "runs on machine")
 	assert.Empty(t, fake.removedMachines)
+}
+
+func TestRemoveMachineHoldsOffMachineChangesUntilItEnds(t *testing.T) {
+	dial := func(context.Context) (net.Conn, error) { return nil, errors.New("not dialed") }
+	server, fake := newTestServerWithConfig(t, Config{DialUncloud: dial})
+	fake.removeMachineStarted = make(chan struct{})
+	fake.removeMachineRelease = make(chan struct{})
+
+	removed := make(chan int)
+	go func() {
+		removed <- doRequest(t, server, http.MethodDelete, "/api/v1/machines/node-1", nil, "").StatusCode
+	}()
+	<-fake.removeMachineStarted
+
+	for _, request := range []struct{ method, path string }{
+		{http.MethodDelete, "/api/v1/machines/node-1"},
+		{http.MethodGet, "/api/v1/cluster/connect"},
+		{http.MethodPost, "/api/v1/services/sidecar/spread"},
+	} {
+		response := doRequest(t, server, request.method, request.path, nil, "")
+		assert.Equal(t, http.StatusConflict, response.StatusCode, request.path)
+		assert.Contains(t, readBody(t, response), "being removed", request.path)
+	}
+
+	close(fake.removeMachineRelease)
+	assert.Equal(t, http.StatusOK, <-removed)
+	assert.Equal(t, []string{"machine-1"}, fake.removedMachines)
+
+	response := doRequest(t, server, http.MethodGet, "/api/v1/cluster/connect", nil, "")
+	assert.Equal(t, http.StatusUpgradeRequired, response.StatusCode)
 }
 
 func TestRemoveMachineErrors(t *testing.T) {

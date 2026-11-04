@@ -754,12 +754,19 @@ describe("adding machines (PostgreSQL)", () => {
         expect(sidecar.pointed).toBe(0);
     });
 
-    it("explains an outdated sidecar and a rejected key before uc runs", async () => {
+    it("explains an outdated or busy sidecar and a rejected key before uc runs", async () => {
         const clusterId = await createCluster();
 
         await prepare(clusterId);
         sidecar.relay = 404;
         expect((await attempt(clusterId)).deployment.error).toContain("too old to add machines");
+        expect(await lines("ssh-calls")).toEqual([]);
+
+        // The sidecar is still removing a machine, maybe after Stoat stopped waiting for it.
+        sidecar.relay = 409;
+        expect((await attempt(clusterId)).deployment.error).toBe(
+            "A machine is still being removed from this cluster. Retry once it's gone.",
+        );
         expect(await lines("ssh-calls")).toEqual([]);
 
         sidecar.relay = 426;
@@ -953,6 +960,7 @@ describe("adding machines (PostgreSQL)", () => {
         for (const [status, error, message] of [
             [405, "Method Not Allowed", "too old to remove machines"],
             [404, "machine not found", "no longer in the cluster"],
+            [409, "a machine is being removed from the cluster", "still being removed"],
             [422, 'the sidecar reaches Uncloud through machine "edge"', "reaches Uncloud through"],
             [500, "remove containers: container web-1: timed out", "container web-1: timed out"],
         ] as const) {

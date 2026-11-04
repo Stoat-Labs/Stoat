@@ -80,6 +80,12 @@ async function checkRelay(uc: UcClient, signal: AbortSignal) {
 
     if (response.status === 426) return;
 
+    // The sidecar refuses machine changes until a removal it started has finished.
+    if (response.status === 409)
+        throw new Error(
+            "A machine is still being removed from this cluster. Retry once it's gone.",
+        );
+
     if (response.status === 404)
         throw new Error(
             "This cluster's sidecar is too old to add machines. Update the Stoat sidecar, then retry.",

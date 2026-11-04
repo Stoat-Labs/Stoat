@@ -87,7 +87,7 @@ export interface paths {
         };
         /**
          * Connect to the Uncloud API
-         * @description With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP.
+         * @description With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP. Answers 409 while a machine is being removed.
          */
         get: operations["connectUncloud"];
         put?: never;
@@ -258,7 +258,7 @@ export interface paths {
         post?: never;
         /**
          * Remove a machine
-         * @description Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away.
+         * @description Like `uc machine rm`: when the machine answers, removes its service containers and resets it to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. Refuses the machine the sidecar runs on or reaches Uncloud through. Once started, removal finishes within the exec timeout even if the client goes away, and until then this, connecting to Uncloud and spreading services answer 409.
          */
         delete: operations["removeMachine"];
         options?: never;
@@ -467,7 +467,7 @@ export interface paths {
         put?: never;
         /**
          * Run a global service on machines that lack it
-         * @description Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself.
+         * @description Uncloud doesn't start global services on machines that join later. This starts one with the spec of the newest container on each eligible machine that has none and answered, and never touches existing containers, stopped ones included, so a service can spread itself. Answers 409 while a machine is being removed.
          */
         post: operations["spreadService"];
         delete?: never;
@@ -1320,6 +1320,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Unprocessable Entity */
             422: {
                 headers: {
@@ -2135,6 +2144,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3200,6 +3218,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
