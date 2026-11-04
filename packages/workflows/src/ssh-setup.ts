@@ -136,8 +136,8 @@ export async function serverAddress(host: string) {
     return addresses[0]!.address;
 }
 
-/** The server's cluster member ID read over SSH, since uc reinstalls a member's daemon first: "" if unreadable, null if none. */
-export function existingMachineId(server: Server, workspace: Workspace, signal: AbortSignal) {
+/** The server's cluster member ID and WireGuard key, read over SSH before uc reinstalls a member's daemon. */
+export function machineState(server: Server, workspace: Workspace, signal: AbortSignal) {
     // Only root can read the machine state; a password prompt fails here and again, clearly, in uc.
     const sudo = server.user === "root" ? "" : "sudo -n ";
 
@@ -160,11 +160,11 @@ export function existingMachineId(server: Server, workspace: Workspace, signal: 
         String(server.port),
         ...options.flatMap((option) => ["-o", option]),
         `${server.user}@${server.host}`,
-        // Only the ID, the state's first field: the file also holds private keys. A fresh server's is "".
-        `${sudo}grep -o -m 1 '"ID": *"[^"][^"]*"' /var/lib/uncloud/machine.json`,
+        // Only the ID and public key: the file also holds private keys.
+        `${sudo}grep -o -E '"(ID|PublicKey)": *"[^"]*"' /var/lib/uncloud/machine.json`,
     ];
 
-    return new Promise<string | null>((resolve, reject) => {
+    return new Promise<{ id: string | null; publicKey: string | null }>((resolve, reject) => {
         const child = spawn("ssh", args, {
             env: { PATH: process.env.PATH ?? "", HOME: workspace.dir },
             stdio: ["ignore", "pipe", "pipe"],
@@ -189,8 +189,18 @@ export function existingMachineId(server: Server, workspace: Workspace, signal: 
         });
         // grep exits 0 on a match; ssh exits 255 when it can't log in.
         child.on("close", (code) => {
-            if (code === 255) reject(new Error(stderr.trim() || "SSH login failed."));
-            else resolve(code === 0 ? (/"ID": *"([^"]*)"/.exec(stdout)?.[1] ?? "") : null);
+            if (code === 255) {
+                reject(new Error(stderr.trim() || "SSH login failed."));
+
+                return;
+            }
+
+            // The ID is the state's first field, and a server that never joined has "".
+            const id = code === 0 ? /"ID": *"([^"]*)"/.exec(stdout)?.[1] || null : null;
+            const key = code === 0 ? /"PublicKey": *"([0-9a-f]+)"/.exec(stdout)?.[1] : undefined;
+
+            // Uncloud saves the key as hex; the sidecar lists machines' keys as base64.
+            resolve({ id, publicKey: key ? Buffer.from(key, "hex").toString("base64") : null });
         });
     });
 }

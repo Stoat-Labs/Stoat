@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorkspace, existingMachineId } from "@stoat/workflows/ssh-setup";
+import { createWorkspace, machineState } from "@stoat/workflows/ssh-setup";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 // Runs the remote command here instead, against the machine.json next to this script.
@@ -11,6 +11,11 @@ exec sh -c "$(printf '%s' "$command" | sed "s#/var/lib/uncloud/machine.json#$(di
 `;
 
 const server = { host: "93.184.216.34", port: 22, user: "root" };
+
+// Uncloud saves WireGuard keys as hex; the sidecar lists them as base64.
+const PUBLIC_KEY = "5a".repeat(32);
+
+const PRIVATE_KEY = "c3".repeat(32);
 
 describe("reading which cluster member a server is", () => {
     const originalPath = process.env.PATH;
@@ -35,28 +40,43 @@ describe("reading which cluster member a server is", () => {
         const workspace = await createWorkspace("stoat-ssh-test-");
 
         try {
-            return await existingMachineId(server, workspace, new AbortController().signal);
+            return await machineState(server, workspace, new AbortController().signal);
         } finally {
             await rm(workspace.dir, { recursive: true, force: true });
         }
     }
 
-    it("reads only the member's own ID", async () => {
+    it("reads the member's own ID and public key, never its private key", async () => {
         const state = {
             ID: "3f2a9c1d0b7e4a6f8c5d2e1b0a9f8e7d",
             Name: "edge",
-            Network: { PrivateKey: "c2VjcmV0", PublicKey: "cHVibGlj", Peers: [{ ID: "other" }] },
+            Network: { PrivateKey: PRIVATE_KEY, PublicKey: PUBLIC_KEY, Peers: [{ ID: "other" }] },
+        };
+
+        const expected = {
+            id: state.ID,
+            publicKey: Buffer.from(PUBLIC_KEY, "hex").toString("base64"),
         };
 
         // Uncloud writes the state with json.MarshalIndent and a two-space indent.
-        expect(await read(JSON.stringify(state, null, 2))).toBe(state.ID);
-        expect(await read(JSON.stringify(state))).toBe(state.ID);
+        expect(await read(JSON.stringify(state, null, 2))).toEqual(expected);
+        expect(await read(JSON.stringify(state))).toEqual(expected);
+        expect(JSON.stringify(await read(JSON.stringify(state)))).not.toContain(
+            Buffer.from(PRIVATE_KEY, "hex").toString("base64"),
+        );
     });
 
     it("finds no member on a server Uncloud is installed on but not initialised", async () => {
-        const fresh = { ID: "", Name: "", Network: { PublicKey: "cHVibGlj" } };
+        const fresh = {
+            ID: "",
+            Name: "",
+            Network: { PrivateKey: PRIVATE_KEY, PublicKey: PUBLIC_KEY },
+        };
 
-        expect(await read(JSON.stringify(fresh, null, 2))).toBeNull();
-        expect(await read(null)).toBeNull();
+        expect(await read(JSON.stringify(fresh, null, 2))).toEqual({
+            id: null,
+            publicKey: Buffer.from(PUBLIC_KEY, "hex").toString("base64"),
+        });
+        expect(await read(null)).toEqual({ id: null, publicKey: null });
     });
 });

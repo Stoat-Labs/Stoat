@@ -294,7 +294,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         expect(init).not.toContain("--no-dns");
         expect(init).toContain("database=0");
         expect(existsSync(dirname(join(home, "config.yaml")))).toBe(false);
-        expect((await lines("ssh-calls"))[0]).toContain("root@93.184.216.34 grep -o -m 1");
+        expect((await lines("ssh-calls"))[0]).toContain("root@93.184.216.34 grep -o -E");
 
         const setup = await call(clusterRouter.getProvisioning, { clusterId }, { context });
         const text = (await setupLogs(deployment.id)).map((line) => line.text);

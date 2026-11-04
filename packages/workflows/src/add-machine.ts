@@ -17,7 +17,7 @@ import { ALLOY_SERVICE } from "./monitoring-compose";
 import { isPrivateServerAddress } from "./server-address";
 import {
     createWorkspace,
-    existingMachineId,
+    machineState,
     runUc,
     serverAddress,
     sshDestination,
@@ -102,35 +102,6 @@ function addFailure(message: string, user: string) {
     return sshFailure(message, user);
 }
 
-/** Runs `uc machine add`, retrying once without the Down record an interrupted attempt left for this server. */
-async function addWithUc(
-    workspace: Workspace,
-    args: string[],
-    uc: UcClient,
-    log: Log,
-    signal: AbortSignal,
-) {
-    try {
-        await runUc(workspace, args, log, signal);
-    } catch (error) {
-        if (signal.aborted || !(error instanceof Error)) throw error;
-
-        const stale = /already exists under the name "([^"]+)"/.exec(error.message)?.[1];
-
-        const record = stale
-            ? (await listMachines(uc, signal)).find(
-                  (machine) => machine.name === stale && machine.state === "Down",
-              )
-            : undefined;
-
-        if (!record) throw error;
-
-        log(`Removing ${record.name}, which an earlier attempt registered but never finished.`);
-        await runUc(workspace, ["machine", "rm", record.id, "--no-reset", "--yes"], log, signal);
-        await runUc(workspace, args, log, signal);
-    }
-}
-
 /** Installs Uncloud on the server and adds it to the cluster with uc, which reaches the cluster through the sidecar. */
 async function joinCluster(
     db: Database,
@@ -151,14 +122,14 @@ async function joinCluster(
 
     log(`Checking ${server.host} for an existing Uncloud cluster...`);
 
-    const existing = await existingMachineId(server, workspace, signal).catch((error: Error) => {
+    const remote = await machineState(server, workspace, signal).catch((error: Error) => {
         if (signal.aborted) throw error;
 
         throw new Error(sshFailure(error.message, server.user));
     });
 
-    if (existing !== null) {
-        const member = before.find((machine) => machine.id === existing);
+    if (remote.id !== null) {
+        const member = before.find((machine) => machine.id === remote.id);
 
         if (!member) throw new Error(ALREADY_MEMBER);
 
@@ -173,11 +144,31 @@ async function joinCluster(
         return { id: member.id, name: member.name };
     }
 
+    // uc registers the server's key before it joins, so an interrupted attempt leaves a Down record of it.
+    const stale =
+        remote.publicKey === null
+            ? undefined
+            : before.find(
+                  ({ state, network }) =>
+                      state === "Down" && network?.publicKey === remote.publicKey,
+              );
+
     // Uncloud refuses a taken name, so say so before uc installs anything.
-    if (pending.name && before.some(({ name }) => name === pending.name))
+    if (pending.name && before.some(({ id, name }) => name === pending.name && id !== stale?.id))
         throw new Error(
             `This cluster already has a machine named ${pending.name}. Discard this server and add it again with another name.`,
         );
+
+    // It would refuse the server's name and key, and it never ran anything, so no reset.
+    if (stale) {
+        log(`Removing ${stale.name}, which an earlier attempt registered but never finished.`);
+        await unwrap(
+            uc.DELETE("/api/v1/machines/{id}", {
+                params: { path: { id: stale.id } },
+                signal: bounded(signal, 120_000),
+            }),
+        );
+    }
 
     const version = clusterVersion(before) ?? (await ucVersion(workspace, signal));
     const socketPath = join(workspace.dir, "uncloud.sock");
@@ -218,7 +209,7 @@ async function joinCluster(
         log(
             `Installing Uncloud ${version ?? "(latest)"} on ${server.host} and adding it to the cluster...`,
         );
-        await addWithUc(workspace, args, uc, log, signal);
+        await runUc(workspace, args, log, signal);
     } catch (error) {
         if (signal.aborted || !(error instanceof Error)) throw error;
 

@@ -14,7 +14,7 @@ import { CLUSTER_STORAGE_CADDY, createCaddyDeployment } from "./deploy-caddy";
 import { isPrivateServerAddress } from "./server-address";
 import {
     createWorkspace,
-    existingMachineId,
+    machineState,
     runUc,
     serverAddress,
     sshDestination,
@@ -104,13 +104,13 @@ async function initMachine(
     if (initState === "none") {
         log(`Checking ${server.host} for an existing Uncloud cluster...`);
 
-        const member = await existingMachineId(server, workspace, signal).catch((error: Error) => {
+        const member = await machineState(server, workspace, signal).catch((error: Error) => {
             if (signal.aborted) throw error;
 
             throw new Error(initFailure(error.message, server.user));
         });
 
-        if (member !== null) throw new Error(ALREADY_MEMBER);
+        if (member.id !== null) throw new Error(ALREADY_MEMBER);
     }
 
     const version = await ucVersion(workspace, signal);

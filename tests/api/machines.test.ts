@@ -44,10 +44,6 @@ case "$1" in
                     member)
                         echo "Error: the remote machine is already initialised as a cluster member; cannot ask to confirm reset in non-interactive mode, use --yes flag or set UNCLOUD_AUTO_CONFIRM=true to auto-confirm" >&2
                         exit 1 ;;
-                    stale)
-                        echo ok > "$dir/mode"
-                        echo "Error: add machine to cluster (context 'default'): rpc error: code = AlreadyExists desc = machine with public key \\"a2V5\\" already exists under the name \\"ghost\\"" >&2
-                        exit 1 ;;
                 esac
                 touch "$dir/added"
                 echo "Machine 'worker' added to the cluster (context 'default')." ;;
@@ -61,6 +57,7 @@ dir=$(dirname "$0")
 echo "$*" >> "$dir/ssh-calls"
 case "$(cat "$dir/ssh-mode")" in
     joined) echo '"ID": "machine-new"'; exit 0 ;;
+    registered) printf '"ID": ""\n"PublicKey": "%s"\n' "$(printf '5a%.0s' $(seq 32))"; exit 0 ;;
     other) echo '"ID": "c0ffee"'; exit 0 ;;
     rejected)
         echo "root@93.184.216.34: Permission denied (publickey)." >&2
@@ -75,6 +72,7 @@ type FakeMachine = {
     state: string;
     daemonVersion?: string;
     publicIp?: string;
+    network?: { publicKey: string };
 };
 
 type FakeService = { name: string; mode: string; machines: string[] };
@@ -115,6 +113,9 @@ const sidecar: FakeSidecar = {
 const OLD_WORKER = "0f".repeat(16);
 
 const STALE = "ab".repeat(16);
+
+// The WireGuard key a registered server keeps across attempts, as the sidecar lists it.
+const SERVER_KEY = Buffer.from("5a".repeat(32), "hex").toString("base64");
 
 let bin: string;
 
@@ -476,7 +477,7 @@ describe("adding machines (PostgreSQL)", () => {
         expect(relays).toHaveLength(1);
         expect(await readFile(join(bin, "config"), "utf8")).toContain(`unix: ${relays[0]}`);
         expect(existsSync(relays[0]!)).toBe(false);
-        expect((await lines("ssh-calls"))[0]).toContain(`root@${PUBLIC_HOST} grep -o -m 1`);
+        expect((await lines("ssh-calls"))[0]).toContain(`root@${PUBLIC_HOST} grep -o -E`);
 
         expect(sidecar.spread).toEqual(["sidecar", "caddy", ALLOY_SERVICE]);
 
@@ -616,26 +617,56 @@ describe("adding machines (PostgreSQL)", () => {
     });
 
     it("removes the record an interrupted attempt left of this server, then adds it", async () => {
-        await writeFile(join(bin, "mode"), "stale");
+        await writeFile(join(bin, "ssh-mode"), "registered");
         const clusterId = await createCluster();
 
-        sidecar.machines.push({ id: "machine-ghost", name: "ghost", state: "Down" });
+        sidecar.machines.push({
+            id: STALE,
+            name: "ghost",
+            state: "Down",
+            network: { publicKey: SERVER_KEY },
+        });
         await prepare(clusterId);
 
         const { deployment } = await attempt(clusterId);
-        const calls = await lines("calls");
 
         expect(deployment.status).toBe("ready");
-        expect(calls.filter((line) => line.startsWith("machine add"))).toHaveLength(2);
-        expect(calls).toContainEqual(
-            expect.stringMatching(/^machine rm machine-ghost --no-reset --yes /),
-        );
+        expect(sidecar.removed).toEqual([STALE]);
+        expect((await lines("calls")).filter((line) => line.startsWith("machine"))).toEqual([
+            expect.stringMatching(/^machine add /),
+        ]);
+    });
+
+    it("retries a named server whose interrupted attempt already took the name", async () => {
+        await writeFile(join(bin, "ssh-mode"), "registered");
+        const clusterId = await createCluster();
+
+        sidecar.machines.push({
+            id: STALE,
+            name: "worker",
+            state: "Down",
+            network: { publicKey: SERVER_KEY },
+        });
+        await prepare(clusterId, PUBLIC_HOST, "worker");
+
+        const { deployment } = await attempt(clusterId);
+
+        expect(deployment.status).toBe("ready");
+        expect(sidecar.removed).toEqual([STALE]);
+        expect(await lines("calls")).toContainEqual(expect.stringContaining("--name worker"));
     });
 
     it("leaves a name another machine uses for the admin to change", async () => {
+        await writeFile(join(bin, "ssh-mode"), "registered");
         const clusterId = await createCluster();
 
-        sidecar.machines.push({ id: OLD_WORKER, name: "worker", state: "Up" });
+        // Down, but another server's: its key isn't this one's.
+        sidecar.machines.push({
+            id: OLD_WORKER,
+            name: "worker",
+            state: "Down",
+            network: { publicKey: Buffer.from("6b".repeat(32), "hex").toString("base64") },
+        });
         await prepare(clusterId, PUBLIC_HOST, "worker");
 
         const { deployment } = await attempt(clusterId);
@@ -643,6 +674,7 @@ describe("adding machines (PostgreSQL)", () => {
         expect(deployment.error).toBe(
             "This cluster already has a machine named worker. Discard this server and add it again with another name.",
         );
+        expect(sidecar.removed).toEqual([]);
         expect(await lines("calls")).toEqual([]);
     });
 
