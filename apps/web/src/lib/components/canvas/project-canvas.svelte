@@ -12,8 +12,6 @@
     import LayoutList from "@lucide/svelte/icons/layout-list";
     import Plus from "@lucide/svelte/icons/plus";
     import {
-        Background,
-        BackgroundVariant,
         ConnectionMode,
         MarkerType,
         Panel,
@@ -35,6 +33,7 @@
     import { cubicOut } from "svelte/easing";
     import { prefersReducedMotion, Tween } from "svelte/motion";
     import CanvasApi from "./canvas-api.svelte";
+    import CanvasDots from "./canvas-dots.svelte";
     import { CanvasLayout } from "./canvas-layout.svelte";
     import CanvasResourceDialogs from "./canvas-resource-dialogs.svelte";
     import CanvasFocus from "./canvas-focus.svelte";
@@ -85,6 +84,7 @@
         type CanvasResource,
         type Positions,
         type Rect,
+        SNAP_GRID,
     } from "./graph";
     import CardNode from "./nodes/card-node.svelte";
     import StackNode from "./nodes/stack-node.svelte";
@@ -1227,7 +1227,7 @@
             maxZoom={1.26}
             panOnScroll
             selectionMode={SelectionMode.Partial}
-            snapGrid={[24, 24]}
+            snapGrid={[SNAP_GRID, SNAP_GRID]}
             defaultEdgeOptions={{
                 type: "smoothstep",
                 selectable: false,
@@ -1327,11 +1327,7 @@
                 persistCards();
             }}
         >
-            <Background
-                variant={BackgroundVariant.Dots}
-                gap={24}
-                size={0.4}
-            />
+            <CanvasDots />
             <CanvasApi bind:toFlow />
             <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->
             {#if !empty}
@@ -1546,11 +1542,6 @@
 
     .project-canvas :global(.svelte-flow) {
         --xy-background-color: var(--background);
-        --xy-background-pattern-dots-color: color-mix(
-            in oklab,
-            var(--muted-foreground) 70%,
-            transparent
-        );
         --xy-edge-stroke: var(--canvas-edge);
         --xy-edge-stroke-width: 1;
         --xy-node-border-radius: var(--radius-xl);

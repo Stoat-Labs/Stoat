@@ -67,6 +67,8 @@ export type CanvasNode = Node<CardData, "card"> | Node<GroupData, "stack">;
 
 export type Positions = Record<string, XYPosition>;
 
+export const SNAP_GRID = 24;
+
 // Railway's service card: 288×144 with 24px padding.
 export const CARD_WIDTH = 288;
 
@@ -136,6 +138,17 @@ export function parseNodeId(nodeId: string) {
         volume,
         config: undefined,
     };
+}
+
+/** Where one axis of canvas dots lands, in whole pixels: mid-cell, so none touches a snapped card's edge. */
+export function gridDots(origin: number, gap: number, length: number) {
+    const dots: number[] = [];
+
+    for (let dot = (origin + gap / 2) % gap; dot < length; dot += gap) {
+        dots.push(Math.round(dot));
+    }
+
+    return dots;
 }
 
 /** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
