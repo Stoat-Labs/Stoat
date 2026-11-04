@@ -16,8 +16,8 @@ catalog:
     "@orpc/tanstack-query": 2.0.0-beta.35
     valibot: ^1.5.0
     yaml: ^2.9.0
-    better-auth: 1.7.3
-    "@better-auth/api-key": 1.7.3
+    better-auth: 1.7.15
+    "@better-auth/api-key": 1.7.15
     vite: npm:@voidzero-dev/vite-plus-core@1.4.0
     vite-plus: 1.4.0
     ofetch: ^1.5.1
