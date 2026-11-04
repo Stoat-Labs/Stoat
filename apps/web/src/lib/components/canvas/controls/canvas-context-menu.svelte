@@ -63,6 +63,7 @@
     import type { Snippet } from "svelte";
     import type { AddPage } from "./add-palette.svelte";
     import { getCanvasActions } from "../context";
+    import { parseNodeId } from "../graph";
     import Trash2 from "@lucide/svelte/icons/trash-2";
     import Undo2 from "@lucide/svelte/icons/undo-2";
 
@@ -94,7 +95,7 @@
 
     const resourceId = $derived(
         target?.kind === "node"
-            ? target.nodeId.split(/[/#]/u)[0]
+            ? parseNodeId(target.nodeId).resourceId
             : undefined,
     );
 

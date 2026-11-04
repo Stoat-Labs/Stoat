@@ -17,10 +17,10 @@
     import { containerInfo } from "$lib/resources/container-info";
     import { createQuery } from "@tanstack/svelte-query";
     import { getCanvasActions, getCanvasCluster } from "../context";
-    import type { GroupData } from "../graph";
+    import { frameContainers, type GroupData } from "../graph";
     import NodeHandles from "./node-handles.svelte";
 
-    let { data, selected }: NodeProps<Node<GroupData, "stack">> =
+    let { id, data, selected }: NodeProps<Node<GroupData, "stack">> =
         $props();
 
     const actions = getCanvasActions();
@@ -32,31 +32,33 @@
         orpc.resources.getProjectContainers.queryOptions({
             input: {
                 clusterId: cluster.id,
-                projectId: data.group.projectId,
+                projectId: data.projectId,
             },
             enabled: cluster.id.length > 0,
             refetchInterval: 30_000,
         }),
     );
 
-    // A resource is online while one of its containers runs and is not unhealthy.
-    const online = $derived(
-        data.resources.filter((resource) =>
-            (containersQuery.data?.[resource.id] ?? []).some(
-                ({ container }) => {
-                    const info = containerInfo(container);
+    const counted = $derived(
+        frameContainers(data, containersQuery.data),
+    );
 
-                    return (
-                        info.status === "running" &&
-                        info.health !== "unhealthy"
-                    );
-                },
-            ),
+    // A resource or service is online while one of its containers runs and is not unhealthy.
+    const online = $derived(
+        counted.filter((containers) =>
+            containers.some(({ container }) => {
+                const info = containerInfo(container);
+
+                return (
+                    info.status === "running" &&
+                    info.health !== "unhealthy"
+                );
+            }),
         ).length,
     );
 
     const allOnline = $derived(
-        online > 0 && online === data.resources.length,
+        online > 0 && online === counted.length,
     );
 </script>
 
@@ -80,7 +82,7 @@
     <Menu>
         <MenuTrigger
             class="nodrag nopan flex size-[26px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
-            aria-label="{data.group.name} options"
+            aria-label="{data.name} options"
             onpointerdown={(event: PointerEvent) =>
                 event.stopPropagation()}
             onclick={(event: MouseEvent) => event.stopPropagation()}
@@ -91,40 +93,44 @@
             />
         </MenuTrigger>
         <MenuPopup align="end" class="min-w-52">
-            <MenuItem
-                onclick={() => actions.edit("rename", data.group.id)}
-            >
-                Rename
-            </MenuItem>
-            <MenuSub>
-                <MenuSubTrigger>Update icon</MenuSubTrigger>
-                <MenuSubPopup>
-                    <MenuItem
-                        onclick={() =>
-                            actions.edit(
-                                "icon-upload",
-                                data.group.id,
-                            )}
-                    >
-                        Upload image
-                    </MenuItem>
-                    <MenuItem
-                        onclick={() =>
-                            actions.edit("icon-link", data.group.id)}
-                    >
-                        Use a link
-                    </MenuItem>
-                </MenuSubPopup>
-            </MenuSub>
-            <MenuItem
-                onclick={() => actions.toggleCollapsed(data.group.id)}
-            >
+            {#if data.group}
+                <MenuItem onclick={() => actions.edit("rename", id)}>
+                    Rename
+                </MenuItem>
+                <MenuSub>
+                    <MenuSubTrigger>Update icon</MenuSubTrigger>
+                    <MenuSubPopup>
+                        <MenuItem
+                            onclick={() =>
+                                actions.edit("icon-upload", id)}
+                        >
+                            Upload image
+                        </MenuItem>
+                        <MenuItem
+                            onclick={() =>
+                                actions.edit("icon-link", id)}
+                        >
+                            Use a link
+                        </MenuItem>
+                    </MenuSubPopup>
+                </MenuSub>
+            {:else}
+                <!-- A resource's own frame: grouping it swaps this frame for the group's. -->
+                <MenuItem
+                    onclick={() => actions.edit("new-group", id)}
+                >
+                    New group
+                </MenuItem>
+            {/if}
+            <MenuItem onclick={() => actions.toggleCollapsed(id)}>
                 {data.collapsed ? "Show contents" : "Hide contents"}
             </MenuItem>
-            <!-- Railway's "Remove Group": the frame goes, its resources stay. -->
-            <MenuItem onclick={() => actions.ungroup(data.group.id)}>
-                Remove Group
-            </MenuItem>
+            {#if data.group}
+                <!-- Railway's "Remove Group": the frame goes, its resources stay. -->
+                <MenuItem onclick={() => actions.ungroup(id)}>
+                    Remove Group
+                </MenuItem>
+            {/if}
         </MenuPopup>
     </Menu>
 {/snippet}
@@ -145,9 +151,9 @@
             {@render icon("size-6")}
             <span
                 class="min-w-0 flex-1 truncate text-base font-semibold"
-                title={data.group.name}
+                title={data.name}
             >
-                {data.group.name}
+                {data.name}
             </span>
             {@render menu()}
         </header>
@@ -196,7 +202,8 @@
                     <circle cx="8" cy="8" r="3" fill="currentColor" />
                 </svg>
             {/if}
-            {online}/{data.resources.length} resources online
+            {online}/{counted.length}
+            {data.group ? "resources" : "services"} online
         </p>
     </div>
 {:else}
@@ -216,9 +223,9 @@
             {@render icon("size-5")}
             <span
                 class="min-w-0 flex-1 truncate text-base font-semibold"
-                title={data.group.name}
+                title={data.name}
             >
-                {data.group.name}
+                {data.name}
             </span>
             {@render menu()}
         </header>

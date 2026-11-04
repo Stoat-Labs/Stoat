@@ -1,6 +1,6 @@
 # Stoat design system
 
-Stoat's **resource overview and Variables pages are the primary design reference** for new application work. Match their neutral surfaces, Outfit typography, compact controls, framed work areas, restrained status colors, and inset application shell. The resource screenshot illustrates this language: a narrow runtime list beside a large editor, both inside muted frames with recessed content panels. Reuse the Svelte components in `apps/web/src/lib/components/ui`; do not approximate them with unrelated card styles.
+Stoat's **resource overview and Variables pages are the primary design reference** for new application work. Match their neutral surfaces, Outfit typoy, compact controls, framed work areas, restrained status colors, and inset application shell. The resource screenshot illustrates this language: a narrow runtime list beside a large editor, both inside muted frames with recessed content panels. Reuse the Svelte components in `apps/web/src/lib/components/ui`; do not approximate them with unrelated card styles.
 
 ## Reference and source of truth
 

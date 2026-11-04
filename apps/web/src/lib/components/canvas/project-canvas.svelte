@@ -64,10 +64,9 @@
         COLUMN_GAP,
         configNodeId,
         frameRect,
-        freeSlot,
+        landResourceCards,
         loadCollapsed,
         loadPositions,
-        moveResourceCards,
         nearestFree,
         nodeRect,
         parseNodeId,
@@ -597,13 +596,15 @@
     const focusNodeId = $derived(
         (
             nodes.find((node) => node.id === selected.current) ??
-            nodes.find((node) => node.id === selectedResourceId)
+            (selectedResourceId
+                ? resourceCard(selectedResourceId)
+                : undefined)
         )?.id,
     );
 
     const selectedIcon = $derived(
-        nodes.find((node) => node.id === selectedResourceId)?.data
-            .icon ?? null,
+        nodes.find((node) => node.id === focusNodeId)?.data.icon ??
+            null,
     );
 
     let canvasWidth = $state(0);
@@ -725,7 +726,7 @@
         const moving = nodes.filter((node) =>
             dragged.type === "stack"
                 ? node.type === "card" &&
-                  node.data.groupId === dragged.id
+                  node.data.frameId === dragged.id
                 : node.id === dragged.id,
         );
 
@@ -759,7 +760,8 @@
         // on their own follow their resource, so only a resource's card joins a group.
         const card =
             dragged.type === "card" &&
-            dragged.id === dragged.data.resource.id
+            !dragged.data.volume &&
+            !dragged.data.config
                 ? dragged
                 : undefined;
 
@@ -771,6 +773,7 @@
             ? nodes.find(
                   (node) =>
                       node.type === "stack" &&
+                      node.data.group !== undefined &&
                       node.id !== card?.data.groupId &&
                       contains(
                           {
@@ -881,10 +884,10 @@
         let next = withPositions(nodes, settle(nodes, id));
         const card = next.find((node) => node.id === id);
 
-        if (card?.type === "card" && card.data.groupId)
+        if (card?.type === "card" && card.data.frameId)
             next = withPositions(
                 next,
-                settle(next, card.data.groupId),
+                settle(next, card.data.frameId),
             );
 
         nodes = next;
@@ -903,19 +906,20 @@
 
         if (!target || dragged.type !== "card") return;
 
-        // Land in the target frame without covering its cards.
+        // setGroup lands it and its sibling cards without covering the frame's cards.
         void setGroup(
             dragged.data.resource.id,
             target,
-            freeSlot(nodeRect(dragged), memberRects(target)),
+            { ...dragged.position },
             startedAt,
+            dragged,
         );
     }
 
     // Cards of a group's frame, as rectangles.
     function memberRects(groupId: string) {
         return nodes.flatMap((node) =>
-            node.type === "card" && node.data.groupId === groupId
+            node.type === "card" && node.data.frameId === groupId
                 ? [nodeRect(node)]
                 : [],
         );
@@ -924,7 +928,7 @@
     // Frames and lone cards: what a card leaving a frame must not land on.
     function blockRects() {
         return nodes.flatMap((node) =>
-            node.type === "stack" || !node.data.groupId
+            node.type === "stack" || !node.data.frameId
                 ? [nodeRect(node)]
                 : [],
         );
@@ -943,6 +947,17 @@
         );
     }
 
+    // A resource's card, or its first service's card when it has several.
+    function resourceCard(resourceId: string) {
+        return nodes.find(
+            (node) =>
+                node.type === "card" &&
+                node.data.resource.id === resourceId &&
+                !node.data.volume &&
+                !node.data.config,
+        );
+    }
+
     // Railway's "Group ›": into a group's frame, or out of it (null). Only the layout changes.
     async function setGroup(
         resourceId: string,
@@ -950,9 +965,9 @@
         landing?: { x: number; y: number },
         // Where the card was before a drag moved it; its own cards keep their offset from there.
         origin?: { x: number; y: number },
+        // The dragged card; the menu moves the resource by its first card.
+        card = resourceCard(resourceId),
     ) {
-        const card = nodes.find((node) => node.id === resourceId);
-
         if (card?.type !== "card" || card.data.groupId === groupId)
             return;
 
@@ -976,11 +991,12 @@
             });
             canvasLayout.place({
                 ...canvasLayout.positions,
-                ...moveResourceCards(
+                ...landResourceCards(
                     nodes,
-                    resourceId,
+                    card.id,
                     origin ?? card.position,
                     spot,
+                    members,
                 ),
             });
         } catch (error) {
@@ -1026,7 +1042,7 @@
             (resource) => resource.id === toResourceId,
         );
 
-        const card = nodes.find((node) => node.id === from.id);
+        const card = resourceCard(from.id);
 
         moving = true;
         moveError = "";
@@ -1223,8 +1239,16 @@
                 select(null);
             }}
             onnodecontextmenu={({ node, event }) => {
+                // A resource's own frame opens that resource's menu.
                 if (node.type === "stack") {
-                    menuTarget = { kind: "group", groupId: node.id };
+                    menuTarget = node.data.group
+                        ? { kind: "group", groupId: node.id }
+                        : {
+                              kind: "node",
+                              nodeId: node.id,
+                              groupId: undefined,
+                              services: 1,
+                          };
 
                     return;
                 }
@@ -1247,7 +1271,7 @@
                           ? volumeNodeId(resourceId, tray.volume)
                           : node.id,
                     groupId: node.data.groupId,
-                    services: node.data.services.length,
+                    services: node.data.service ? 1 : 0,
                 };
             }}
             onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
