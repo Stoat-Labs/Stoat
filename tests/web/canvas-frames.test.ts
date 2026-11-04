@@ -9,12 +9,25 @@ import {
     frameContainers,
     frameRect,
     freeSlot,
+    gridDots,
     landResourceCards,
     refitFrames,
     repairOverlaps,
     settle,
     type CanvasService,
 } from "../../apps/web/src/lib/components/canvas/graph";
+
+describe("gridDots", () => {
+    it("puts dots mid-cell, on whole pixels", () => {
+        expect(gridDots(0, 24, 100)).toEqual([12, 36, 60, 84]);
+        expect(gridDots(0, 22.32, 60)).toEqual([11, 33, 56]);
+    });
+
+    it("follows a pan in either direction", () => {
+        expect(gridDots(30, 24, 50)).toEqual([18, 42]);
+        expect(gridDots(-30, 24, 50)).toEqual([-18, 6, 30]);
+    });
+});
 
 describe("frameRect", () => {
     it("wraps its cards like Railway: 24px on the sides and bottom, 48px on top", () => {
