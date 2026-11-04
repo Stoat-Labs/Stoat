@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -71,8 +72,18 @@ type fakeBackend struct {
 
 	// Recorded contexts let the timeout tests assert the deadline a handler
 	// actually runs with, which is the part that is easy to get silently wrong.
-	lastListServicesCtx context.Context
-	lastMachineExecCtx  context.Context
+	lastListServicesCtx  context.Context
+	lastMachineExecCtx   context.Context
+	lastRemoveMachineCtx context.Context
+
+	removeMachineErr error
+	removedMachines  []string
+	// When set, RemoveMachine closes started, then waits for release.
+	removeMachineStarted chan struct{}
+	removeMachineRelease chan struct{}
+
+	ingressRecords    IngressRecordsResponse
+	ingressRecordsErr error
 
 	lastMachineFilter *api.MachineFilter
 	lastMachineID     string
@@ -92,6 +103,7 @@ type fakeBackend struct {
 
 	deployComposeErr      error
 	lastComposeDeployment ComposeDeployment
+	spreadErr             error
 
 	caddySettings    CaddySettingsResponse
 	lastCaddyRequest DeployCaddyRequest
@@ -132,6 +144,19 @@ func (f *fakeBackend) RenameMachine(_ context.Context, id, name string) (Machine
 		return MachineInfoResponse{}, f.renameMachineErr
 	}
 	return MachineInfoResponse{ID: id, Name: name}, nil
+}
+
+func (f *fakeBackend) RemoveMachine(ctx context.Context, machine api.MachineMember) (RemoveMachineResponse, error) {
+	if f.removeMachineStarted != nil {
+		close(f.removeMachineStarted)
+		<-f.removeMachineRelease
+	}
+	f.removedMachines = append(f.removedMachines, machine.ID)
+	f.lastRemoveMachineCtx = ctx
+	if f.removeMachineErr != nil {
+		return RemoveMachineResponse{}, f.removeMachineErr
+	}
+	return RemoveMachineResponse{ID: machine.ID, Name: machine.Name, Containers: 2, Reset: true}, nil
 }
 
 func (f *fakeBackend) ListServices(ctx context.Context) ([]api.Service, error) {
@@ -326,6 +351,10 @@ func (f *fakeBackend) ClearClusterDomain(context.Context) error {
 	return nil
 }
 
+func (f *fakeBackend) UpdateIngressRecords(context.Context) (IngressRecordsResponse, error) {
+	return f.ingressRecords, f.ingressRecordsErr
+}
+
 func (f *fakeBackend) ListCaddyCertificates(_ context.Context, machine string) (CaddyCertificatesResponse, error) {
 	f.lastCertificatesMachine = machine
 	return f.certificates, nil
@@ -357,6 +386,17 @@ func (f *fakeBackend) DeployCompose(_ context.Context, deployment ComposeDeploym
 		}
 		events <- DeployComposeEvent{Type: "complete", DeployStatus: "deployed"}
 	}()
+	return events, nil
+}
+
+func (f *fakeBackend) SpreadService(_ context.Context, id string) (<-chan DeployComposeEvent, error) {
+	f.lastServiceID = id
+	if f.spreadErr != nil {
+		return nil, f.spreadErr
+	}
+	events := make(chan DeployComposeEvent, 1)
+	events <- DeployComposeEvent{Type: "complete", DeployStatus: "deployed"}
+	close(events)
 	return events, nil
 }
 
@@ -532,6 +572,75 @@ func TestExecDetachesFromTheRequestDeadline(t *testing.T) {
 	deadline, ok := fake.lastMachineExecCtx.Deadline()
 	require.True(t, ok, "command execution must be bounded")
 	assert.WithinDuration(t, time.Now().Add(30*time.Minute), deadline, time.Minute)
+}
+
+func TestRemoveMachine(t *testing.T) {
+	// Removal outlives a short request deadline: stopping halfway would strand the machine.
+	server, fake := newTestServerWithConfig(t, Config{RequestTimeout: time.Second, ExecTimeout: 30 * time.Minute})
+
+	response := doRequest(t, server, http.MethodDelete, "/api/v1/machines/node-1", nil, "")
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, RemoveMachineResponse{ID: "machine-1", Name: "node-1", Containers: 2, Reset: true},
+		decodeResponse[RemoveMachineResponse](t, response))
+	assert.Equal(t, []string{"machine-1"}, fake.removedMachines)
+
+	deadline, ok := fake.lastRemoveMachineCtx.Deadline()
+	require.True(t, ok, "removal must be bounded")
+	assert.WithinDuration(t, time.Now().Add(30*time.Minute), deadline, time.Minute)
+}
+
+func TestRemoveMachineRefusesTheSidecarsOwnMachine(t *testing.T) {
+	server, fake := newTestServerWithConfig(t, Config{MachineID: "machine-1"})
+
+	response := doRequest(t, server, http.MethodDelete, "/api/v1/machines/node-1", nil, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	assert.Contains(t, readBody(t, response), "runs on machine")
+	assert.Empty(t, fake.removedMachines)
+}
+
+func TestRemoveMachineHoldsOffMachineChangesUntilItEnds(t *testing.T) {
+	dial := func(context.Context) (net.Conn, error) { return nil, errors.New("not dialed") }
+	server, fake := newTestServerWithConfig(t, Config{DialUncloud: dial})
+	fake.removeMachineStarted = make(chan struct{})
+	fake.removeMachineRelease = make(chan struct{})
+
+	removed := make(chan int)
+	go func() {
+		removed <- doRequest(t, server, http.MethodDelete, "/api/v1/machines/node-1", nil, "").StatusCode
+	}()
+	<-fake.removeMachineStarted
+
+	for _, request := range []struct{ method, path string }{
+		{http.MethodDelete, "/api/v1/machines/node-1"},
+		{http.MethodGet, "/api/v1/cluster/connect"},
+		{http.MethodPost, "/api/v1/services/sidecar/spread"},
+	} {
+		response := doRequest(t, server, request.method, request.path, nil, "")
+		assert.Equal(t, http.StatusConflict, response.StatusCode, request.path)
+		assert.Contains(t, readBody(t, response), "being removed", request.path)
+	}
+
+	close(fake.removeMachineRelease)
+	assert.Equal(t, http.StatusOK, <-removed)
+	assert.Equal(t, []string{"machine-1"}, fake.removedMachines)
+
+	response := doRequest(t, server, http.MethodGet, "/api/v1/cluster/connect", nil, "")
+	assert.Equal(t, http.StatusUpgradeRequired, response.StatusCode)
+}
+
+func TestRemoveMachineErrors(t *testing.T) {
+	server, fake := newTestServer(t)
+
+	fake.inspectMachineErr = api.ErrNotFound
+	response := doRequest(t, server, http.MethodDelete, "/api/v1/machines/missing", nil, "")
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+	assert.Empty(t, fake.removedMachines)
+
+	fake.inspectMachineErr = nil
+	fake.removeMachineErr = status.Error(codes.FailedPrecondition, "the sidecar reaches Uncloud through machine \"node-1\"")
+	response = doRequest(t, server, http.MethodDelete, "/api/v1/machines/node-1", nil, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	assert.Contains(t, readBody(t, response), "reaches Uncloud through")
 }
 
 func TestHealthOpenAPIScalarAndCORS(t *testing.T) {
@@ -1010,6 +1119,27 @@ func TestClusterDomainRoutes(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, response.StatusCode)
 }
 
+func TestUpdateIngressRecordsRoute(t *testing.T) {
+	server, fake := newTestServer(t)
+	fake.ingressRecords = IngressRecordsResponse{
+		Domain:  "abc123.uncld.dev",
+		Records: []DNSRecordResponse{{Name: "*", Type: "A", Values: []string{"203.0.113.10", "203.0.113.11"}}},
+	}
+
+	response := doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain/records", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, fake.ingressRecords, decodeResponse[IngressRecordsResponse](t, response))
+
+	fake.ingressRecordsErr = api.ErrNotFound
+	response = doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain/records", nil, "")
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+
+	fake.ingressRecordsErr = status.Error(codes.FailedPrecondition, "no machine running Caddy answered on its public IP")
+	response = doRequest(t, server, http.MethodPut, "/api/v1/cluster/domain/records", nil, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	assert.Contains(t, readBody(t, response), "no machine running Caddy answered")
+}
+
 func TestCaddyCertificatesRoute(t *testing.T) {
 	server, fake := newTestServer(t)
 	fake.certificates = CaddyCertificatesResponse{
@@ -1049,6 +1179,20 @@ func TestCaddySettingsRoutes(t *testing.T) {
 
 	response = doRequest(t, server, http.MethodPost, "/api/v1/caddy/deploy", DeployCaddyRequest{Image: "Not An Image"}, "")
 	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+}
+
+func TestSpreadServiceRoute(t *testing.T) {
+	server, fake := newTestServer(t)
+
+	response := doRequest(t, server, http.MethodPost, "/api/v1/services/sidecar/spread", nil, "")
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Contains(t, readBody(t, response), "event: complete")
+	assert.Equal(t, "sidecar", fake.lastServiceID)
+
+	fake.spreadErr = status.Error(codes.FailedPrecondition, `service "web" is not global`)
+	response = doRequest(t, server, http.MethodPost, "/api/v1/services/web/spread", nil, "")
+	assert.Equal(t, http.StatusUnprocessableEntity, response.StatusCode)
+	assert.Contains(t, decodeResponse[ErrorResponse](t, response).Message, "not global")
 }
 
 func TestClusterMachineAndServiceRoutes(t *testing.T) {

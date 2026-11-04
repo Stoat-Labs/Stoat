@@ -189,7 +189,9 @@ export const deploymentsRouter = {
             }
 
             const job =
-                deployment.name === "DeployCaddy" || deployment.name === "ProvisionCluster"
+                deployment.name === "DeployCaddy" ||
+                deployment.name === "ProvisionCluster" ||
+                deployment.name === "AddMachine"
                     ? deployment.name
                     : deployment.resourceId
                       ? "DeployResource"

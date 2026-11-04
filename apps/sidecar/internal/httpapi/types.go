@@ -65,6 +65,7 @@ type DiagnosticMachineResponse struct {
 	StoreVersion  api.StoreVersion   `json:"storeVersion,omitempty"`
 	WireGuard     *WireGuardResponse `json:"wireGuard,omitempty"`
 	Error         string             `json:"error,omitempty"`
+	Connected     bool               `json:"connected,omitempty" doc:"The machine this sidecar reaches Uncloud through, which it can't remove."`
 }
 
 type ClusterLinkResponse struct {
@@ -391,6 +392,27 @@ type MachineImageResponse struct {
 type MachineInfoResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// RemoveMachineResponse reports what removing a machine did on the machine itself.
+type RemoveMachineResponse struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Containers int    `json:"containers" doc:"Service containers removed from the machine."`
+	Reset      bool   `json:"reset" doc:"False when the machine didn't answer or refused the reset, so it keeps its cluster state."`
+}
+
+// IngressRecordsResponse is the reserved cluster domain's records once they point at the machines whose Caddy answers.
+type IngressRecordsResponse struct {
+	Domain  string              `json:"domain"`
+	Records []DNSRecordResponse `json:"records"`
+}
+
+// DNSRecordResponse is one of the cluster domain's records, such as `*` A with the ingress machines' IPs.
+type DNSRecordResponse struct {
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Values []string `json:"values"`
 }
 
 // LogMetadataResponse identifies the source of a streamed log entry.

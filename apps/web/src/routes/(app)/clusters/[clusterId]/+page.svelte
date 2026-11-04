@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
+    import AddMachineDialog from "$lib/components/clusters/add-machine-dialog.svelte";
     import CaddyDialog from "$lib/components/clusters/caddy-dialog.svelte";
     import ClusterCaddyCard from "$lib/components/clusters/cluster-caddy-card.svelte";
     import ClusterConnectionsFlow from "$lib/components/clusters/cluster-connections-flow.svelte";
@@ -10,6 +11,7 @@
     import ClusterMonitoringCard from "$lib/components/clusters/cluster-monitoring-card.svelte";
     import ClusterSummaryStrip from "$lib/components/clusters/cluster-summary-strip.svelte";
     import InitializeClusterDialog from "$lib/components/clusters/initialize-cluster-dialog.svelte";
+    import RemoveMachineDialog from "$lib/components/clusters/remove-machine-dialog.svelte";
     import RetentionDialog from "$lib/components/clusters/retention-dialog.svelte";
     import MonitoringConnectionDialog from "$lib/components/clusters/monitoring-connection-dialog.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
@@ -48,7 +50,11 @@
         createMutation,
         createQuery,
     } from "@tanstack/svelte-query";
-    import { parseAsString, useQueryState } from "nuqs-svelte";
+    import {
+        parseAsString,
+        useQueryState,
+        useQueryStates,
+    } from "nuqs-svelte";
     import { onDestroy } from "svelte";
 
     let mounted = true;
@@ -112,6 +118,11 @@
         parseAsString.withOptions({ shallow: true, scroll: false }),
     );
 
+    const removal = useQueryStates(
+        { dialog: parseAsString, machine: parseAsString },
+        { shallow: true, scroll: false },
+    );
+
     const canInitialize = $derived(
         clusterQuery.isSuccess &&
             cluster?.canInitialize === true &&
@@ -173,7 +184,8 @@
             | "retention"
             | "caddy"
             | "domain"
-            | "remove-domain",
+            | "remove-domain"
+            | "add-machine",
     ) {
         void dialog.set(next);
     }
@@ -397,7 +409,19 @@
                 </Alert>
             {/if}
 
-            <ClusterMachinesTable {machines} />
+            <ClusterMachinesTable
+                {machines}
+                onadd={cluster.canInitialize
+                    ? () => openDialog("add-machine")
+                    : undefined}
+                onremove={cluster.canInitialize
+                    ? (machine) =>
+                          void removal.set({
+                              dialog: "remove-machine",
+                              machine: machine.id,
+                          })
+                    : undefined}
+            />
 
             <!-- Connections are paths between machines, so a single machine has none to show. -->
             {#if machines.length > 1}
@@ -491,6 +515,8 @@
         ondeployed={openDeployment}
     />
     <ClusterDomainDialog {clusterId} />
+    <AddMachineDialog {clusterId} />
+    <RemoveMachineDialog {clusterId} {machines} />
 {/if}
 <MonitoringConnectionDialog
     bind:open={

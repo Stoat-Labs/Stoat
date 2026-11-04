@@ -62,10 +62,13 @@ const cliPlanOp = /^[+~-]\s+(.+)$/u;
 
 const cliPlanEnd = /^\d+ \w+ · /u;
 
-// The Docker install script's own output, which stays in the raw logs.
-const dockerStart = /^Installing Docker/u;
+// The Docker install script's output, or `docker version` when Docker was already there; both stay in the raw logs.
+const dockerStart = /^(?:Installing Docker|Docker is already installed)/u;
 
 const dockerEnd = /^Docker installed/u;
+
+// The Uncloud install script marks its own steps, so the next one also ends the Docker output.
+const scriptStep = /^[⏳✓]/u;
 
 const progressLine = /^(?:(?:Old )?[Pp]re-deploy hook|Container|Volume|Image) .+ on \S+ \| /u;
 
@@ -112,7 +115,7 @@ export function deploymentSteps(lines: DeploymentLine[], running: boolean) {
             .replace(cliProgress, "$1 | ");
 
         if (dockerStart.test(text)) inDocker = true;
-        else if (dockerEnd.test(text)) inDocker = false;
+        else if (dockerEnd.test(text) || scriptStep.test(line.message.trim())) inDocker = false;
         else if (inDocker && line.level !== "error") continue;
 
         if (text === "Deployment plan") {

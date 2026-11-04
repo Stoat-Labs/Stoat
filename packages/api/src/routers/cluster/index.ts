@@ -16,6 +16,7 @@ import { caddyRouter } from "./caddy";
 import { deploymentsRouter } from "./deployments";
 import { domainRouter } from "./domain";
 import { initializationRouter, monitoringRouter } from "./initialization";
+import { machinesRouter } from "./machines";
 import { metricsRouter } from "./metrics";
 import { observabilityRouter } from "./observability";
 import { provisioningRouter, provisioningStatus } from "./provisioning";
@@ -50,6 +51,7 @@ export const clusterRouter = {
     ...caddyRouter,
     ...domainRouter,
     ...provisioningRouter,
+    ...machinesRouter,
     listClusters: organizationProcedure
         .input(
             v.optional(
@@ -296,22 +298,24 @@ export const clusterRouter = {
                     throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
                 }
 
-                const [setup] = await tx
-                    .select({ id: deployments.id })
+                const [job] = await tx
+                    .select({ name: deployments.name })
                     .from(deployments)
                     .where(
                         and(
                             eq(deployments.clusterId, cluster.id),
-                            eq(deployments.name, "ProvisionCluster"),
+                            inArray(deployments.name, ["ProvisionCluster", "AddMachine"]),
                             inArray(deployments.status, ["queued", "running"]),
                         ),
                     )
                     .limit(1);
 
-                if (setup)
+                if (job)
                     throw new ORPCError("CONFLICT", {
                         message:
-                            "Wait for the cluster's setup to finish or fail before deleting it.",
+                            job.name === "AddMachine"
+                                ? "Wait for the machine being added to join or fail before deleting the cluster."
+                                : "Wait for the cluster's setup to finish or fail before deleting it.",
                     });
 
                 if (["queued", "running", "retrying"].includes(cluster.initializationStatus)) {

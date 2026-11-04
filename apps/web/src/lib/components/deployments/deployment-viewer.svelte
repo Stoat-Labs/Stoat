@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
+    import AddMachineActions from "$lib/components/clusters/add-machine-actions.svelte";
     import ProvisionActions from "$lib/components/clusters/provision-actions.svelte";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
@@ -124,7 +125,9 @@
                 ? "Caddy deployment"
                 : deployment?.name === "ProvisionCluster"
                   ? "Cluster creation"
-                  : (deployment?.name ?? "Deployment"),
+                  : deployment?.name === "AddMachine"
+                    ? "New machine"
+                    : (deployment?.name ?? "Deployment"),
     );
 
     const raw = $derived(view.deploymentDebug.current);
@@ -269,6 +272,12 @@
 {#snippet cancelAction()}
     {#if deployment?.name === "ProvisionCluster"}
         <ProvisionActions
+            clusterId={deployment.clusterId}
+            {deploymentId}
+            status={stream.status}
+        />
+    {:else if deployment?.name === "AddMachine"}
+        <AddMachineActions
             clusterId={deployment.clusterId}
             {deploymentId}
             status={stream.status}

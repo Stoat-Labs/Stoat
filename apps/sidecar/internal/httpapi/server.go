@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	scalargo "github.com/bdpiprava/scalar-go"
@@ -110,6 +111,7 @@ type Backend interface {
 	ListMachines(context.Context, *api.MachineFilter) ([]api.MachineMember, error)
 	InspectMachine(context.Context, string) (api.MachineMember, error)
 	RenameMachine(context.Context, string, string) (MachineInfoResponse, error)
+	RemoveMachine(context.Context, api.MachineMember) (RemoveMachineResponse, error)
 
 	ListServices(context.Context) ([]api.Service, error)
 	InspectService(context.Context, string) (api.Service, error)
@@ -138,8 +140,10 @@ type Backend interface {
 	GetDomain(context.Context) (api.ClusterDomain, error)
 	SetClusterDomain(context.Context, string) error
 	ClearClusterDomain(context.Context) error
+	UpdateIngressRecords(context.Context) (IngressRecordsResponse, error)
 
 	DeployCompose(context.Context, ComposeDeployment) (<-chan DeployComposeEvent, error)
+	SpreadService(context.Context, string) (<-chan DeployComposeEvent, error)
 }
 
 // Config controls HTTP-only behavior. Cluster connection setup belongs to the
@@ -171,6 +175,8 @@ type Config struct {
 	// ServiceHTTPClient allows the cluster-network service transport to be
 	// replaced in tests. newServiceHTTPClient is used when it is nil.
 	ServiceHTTPClient *http.Client
+	// DialUncloud opens raw Uncloud API connections for /api/v1/cluster/connect, which answers 501 without it.
+	DialUncloud func(context.Context) (net.Conn, error)
 }
 
 // Server is the standalone Fiber HTTP API for Uncloud.
@@ -187,6 +193,11 @@ type Server struct {
 	openapiJSON    []byte
 	openapiYAML    []byte
 	scalarHTML     string
+	dialUncloud    func(context.Context) (net.Conn, error)
+	// uncloudConnections holds a slot per open /api/v1/cluster/connect connection.
+	uncloudConnections chan struct{}
+	// removing is set while a machine is removed, until the removal ends even if its client left.
+	removing atomic.Bool
 }
 
 // New creates a Fiber server backed by Uncloud's typed client bindings.
@@ -229,6 +240,9 @@ func New(backend Backend, cfg Config) (*Server, error) {
 		execTimeout:    execTimeout,
 		metricsClient:  metricsClient,
 		serviceClient:  serviceClient,
+		dialUncloud:    cfg.DialUncloud,
+
+		uncloudConnections: make(chan struct{}, maxUncloudConnections),
 	}
 	s.app = fiber.New(fiber.Config{
 		BodyLimit:   maxRequestBodyBytes,
@@ -507,9 +521,32 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 			"Uncloud DNS cannot give a released name back yet, so it only forgets it in the cluster store.",
 	}, s.clearDomain)
 	register(humaAPI, huma.Operation{
+		OperationID: "updateIngressRecords", Method: http.MethodPut, Path: "/api/v1/cluster/domain/records",
+		Summary: "Point the cluster domain at its ingress machines", Tags: []string{"cluster"},
+		Description: "Like uc after deploying Caddy: points the domain reserved in Uncloud DNS at the machines whose " +
+			"Caddy answers on their public IP. Returns 404 without a cluster domain, and 422 when the domain is managed " +
+			"externally or no machine answers, which leaves the records as they were.",
+		Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity},
+	}, s.updateIngressRecords)
+	register(humaAPI, huma.Operation{
 		OperationID: "clusterDiagnostics", Method: http.MethodGet, Path: "/api/v1/cluster/diagnostics",
 		Summary: "Inspect cluster health", Tags: []string{"cluster"},
 	}, s.clusterDiagnostics)
+	register(humaAPI, huma.Operation{
+		OperationID: "connectUncloud", Method: http.MethodGet, Path: "/api/v1/cluster/connect",
+		Summary: "Connect to the Uncloud API", Tags: []string{"cluster"}, DefaultStatus: http.StatusSwitchingProtocols,
+		Description: "With `Connection: Upgrade` and `Upgrade: uncloud`, switches to a raw connection to the Uncloud API " +
+			"the sidecar uses, so a gRPC client such as `uc` reaches the cluster through the sidecar. " +
+			"Without them it answers 426. Needs a sidecar that reaches Uncloud through its socket or TCP. " +
+			"Answers 409 while a machine is being removed.",
+		Errors: []int{
+			http.StatusUpgradeRequired, http.StatusConflict, http.StatusNotImplemented, http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+		},
+		Responses: map[string]*huma.Response{
+			"101": {Description: "The connection now carries the Uncloud API's own traffic"},
+		},
+	}, s.connectUncloud)
 	register(humaAPI, huma.Operation{
 		OperationID: "listCaddyConfigs", Method: http.MethodGet, Path: "/api/v1/caddy/configs",
 		Summary: "List active Caddy configurations", Tags: []string{"cluster"},
@@ -547,6 +584,17 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 		OperationID: "renameMachine", Method: http.MethodPatch, Path: "/api/v1/machines/{id}",
 		Summary: "Rename a machine", Tags: []string{"machines"},
 	}, s.renameMachine)
+	register(humaAPI, huma.Operation{
+		OperationID: "removeMachine", Method: http.MethodDelete, Path: "/api/v1/machines/{id}",
+		Summary: "Remove a machine", Tags: []string{"machines"},
+		Description: "Like `uc machine rm`: when the machine answers, removes its service containers and resets it " +
+			"to an uninitialised state, then removes it from the cluster. A machine that doesn't answer is only " +
+			"removed from the cluster. Drops a machine with a public IP from the reserved cluster domain's records too. " +
+			"Refuses the machine the sidecar runs on or reaches Uncloud through. " +
+			"Once started, removal finishes within the exec timeout even if the client goes away, and until then this, " +
+			"connecting to Uncloud and spreading services answer 409.",
+		Errors: []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+	}, s.removeMachine)
 	register(humaAPI, huma.Operation{
 		OperationID: "execMachine", Method: http.MethodPost, Path: "/api/v1/machines/{id}/exec",
 		Summary: "Execute a host command", Tags: []string{"machines"},
@@ -597,6 +645,15 @@ func (s *Server) registerOperations(humaAPI huma.API) {
 		OperationID: "stopService", Method: http.MethodPost, Path: "/api/v1/services/{id}/stop",
 		Summary: "Stop a service", Tags: []string{"services"},
 	}, s.stopService)
+	register(humaAPI, huma.Operation{
+		OperationID: "spreadService", Method: http.MethodPost, Path: "/api/v1/services/{id}/spread",
+		Summary: "Run a global service on machines that lack it", Tags: []string{"services"},
+		Description: "Uncloud doesn't start global services on machines that join later. This starts one with the spec " +
+			"of the newest container on each eligible machine that has none and answered, and never touches existing " +
+			"containers, stopped ones included, so a service can spread itself. Answers 409 while a machine is being removed.",
+		Errors:    []int{http.StatusConflict, http.StatusUnprocessableEntity},
+		Responses: eventStreamResponse(humaAPI, "Server-Sent deployment events", DeployComposeEvent{}),
+	}, s.spreadService)
 	register(humaAPI, huma.Operation{
 		OperationID: "inspectContainer", Method: http.MethodGet, Path: "/api/v1/services/{id}/containers/{container}",
 		Summary: "Inspect a service container", Tags: []string{"services"},
@@ -830,6 +887,19 @@ func (s *Server) clearDomain(ctx context.Context, _ *struct{}) (*bodyOutput[Stat
 	return reply(StatusResponse{Status: "cleared"}), nil
 }
 
+// errRemovingMachine refuses a machine change while another machine is being removed.
+func errRemovingMachine() error {
+	return huma.Error409Conflict("a machine is being removed from the cluster; try again once it's gone")
+}
+
+func (s *Server) updateIngressRecords(ctx context.Context, _ *struct{}) (*bodyOutput[IngressRecordsResponse], error) {
+	records, err := s.backend.UpdateIngressRecords(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return reply(records), nil
+}
+
 func (s *Server) listMachines(ctx context.Context, input *listMachinesInput) (*bodyOutput[ItemResponse[MachineResponse]], error) {
 	machines, err := s.backend.ListMachines(ctx, &api.MachineFilter{
 		Available:  input.Available,
@@ -867,6 +937,35 @@ func (s *Server) renameMachine(ctx context.Context, input *renameMachineInput) (
 		return nil, errors.New("Uncloud returned an empty machine response")
 	}
 	return reply(machine), nil
+}
+
+func (s *Server) removeMachine(ctx context.Context, input *idInput) (*bodyOutput[RemoveMachineResponse], error) {
+	machine, err := s.backend.InspectMachine(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	// Its containers include this sidecar, which would stop halfway through.
+	if machine.ID == s.machineID {
+		return nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("this sidecar runs on machine %q, so it can't remove it", machine.Name),
+		)
+	}
+
+	// The flag outlives a client that stops waiting, so nothing joins or spreads mid-removal.
+	if !s.removing.CompareAndSwap(false, true) {
+		return nil, errRemovingMachine()
+	}
+	defer s.removing.Store(false)
+
+	// Stopping halfway would leave the machine in the cluster without its containers.
+	removeCtx, cancel := s.execContext(ctx)
+	defer cancel()
+
+	removed, err := s.backend.RemoveMachine(removeCtx, machine)
+	if err != nil {
+		return nil, err
+	}
+	return reply(removed), nil
 }
 
 func (s *Server) listServices(ctx context.Context, _ *struct{}) (*bodyOutput[ItemResponse[ServiceResponse]], error) {
@@ -987,6 +1086,21 @@ func (s *Server) stopService(ctx context.Context, input *idInput) (*bodyOutput[S
 		return nil, err
 	}
 	return reply(StatusResponse{Status: "stopped"}), nil
+}
+
+func (s *Server) spreadService(ctx context.Context, input *idInput) (*huma.StreamResponse, error) {
+	if s.removing.Load() {
+		return nil, errRemovingMachine()
+	}
+
+	streamCtx, cancel := streamContext(ctx)
+	events, err := s.backend.SpreadService(streamCtx, input.ID)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	return eventStream(cancel, events, encodeDeployEvent), nil
 }
 
 func (s *Server) inspectContainer(ctx context.Context, input *ContainerInput) (*bodyOutput[ServiceContainerResponse], error) {

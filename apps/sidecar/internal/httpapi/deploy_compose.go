@@ -329,6 +329,24 @@ func runServiceDeployment(
 	})
 }
 
+// runOperations streams planned operations as Compose deploy events, like runServiceDeployment.
+func runOperations(
+	ctx context.Context,
+	cli deployop.Client,
+	ops []deployop.Operation,
+	events chan<- DeployComposeEvent,
+) {
+	emit := newDeployComposeEmitter(ctx, events, stripansi.Strip)
+	if len(ops) == 0 {
+		emit(DeployComposeEvent{Type: "complete", DeployStatus: "up to date"})
+		return
+	}
+
+	executePlan(ctx, emit, planOperationsFromOperations(ops), func(ctx context.Context) error {
+		return (&deployop.SequenceOperation{Operations: ops}).Execute(ctx, cli)
+	})
+}
+
 // executePlan announces a non-empty plan, runs it with progress reporting and
 // emits its outcome.
 func executePlan(

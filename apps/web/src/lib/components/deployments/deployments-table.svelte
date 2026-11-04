@@ -284,6 +284,8 @@
 
         if (name === "ProvisionCluster") return "Cluster creation";
 
+        if (name === "AddMachine") return "New machine";
+
         return name;
     }
 

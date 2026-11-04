@@ -39,6 +39,23 @@ export type ClusterProvisioning = {
     caddyStorage: boolean;
 };
 
+/** A server an admin is adding to a ready cluster over SSH, one at a time. */
+export type PendingMachine = {
+    host: string;
+    port: number;
+    user: string;
+    /** The Uncloud machine name; null lets Uncloud name it after its hostname. */
+    name: string | null;
+    /** Authorized on the server by the admin; the private half is in `pendingMachineKey`. */
+    publicKey: string;
+    /** ISO time it was prepared; only `AddMachine` attempts since then are its own. */
+    preparedAt: string;
+    /** Set once an attempt runs uc on it, so a retry knows a member it finds was added by Stoat. */
+    joining?: boolean;
+    /** Set once it is a member, so a retry only finishes spreading the cluster's services to it. */
+    joined: { id: string; name: string } | null;
+};
+
 export type ClusterInitializationConfiguration = {
     /** Uncloud machine name. Legacy rows may still hold an ID; Uncloud accepts either. */
     machine: string;
@@ -61,6 +78,10 @@ export const clusters = t.pgTable(
         provisioning: t.jsonb("provisioning").$type<ClusterProvisioning>(),
         // JSON of the single-use SSH private key and the sidecar's TLS key, deleted with `provisioning`.
         provisioningSecrets: encryptedText("provisioning_secrets", "cluster-provisioning"),
+        // A server being added to the cluster over SSH, cleared once it has joined.
+        pendingMachine: t.jsonb("pending_machine").$type<PendingMachine>(),
+        // The single-use SSH private key for `pendingMachine`, deleted with it.
+        pendingMachineKey: encryptedText("pending_machine_key", "cluster-pending-machine"),
         greptimeUrl: t.text("greptime_url"),
         organizationId: t
             .text("organization_id")
