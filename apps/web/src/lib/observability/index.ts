@@ -196,6 +196,12 @@ export function perSecond(value: number | null | undefined) {
         : `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 2 : 0 })}/s`;
 }
 
+export function cores(value: number | null | undefined) {
+    if (value == null) return "—";
+
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${value === 1 ? "core" : "cores"}`;
+}
+
 export type MetricUnit =
     | "percent"
     | "bytes"
@@ -203,7 +209,8 @@ export type MetricUnit =
     | "requests"
     | "duration"
     | "count"
-    | "perSecond";
+    | "perSecond"
+    | "cores";
 
 export function duration(seconds: number | null | undefined) {
     if (seconds == null) return "—";
@@ -416,6 +423,16 @@ export function chartSeriesRatio(
     });
 }
 
+export function scaleSeries(series: ChartSeries[], factor: number): ChartSeries[] {
+    return series.map((item) => ({
+        ...item,
+        points: item.points.map((point) => ({
+            time: point.time,
+            value: point.value === null ? null : point.value * factor,
+        })),
+    }));
+}
+
 /** Keep mount identities for charts and match capacity to the same filesystem, never another disk. */
 export function filesystemRows(machines: MachineData[]) {
     return machines
@@ -468,6 +485,7 @@ export function filesystemRows(machines: MachineData[]) {
                         total: at(capacity.points),
                         percent: at(points),
                         points,
+                        usedPoints: used?.points ?? [],
                     },
                 ];
             }),
@@ -530,6 +548,49 @@ export function sumMachines(machines: MachineData[], name: MetricName) {
     return values.length && values.every((value) => value !== null)
         ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0)
         : null;
+}
+
+export type UsageAmount = { used: number | null; total: number | null; percent: number | null };
+
+export function usageAmount(used: number | null, total: number | null): UsageAmount {
+    return { used, total, percent: used !== null && total ? (100 * used) / total : null };
+}
+
+/** What these machines use of what they have, with CPU in cores (the metric counts 100 per busy core). */
+export function machinesUsage(machines: MachineData[]) {
+    const cpu = sumMachines(machines, "cpu");
+
+    return {
+        cpu: usageAmount(cpu === null ? null : cpu / 100, sumMachines(machines, "cores")),
+        memory: usageAmount(sumMachines(machines, "memory"), sumMachines(machines, "memoryTotal")),
+        disk: usageAmount(sumMachines(machines, "disk"), sumMachines(machines, "diskTotal")),
+    };
+}
+
+export type UsageDisplay = "percent" | "absolute";
+
+export function usageText(
+    usage: UsageAmount,
+    format: (value: number | null) => string,
+    display: UsageDisplay,
+) {
+    return display === "percent"
+        ? percent(usage.percent)
+        : `${format(usage.used)} / ${format(usage.total)}`;
+}
+
+const usageLimits = {
+    cpu: [65, 90],
+    memory: [90, 97],
+    disk: [85, 95],
+} as const;
+
+export function usageLevel(kind: keyof typeof usageLimits, value: number | null) {
+    const [warning, critical] = usageLimits[kind];
+
+    if (value !== null && value >= critical) return "critical";
+
+    return value !== null && value >= warning ? "warning" : "normal";
 }
 
 function total(values: (number | null)[]) {

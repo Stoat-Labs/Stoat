@@ -23,6 +23,10 @@ import {
     current,
     filesystemRows,
     machineList,
+    machinesUsage,
+    scaleSeries,
+    usageLevel,
+    usageText,
     percent,
     serviceRows,
     serviceSeries,
@@ -529,5 +533,72 @@ it("detects MySQL metrics from a MySQL or MariaDB server and mysqld-exporter in 
     expect(services("mariadb:13.0", "prom/mysqld-exporter").map(isMysqlExporter)).toEqual([
         false,
         true,
+    ]);
+});
+
+it("reports machine usage in cores and bytes, and as a share of capacity", () => {
+    const series = (value: number) => ({
+        machineId: "node",
+        serviceId: "",
+        container: "",
+        points: [{ time: 60000, value }],
+    });
+
+    const cluster: ClusterData = {
+        id: "a",
+        name: "A",
+        available: true,
+        start: 0,
+        end: 60,
+        step: 15,
+        machines: [{ id: "node", name: "Node", state: "up" }],
+        services: [],
+        unavailable: [],
+        metrics: {
+            cpu: [series(150)],
+            cores: [series(4)],
+            memory: [series(512)],
+            memoryTotal: [series(1024)],
+        },
+    };
+
+    const usage = machinesUsage(machineList([cluster]));
+
+    expect(usage.cpu).toEqual({ used: 1.5, total: 4, percent: 37.5 });
+    expect(usageText(usage.cpu, String, "percent")).toBe("37.5%");
+    expect(usageText(usage.memory, (value) => `${value} B`, "absolute")).toBe("512 B / 1024 B");
+    // No samples stay unknown rather than reading as 0%.
+    expect(usage.disk).toEqual({ used: null, total: null, percent: null });
+    expect(usageText(usage.disk, String, "percent")).toBe("—");
+});
+
+it("grades usage against each resource's own limits", () => {
+    expect(usageLevel("cpu", 64.9)).toBe("normal");
+    expect(usageLevel("cpu", 65)).toBe("warning");
+    expect(usageLevel("cpu", 90)).toBe("critical");
+    expect(usageLevel("memory", 89)).toBe("normal");
+    expect(usageLevel("disk", 85)).toBe("warning");
+    expect(usageLevel("disk", null)).toBe("normal");
+});
+
+it("scales series without turning gaps into zero", () => {
+    const [series] = scaleSeries(
+        [
+            {
+                key: "a",
+                label: "A",
+                color: "red",
+                points: [
+                    { time: 1, value: 200 },
+                    { time: 2, value: null },
+                ],
+            },
+        ],
+        0.01,
+    );
+
+    expect(series?.points).toEqual([
+        { time: 1, value: 2 },
+        { time: 2, value: null },
     ]);
 });

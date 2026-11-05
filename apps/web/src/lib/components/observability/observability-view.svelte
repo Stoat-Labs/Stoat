@@ -43,6 +43,10 @@
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
+        ToggleGroup,
+        ToggleGroupItem,
+    } from "$lib/components/ui/toggle-group";
+    import {
         assembleCluster,
         machineList,
         rankCpu,
@@ -60,8 +64,14 @@
         observabilityViews,
         type ObservabilityView,
     } from "$lib/observability/navigation";
+    import {
+        setUsageDisplay,
+        usageDisplay,
+    } from "$lib/observability/usage-display.svelte";
     import type { MachineMetricName } from "@stoat/api/observability";
     import ChevronDown from "@lucide/svelte/icons/chevron-down";
+    import Hash from "@lucide/svelte/icons/hash";
+    import Percent from "@lucide/svelte/icons/percent";
     import {
         createQueries,
         createQuery,
@@ -97,6 +107,7 @@
 
     const loadingTitles = {
         overview: [
+            "Machines",
             "CPU per machine",
             "Memory by machine",
             "Disk usage · all filesystems",
@@ -524,6 +535,37 @@
         </Popover>
         <!-- Machine, range and live controls only apply to clusters with monitoring. -->
         {#if monitoredSelection.length}
+            {#if view === "overview"}
+                <ToggleGroup
+                    variant="outline"
+                    size="sm"
+                    aria-label="Show usage as"
+                    value={[usageDisplay.current]}
+                    onValueChange={(next) => {
+                        // Pressing the active button would clear the group; keep the current choice then.
+                        if (
+                            next[0] === "percent" ||
+                            next[0] === "absolute"
+                        )
+                            setUsageDisplay(next[0]);
+                    }}
+                >
+                    <ToggleGroupItem
+                        value="percent"
+                        aria-label="Percentages"
+                        title="Percentages"
+                    >
+                        <Percent aria-hidden="true" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                        value="absolute"
+                        aria-label="Numbers"
+                        title="Numbers"
+                    >
+                        <Hash aria-hidden="true" />
+                    </ToggleGroupItem>
+                </ToggleGroup>
+            {/if}
             <Select
                 value={filters.machine.current}
                 items={machineOptions}
@@ -580,7 +622,8 @@
             <div class="grid gap-4 lg:grid-cols-2">
                 {#each loadingTitles[view] as heading, index (heading)}
                     <Frame
-                        class={index === 0
+                        class={index === 0 ||
+                        heading === "CPU per machine"
                             ? "min-w-0 lg:col-span-2"
                             : "min-w-0"}
                     >

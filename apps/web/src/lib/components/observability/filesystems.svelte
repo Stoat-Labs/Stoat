@@ -16,9 +16,12 @@
     } from "$lib/components/ui/table";
     import {
         bytes,
-        percent,
+        usageAmount,
+        usageLevel,
+        usageText,
         type filesystemRows,
     } from "$lib/observability";
+    import { usageDisplay } from "$lib/observability/usage-display.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
 
     let {
@@ -34,6 +37,14 @@
         loading?: boolean;
         hoveredMachine?: string;
     } = $props();
+
+    const showPercent = $derived(usageDisplay.current === "percent");
+
+    const series = $derived(
+        showPercent
+            ? rows
+            : rows.map((row) => ({ ...row, points: row.usedPoints })),
+    );
 </script>
 
 <Frame class="min-w-0">
@@ -41,10 +52,11 @@
     <FramePanel class="min-w-0 p-4">
         <Skeleton {loading} label="Loading filesystems">
             <MetricChart
-                series={rows}
+                {series}
                 {start}
                 {end}
-                max={100}
+                unit={showPercent ? "percent" : "bytes"}
+                max={showPercent ? 100 : undefined}
                 bind:hoveredMachine
             />
             <Table class="mt-4">
@@ -56,8 +68,6 @@
                             Device
                         </TableHead><TableHead class="text-center">
                             Type
-                        </TableHead><TableHead class="text-center">
-                            Used / capacity
                         </TableHead><TableHead class="text-center">
                             Usage
                         </TableHead>
@@ -86,27 +96,31 @@
                             <TableCell
                                 class="text-center tabular-nums"
                             >
-                                {bytes(row.used)} / {bytes(row.total)}
-                            </TableCell>
-                            <TableCell
-                                class="text-center tabular-nums"
-                            >
                                 <span
-                                    class:text-warning-foreground={row.percent !==
-                                        null &&
-                                        row.percent >= 85 &&
-                                        row.percent < 95}
-                                    class:text-destructive-foreground={row.percent !==
-                                        null && row.percent >= 95}
+                                    class:text-warning-foreground={usageLevel(
+                                        "disk",
+                                        row.percent,
+                                    ) === "warning"}
+                                    class:text-destructive-foreground={usageLevel(
+                                        "disk",
+                                        row.percent,
+                                    ) === "critical"}
                                 >
-                                    {percent(row.percent)}
+                                    {usageText(
+                                        usageAmount(
+                                            row.used,
+                                            row.total,
+                                        ),
+                                        bytes,
+                                        usageDisplay.current,
+                                    )}
                                 </span>
                             </TableCell>
                         </TableRow>
                     {:else}
                         <TableRow>
                             <TableCell
-                                colspan={5}
+                                colspan={4}
                                 class="text-center text-muted-foreground"
                             >
                                 No filesystem samples in this range.

@@ -87,6 +87,35 @@ test.describe("with monitoring", () => {
         }
     });
 
+    test("the usage switch is remembered in a cookie", async ({ page }) => {
+        const clusterId = await monitoredCluster(page);
+
+        await page.goto(`/observability?clusters=${clusterId}`);
+
+        const numbers = page.getByRole("button", { name: "Numbers" });
+
+        await numbers.click();
+        await expect(numbers).toHaveAttribute("aria-pressed", "true");
+        expect(
+            (await page.context().cookies()).find((cookie) => cookie.name === "observability_usage")
+                ?.value,
+        ).toBe("absolute");
+
+        await page.reload();
+        await expect(page.getByRole("button", { name: "Numbers" })).toHaveAttribute(
+            "aria-pressed",
+            "true",
+        );
+    });
+
+    test("a machine row filters the page to that machine", async ({ page }) => {
+        const clusterId = await monitoredCluster(page);
+
+        await page.goto(`/observability?clusters=${clusterId}`);
+        await page.getByRole("button", { name: new RegExp(MACHINE.name, "u") }).click();
+        await expect(page).toHaveURL(/[?&]machine=/u);
+    });
+
     test("a stack that stops answering is reported without breaking the page", async ({ page }) => {
         const clusterId = await monitoredCluster(page);
         await sql("UPDATE clusters SET sidecar_url = 'http://127.0.0.1:9' WHERE id = $1", [
