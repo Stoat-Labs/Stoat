@@ -1,11 +1,11 @@
 <script lang="ts">
     import Filesystems from "./filesystems.svelte";
+    import MachinesTable from "./machines-table.svelte";
     import MetricChart from "./metric-chart.svelte";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Button } from "$lib/components/ui/button";
     import {
         Frame,
         FrameHeader,
@@ -17,12 +17,18 @@
         bytes,
         chartSeries,
         chartSeriesRatio,
+        cores,
         filesystemRows,
+        machinesUsage,
         machineValue,
         percent,
+        scaleSeries,
         sumMachines,
+        usageLevel,
+        usageText,
         type MachineData,
     } from "$lib/observability";
+    import { usageDisplay } from "$lib/observability/usage-display.svelte";
     import type { MachineMetricName } from "@stoat/api/observability";
 
     let {
@@ -45,19 +51,12 @@
 
     let hoveredMachine = $state("");
 
-    const memory = $derived(sumMachines(visibleMachines, "memory"));
+    const usage = $derived(machinesUsage(visibleMachines));
 
-    const memoryTotal = $derived(
-        sumMachines(visibleMachines, "memoryTotal"),
-    );
+    const showPercent = $derived(usageDisplay.current === "percent");
 
-    const disk = $derived(sumMachines(visibleMachines, "disk"));
-
-    const diskTotal = $derived(
-        sumMachines(visibleMachines, "diskTotal"),
-    );
-
-    const cores = $derived(sumMachines(visibleMachines, "cores"));
+    // With one machine there is nothing to tell apart, so its charts can fill and drop the machine legend.
+    const single = $derived(visibleMachines.length === 1);
 
     const filesystems = $derived(filesystemRows(visibleMachines));
 
@@ -69,47 +68,53 @@
 
     const pressure = $derived([
         ...visibleMachines.flatMap((item) => {
-            const used = machineValue(item, "memory");
-            const capacity = machineValue(item, "memoryTotal");
+            const ratio = machinesUsage([item]).memory.percent;
+            const level = usageLevel("memory", ratio);
 
-            const ratio =
-                used !== null && capacity
-                    ? (100 * used) / capacity
-                    : null;
-
-            return ratio !== null && ratio >= 90
-                ? [
+            return level === "normal"
+                ? []
+                : [
                       {
                           key: `${item.key}:memory`,
                           text: `${item.cluster.name} / ${item.name}: memory ${percent(ratio)} used`,
-                          critical: ratio >= 97,
+                          critical: level === "critical",
                       },
-                  ]
-                : [];
+                  ];
         }),
-        ...filesystems.flatMap((row) =>
-            row.percent !== null && row.percent >= 85
-                ? [
+        ...filesystems.flatMap((row) => {
+            const level = usageLevel("disk", row.percent);
+
+            return level === "normal"
+                ? []
+                : [
                       {
                           key: row.key,
                           text: `${row.label}: disk ${percent(row.percent)} full`,
-                          critical: row.percent >= 95,
+                          critical: level === "critical",
                       },
-                  ]
-                : [],
-        ),
+                  ];
+        }),
     ]);
 
-    /** Receive/send and read/write share a chart; suffix each machine's label with its direction. */
+    /**
+     * Receive/send and read/write share a chart. Several machines keep their colors, so direction
+     * is the dash; one machine has its color free to show direction instead.
+     */
     function directions(
         first: [MachineMetricName, string],
         second: [MachineMetricName, string],
     ) {
-        return [first, second].flatMap(([name, suffix]) =>
-            chartSeries(visibleMachines, name).map((item) => ({
-                ...item,
-                label: `${item.label} ${suffix}`,
-            })),
+        return [first, second].flatMap(([name, suffix], index) =>
+            chartSeries(visibleMachines, name).map((item) =>
+                single
+                    ? {
+                          ...item,
+                          label: suffix,
+                          color: `var(--chart-${index + 1})`,
+                          dashed: false,
+                      }
+                    : { ...item, label: `${item.label} ${suffix}` },
+            ),
         );
     }
 
@@ -119,20 +124,42 @@
 </script>
 
 {#snippet legend()}
-    <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-        {#each visibleMachines as item (item.key)}
-            <span
-                class="flex items-center gap-2 text-xs"
-                style:opacity={dim(item.key)}
-            >
+    {#if !single}
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+            {#each visibleMachines as item (item.key)}
                 <span
-                    class="size-2 rounded-full"
-                    style:background={item.color}
-                ></span>
-                {item.cluster.name} / {item.name}
-            </span>
-        {/each}
-    </div>
+                    class="flex items-center gap-2 text-xs"
+                    style:opacity={dim(item.key)}
+                >
+                    <span
+                        class="size-2 rounded-full"
+                        style:background={item.color}
+                    ></span>
+                    {item.cluster.name} / {item.name}
+                </span>
+            {/each}
+        </div>
+    {/if}
+{/snippet}
+
+{#snippet directionLegend(first: string, second: string)}
+    {#if single}
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+            {#each [first, second] as label, index (label)}
+                <span class="flex items-center gap-2 text-xs">
+                    <span
+                        class="size-2 rounded-full"
+                        style:background={`var(--chart-${index + 1})`}
+                    ></span>
+                    {label}
+                </span>
+            {/each}
+        </div>
+    {:else}
+        <p class="mt-2 text-xs text-muted-foreground">
+            Solid: {first.toLowerCase()} · dashed: {second.toLowerCase()}
+        </p>
+    {/if}
 {/snippet}
 
 {#if pressure.length}
@@ -148,6 +175,24 @@
     </Alert>
 {/if}
 
+<MachinesTable
+    {machines}
+    loading={metricPending([
+        "cpu",
+        "cores",
+        "memory",
+        "memoryTotal",
+        "disk",
+        "diskTotal",
+        "networkIn",
+        "networkOut",
+        "diskRead",
+        "diskWrite",
+    ])}
+    bind:machine
+    bind:hoveredMachine
+/>
+
 <Frame>
     <FrameHeader
         class="flex-row flex-wrap items-center justify-between gap-2"
@@ -155,52 +200,34 @@
         <FrameTitle>CPU per machine</FrameTitle>
         <span class="text-xs text-muted-foreground tabular-nums">
             <span class="font-medium text-foreground">
-                {percent(sumMachines(visibleMachines, "cpu"))}
+                {usageText(usage.cpu, cores, usageDisplay.current)}
             </span>
-            of {percent(
-                cores === null ? null : cores * 100,
-            )}{reporting < visibleMachines.length
+            {reporting < visibleMachines.length
                 ? ` · ${reporting} / ${visibleMachines.length} reporting`
                 : ""}
         </span>
     </FrameHeader>
     <FramePanel class="min-w-0 p-4">
         <MetricChart
-            series={chartSeries(visibleMachines, "cpu")}
-            loading={metricPending(["cpu"])}
+            series={scaleSeries(
+                showPercent
+                    ? chartSeriesRatio(
+                          visibleMachines,
+                          "cpu",
+                          "cores",
+                      )
+                    : chartSeries(visibleMachines, "cpu"),
+                0.01,
+            )}
+            loading={metricPending(["cpu", "cores"])}
             {start}
             {end}
+            unit={showPercent ? "percent" : "cores"}
+            max={showPercent ? 100 : undefined}
+            fill={single}
             bind:hoveredMachine
         />
-        <div class="mt-3 flex flex-wrap gap-2">
-            {#each machines as item (item.key)}
-                <Button
-                    variant={machine === item.key
-                        ? "secondary"
-                        : "ghost"}
-                    size="sm"
-                    class="gap-2 text-xs"
-                    style={`opacity: ${dim(item.key)}`}
-                    onpointerenter={() => (hoveredMachine = item.key)}
-                    onpointerleave={() => (hoveredMachine = "")}
-                    onfocus={() => (hoveredMachine = item.key)}
-                    onblur={() => (hoveredMachine = "")}
-                    aria-pressed={machine === item.key}
-                    onclick={() =>
-                        (machine =
-                            machine === item.key ? "" : item.key)}
-                >
-                    <span
-                        class="size-2 rounded-full"
-                        style:background={item.color}
-                    ></span>
-                    {item.cluster.name} / {item.name}
-                    <span class="font-semibold tabular-nums">
-                        {percent(machineValue(item, "cpu"))}
-                    </span>
-                </Button>
-            {/each}
-        </div>
+        {@render legend()}
     </FramePanel>
 </Frame>
 
@@ -212,18 +239,29 @@
             <FrameTitle>Memory by machine</FrameTitle>
             <span class="text-xs text-muted-foreground tabular-nums">
                 <span class="font-medium text-foreground">
-                    {bytes(memory)}
+                    {usageText(
+                        usage.memory,
+                        bytes,
+                        usageDisplay.current,
+                    )}
                 </span>
-                of {bytes(memoryTotal)}
             </span>
         </FrameHeader>
         <FramePanel class="min-w-0 p-4">
             <MetricChart
-                series={chartSeries(visibleMachines, "memory")}
-                loading={metricPending(["memory"])}
+                series={showPercent
+                    ? chartSeriesRatio(
+                          visibleMachines,
+                          "memory",
+                          "memoryTotal",
+                      )
+                    : chartSeries(visibleMachines, "memory")}
+                loading={metricPending(["memory", "memoryTotal"])}
                 {start}
                 {end}
-                unit="bytes"
+                unit={showPercent ? "percent" : "bytes"}
+                max={showPercent ? 100 : undefined}
+                fill={single}
                 bind:hoveredMachine
             />
             {@render legend()}
@@ -236,24 +274,29 @@
             <FrameTitle>Disk usage · all filesystems</FrameTitle>
             <span class="text-xs text-muted-foreground tabular-nums">
                 <span class="font-medium text-foreground">
-                    {disk !== null && diskTotal
-                        ? percent((100 * disk) / diskTotal)
-                        : "—"}
+                    {usageText(
+                        usage.disk,
+                        bytes,
+                        usageDisplay.current,
+                    )}
                 </span>
-                · {bytes(disk)} of {bytes(diskTotal)}
             </span>
         </FrameHeader>
         <FramePanel class="min-w-0 p-4">
             <MetricChart
-                series={chartSeriesRatio(
-                    visibleMachines,
-                    "disk",
-                    "diskTotal",
-                )}
+                series={showPercent
+                    ? chartSeriesRatio(
+                          visibleMachines,
+                          "disk",
+                          "diskTotal",
+                      )
+                    : chartSeries(visibleMachines, "disk")}
                 loading={metricPending(["disk", "diskTotal"])}
                 {start}
                 {end}
-                max={100}
+                unit={showPercent ? "percent" : "bytes"}
+                max={showPercent ? 100 : undefined}
+                fill={single}
                 bind:hoveredMachine
             />
             {@render legend()}
@@ -288,11 +331,10 @@
                 {start}
                 {end}
                 unit="rate"
+                fill={single}
                 bind:hoveredMachine
             />
-            <p class="mt-2 text-xs text-muted-foreground">
-                Solid: receive · dashed: send · bits per second
-            </p>
+            {@render directionLegend("Receive", "Send")}
         </FramePanel>
     </Frame>
     <Frame class="min-w-0">
@@ -324,11 +366,10 @@
                 {start}
                 {end}
                 unit="rate"
+                fill={single}
                 bind:hoveredMachine
             />
-            <p class="mt-2 text-xs text-muted-foreground">
-                Solid: read · dashed: write · bytes per second
-            </p>
+            {@render directionLegend("Read", "Write")}
         </FramePanel>
     </Frame>
 </div>

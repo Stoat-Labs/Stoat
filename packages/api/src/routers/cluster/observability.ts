@@ -95,8 +95,6 @@ const unreachable = () => new ORPCError("BAD_GATEWAY", { message: "Monitoring is
 
 // Shown only as the latest value, never charted, so a single sample is enough.
 const latestOnly = new Set<MetricName | DnsMetricName>([
-    "cores",
-    "memoryTotal",
     "serviceMemory",
     "serviceNetworkIn",
     "serviceNetworkOut",

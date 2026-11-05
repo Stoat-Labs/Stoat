@@ -4,6 +4,7 @@
         bridgeGaps,
         bytes,
         byteTicks,
+        cores,
         count,
         duration,
         percent,
@@ -16,6 +17,7 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { metricChartCursor } from "./chart-sync";
     import {
+        areaY,
         crosshair,
         defineChart,
         lineY,
@@ -38,6 +40,7 @@
         unit = "percent",
         max,
         compact = false,
+        fill = false,
         loading = false,
         tooltipRows = 16,
         markers = [],
@@ -50,6 +53,7 @@
         unit?: MetricUnit;
         max?: number;
         compact?: boolean;
+        fill?: boolean;
         loading?: boolean;
         tooltipRows?: number;
         markers?: { key: string; time: number; label: string }[];
@@ -73,6 +77,7 @@
             duration,
             count,
             perSecond,
+            cores,
         }[unit],
     );
 
@@ -157,6 +162,22 @@
         ),
     );
 
+    // Decorative, so the fill under a line never adds a second tooltip row for it.
+    const areas = $derived(
+        fill
+            ? series.map((item) =>
+                  decorative(
+                      areaY<Row>(bridgeGaps(item.points), {
+                          x: "time",
+                          y: "value",
+                          fill: item.color,
+                          fillOpacity: 0.2,
+                      }),
+                  ),
+              )
+            : [],
+    );
+
     const seriesByKey = $derived(
         new Map(series.map((item) => [item.key, item])),
     );
@@ -166,6 +187,7 @@
             marks: [
                 // Keeps zero in the inferred y domain, like a baseline.
                 ruleY([0], { strokeOpacity: compact ? 0 : 0.15 }),
+                ...areas,
                 ...lines,
                 ruleX(markers, {
                     x: "time",

@@ -467,6 +467,9 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
 
     // Scoped requests chart the whole window instead of the table's latest-only sample.
     expect((await scoped(["web-id"])).series[0]?.values).toHaveLength(61);
+    // Percent charts divide by capacity at every sample, so one latest sample would leave them blank.
+    expect((await metric("cores", range)).series[0]?.values).toHaveLength(61);
+    expect((await metric("memoryTotal", range)).series[0]?.values).toHaveLength(61);
     await expect(scoped(["other-id"])).resolves.toMatchObject({ series: [] });
     await expect(scoped(['web-id"}) or vector(1'])).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
