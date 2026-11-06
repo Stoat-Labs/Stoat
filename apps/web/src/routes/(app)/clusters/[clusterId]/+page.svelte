@@ -40,12 +40,12 @@
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import Activity from "@lucide/svelte/icons/activity";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Check from "@lucide/svelte/icons/check";
-    import CircleAlert from "@lucide/svelte/icons/circle-alert";
-    import CircleCheck from "@lucide/svelte/icons/circle-check";
-    import Server from "@lucide/svelte/icons/server";
+    import Activity from "phosphor-svelte/lib/PulseIcon";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
+    import CircleCheck from "phosphor-svelte/lib/CheckCircleIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import {
         createMutation,
         createQuery,

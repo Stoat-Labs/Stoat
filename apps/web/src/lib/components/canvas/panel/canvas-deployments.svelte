@@ -20,16 +20,16 @@
         containerInfo,
     } from "$lib/resources/container-info";
     import { imageIcon } from "$lib/resources/image-icons";
-    import Box from "@lucide/svelte/icons/box";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import CircleCheck from "@lucide/svelte/icons/circle-check";
-    import CircleX from "@lucide/svelte/icons/circle-x";
-    import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
-    import EyeOff from "@lucide/svelte/icons/eye-off";
-    import Globe from "@lucide/svelte/icons/globe";
-    import Layers from "@lucide/svelte/icons/layers";
-    import LoaderCircle from "@lucide/svelte/icons/loader-circle";
-    import Server from "@lucide/svelte/icons/server";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import CircleCheck from "phosphor-svelte/lib/CheckCircleIcon";
+    import CircleX from "phosphor-svelte/lib/XCircleIcon";
+    import EllipsisVertical from "phosphor-svelte/lib/DotsThreeVerticalIcon";
+    import EyeOff from "phosphor-svelte/lib/EyeSlashIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import Layers from "phosphor-svelte/lib/StackIcon";
+    import LoaderCircle from "phosphor-svelte/lib/CircleNotchIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
@@ -333,7 +333,7 @@
             {:else}
                 <Box
                     class="size-6 text-muted-foreground"
-                    strokeWidth={1.5}
+                    weight="regular"
                     aria-hidden="true"
                 />
             {/if}

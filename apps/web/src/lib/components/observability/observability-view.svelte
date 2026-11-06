@@ -69,9 +69,9 @@
         usageDisplay,
     } from "$lib/observability/usage-display.svelte";
     import type { MachineMetricName } from "@stoat/api/observability";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Hash from "@lucide/svelte/icons/hash";
-    import Percent from "@lucide/svelte/icons/percent";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import Hash from "phosphor-svelte/lib/HashIcon";
+    import Percent from "phosphor-svelte/lib/PercentIcon";
     import {
         createQueries,
         createQuery,

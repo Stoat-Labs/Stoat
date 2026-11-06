@@ -24,7 +24,7 @@
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import Info from "@lucide/svelte/icons/info";
+    import Info from "phosphor-svelte/lib/InfoIcon";
     import { createMutation } from "@tanstack/svelte-query";
     import { watch } from "runed";
 

@@ -7,8 +7,8 @@
     import { Button } from "$lib/components/ui/button";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import ArrowDown from "@lucide/svelte/icons/arrow-down";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import ArrowDown from "phosphor-svelte/lib/ArrowDownIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import {
         createMutation,

@@ -1,6 +1,6 @@
 <script lang="ts">
-    import CheckIcon from "@lucide/svelte/icons/check";
-    import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
+    import CheckIcon from "phosphor-svelte/lib/CheckIcon";
+    import LoaderCircleIcon from "phosphor-svelte/lib/CircleNotchIcon";
     import { getContext, type Snippet } from "svelte";
     import { cn } from "$lib/utils";
 

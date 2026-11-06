@@ -14,7 +14,7 @@
     "typescript": true,
     "registry": "https://cossui-svelte.com/r",
     "style": "rhea",
-    "iconLibrary": "lucide",
+    "iconLibrary": "phosphor",
     "menuColor": "default-translucent",
     "menuAccent": "bold"
 }

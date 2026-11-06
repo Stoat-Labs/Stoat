@@ -13,7 +13,7 @@
         observabilityHref,
         observabilityView,
     } from "$lib/observability/navigation";
-    import Pencil from "@lucide/svelte/icons/pencil";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
     import { onMount } from "svelte";

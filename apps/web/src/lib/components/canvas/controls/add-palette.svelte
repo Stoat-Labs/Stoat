@@ -19,10 +19,10 @@
         CommandInput,
         CommandList,
     } from "$lib/components/ui/command";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Info from "@lucide/svelte/icons/info";
-    import KeyRound from "@lucide/svelte/icons/key-round";
-    import Search from "@lucide/svelte/icons/search";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Info from "phosphor-svelte/lib/InfoIcon";
+    import KeyRound from "phosphor-svelte/lib/KeyIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import { ORPCError } from "@orpc/client";
     import { s3Providers } from "@stoat/s3/providers";
     import {

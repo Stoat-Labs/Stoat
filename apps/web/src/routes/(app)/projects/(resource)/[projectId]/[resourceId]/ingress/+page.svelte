@@ -32,9 +32,9 @@
     import { Badge } from "$lib/components/ui/badge";
     import { orpc } from "$lib/api/orpc";
     import { ComposeDraft } from "$lib/resources/compose-draft.svelte";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Container from "@lucide/svelte/icons/container";
-    import Globe from "@lucide/svelte/icons/globe";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
     import {
         parseIngressCompose,
         removeIngressFromCompose,

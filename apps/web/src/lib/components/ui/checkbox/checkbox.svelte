@@ -1,4 +1,6 @@
 <script lang="ts">
+    import CheckIcon from "phosphor-svelte/lib/CheckIcon";
+    import MinusIcon from "phosphor-svelte/lib/MinusIcon";
     import { Checkbox as CheckboxPrimitive } from "@shardsui/svelte/checkbox";
     import type { ComponentProps } from "svelte";
     import { cn } from "$lib/utils.js";
@@ -34,39 +36,9 @@
             data-indeterminate={indeterminate ? "" : undefined}
         >
             {#if indeterminate}
-                <svg
-                    aria-hidden="true"
-                    class="size-3.5 sm:size-3"
-                    fill="none"
-                    height="24"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="3"
-                    viewBox="0 0 24 24"
-                    width="24"
-                    xmlns="http://www.w3.org/2000/svg"
-                >
-                    <path d="M5.252 12h13.496"></path>
-                </svg>
+                <MinusIcon class="size-3.5 sm:size-3" aria-hidden="true" />
             {:else if checked}
-                <svg
-                    aria-hidden="true"
-                    class="size-3.5 sm:size-3"
-                    fill="none"
-                    height="24"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="3"
-                    viewBox="0 0 24 24"
-                    width="24"
-                    xmlns="http://www.w3.org/2000/svg"
-                >
-                    <path
-                        d="M5.252 12.7 10.2 18.63 18.748 5.37"
-                    ></path>
-                </svg>
+                <CheckIcon class="size-3.5 sm:size-3" aria-hidden="true" />
             {/if}
         </span>
     {/snippet}

@@ -39,9 +39,9 @@
     } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { logsAsText } from "$lib/deployments/log-text";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
-    import Download from "@lucide/svelte/icons/download";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
     import { createMutation } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
@@ -116,18 +116,19 @@
             : null,
     );
 
+    const jobTitles = new Map([
+        ["InitializeCluster", "Cluster initialization"],
+        ["DeployCaddy", "Caddy deployment"],
+        ["ProvisionCluster", "Cluster creation"],
+        ["AddMachine", "New machine"],
+    ]);
+
     const title = $derived(
         deployment?.name === "DeployResource"
             ? resourceLabel || "Resource deployment"
-            : deployment?.name === "InitializeCluster"
-              ? "Cluster initialization"
-              : deployment?.name === "DeployCaddy"
-                ? "Caddy deployment"
-                : deployment?.name === "ProvisionCluster"
-                  ? "Cluster creation"
-                  : deployment?.name === "AddMachine"
-                    ? "New machine"
-                    : (deployment?.name ?? "Deployment"),
+            : (jobTitles.get(deployment?.name ?? "") ??
+                  deployment?.name ??
+                  "Deployment"),
     );
 
     const raw = $derived(view.deploymentDebug.current);

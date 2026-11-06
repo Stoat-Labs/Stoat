@@ -30,7 +30,7 @@
         bucketJobPollInterval,
         s3BucketStatusVariant,
     } from "$lib/s3";
-    import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+    import TriangleAlert from "phosphor-svelte/lib/WarningIcon";
     import {
         createMutation,
         createQuery,

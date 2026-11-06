@@ -8,6 +8,10 @@
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
     import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
     import ProjectOverviewCard from "$lib/components/home/project-overview-card.svelte";
+    import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
+    import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import CreateProjectDialog from "$lib/components/projects/create-project-dialog.svelte";
     import ProjectCard, {
         placeholderResources,
@@ -47,10 +51,6 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
-    import FolderOpen from "@lucide/svelte/icons/folder-open";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Search from "@lucide/svelte/icons/search";
     import {
         createQueries,
         createQuery,
@@ -387,9 +387,30 @@
         <header
             class="flex flex-wrap items-center justify-between gap-2"
         >
-            <h2 id="projects-heading" class="text-base font-semibold">
-                Projects
-            </h2>
+            <div class="flex items-center justify-center">
+                <h2
+                    id="projects-heading"
+                    class="text-base font-semibold"
+                >
+                    Projects
+                </h2>
+                {#if filtered.length > homeProjectLimit}
+                    <Button
+                        size="xs"
+                        class="text-muted-foreground"
+                        variant="ghost"
+                        href="/projects{params.q.current
+                            ? `?q=${encodeURIComponent(params.q.current)}`
+                            : ''}"
+                    >
+                        View all {filtered.length} projects
+                        <ArrowRight
+                            class="size-4"
+                            aria-hidden="true"
+                        />
+                    </Button>
+                {/if}
+            </div>
             <div class="flex max-w-full flex-wrap gap-2">
                 <Select
                     items={clusterItems}
@@ -449,7 +470,7 @@
         {#if projectsQuery.isPending}
             <Skeleton loading label="Loading projects">
                 <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {#each { length: 3 }, index (index)}
+                    {#each { length: 6 }, index (index)}
                         <li class="min-w-0">
                             <ProjectCard
                                 name="Project workspace"
@@ -553,18 +574,6 @@
                     </li>
                 {/each}
             </ul>
-            {#if filtered.length > homeProjectLimit}
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    href="/projects{params.q.current
-                        ? `?q=${encodeURIComponent(params.q.current)}`
-                        : ''}"
-                >
-                    View all {filtered.length} projects
-                    <ArrowRight class="size-4" aria-hidden="true" />
-                </Button>
-            {/if}
         {/if}
     </section>
 

@@ -1,9 +1,9 @@
 <!-- Railway's masked value, with reveal and copy on hover. -->
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
-    import Copy from "@lucide/svelte/icons/copy";
-    import Eye from "@lucide/svelte/icons/eye";
-    import EyeOff from "@lucide/svelte/icons/eye-off";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import Eye from "phosphor-svelte/lib/EyeIcon";
+    import EyeOff from "phosphor-svelte/lib/EyeSlashIcon";
 
     let {
         name,

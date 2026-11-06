@@ -29,9 +29,9 @@
         connectionDialogUrl,
     } from "$lib/params/git-query-params";
     import { orpc } from "$lib/api/orpc";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import Plus from "@lucide/svelte/icons/plus";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { useQueryStates } from "nuqs-svelte";
     import { onDestroy, untrack } from "svelte";

@@ -6,9 +6,9 @@
     import BucketFiles from "$lib/components/s3/bucket-files.svelte";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Button } from "$lib/components/ui/button";
-    import Box from "@lucide/svelte/icons/box";
-    import ExternalLink from "@lucide/svelte/icons/external-link";
-    import X from "@lucide/svelte/icons/x";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import {
         parseAsString,
         parseAsStringLiteral,
@@ -173,7 +173,7 @@
     {:else}
         <Box
             class="size-8 shrink-0"
-            strokeWidth={1.5}
+            weight="regular"
             aria-hidden="true"
         />
     {/if}

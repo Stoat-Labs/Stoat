@@ -1,7 +1,7 @@
 <script lang="ts">
     import { buttonVariants } from "$lib/components/ui/button";
     import { cn, type WithoutChildren } from "$lib/utils";
-    import XIcon from "@lucide/svelte/icons/x";
+    import XIcon from "phosphor-svelte/lib/XIcon";
     import { Dialog as DialogPrimitive } from "@shardsui/svelte/dialog";
     import type { ComponentProps, Snippet } from "svelte";
     import DialogOverlay from "./dialog-backdrop.svelte";

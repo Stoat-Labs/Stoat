@@ -1,5 +1,5 @@
 <script lang="ts">
-    import Check from "@lucide/svelte/icons/check";
+    import Check from "phosphor-svelte/lib/CheckIcon";
     import { Select as SelectPrimitive } from "@shardsui/svelte/select";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";

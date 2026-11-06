@@ -43,8 +43,8 @@
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import { s3Providers } from "@stoat/s3/providers";
     import {
         createMutation,

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
     import { Menu as MenuPrimitive } from "@shardsui/svelte/menu";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";

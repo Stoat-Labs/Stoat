@@ -15,14 +15,14 @@
         FrameTitle,
     } from "$lib/components/ui/frame";
     import { Separator } from "$lib/components/ui/separator";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
-    import Globe from "@lucide/svelte/icons/globe";
-    import Network from "@lucide/svelte/icons/network";
-    import Pencil from "@lucide/svelte/icons/pencil";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Server from "@lucide/svelte/icons/server";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+    import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import Network from "phosphor-svelte/lib/TreeStructureIcon";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import TriangleAlert from "phosphor-svelte/lib/WarningIcon";
     import type {
         CaddyIngress,
         CaddyRoute,

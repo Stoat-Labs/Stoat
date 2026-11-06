@@ -6,14 +6,14 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
-    import Cable from "@lucide/svelte/icons/cable";
-    import CircleCheck from "@lucide/svelte/icons/circle-check";
-    import Copy from "@lucide/svelte/icons/copy";
-    import Globe from "@lucide/svelte/icons/globe";
-    import Pencil from "@lucide/svelte/icons/pencil";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
+    import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
+    import Cable from "phosphor-svelte/lib/PlugsConnectedIcon";
+    import CircleCheck from "phosphor-svelte/lib/CheckCircleIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
     import {
         parseIngressCompose,
         removeIngressFromCompose,

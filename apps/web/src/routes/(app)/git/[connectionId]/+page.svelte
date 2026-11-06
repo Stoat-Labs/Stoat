@@ -27,7 +27,7 @@
     } from "$lib/components/ui/table";
     import { connectionDialogUrl } from "$lib/params/git-query-params";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
     import {
         createMutation,
         createQuery,

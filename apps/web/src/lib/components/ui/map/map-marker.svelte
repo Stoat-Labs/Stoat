@@ -84,12 +84,7 @@
         const lng = untrack(() => longitude);
         const lat = untrack(() => latitude);
 
-        if (
-            typeof lng !== "number" ||
-            typeof lat !== "number" ||
-            Number.isNaN(lng) ||
-            Number.isNaN(lat)
-        ) {
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
             return;
         }
 
@@ -198,10 +193,8 @@
     $effect(() => {
         if (
             marker &&
-            typeof longitude === "number" &&
-            typeof latitude === "number" &&
-            !Number.isNaN(longitude) &&
-            !Number.isNaN(latitude)
+            Number.isFinite(longitude) &&
+            Number.isFinite(latitude)
         ) {
             marker.setLngLat([longitude, latitude]);
         }

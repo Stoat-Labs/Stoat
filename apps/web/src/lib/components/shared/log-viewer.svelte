@@ -22,10 +22,11 @@
         type LogLevel,
         type LogRow,
     } from "$lib/resources/logs";
-    import ArrowDown from "@lucide/svelte/icons/arrow-down";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
-    import WrapText from "@lucide/svelte/icons/wrap-text";
+    import ArrowDown from "phosphor-svelte/lib/ArrowDownIcon";
+    import Broom from "phosphor-svelte/lib/BroomIcon";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import WrapText from "$lib/components/shared/wrap-text-icon.svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import { tick, untrack, type Snippet } from "svelte";
     import LogActivity from "./log-activity.svelte";
@@ -318,22 +319,7 @@
             aria-pressed={clean}
             onclick={() => (clean = !clean)}
         >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="size-3.5"
-                aria-hidden="true"
-            >
-                <path
-                    d="M8 19v-9a4 4 0 0 1 2.5-3.7V4a1.5 1.5 0 0 1 3 0v2.3A4 4 0 0 1 16 10v9"
-                />
-                <rect x="6" y="19" width="12" height="3" rx="1.5" />
-            </svg>
+            <Broom class="size-3.5" aria-hidden="true" />
         </Button>
     </div>
 </div>

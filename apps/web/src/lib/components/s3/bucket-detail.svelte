@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
     import type { Snippet } from "svelte";
 
     let {

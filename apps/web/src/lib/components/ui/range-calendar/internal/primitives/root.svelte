@@ -97,6 +97,7 @@
                 onValueChange(v);
             },
         ),
+        // SAFETY: handleDefaultPlaceholder above keeps placeholder set.
         placeholder: boxWith(
             () => placeholder as DateValue,
             (v) => {

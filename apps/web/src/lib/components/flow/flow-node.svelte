@@ -4,6 +4,7 @@
     import { watch } from "runed";
     import { useDescendantsContext } from "./descendants.svelte";
     import { setFlowNodeAnchorContext } from "./node-context.svelte";
+    import type { HTMLAttributes } from "svelte/elements";
     import { withElementAttachment } from "./render-props";
     import {
         rectEquals,
@@ -17,7 +18,7 @@
         class?: string;
         children?: Snippet;
 
-        render?: Snippet<[{ props: Record<string, unknown> }]>;
+        render?: Snippet<[{ props: HTMLAttributes<HTMLElement> }]>;
     }
 
     let {

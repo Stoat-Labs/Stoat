@@ -17,6 +17,7 @@ class BitsAttrs<T extends readonly string[]> {
     constructor(config: { component: string; parts: T }) {
         this.#prefix = `data-${config.component}-`;
         this.getAttr = this.getAttr.bind(this);
+        // SAFETY: fromEntries gets one entry per part, so every T[number] key is present.
         this.attrs = Object.fromEntries(
             config.parts.map((part) => [part, this.getAttr(part)]),
         ) as Record<T[number], string>;

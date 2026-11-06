@@ -19,8 +19,8 @@
         DialogTitle,
     } from "$lib/components/ui/dialog";
     import { Input } from "$lib/components/ui/input";
-    import Boxes from "@lucide/svelte/icons/boxes";
-    import Upload from "@lucide/svelte/icons/upload";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
+    import Upload from "phosphor-svelte/lib/UploadSimpleIcon";
     import { watch } from "runed";
 
     let {

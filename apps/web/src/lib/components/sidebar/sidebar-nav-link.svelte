@@ -17,7 +17,10 @@
     }: {
         href: string;
         title?: string;
-        icon?: Component;
+        icon?: Component<{
+            weight?: "fill";
+            "aria-hidden"?: "true";
+        }>;
         active: boolean;
         current?: boolean;
         tooltip?: string;
@@ -38,7 +41,10 @@
             >
                 {#if icon}
                     {@const Icon = icon}
-                    <Icon aria-hidden="true" />
+                    <Icon
+                        aria-hidden="true"
+                        weight={active ? "fill" : undefined}
+                    />
                 {/if}
                 <span>{@render children()}</span>
             </a>

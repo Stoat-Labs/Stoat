@@ -18,10 +18,10 @@
         rangePresets,
         type RangePreset,
     } from "@stoat/api/observability";
-    import Check from "@lucide/svelte/icons/check";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Clock from "@lucide/svelte/icons/clock";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import Clock from "phosphor-svelte/lib/ClockIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
     import type { ObservabilityRangeState } from "./range";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
 

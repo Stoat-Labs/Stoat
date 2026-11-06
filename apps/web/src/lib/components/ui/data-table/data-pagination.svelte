@@ -1,6 +1,6 @@
 <script lang="ts">
-    import ChevronLeft from "@lucide/svelte/icons/chevron-left";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import ChevronLeft from "phosphor-svelte/lib/CaretLeftIcon";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
     import { Button } from "$lib/components/ui/button";
     import {
         Pagination,

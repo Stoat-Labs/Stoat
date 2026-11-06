@@ -5,8 +5,8 @@
         FlowNodeList,
         FlowParallel,
     } from "$lib/components/flow";
-    import Globe from "@lucide/svelte/icons/globe";
-    import Server from "@lucide/svelte/icons/server";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
 
     let {
         host,

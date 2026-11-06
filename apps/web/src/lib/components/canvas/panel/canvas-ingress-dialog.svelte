@@ -34,7 +34,7 @@
         type HttpIngress,
         type IngressEntry,
     } from "@stoat/workflows/ingress";
-    import Info from "@lucide/svelte/icons/info";
+    import Info from "phosphor-svelte/lib/InfoIcon";
     import { untrack } from "svelte";
 
     let {

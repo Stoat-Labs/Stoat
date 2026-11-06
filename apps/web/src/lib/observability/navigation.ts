@@ -42,7 +42,12 @@ export function observabilityMetrics(view: ObservabilityView): readonly MachineM
         case "http":
             return [];
         case "services":
-            return metricNames.filter((name) => name.startsWith("service"));
+            // Machine capacity is what the services table's bars measure unlimited containers against.
+            return [
+                ...metricNames.filter((name) => name.startsWith("service")),
+                "cores",
+                "memoryTotal",
+            ];
         case "overview":
             return metricNames.filter((name) => !name.startsWith("service"));
     }

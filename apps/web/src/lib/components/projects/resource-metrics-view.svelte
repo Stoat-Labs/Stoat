@@ -64,8 +64,8 @@
         createQueries,
         createQuery,
     } from "@tanstack/svelte-query";
-    import LayoutGrid from "@lucide/svelte/icons/layout-grid";
-    import Rows3 from "@lucide/svelte/icons/rows-3";
+    import LayoutGrid from "phosphor-svelte/lib/GridFourIcon";
+    import Rows3 from "phosphor-svelte/lib/RowsIcon";
     import {
         parseAsBoolean,
         parseAsStringLiteral,

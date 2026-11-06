@@ -25,7 +25,7 @@
         completeMetricsOption,
         missingMetricsSubdirectives,
     } from "@stoat/workflows/caddy-metrics";
-    import Info from "@lucide/svelte/icons/info";
+    import Info from "phosphor-svelte/lib/InfoIcon";
     import {
         createMutation,
         createQuery,

@@ -15,8 +15,8 @@
         SidebarSeparator,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import ChartColumn from "@lucide/svelte/icons/chart-column";
-    import Shield from "@lucide/svelte/icons/shield";
+    import ChartColumn from "phosphor-svelte/lib/ChartBarIcon";
+    import Shield from "phosphor-svelte/lib/ShieldIcon";
     import SidebarNavLink from "./sidebar-nav-link.svelte";
     import UserMenu from "./user-menu.svelte";
 

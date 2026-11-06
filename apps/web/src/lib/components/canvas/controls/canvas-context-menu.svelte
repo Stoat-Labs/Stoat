@@ -37,35 +37,35 @@
         ContextMenuSubTrigger,
         ContextMenuTrigger,
     } from "$lib/components/ui/context-menu";
-    import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
-    import Group from "@lucide/svelte/icons/group";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Ungroup from "@lucide/svelte/icons/ungroup";
-    import ChartColumn from "@lucide/svelte/icons/chart-column";
-    import Container from "@lucide/svelte/icons/container";
-    import Copy from "@lucide/svelte/icons/copy";
-    import CopyPlus from "@lucide/svelte/icons/copy-plus";
-    import FolderInput from "@lucide/svelte/icons/folder-input";
-    import Database from "@lucide/svelte/icons/database";
-    import ExternalLink from "@lucide/svelte/icons/external-link";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import FileCog from "@lucide/svelte/icons/file-cog";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import Layers from "@lucide/svelte/icons/layers";
-    import Play from "@lucide/svelte/icons/play";
-    import RotateCw from "@lucide/svelte/icons/rotate-cw";
-    import Square from "@lucide/svelte/icons/square";
-    import ScrollText from "@lucide/svelte/icons/scroll-text";
-    import Settings from "@lucide/svelte/icons/settings";
-    import SquareTerminal from "@lucide/svelte/icons/square-terminal";
-    import Braces from "@lucide/svelte/icons/braces";
-    import Zap from "@lucide/svelte/icons/zap";
+    import ArrowRightLeft from "phosphor-svelte/lib/ArrowsLeftRightIcon";
+    import Group from "phosphor-svelte/lib/BoundingBoxIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Ungroup from "phosphor-svelte/lib/SelectionIcon";
+    import ChartColumn from "phosphor-svelte/lib/ChartBarIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import CopyPlus from "phosphor-svelte/lib/CopySimpleIcon";
+    import FolderInput from "phosphor-svelte/lib/FolderPlusIcon";
+    import Database from "phosphor-svelte/lib/DatabaseIcon";
+    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import FileCog from "$lib/components/shared/file-gear-icon.svelte";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import Layers from "phosphor-svelte/lib/StackIcon";
+    import Play from "phosphor-svelte/lib/PlayIcon";
+    import RotateCw from "phosphor-svelte/lib/ArrowClockwiseIcon";
+    import Square from "phosphor-svelte/lib/SquareIcon";
+    import ScrollText from "phosphor-svelte/lib/ScrollIcon";
+    import Settings from "phosphor-svelte/lib/GearSixIcon";
+    import SquareTerminal from "phosphor-svelte/lib/TerminalWindowIcon";
+    import Braces from "phosphor-svelte/lib/BracketsCurlyIcon";
+    import Zap from "phosphor-svelte/lib/LightningIcon";
     import type { Snippet } from "svelte";
     import type { AddPage } from "./add-palette.svelte";
     import { getCanvasActions } from "../context";
     import { parseNodeId } from "../graph";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import Undo2 from "@lucide/svelte/icons/undo-2";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import Undo2 from "phosphor-svelte/lib/ArrowUUpLeftIcon";
 
     let {
         projectId,

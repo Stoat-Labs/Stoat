@@ -1,9 +1,9 @@
 <script lang="ts">
     import type { StepState } from "$lib/deployments/steps";
-    import Check from "@lucide/svelte/icons/check";
-    import Loader from "@lucide/svelte/icons/loader-circle";
-    import Minus from "@lucide/svelte/icons/minus";
-    import X from "@lucide/svelte/icons/x";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Loader from "phosphor-svelte/lib/CircleNotchIcon";
+    import Minus from "phosphor-svelte/lib/MinusIcon";
+    import X from "phosphor-svelte/lib/XIcon";
 
     let {
         state,

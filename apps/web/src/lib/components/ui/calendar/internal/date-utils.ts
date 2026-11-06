@@ -71,7 +71,7 @@ export function parseStringToDateValue(dateStr: string, referenceVal: DateValue)
     }
 
     return dateValue.calendar !== referenceVal.calendar
-        ? (toCalendar(dateValue, referenceVal.calendar) as DateValue)
+        ? toCalendar(dateValue, referenceVal.calendar)
         : dateValue;
 }
 

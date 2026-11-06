@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { ComponentProps } from "svelte";
     import { Slider as SliderPrimitive } from "@shardsui/svelte/slider";
     import { on } from "svelte/events";
     import {
@@ -16,7 +17,14 @@
         tooltipContent,
         value = $bindable(),
         ...restProps
-    }: {
+    }: Omit<
+        ComponentProps<typeof SliderPrimitive.Root>,
+        | "class"
+        | "orientation"
+        | "ref"
+        | "thumbCollisionBehavior"
+        | "value"
+    > & {
         class?: string;
         orientation?: "horizontal" | "vertical";
         ref?: HTMLElement | null;
@@ -25,7 +33,6 @@
         thumbCollisionBehavior?: "push" | "swap" | "none";
         tooltipContent?: (value: number) => number | string;
         value?: number | number[];
-        [key: string]: unknown;
     } = $props();
 
     let tooltipOpen = $state(false);
@@ -82,7 +89,7 @@
     {orientation}
     class={cn("data-[orientation=horizontal]:w-full", className)}
     data-slot="slider"
-    {...restProps as Record<string, unknown>}
+    {...restProps}
 >
     {#snippet children(state)}
         <SliderPrimitive.Control

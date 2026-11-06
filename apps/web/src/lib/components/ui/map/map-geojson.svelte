@@ -106,12 +106,14 @@
         hoverPaint: T | undefined,
     ): T {
         if (!hoverPaint) return paint;
-        const merged: Record<string, unknown> = { ...paint };
+        const merged = new Map(Object.entries(paint));
 
         for (const [key, hoverValue] of Object.entries(hoverPaint)) {
             if (hoverValue === undefined) continue;
-            const baseValue = merged[key];
-            merged[key] =
+            const baseValue = merged.get(key);
+
+            merged.set(
+                key,
                 baseValue === undefined
                     ? hoverValue
                     : [
@@ -123,10 +125,12 @@
                           ],
                           hoverValue,
                           baseValue,
-                      ];
+                      ],
+            );
         }
 
-        return merged as T;
+        // SAFETY: same paint keys as the input; a `case` expression is valid for any data-driven value.
+        return Object.fromEntries(merged) as T;
     }
 
     const mergedFillPaint = $derived(
@@ -176,13 +180,14 @@
         const initialData = untrack(() => data);
         const initialPromoteId = untrack(() => promoteId);
 
-        map.addSource(sourceId, {
+        const source: MapLibreGL.GeoJSONSourceSpecification = {
             type: "geojson",
             data: initialData,
-            ...(initialPromoteId
-                ? { promoteId: initialPromoteId }
-                : {}),
-        });
+        };
+
+        if (initialPromoteId) source.promoteId = initialPromoteId;
+
+        map.addSource(sourceId, source);
 
         return () => {
             try {
@@ -206,11 +211,10 @@
 
         if (!isLoaded || !map) return;
 
-        const source = map.getSource(sourceId) as
-            | MapLibreGL.GeoJSONSource
-            | undefined;
+        const source =
+            map.getSource<MapLibreGL.GeoJSONSource>(sourceId);
 
-        source?.setData(data as GeoJSON.GeoJSON | string);
+        source?.setData(data);
     });
 
     $effect(() => {
@@ -253,6 +257,7 @@
             for (const [key, value] of Object.entries(
                 mergedFillPaint,
             )) {
+                // SAFETY: the key comes from this layer's own paint object.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 map.setPaintProperty(fillLayerId, key as any, value);
             }
@@ -262,6 +267,7 @@
             for (const [key, value] of Object.entries(
                 mergedLinePaint,
             )) {
+                // SAFETY: the key comes from this layer's own paint object.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 map.setPaintProperty(lineLayerId, key as any, value);
             }
@@ -287,6 +293,8 @@
             if (featureId === hoveredId) return;
             setHover(featureId ?? null);
             onhover?.({
+                // SAFETY: `properties` are the ones this component's data gave the feature, typed P.
+                // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- an open P isn't comparable to maplibre's properties.
                 feature: feature as unknown as MapGeoJSONFeature<P>,
                 longitude: e.lngLat.lng,
                 latitude: e.lngLat.lat,
@@ -305,6 +313,8 @@
 
             if (!feature) return;
             onclick?.({
+                // SAFETY: `properties` are the ones this component's data gave the feature, typed P.
+                // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- an open P isn't comparable to maplibre's properties.
                 feature: feature as unknown as MapGeoJSONFeature<P>,
                 longitude: e.lngLat.lng,
                 latitude: e.lngLat.lat,

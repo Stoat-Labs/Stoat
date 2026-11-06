@@ -20,7 +20,7 @@
     import { Label } from "$lib/components/ui/label";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
-    import Boxes from "@lucide/svelte/icons/boxes";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
     import { createQuery } from "@tanstack/svelte-query";
 
     let {

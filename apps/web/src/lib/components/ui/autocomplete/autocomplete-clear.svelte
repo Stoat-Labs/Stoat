@@ -1,5 +1,5 @@
 <script lang="ts">
-    import X from "@lucide/svelte/icons/x";
+    import X from "phosphor-svelte/lib/XIcon";
     import { Autocomplete as AutocompletePrimitive } from "@shardsui/svelte/autocomplete";
     import type { Snippet } from "svelte";
     import type { HTMLButtonAttributes } from "svelte/elements";

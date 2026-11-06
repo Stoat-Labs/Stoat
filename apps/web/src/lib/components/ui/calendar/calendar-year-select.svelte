@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
     import { cn, type WithoutChildrenOrChild } from "$lib/utils";
     import * as CalendarPrimitive from "./internal";
 

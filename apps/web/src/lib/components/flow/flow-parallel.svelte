@@ -16,6 +16,8 @@
         RectLike,
     } from "./types";
 
+    type FlowPoint = { x: number; y: number };
+
     type LinksResult = {
         connectors: Connector[];
         junctions: {
@@ -279,7 +281,7 @@
                     descendant.props.disabled;
 
                 if (previousNodeRect && endAnchorRect) {
-                    let branchStart: { x: number; y: number };
+                    let branchStart: FlowPoint;
 
                     if (orientation === "vertical") {
                         const anchorCenter =
@@ -323,7 +325,7 @@
                 }
 
                 if (nextNodeRect && startAnchorRect) {
-                    let branchEnd: { x: number; y: number };
+                    let branchEnd: FlowPoint;
 
                     if (orientation === "vertical") {
                         const anchorCenter =

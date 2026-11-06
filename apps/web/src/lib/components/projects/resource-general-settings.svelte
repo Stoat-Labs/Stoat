@@ -30,11 +30,11 @@
     import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
-    import Boxes from "@lucide/svelte/icons/boxes";
-    import Link from "@lucide/svelte/icons/link";
-    import Pencil from "@lucide/svelte/icons/pencil";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import Upload from "@lucide/svelte/icons/upload";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
+    import Link from "phosphor-svelte/lib/LinkIcon";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import Upload from "phosphor-svelte/lib/UploadSimpleIcon";
     import {
         createMutation,
         createQuery,

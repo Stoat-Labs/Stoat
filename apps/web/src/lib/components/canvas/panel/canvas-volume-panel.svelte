@@ -6,10 +6,10 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import Unplug from "@lucide/svelte/icons/unplug";
-    import X from "@lucide/svelte/icons/x";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import Unplug from "phosphor-svelte/lib/PlugsIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import { cubicOut, expoOut } from "svelte/easing";
     import { prefersReducedMotion } from "svelte/motion";
@@ -200,7 +200,7 @@
     <header class="flex items-center gap-4 px-12 pt-12 pb-6">
         <HardDrive
             class="size-8 shrink-0"
-            strokeWidth={1.5}
+            weight="regular"
             aria-hidden="true"
         />
         <h2 class="min-w-0 flex-1 truncate text-2xl font-semibold">

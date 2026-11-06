@@ -1,6 +1,6 @@
 import { DateFormatter, type DateValue } from "@internationalized/date";
 import type { ReadableBox } from "svelte-toolbelt";
-import { hasTime, isZonedDateTime, toDate } from "./date-utils";
+import { hasTime, toDate } from "./date-utils";
 
 type MonthFormatOpt = Intl.DateTimeFormatOptions["month"] | ((month: number) => string);
 
@@ -41,17 +41,17 @@ export function createFormatter(opts: {
         const monthFormat = opts.monthFormat.current;
         const yearFormat = opts.yearFormat.current;
 
-        if (typeof monthFormat !== "function" && typeof yearFormat !== "function") {
+        if (!(monthFormat instanceof Function) && !(yearFormat instanceof Function)) {
             return new DateFormatter(locale, { month: monthFormat, year: yearFormat }).format(date);
         }
 
         const formattedMonth =
-            typeof monthFormat === "function"
+            monthFormat instanceof Function
                 ? monthFormat(date.getMonth() + 1)
                 : new DateFormatter(locale, { month: monthFormat }).format(date);
 
         const formattedYear =
-            typeof yearFormat === "function"
+            yearFormat instanceof Function
                 ? yearFormat(date.getFullYear())
                 : new DateFormatter(locale, { year: yearFormat }).format(date);
 

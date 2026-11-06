@@ -6,7 +6,7 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import Play from "@lucide/svelte/icons/play";
+    import Play from "phosphor-svelte/lib/PlayIcon";
     import { createMutation } from "@tanstack/svelte-query";
     import DatabaseGrid from "./database-grid.svelte";
     import type { DatabaseInput } from "./query";

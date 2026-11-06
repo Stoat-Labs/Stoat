@@ -16,9 +16,9 @@
         SidebarMenuItem,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import ChartColumn from "@lucide/svelte/icons/chart-column";
-    import Network from "@lucide/svelte/icons/network";
-    import Settings from "@lucide/svelte/icons/settings";
+    import ChartColumn from "phosphor-svelte/lib/ChartBarIcon";
+    import Network from "phosphor-svelte/lib/TreeStructureIcon";
+    import Settings from "phosphor-svelte/lib/GearSixIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
 

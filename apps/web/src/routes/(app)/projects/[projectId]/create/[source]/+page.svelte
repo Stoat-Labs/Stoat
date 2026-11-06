@@ -47,15 +47,15 @@
     } from "$lib/api/canvas-mode.svelte";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { cn } from "$lib/utils";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
     import ImageIcon from "$lib/components/shared/image-icon.svelte";
     import UnsavedChangesGuard from "$lib/components/shared/unsaved-changes-guard.svelte";
-    import Container from "@lucide/svelte/icons/container";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import KeyRound from "@lucide/svelte/icons/key-round";
-    import LayoutTemplate from "@lucide/svelte/icons/layout-template";
-    import X from "@lucide/svelte/icons/x";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import KeyRound from "phosphor-svelte/lib/KeyIcon";
+    import LayoutTemplate from "phosphor-svelte/lib/LayoutIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import {
         createMutation,
         createQuery,

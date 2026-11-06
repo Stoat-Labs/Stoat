@@ -2,10 +2,10 @@
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Frame, FramePanel } from "$lib/components/ui/frame";
     import { cn } from "$lib/utils";
-    import Box from "@lucide/svelte/icons/box";
-    import ChartLine from "@lucide/svelte/icons/chart-line";
-    import FileCog from "@lucide/svelte/icons/file-cog";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import ChartLine from "phosphor-svelte/lib/ChartLineIcon";
+    import FileCog from "$lib/components/shared/file-gear-icon.svelte";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import type { Node, NodeProps } from "@xyflow/svelte";
     import { getCanvasActions } from "../context";
     import {
@@ -43,18 +43,16 @@
         shared && service ? service.name : (saving ?? resource.name),
     );
 
-    // Shared with the trays, so a selected card is outlined as one stack.
-    const borderClass = $derived(
-        selected
-            ? "border-primary"
-            : "border-foreground/14 hover:border-foreground/24",
-    );
-
     const frameClass = $derived(
         cn(
             "border bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] transition-colors",
-            trays.length > 0 && "border-b-0 rounded-b-none",
-            borderClass,
+            // Selecting a card outlines only the card, so it closes its bottom edge over the trays. The padding replaces the missing border, so the content doesn't shift.
+            trays.length > 0 &&
+                !selected &&
+                "border-b-0 rounded-b-none pb-[5px]",
+            selected
+                ? "border-primary"
+                : "border-foreground/14 hover:border-foreground/24",
         ),
     );
 
@@ -96,7 +94,7 @@
                 <div class="flex min-w-0 items-center gap-3">
                     <FileCog
                         class="size-6 shrink-0"
-                        strokeWidth={1.75}
+                        weight="regular"
                         aria-hidden="true"
                     />
                     <p
@@ -118,7 +116,7 @@
                 <div class="flex min-w-0 items-center gap-3">
                     <HardDrive
                         class="size-6 shrink-0"
-                        strokeWidth={1.75}
+                        weight="regular"
                         aria-hidden="true"
                     />
                     <p
@@ -166,7 +164,7 @@
                     {:else}
                         <Box
                             class="size-6 shrink-0"
-                            strokeWidth={1.75}
+                            weight="regular"
                             aria-hidden="true"
                         />
                     {/if}
@@ -246,10 +244,7 @@
         {#each trays as { kind, name }, index (`${kind}:${name}`)}
             <button
                 type="button"
-                class={cn(
-                    "group/volume absolute inset-x-0 flex cursor-pointer flex-col rounded-2xl border bg-card dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))] text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                    borderClass,
-                )}
+                class="group/volume absolute inset-x-0 flex cursor-pointer flex-col rounded-2xl border border-foreground/14 bg-card text-left transition-colors hover:border-foreground/24 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:bg-[color:color-mix(in_oklab,var(--color-background)_85%,var(--color-neutral-900))]"
                 style:top="{CARD_HEIGHT -
                     VOLUME_OVERLAP +
                     index * (VOLUME_TRAY - VOLUME_OVERLAP)}px"

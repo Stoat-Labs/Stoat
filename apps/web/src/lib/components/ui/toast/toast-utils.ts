@@ -1,8 +1,8 @@
-import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
-import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
-import InfoIcon from "@lucide/svelte/icons/info";
-import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
-import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+import CircleAlertIcon from "phosphor-svelte/lib/WarningCircleIcon";
+import CircleCheckIcon from "phosphor-svelte/lib/CheckCircleIcon";
+import InfoIcon from "phosphor-svelte/lib/InfoIcon";
+import LoaderCircleIcon from "phosphor-svelte/lib/CircleNotchIcon";
+import TriangleAlertIcon from "phosphor-svelte/lib/WarningIcon";
 
 export const TOAST_ICONS = {
     error: CircleAlertIcon,

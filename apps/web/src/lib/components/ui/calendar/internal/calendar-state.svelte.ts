@@ -9,6 +9,7 @@ import { Context, watch } from "runed";
 import { DOMContext, type ReadableBox, type WritableBox, attachRef } from "svelte-toolbelt";
 import { onMount, untrack } from "svelte";
 import { boolToEmptyStrOrUndef, boolToStr, boolToStrTrueOrUndef } from "./attrs";
+import type { RangeCalendarRootState } from "../../range-calendar/internal/range-calendar-state.svelte";
 import { getAnnouncer } from "./announcer";
 import { createFormatter, type Formatter } from "./formatter";
 import {
@@ -65,13 +66,23 @@ export type CalendarRootStateOpts = {
     onDateSelect?: () => void;
 };
 
-export const CalendarRootContext = new Context<CalendarRootState>(
+export const CalendarRootContext = new Context<CalendarRootState | RangeCalendarRootState>(
     "Calendar.Root | RangeCalendar.Root",
 );
 
+/** The root for parts both calendars share. */
+function getCalendarRoot() {
+    // SAFETY: shared parts only read the members both root states have in common.
+    return CalendarRootContext.get() as CalendarRootState;
+}
+
 export class CalendarRootState {
     static create(opts: CalendarRootStateOpts) {
-        return CalendarRootContext.set(new CalendarRootState(opts));
+        const root = new CalendarRootState(opts);
+
+        CalendarRootContext.set(root);
+
+        return root;
     }
 
     opts: CalendarRootStateOpts;
@@ -479,21 +490,18 @@ export class CalendarRootState {
         return calendarAttrs.getAttr(part);
     };
 
-    props = $derived.by(
-        () =>
-            ({
-                ...getCalendarElementProps({
-                    fullCalendarLabel: this.fullCalendarLabel,
-                    id: this.opts.id.current,
-                    isInvalid: this.isInvalid,
-                    disabled: this.opts.disabled.current,
-                    readonly: this.opts.readonly.current,
-                }),
-                [this.getBitsAttr("root")]: "",
-                onkeydown: this.onkeydown,
-                ...this.attachment,
-            }) as Record<string, unknown>,
-    );
+    props = $derived.by(() => ({
+        ...getCalendarElementProps({
+            fullCalendarLabel: this.fullCalendarLabel,
+            id: this.opts.id.current,
+            isInvalid: this.isInvalid,
+            disabled: this.opts.disabled.current,
+            readonly: this.opts.readonly.current,
+        }),
+        [this.getBitsAttr("root")]: "",
+        onkeydown: this.onkeydown,
+        ...this.attachment,
+    }));
 }
 
 export type CalendarHeadingStateOpts = {
@@ -503,7 +511,7 @@ export type CalendarHeadingStateOpts = {
 
 export class CalendarHeadingState {
     static create(opts: CalendarHeadingStateOpts) {
-        return new CalendarHeadingState(opts, CalendarRootContext.get());
+        return new CalendarHeadingState(opts, getCalendarRoot());
     }
 
     opts: CalendarHeadingStateOpts;
@@ -539,7 +547,7 @@ export const CalendarCellContext = new Context<CalendarCellState>(
 
 export class CalendarCellState {
     static create(opts: CalendarCellStateOpts) {
-        return CalendarCellContext.set(new CalendarCellState(opts, CalendarRootContext.get()));
+        return CalendarCellContext.set(new CalendarCellState(opts, getCalendarRoot()));
     }
 
     opts: CalendarCellStateOpts;
@@ -684,7 +692,7 @@ export type CalendarNextButtonStateOpts = {
 
 export class CalendarNextButtonState {
     static create(opts: CalendarNextButtonStateOpts) {
-        return new CalendarNextButtonState(opts, CalendarRootContext.get());
+        return new CalendarNextButtonState(opts, getCalendarRoot());
     }
 
     opts: CalendarNextButtonStateOpts;
@@ -724,7 +732,7 @@ export type CalendarPrevButtonStateOpts = {
 
 export class CalendarPrevButtonState {
     static create(opts: CalendarPrevButtonStateOpts) {
-        return new CalendarPrevButtonState(opts, CalendarRootContext.get());
+        return new CalendarPrevButtonState(opts, getCalendarRoot());
     }
 
     opts: CalendarPrevButtonStateOpts;
@@ -766,7 +774,7 @@ function createSimplePartState(part: string) {
     return class {
         static create(opts: SimplePartStateOpts) {
             // biome-ignore lint/complexity/noThisInStatic: mirrors the class pattern used throughout this file
-            return new this(opts, CalendarRootContext.get());
+            return new this(opts, getCalendarRoot());
         }
 
         opts: SimplePartStateOpts;
@@ -811,7 +819,7 @@ export type CalendarMonthSelectStateOpts = {
 
 export class CalendarMonthSelectState {
     static create(opts: CalendarMonthSelectStateOpts) {
-        return new CalendarMonthSelectState(opts, CalendarRootContext.get());
+        return new CalendarMonthSelectState(opts, getCalendarRoot());
     }
 
     opts: CalendarMonthSelectStateOpts;
@@ -834,7 +842,7 @@ export class CalendarMonthSelectState {
             const date = this.root.opts.placeholder.current.set({ month });
 
             const label =
-                typeof monthFormat === "function"
+                monthFormat instanceof Function
                     ? monthFormat(month)
                     : this.root.formatter.custom(toDate(date), { month: monthFormat });
 
@@ -849,6 +857,7 @@ export class CalendarMonthSelectState {
 
     snippetProps = $derived.by(() => ({
         monthItems: this.monthItems,
+        // SAFETY: a custom `months` list must include the shown month; the default 1-12 always does.
         selectedMonthItem: this.monthItems.find((month) => month.value === this.currentMonth) as {
             value: number;
             label: string;
@@ -885,7 +894,7 @@ export type CalendarYearSelectStateOpts = {
 
 export class CalendarYearSelectState {
     static create(opts: CalendarYearSelectStateOpts) {
-        return new CalendarYearSelectState(opts, CalendarRootContext.get());
+        return new CalendarYearSelectState(opts, getCalendarRoot());
     }
 
     opts: CalendarYearSelectStateOpts;
@@ -914,7 +923,7 @@ export class CalendarYearSelectState {
             const date = this.root.opts.placeholder.current.set({ year });
 
             const label =
-                typeof yearFormat === "function"
+                yearFormat instanceof Function
                     ? yearFormat(year)
                     : this.root.formatter.custom(toDate(date), { year: yearFormat });
 
@@ -929,6 +938,7 @@ export class CalendarYearSelectState {
 
     snippetProps = $derived.by(() => ({
         yearItems: this.yearItems,
+        // SAFETY: a custom `years` list must include the shown year; defaultYears are built around it.
         selectedYearItem: this.yearItems.find((year) => year.value === this.currentYear) as {
             value: number;
             label: string;

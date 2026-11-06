@@ -165,7 +165,7 @@ The shared scroller defaults to a 22rem minimum and 32rem maximum height with in
 
 ### Icons
 
-Stoat keeps its existing Lucide Svelte icon family. UptimeKit also uses Font Awesome; copying that dependency is unnecessary for visual consistency. Use 16–18px icons within controls, a consistent stroke, and `aria-hidden="true"` for decorative icons. Icon-only actions need an accessible name.
+Stoat uses Phosphor through `phosphor-svelte`, imported per icon from `phosphor-svelte/lib/<Name>Icon`. The root layout sets bold weight, a 24px default size and `aria-hidden` for every icon, so an icon that carries meaning must set `aria-hidden={false}` and its own name. Active navigation items use the `fill` weight. Icons Phosphor doesn't ship live in `$lib/components/shared/*-icon.svelte`, drawn on its 256 grid with round 24-unit strokes. Use 16–18px icons within controls. Icon-only actions need an accessible name.
 
 ## Layout recipes
 
@@ -186,7 +186,7 @@ Use the shared `AppShell`, `SidebarProvider`, contextual sidebar, and `SidebarIn
 
 The desktop sidebar is 256px wide. The inset has 16px outer margin with no start margin, rounded-xl corners, and a subtle shadow; collapsed inset margins become 8px. Desktop navigation begins at `md`; mobile uses the existing 288px Sheet. Preserve the primitive's icon-collapse sizing instead of calculating it from the 48px icon-width token alone.
 
-Resource navigation follows this order: organization switcher; project-name group with Back to project; separator; resource-name group with Overview, Variables, Settings; separator; Resources list; footer account menu and version. Standard application navigation may retain Main and Configuration groups, but must not replace this resource context. Navigation items are 32px high with 14px text, 16px icons, and 8px padding/gaps. Active items use a muted sidebar-accent rounded background and medium text, not a colored indicator bar.
+Resource navigation follows this order: organization switcher; project-name group with Back to project; separator; resource-name group with Overview, Variables, Settings; separator; Resources list; footer account menu and version. Standard application navigation may retain Main and Configuration groups, but must not replace this resource context. Navigation items are 32px high with 14px text, 18px icons, and 8px padding/gaps. Active items use a muted sidebar-accent rounded background and medium text, not a colored indicator bar.
 
 The user trigger is a 48px sidebar button with a 32px rounded avatar (24px when collapsed), a two-line name/email block, and up/down chevrons. The popup repeats the identity, separates Settings from a destructive Log out action, aligns to the trigger's end, and uses its width with a 224px minimum and viewport-safe maximum. Allow the menu primitive to flip placement at viewport edges. Menu popups close on selection, on Escape, and on route change, since SPA navigation keeps the layout and its portals mounted. The header sidebar trigger stays disabled until hydration completes, matching other client-only actions. Keep errors visible in the footer and prevent duplicate logout requests. Do not duplicate the account controls in the page header.
 

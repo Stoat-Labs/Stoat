@@ -1,9 +1,9 @@
 <script lang="ts">
-    import Loader2 from "@lucide/svelte/icons/loader-2";
-    import Locate from "@lucide/svelte/icons/locate";
-    import Maximize from "@lucide/svelte/icons/maximize";
-    import Minus from "@lucide/svelte/icons/minus";
-    import Plus from "@lucide/svelte/icons/plus";
+    import Loader2 from "phosphor-svelte/lib/CircleNotchIcon";
+    import Locate from "phosphor-svelte/lib/CrosshairSimpleIcon";
+    import Maximize from "phosphor-svelte/lib/ArrowsOutIcon";
+    import Minus from "phosphor-svelte/lib/MinusIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import type * as MapLibreGL from "maplibre-gl";
     import { getContext } from "svelte";
     import type { HTMLAttributes } from "svelte/elements";

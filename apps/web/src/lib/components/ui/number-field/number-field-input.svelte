@@ -47,6 +47,7 @@
     }
 
     function handleChange(e: Event) {
+        // SAFETY: this handler is only attached to the <input> below.
         const input = e.currentTarget as HTMLInputElement;
         const v = (parse ?? parseFloat)(input.value);
 

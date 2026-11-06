@@ -45,7 +45,7 @@ type PinInputCellBaseProps = {
     cell: PinInputCell;
     /** @bindable */
     ref?: HTMLDivElement | null;
-    child?: Snippet<[{ props: Record<string, unknown> }]>;
+    child?: Snippet<[{ props: HTMLAttributes<HTMLDivElement> }]>;
     children?: Snippet;
 };
 

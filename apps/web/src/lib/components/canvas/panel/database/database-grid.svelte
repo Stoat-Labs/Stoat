@@ -11,10 +11,10 @@
 </script>
 
 <script lang="ts">
-    import ArrowDown from "@lucide/svelte/icons/arrow-down";
-    import ArrowUp from "@lucide/svelte/icons/arrow-up";
-    import ArrowUpDown from "@lucide/svelte/icons/arrow-up-down";
-    import KeyRound from "@lucide/svelte/icons/key-round";
+    import ArrowDown from "phosphor-svelte/lib/ArrowDownIcon";
+    import ArrowUp from "phosphor-svelte/lib/ArrowUpIcon";
+    import ArrowUpDown from "phosphor-svelte/lib/ArrowsDownUpIcon";
+    import KeyRound from "phosphor-svelte/lib/KeyIcon";
 
     let {
         columns,

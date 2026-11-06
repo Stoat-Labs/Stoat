@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { Button } from "$lib/components/ui/button";
     import {
         Frame,
         FrameHeader,
@@ -19,7 +20,6 @@
         TableHeader,
         TableRow,
     } from "$lib/components/ui/table";
-    import { Button } from "$lib/components/ui/button";
     import {
         bandwidth,
         bytes,
@@ -150,7 +150,7 @@
     }
 
     const levelColors = {
-        normal: "bg-success",
+        normal: "bg-primary",
         warning: "bg-warning",
         critical: "bg-destructive",
     };

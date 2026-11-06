@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
+    import ChevronsUpDown from "phosphor-svelte/lib/CaretUpDownIcon";
     import { Select as SelectPrimitive } from "@shardsui/svelte/select";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";

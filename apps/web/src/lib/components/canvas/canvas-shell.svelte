@@ -21,9 +21,9 @@
         SidebarTrigger,
     } from "$lib/components/ui/sidebar";
     import { setHeaderActions } from "$lib/components/sidebar/header-actions";
-    import Check from "@lucide/svelte/icons/check";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import FolderOpen from "@lucide/svelte/icons/folder-open";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import type { Snippet } from "svelte";
 

@@ -23,9 +23,9 @@
         MenuSeparator,
     } from "$lib/components/ui/menu";
     import { sidebarMenuButtonVariants } from "$lib/components/ui/sidebar/sidebar-menu-button.svelte";
-    import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
-    import UserIcon from "@lucide/svelte/icons/user";
-    import LogOut from "@lucide/svelte/icons/log-out";
+    import ChevronsUpDown from "phosphor-svelte/lib/CaretUpDownIcon";
+    import LogOut from "phosphor-svelte/lib/SignOutIcon";
+    import UserIcon from "phosphor-svelte/lib/UserIcon";
     import ThemeSwitcher from "$lib/components/theme-switcher.svelte";
     import { watch } from "runed";
 

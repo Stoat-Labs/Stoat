@@ -11,7 +11,7 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { ago } from "$lib/format";
     import { describeUserAgent } from "$lib/user-agent";
-    import Monitor from "@lucide/svelte/icons/monitor";
+    import Monitor from "phosphor-svelte/lib/MonitorIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import SettingsSection from "./settings-section.svelte";
 

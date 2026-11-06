@@ -23,9 +23,9 @@
     } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import Info from "@lucide/svelte/icons/info";
-    import Server from "@lucide/svelte/icons/server";
-    import ShieldCheck from "@lucide/svelte/icons/shield-check";
+    import Info from "phosphor-svelte/lib/InfoIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
+    import ShieldCheck from "phosphor-svelte/lib/ShieldCheckIcon";
     import {
         createMutation,
         createQuery,

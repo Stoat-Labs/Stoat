@@ -29,11 +29,11 @@
         TableHeader,
         TableRow,
     } from "$lib/components/ui/table";
-    import Activity from "@lucide/svelte/icons/activity";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Server from "@lucide/svelte/icons/server";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
+    import Activity from "phosphor-svelte/lib/PulseIcon";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
     import type { AppRouterClient } from "@stoat/api/routers/index";
 
     type Machine = NonNullable<
@@ -87,9 +87,6 @@
             </FrameDescription>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-            <Badge variant="secondary">
-                {machines.length}
-            </Badge>
             {#if onadd}
                 <Button size="sm" onclick={onadd}>
                     <Plus class="size-4" aria-hidden="true" />
@@ -110,7 +107,12 @@
         <Table variant="card">
             <TableHeader>
                 <TableRow>
-                    <TableHead>Machine</TableHead>
+                    <TableHead>
+                        <span>Machine</span>
+                        <Badge variant="secondary">
+                            {machines.length}
+                        </Badge>
+                    </TableHead>
                     <TableHead class="text-center">State</TableHead>
                     <TableHead class="text-center">
                         Versions
@@ -142,7 +144,7 @@
                                     </span>
                                     {#if machine.error}
                                         <span
-                                            class="mt-1 block text-xs break-words text-destructive-foreground"
+                                            class="mt-1 block text-xs wrap-break-word text-destructive-foreground"
                                         >
                                             {machine.error}
                                         </span>

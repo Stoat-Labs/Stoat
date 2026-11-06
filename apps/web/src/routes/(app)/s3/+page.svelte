@@ -25,9 +25,9 @@
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import Plus from "@lucide/svelte/icons/plus";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import { s3Providers } from "@stoat/s3/providers";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";

@@ -1,10 +1,10 @@
-import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
-import KeyRound from "@lucide/svelte/icons/key-round";
-import Lock from "@lucide/svelte/icons/lock";
-import Settings from "@lucide/svelte/icons/settings-2";
-import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-import User from "@lucide/svelte/icons/user";
-import Users from "@lucide/svelte/icons/users";
+import SlidersHorizontal from "phosphor-svelte/lib/SlidersHorizontalIcon";
+import KeyRound from "phosphor-svelte/lib/KeyIcon";
+import Lock from "phosphor-svelte/lib/LockIcon";
+import Settings from "phosphor-svelte/lib/GearSixIcon";
+import TriangleAlert from "phosphor-svelte/lib/WarningIcon";
+import User from "phosphor-svelte/lib/UserIcon";
+import Users from "phosphor-svelte/lib/UsersIcon";
 import { parseAsStringLiteral } from "nuqs-svelte";
 import type { Component } from "svelte";
 

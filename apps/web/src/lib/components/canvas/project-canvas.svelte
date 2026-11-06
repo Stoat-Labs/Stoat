@@ -9,8 +9,8 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
-    import LayoutList from "@lucide/svelte/icons/layout-list";
-    import Plus from "@lucide/svelte/icons/plus";
+    import LayoutList from "phosphor-svelte/lib/ListDashesIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import {
         ConnectionMode,
         MarkerType,

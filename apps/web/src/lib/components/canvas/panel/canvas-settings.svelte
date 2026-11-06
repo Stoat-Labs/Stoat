@@ -9,12 +9,12 @@
     import { Kbd } from "$lib/components/ui/kbd";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
-    import Code from "@lucide/svelte/icons/code";
-    import Flame from "@lucide/svelte/icons/flame";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import Network from "@lucide/svelte/icons/network";
-    import Rocket from "@lucide/svelte/icons/rocket";
-    import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+    import Code from "phosphor-svelte/lib/CodeIcon";
+    import Flame from "phosphor-svelte/lib/FireIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import Network from "phosphor-svelte/lib/TreeStructureIcon";
+    import Rocket from "phosphor-svelte/lib/RocketIcon";
+    import SlidersHorizontal from "phosphor-svelte/lib/SlidersHorizontalIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import type { Component } from "svelte";

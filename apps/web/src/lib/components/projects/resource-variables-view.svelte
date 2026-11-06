@@ -23,11 +23,11 @@
     } from "$lib/components/ui/empty";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Boxes from "@lucide/svelte/icons/boxes";
-    import Container from "@lucide/svelte/icons/container";
-    import Eye from "@lucide/svelte/icons/eye";
-    import EyeOff from "@lucide/svelte/icons/eye-off";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import Eye from "phosphor-svelte/lib/EyeIcon";
+    import EyeOff from "phosphor-svelte/lib/EyeSlashIcon";
     import {
         createMutation,
         createQuery,

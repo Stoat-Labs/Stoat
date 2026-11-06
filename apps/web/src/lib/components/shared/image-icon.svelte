@@ -1,6 +1,6 @@
 <script lang="ts">
     import { imageIcon } from "$lib/resources/image-icons";
-    import Box from "@lucide/svelte/icons/box";
+    import Box from "phosphor-svelte/lib/CubeIcon";
 
     let { image }: { image: string | null | undefined } = $props();
 

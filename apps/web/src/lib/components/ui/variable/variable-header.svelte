@@ -2,7 +2,7 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
-    import Search from "@lucide/svelte/icons/search";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import type { Snippet } from "svelte";
 
     let {

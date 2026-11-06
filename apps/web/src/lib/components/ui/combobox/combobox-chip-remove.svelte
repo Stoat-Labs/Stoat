@@ -1,5 +1,5 @@
 <script lang="ts">
-    import X from "@lucide/svelte/icons/x";
+    import X from "phosphor-svelte/lib/XIcon";
     import { Combobox as ComboboxPrimitive } from "@shardsui/svelte/combobox";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";

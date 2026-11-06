@@ -17,7 +17,7 @@
     import { Field, FieldError } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
-    import Boxes from "@lucide/svelte/icons/boxes";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
     import { watch } from "runed";
 
     let {

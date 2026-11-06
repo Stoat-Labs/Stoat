@@ -23,7 +23,7 @@
     import { Label } from "$lib/components/ui/label";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { isClusterDomain } from "@stoat/workflows/ingress";
-    import Info from "@lucide/svelte/icons/info";
+    import Info from "phosphor-svelte/lib/InfoIcon";
     import {
         createMutation,
         createQuery,

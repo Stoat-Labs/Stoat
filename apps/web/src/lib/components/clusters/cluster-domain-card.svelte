@@ -14,7 +14,7 @@
     } from "$lib/components/ui/card";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
-    import CircleAlert from "@lucide/svelte/icons/circle-alert";
+    import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
     import { createQuery } from "@tanstack/svelte-query";
 
     let {

@@ -18,7 +18,7 @@
         projectHref,
     } from "$lib/api/canvas-mode.svelte";
     import { formatDate } from "$lib/format";
-    import CircleAlert from "@lucide/svelte/icons/circle-alert";
+    import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
     import type { AppRouterClient } from "@stoat/api/routers/index";
 
     type Cluster = NonNullable<

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import Boxes from "@lucide/svelte/icons/boxes";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { orpc } from "$lib/api/orpc";
     import { Button } from "$lib/components/ui/button";

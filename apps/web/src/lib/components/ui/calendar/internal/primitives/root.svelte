@@ -100,11 +100,12 @@
         ),
         initialFocus: boxWith(() => initialFocus),
         maxDays: boxWith(() => maxDays),
+        // SAFETY: handleDefaultPlaceholder above keeps placeholder set.
         placeholder: boxWith(
             () => placeholder as DateValue,
             (v) => {
                 placeholder = v;
-                onPlaceholderChange(v as DateValue);
+                onPlaceholderChange(v);
             },
         ),
         preventDeselect: boxWith(() => preventDeselect),
@@ -112,11 +113,12 @@
             () => value,
             (v) => {
                 value = v;
+                // SAFETY: `v` has the type this root's `type` picks, and so does onValueChange; TS can't correlate them.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- discriminated single/multiple onValueChange signature can't be narrowed here
                 onValueChange(v as any);
             },
         ),
-        type: boxWith(() => type as "single" | "multiple"),
+        type: boxWith(() => type),
         monthFormat: boxWith(() => monthFormat),
         yearFormat: boxWith(() => yearFormat),
         defaultPlaceholder,

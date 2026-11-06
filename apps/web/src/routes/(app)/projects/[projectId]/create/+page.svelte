@@ -31,12 +31,12 @@
         SelectValue,
     } from "$lib/components/ui/select";
     import { orpc } from "$lib/api/orpc";
-    import Box from "@lucide/svelte/icons/box";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import Container from "@lucide/svelte/icons/container";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
-    import Search from "@lucide/svelte/icons/search";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import type { AppRouterClient } from "@stoat/api/routers/index";
     import { createQuery } from "@tanstack/svelte-query";
     import type { Component } from "svelte";

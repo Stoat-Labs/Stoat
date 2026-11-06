@@ -157,12 +157,14 @@
             | undefined,
     ): NonNullable<MapLibreGL.LineLayerSpecification["paint"]> {
         if (!hover) return base;
-        const merged: Record<string, unknown> = { ...base };
+        const merged = new Map<string, unknown>(Object.entries(base));
 
         for (const [key, hoverValue] of Object.entries(hover)) {
             if (hoverValue === undefined) continue;
-            const baseValue = merged[key];
-            merged[key] =
+            const baseValue = merged.get(key);
+
+            merged.set(
+                key,
                 baseValue === undefined
                     ? hoverValue
                     : [
@@ -174,10 +176,12 @@
                           ],
                           hoverValue,
                           baseValue,
-                      ];
+                      ],
+            );
         }
 
-        return merged as NonNullable<
+        // SAFETY: same paint keys as the input; a `case` expression is valid for any data-driven value.
+        return Object.fromEntries(merged) as NonNullable<
             MapLibreGL.LineLayerSpecification["paint"]
         >;
     }
@@ -190,7 +194,9 @@
             const { from, to, id: arcId, ...properties } = arc;
 
             return {
-                id: typeof arcId === "number" ? arcId : undefined,
+                id: Number.isFinite(arcId)
+                    ? Number(arcId)
+                    : undefined,
                 type: "Feature" as const,
                 properties: { ...properties, _arc_id: String(arcId) },
                 geometry: {
@@ -216,12 +222,11 @@
         const w =
             paint?.["line-width"] ?? DEFAULT_PAINT["line-width"];
 
-        const base = typeof w === "number" ? w : ARC_HIT_MIN_WIDTH;
+        const base = Number.isFinite(w)
+            ? Number(w)
+            : ARC_HIT_MIN_WIDTH;
 
-        return Math.max(
-            (base as number) + ARC_HIT_PADDING,
-            ARC_HIT_MIN_WIDTH,
-        );
+        return Math.max(base + ARC_HIT_PADDING, ARC_HIT_MIN_WIDTH);
     });
 
     let hoveredArcId: string | null = null;
@@ -317,9 +322,8 @@
 
         if (!map || !isLoaded) return;
 
-        const source = map.getSource(sourceId) as
-            | MapLibreGL.GeoJSONSource
-            | undefined;
+        const source =
+            map.getSource<MapLibreGL.GeoJSONSource>(sourceId);
 
         if (source) source.setData(geoJSON);
     });
@@ -333,6 +337,7 @@
 
         if (map.getLayer(layerId)) {
             for (const [key, value] of Object.entries(mergedPaint)) {
+                // SAFETY: the key comes from this layer's own paint object.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 map.setPaintProperty(layerId, key as any, value);
             }

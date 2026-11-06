@@ -33,7 +33,7 @@
         s3DraftComplete,
         type S3ConnectionDraft,
     } from "$lib/s3";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
     import { s3Providers } from "@stoat/s3/providers";
     import {
         createMutation,

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
-    import Inbox from "@lucide/svelte/icons/inbox";
+    import Inbox from "phosphor-svelte/lib/TrayIcon";
     import {
         Empty,
         EmptyContent,

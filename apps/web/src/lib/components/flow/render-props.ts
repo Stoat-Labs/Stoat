@@ -6,6 +6,7 @@ export function withElementAttachment<T extends HTMLElement, P extends Record<st
 ) {
     const key = createAttachmentKey();
 
+    // SAFETY: only adds the attachment's symbol key to P, which consumers spread onto an element.
     return {
         ...props,
         [key]: (element: T) => {

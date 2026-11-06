@@ -29,13 +29,13 @@
     } from "$lib/components/ui/menu";
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
-    import Link from "@lucide/svelte/icons/link";
-    import Mail from "@lucide/svelte/icons/mail";
-    import Plus from "@lucide/svelte/icons/plus";
-    import User from "@lucide/svelte/icons/user";
-    import UserMinus from "@lucide/svelte/icons/user-minus";
-    import X from "@lucide/svelte/icons/x";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
+    import Link from "phosphor-svelte/lib/LinkIcon";
+    import Mail from "phosphor-svelte/lib/EnvelopeIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import User from "phosphor-svelte/lib/UserIcon";
+    import UserMinus from "phosphor-svelte/lib/UserMinusIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         Dialog,

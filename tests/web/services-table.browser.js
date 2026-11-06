@@ -23,7 +23,7 @@ function checkServicesTableWidth() {
             throw new Error("Sortable and non-sortable headings must use the same text size");
     }
 
-    const minimumWidth = 82 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const minimumWidth = 67 * parseFloat(getComputedStyle(document.documentElement).fontSize);
 
     if (Math.abs(bounds.width - Math.max(viewport.clientWidth, minimumWidth)) > 2)
         throw new Error("Table must fill its viewport or scroll at its minimum width");

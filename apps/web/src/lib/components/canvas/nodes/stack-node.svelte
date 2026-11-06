@@ -9,9 +9,9 @@
         MenuTrigger,
     } from "$lib/components/ui/menu";
     import { cn } from "$lib/utils";
-    import Box from "@lucide/svelte/icons/box";
-    import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
-    import Group from "@lucide/svelte/icons/group";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import EllipsisVertical from "phosphor-svelte/lib/DotsThreeVerticalIcon";
+    import Group from "phosphor-svelte/lib/BoundingBoxIcon";
     import type { Node, NodeProps } from "@xyflow/svelte";
     import { orpc } from "$lib/api/orpc";
     import { containerInfo } from "$lib/resources/container-info";

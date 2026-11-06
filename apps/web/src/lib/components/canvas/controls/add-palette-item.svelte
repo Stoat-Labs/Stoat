@@ -1,7 +1,7 @@
 <script lang="ts">
     import ProviderIcon from "$lib/components/connections/provider-icon.svelte";
     import { CommandItem } from "$lib/components/ui/command";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
     import type { Entry } from "./add-palette-entries";
 
     let {

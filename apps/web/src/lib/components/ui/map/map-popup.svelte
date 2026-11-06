@@ -1,5 +1,5 @@
 <script lang="ts">
-    import X from "@lucide/svelte/icons/x";
+    import X from "phosphor-svelte/lib/XIcon";
     import type { PopupOptions } from "maplibre-gl";
     import * as MapLibreGL from "maplibre-gl";
     import { getContext } from "svelte";
@@ -63,10 +63,8 @@
 
         // Validate coordinates
         if (
-            typeof longitude !== "number" ||
-            typeof latitude !== "number" ||
-            Number.isNaN(longitude) ||
-            Number.isNaN(latitude)
+            !Number.isFinite(longitude) ||
+            !Number.isFinite(latitude)
         ) {
             return;
         }
@@ -141,10 +139,8 @@
         if (!popup) return;
 
         if (
-            typeof longitude !== "number" ||
-            typeof latitude !== "number" ||
-            Number.isNaN(longitude) ||
-            Number.isNaN(latitude)
+            !Number.isFinite(longitude) ||
+            !Number.isFinite(latitude)
         ) {
             return;
         }

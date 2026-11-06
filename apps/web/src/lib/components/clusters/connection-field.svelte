@@ -7,8 +7,8 @@
         InputGroupInput,
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
 
     let {
         label,

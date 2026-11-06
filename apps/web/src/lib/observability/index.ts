@@ -11,6 +11,7 @@ import {
     type ObservabilityService,
     type PackedMetricSeries,
 } from "@stoat/api/observability";
+import { ago } from "../format";
 
 export type ClusterData = ClusterObservability & {
     id: string;
@@ -106,6 +107,8 @@ type Usage = {
     cpu: number | null;
     /** Cores; null when any container is unlimited. */
     cpuLimit: number | null;
+    /** Of the CPU limit, or of machine cores when unlimited. */
+    cpuPercent: number | null;
     memory: number | null;
     /** Bytes; null when any container is unlimited. */
     memoryLimit: number | null;
@@ -628,7 +631,10 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                 const value = (name: MetricName) =>
                     at(metric(cluster, name, item.machineId, service.id, item.name));
 
+                const cpu = value("serviceCpu");
                 const memory = value("serviceMemory");
+
+                const coreCapacity = item.cpuLimit ?? at(metric(cluster, "cores", item.machineId));
 
                 const capacity =
                     item.memoryLimit ?? at(metric(cluster, "memoryTotal", item.machineId));
@@ -637,7 +643,9 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                     {
                         ...item,
                         key: `${cluster.id}:${service.id}:${item.machineId}:${item.id || item.name}`,
-                        cpu: value("serviceCpu"),
+                        cpu,
+                        // The CPU metric counts 100 per busy core, so this is already a percentage.
+                        cpuPercent: cpu !== null && coreCapacity ? cpu / coreCapacity : null,
                         memory,
                         memoryPercent:
                             memory !== null && capacity ? (100 * memory) / capacity : null,
@@ -654,8 +662,19 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
             const value = (name: MetricName) =>
                 at(metric(cluster, name, scope || undefined, service.id));
 
+            const cpu = value("serviceCpu");
+            const cpuLimit = limit(containers.map((item) => item.cpuLimit));
             const memory = value("serviceMemory");
             const memoryLimit = limit(containers.map((item) => item.memoryLimit));
+
+            // Containers sharing a machine share its capacity, so each machine counts once.
+            const machineIds = [...new Set(containers.map((item) => item.machineId))];
+
+            const machineTotal = (name: MachineMetricName) =>
+                limit(machineIds.map((id) => at(metric(cluster, name, id))));
+
+            const coreCapacity = cpuLimit ?? machineTotal("cores");
+            const memoryCapacity = memoryLimit ?? machineTotal("memoryTotal");
 
             return [
                 {
@@ -671,12 +690,13 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
                     running: containers.filter((item) => item.running).length,
                     unhealthy: containers.filter((item) => item.health === "unhealthy").length,
                     machines: [...new Set(containers.map((item) => item.machineName))],
-                    cpu: value("serviceCpu"),
-                    cpuLimit: limit(containers.map((item) => item.cpuLimit)),
+                    cpu,
+                    cpuLimit,
+                    cpuPercent: cpu !== null && coreCapacity ? cpu / coreCapacity : null,
                     memory,
                     memoryLimit,
                     memoryPercent:
-                        memory !== null && memoryLimit ? (100 * memory) / memoryLimit : null,
+                        memory !== null && memoryCapacity ? (100 * memory) / memoryCapacity : null,
                     networkIn: value("serviceNetworkIn"),
                     networkOut: value("serviceNetworkOut"),
                     restarts: containers.reduce((sum, item) => sum + item.restarts, 0),
@@ -685,4 +705,72 @@ export function serviceRows(clusters: ClusterData[], machineKey = ""): ServiceRo
             ];
         }),
     );
+}
+
+export type Health = { level: "ok" | "warning" | "error"; reason: string };
+
+const recentRestartMs = 60 * 60 * 1000;
+
+const plural = (amount: number, noun: string) => `${amount} ${noun}${amount === 1 ? "" : "s"}`;
+
+/** Restart counts never reset, so only a container that restarted within the hour is a live problem. */
+function restartedRecently(container: ContainerRow, now: number) {
+    if (!container.restarts) return false;
+
+    if (container.state === "restarting") return true;
+
+    return (
+        container.startedAt !== null &&
+        now - new Date(container.startedAt).getTime() < recentRestartMs
+    );
+}
+
+export function containerHealth(container: ContainerRow, now: number): Health {
+    const unhealthy = container.health === "unhealthy";
+
+    const state =
+        container.running && container.startedAt
+            ? `${container.state} · started ${ago(container.startedAt, now)}`
+            : container.state;
+
+    const reason = [
+        state,
+        container.oomKilled ? "OOM killed" : "",
+        unhealthy ? "Unhealthy" : "",
+        container.restarts ? plural(container.restarts, "restart") : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
+
+    if (unhealthy || container.oomKilled) return { level: "error", reason };
+
+    return {
+        level: !container.running || restartedRecently(container, now) ? "warning" : "ok",
+        reason,
+    };
+}
+
+export function serviceHealth(service: ServiceRow, now: number): Health {
+    const total = service.containers.length;
+
+    const restarts = service.containers.reduce(
+        (sum, item) => (restartedRecently(item, now) ? sum + item.restarts : sum),
+        0,
+    );
+
+    const reason = [
+        total ? "" : "No containers",
+        service.running < total ? `${service.running}/${total} running` : "",
+        service.oomKilled ? `${service.oomKilled} OOM killed` : "",
+        service.unhealthy ? `${service.unhealthy} unhealthy` : "",
+        restarts ? `Restarted recently · ${plural(restarts, "restart")}` : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
+
+    if (service.oomKilled || service.unhealthy) return { level: "error", reason };
+
+    return reason
+        ? { level: "warning", reason }
+        : { level: "ok", reason: `${service.running}/${total} running` };
 }

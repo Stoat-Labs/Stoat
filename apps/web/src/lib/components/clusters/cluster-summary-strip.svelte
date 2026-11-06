@@ -1,8 +1,8 @@
 <script lang="ts">
-    import CircleAlert from "@lucide/svelte/icons/circle-alert";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import Network from "@lucide/svelte/icons/network";
-    import Server from "@lucide/svelte/icons/server";
+    import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import Network from "phosphor-svelte/lib/TreeStructureIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
 
     let {
         machineCount,

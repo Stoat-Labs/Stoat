@@ -1,4 +1,5 @@
 <script lang="ts">
+    import CheckIcon from "phosphor-svelte/lib/CheckIcon";
     import { Menu as MenuPrimitive } from "@shardsui/svelte/menu";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";
@@ -55,22 +56,7 @@
                 class="-ms-0.5 col-start-1 flex items-center justify-center"
             >
                 {#if checked}
-                    <svg
-                        aria-hidden="true"
-                        fill="none"
-                        height="24"
-                        stroke="currentColor"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        viewBox="0 0 24 24"
-                        width="24"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M5.252 12.7 10.2 18.63 18.748 5.37"
-                        />
-                    </svg>
+                    <CheckIcon aria-hidden="true" />
                 {/if}
             </span>
             <span class="col-start-2">{@render userContent?.()}</span>

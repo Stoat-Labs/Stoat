@@ -15,7 +15,7 @@
         SaturationArea,
         SaturationInput,
     } from "@hueycolor/svelte";
-    import PipetteIcon from "@lucide/svelte/icons/pipette";
+    import PipetteIcon from "phosphor-svelte/lib/EyedropperIcon";
     import {
         Popover,
         PopoverPopup,
