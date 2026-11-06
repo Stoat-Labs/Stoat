@@ -127,6 +127,7 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
             }),
             admin(),
             // Org-owned keys, sent as `x-api-key`. Only org owners can manage them by default.
+            // SAFETY: ApiKeyPlugin extends apiKey's return type without adding members.
             apiKey({
                 references: "organization",
                 defaultPrefix: "stoat_",

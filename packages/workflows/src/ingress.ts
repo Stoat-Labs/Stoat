@@ -566,7 +566,7 @@ export type CaddyRoute = {
 const UPSTREAMS_PATTERN =
     /\{\{\s*upstreams(?:\s+"(?<service>[^"]+)")?(?:\s+(?<port>\d+))?\s*\}\}/gu;
 
-function parseSiteAddress(address: string): { host: string; protocol: HttpProtocol } {
+function parseSiteAddress(address: string) {
     let host = address;
     let protocol: HttpProtocol = "https";
 
@@ -683,11 +683,15 @@ function parseUpstreamRoutes(body: string, serviceName: string): UpstreamRoute[]
         for (const match of line.matchAll(UPSTREAMS_PATTERN)) {
             const port = match.groups?.port;
 
-            routes.push({
+            const route: UpstreamRoute = {
                 upstreamService: match.groups?.service ?? serviceName,
-                ...(port === undefined ? {} : { containerPort: Number(port) }),
-                ...(currentPath === undefined ? {} : { path: currentPath }),
-            });
+            };
+
+            if (port !== undefined) route.containerPort = Number(port);
+
+            if (currentPath !== undefined) route.path = currentPath;
+
+            routes.push(route);
         }
 
         const opens = line.split("{").length - 1 - (line.split("{{").length - 1) * 2;
@@ -738,16 +742,20 @@ export function parseCaddyRoutes(caddyfile: string, serviceName: string): CaddyR
                 if (seen.has(key)) continue;
 
                 seen.add(key);
-                routes.push({
+
+                const caddyRoute: CaddyRoute = {
                     host,
                     protocol,
                     serviceName,
                     upstreamService: route.upstreamService,
-                    ...(route.containerPort === undefined
-                        ? {}
-                        : { containerPort: route.containerPort }),
-                    ...(route.path === undefined ? {} : { path: route.path }),
-                });
+                };
+
+                if (route.containerPort !== undefined)
+                    caddyRoute.containerPort = route.containerPort;
+
+                if (route.path !== undefined) caddyRoute.path = route.path;
+
+                routes.push(caddyRoute);
             }
         }
     }
@@ -755,10 +763,19 @@ export function parseCaddyRoutes(caddyfile: string, serviceName: string): CaddyR
     return routes;
 }
 
-type RawServices = Record<string, unknown>;
+/** What `YAML.parse` yields for a Compose file. */
+type ComposeValue = string | number | boolean | null | ComposeValue[] | ComposeRecord;
 
-function readServices(composeText: string): RawServices {
-    let parsed: unknown;
+interface ComposeRecord {
+    [key: string]: ComposeValue;
+}
+
+function isComposeRecord(value: ComposeValue | undefined): value is ComposeRecord {
+    return Predicate.isObject(value);
+}
+
+function readServices(composeText: string): ComposeRecord {
+    let parsed: ComposeValue;
 
     try {
         parsed = YAML.parse(composeText, { merge: true });
@@ -766,14 +783,10 @@ function readServices(composeText: string): RawServices {
         throw new Error("Invalid compose YAML");
     }
 
-    // SAFETY: narrowed with Predicate guards immediately below before field reads.
-    const root = parsed as Record<string, unknown> | null;
-
-    if (root === null || !Predicate.isObject(root) || !Predicate.isObject(root.services))
+    if (!isComposeRecord(parsed) || !isComposeRecord(parsed.services))
         throw new Error('Compose must contain a "services" map');
 
-    // SAFETY: root.services passed the isObject guard above.
-    return root.services as RawServices;
+    return parsed.services;
 }
 
 /**
@@ -803,7 +816,7 @@ export function parseIngressComposeWith(composeText: string, lookup: VarLookup):
 
         if (service === null || service === undefined) continue;
 
-        if (!Predicate.isObject(service)) {
+        if (!isComposeRecord(service)) {
             issues.push({
                 service: name,
                 message: `Service "${name}" has an invalid configuration.`,
@@ -812,9 +825,7 @@ export function parseIngressComposeWith(composeText: string, lookup: VarLookup):
             continue;
         }
 
-        // SAFETY: narrowed with the isObject guard above.
-        const record = service as Record<string, unknown>;
-        const ports = record["x-ports"];
+        const ports = service["x-ports"];
 
         if (ports !== undefined) {
             if (!Array.isArray(ports)) {
@@ -849,7 +860,7 @@ export function parseIngressComposeWith(composeText: string, lookup: VarLookup):
             }
         }
 
-        const caddy = record["x-caddy"];
+        const caddy = service["x-caddy"];
 
         if (caddy !== undefined) {
             if (!Predicate.isString(caddy)) {

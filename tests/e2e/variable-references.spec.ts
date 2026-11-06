@@ -22,8 +22,6 @@ const editor = (page: Page) => page.locator(".cm-content");
 
 const chips = (page: Page) => editor(page).locator(".cm-reference-name");
 
-const search = (page: Page) => popup(page).getByRole("combobox");
-
 /** Opens a resource's Variables page once its reference targets have loaded. */
 async function openVariables(
     page: Page,

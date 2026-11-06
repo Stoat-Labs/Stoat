@@ -180,6 +180,7 @@ exit $status`;
  * command tags, so output after the last footer is only from statements that return no rows.
  */
 export function parsePsqlOutput(stdout: string) {
+    // eslint-disable-next-line no-control-regex -- 0x1e is the field separator we give psql.
     const footers = [...stdout.matchAll(/\x1e\((\d+) rows?\)\n/gu)];
     const last = footers.at(-1);
 
