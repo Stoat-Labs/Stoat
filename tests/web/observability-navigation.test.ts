@@ -44,6 +44,9 @@ it("partitions the existing metrics into focused pages without dropping any", ()
     expect([...new Set(metrics)].toSorted()).toEqual(expected.toSorted());
     expect(observabilityMetrics("dns")).toEqual(["dnsQueries", "dnsErrors", "dnsAvailability"]);
     expect(observabilityMetrics("health")).toEqual(["dnsAvailability"]);
-    expect(observabilityMetrics("services").every((name) => name.startsWith("service"))).toBe(true);
+    expect(observabilityMetrics("services").filter((name) => !name.startsWith("service"))).toEqual([
+        "cores",
+        "memoryTotal",
+    ]);
     expect(observabilityMetrics("overview").some((name) => name.startsWith("service"))).toBe(false);
 });

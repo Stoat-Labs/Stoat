@@ -1,4 +1,5 @@
 <script lang="ts">
+    import CheckIcon from "phosphor-svelte/lib/CheckIcon";
     import { Checkbox as CheckboxPrimitive } from "@shardsui/svelte/checkbox";
     import type { ComponentProps, Snippet } from "svelte";
     import { cn } from "$lib/utils";
@@ -44,20 +45,7 @@
         </CheckboxPrimitive.Indicator>
     {:else}
         <CheckboxPrimitive.Indicator class="col-start-1">
-            <svg
-                aria-hidden="true"
-                fill="none"
-                height="24"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                viewBox="0 0 24 24"
-                width="24"
-                xmlns="http://www.w3.org/2000/svg"
-            >
-                <path d="M5.252 12.7 10.2 18.63 18.748 5.37" />
-            </svg>
+            <CheckIcon aria-hidden="true" />
         </CheckboxPrimitive.Indicator>
         <span class="col-start-2">{@render children?.()}</span>
     {/if}

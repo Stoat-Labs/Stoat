@@ -1,7 +1,7 @@
 <!-- eslint-disable-next-line @typescript-eslint/no-explicit-any -->
 <script lang="ts" generics="T = any">
     import type { ItemInstance } from "@headless-tree/core";
-    import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+    import ChevronDownIcon from "phosphor-svelte/lib/CaretDownIcon";
     import type { HTMLAttributes } from "svelte/elements";
     import { cn } from "$lib/utils";
     import { useTreeContext } from "./tree-context.svelte";

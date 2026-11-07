@@ -21,8 +21,8 @@
         SidebarMenuItem,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Plus from "@lucide/svelte/icons/plus";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import { watch } from "runed";
     import { onMount } from "svelte";

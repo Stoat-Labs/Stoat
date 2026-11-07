@@ -6,9 +6,9 @@
         allExited,
         containerInfo,
     } from "$lib/resources/container-info";
-    import CircleCheck from "@lucide/svelte/icons/circle-check";
-    import CircleX from "@lucide/svelte/icons/circle-x";
-    import LoaderCircle from "@lucide/svelte/icons/loader-circle";
+    import CircleCheck from "phosphor-svelte/lib/CheckCircleIcon";
+    import CircleX from "phosphor-svelte/lib/XCircleIcon";
+    import LoaderCircle from "phosphor-svelte/lib/CircleNotchIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { getCanvasClock, getCanvasCluster } from "../context";
     import type { CanvasResource } from "../graph";

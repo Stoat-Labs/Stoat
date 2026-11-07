@@ -13,10 +13,10 @@
         LogStream,
     } from "$lib/resources/log-stream.svelte";
     import { selectedLogServices } from "$lib/resources/logs";
-    import Download from "@lucide/svelte/icons/download";
-    import ExternalLink from "@lucide/svelte/icons/external-link";
-    import Search from "@lucide/svelte/icons/search";
-    import X from "@lucide/svelte/icons/x";
+    import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
+    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import {
         createInfiniteQuery,
         createQuery,

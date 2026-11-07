@@ -21,7 +21,7 @@ const config: ClusterInitializationConfiguration = {
 // Workers only roll out a higher MONITORING_VERSION, so a template edit without a bump would never
 // reach existing clusters. Changed the template? Bump MONITORING_VERSION and pin the new hash here.
 it("pins the monitoring template to its MONITORING_VERSION", () => {
-    const versions: Record<number, string> = {
+    const versions = {
         1: "17e27cf7c8be042d2b70b2ee270ca80b25ef25d3f07a3b427d8e49b48ae8d4f2",
         2: "d68af3e5a5ba727e2d9db16145950964cc3997af57f3193c4c28a1796aaf0454",
     };

@@ -8,10 +8,7 @@ import {
 import { onMount, untrack } from "svelte";
 import { Context, watch } from "runed";
 import { DOMContext, type ReadableBox, type WritableBox, attachRef } from "svelte-toolbelt";
-import {
-    CalendarRootContext,
-    type CalendarRootState,
-} from "$lib/components/ui/calendar/internal/calendar-state.svelte";
+import { CalendarRootContext } from "$lib/components/ui/calendar/internal/calendar-state.svelte";
 import { boolToEmptyStrOrUndef, boolToStr } from "$lib/components/ui/calendar/internal/attrs";
 import { getAnnouncer } from "$lib/components/ui/calendar/internal/announcer";
 import { createFormatter, type Formatter } from "$lib/components/ui/calendar/internal/formatter";
@@ -79,9 +76,11 @@ const RangeCalendarCellContext = new Context<RangeCalendarCellState>("RangeCalen
 
 export class RangeCalendarRootState {
     static create(opts: RangeCalendarRootStateOpts) {
-        return CalendarRootContext.set(
-            new RangeCalendarRootState(opts) as unknown as CalendarRootState,
-        );
+        const root = new RangeCalendarRootState(opts);
+
+        CalendarRootContext.set(root);
+
+        return root;
     }
 
     opts: RangeCalendarRootStateOpts;
@@ -611,21 +610,18 @@ export class RangeCalendarRootState {
 
     snippetProps = $derived.by(() => ({ months: this.months, weekdays: this.weekdays }));
 
-    props = $derived.by(
-        () =>
-            ({
-                ...getCalendarElementProps({
-                    fullCalendarLabel: this.fullCalendarLabel,
-                    id: this.opts.id.current,
-                    isInvalid: this.isInvalid,
-                    disabled: this.opts.disabled.current,
-                    readonly: this.opts.readonly.current,
-                }),
-                [this.getBitsAttr("root")]: "",
-                onkeydown: this.onkeydown,
-                ...this.attachment,
-            }) as Record<string, unknown>,
-    );
+    props = $derived.by(() => ({
+        ...getCalendarElementProps({
+            fullCalendarLabel: this.fullCalendarLabel,
+            id: this.opts.id.current,
+            isInvalid: this.isInvalid,
+            disabled: this.opts.disabled.current,
+            readonly: this.opts.readonly.current,
+        }),
+        [this.getBitsAttr("root")]: "",
+        onkeydown: this.onkeydown,
+        ...this.attachment,
+    }));
 
     #hasDisabledDatesInRange(start: DateValue, end: DateValue): boolean {
         for (
@@ -652,7 +648,8 @@ export class RangeCalendarCellState {
         return RangeCalendarCellContext.set(
             new RangeCalendarCellState(
                 opts,
-                CalendarRootContext.get() as unknown as RangeCalendarRootState,
+                // SAFETY: range cells only render inside a range calendar's root.
+                CalendarRootContext.get() as RangeCalendarRootState,
             ),
         );
     }

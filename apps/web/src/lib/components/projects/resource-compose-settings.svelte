@@ -18,7 +18,7 @@
     import { Spinner } from "$lib/components/ui/spinner";
     import { Switch } from "$lib/components/ui/switch";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import Check from "@lucide/svelte/icons/check";
+    import Check from "phosphor-svelte/lib/CheckIcon";
     import {
         createMutation,
         createQuery,

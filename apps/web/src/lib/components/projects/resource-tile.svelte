@@ -1,9 +1,9 @@
 <!-- One resource on a project's preview: its logo in a small card, like a node on the canvas. -->
 <script lang="ts">
     import { imageIcon } from "$lib/resources/image-icons";
-    import Box from "@lucide/svelte/icons/box";
-    import Database from "@lucide/svelte/icons/database";
-    import HardDrive from "@lucide/svelte/icons/hard-drive";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import Database from "phosphor-svelte/lib/DatabaseIcon";
+    import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import type { ProjectCardResource } from "./project-card.svelte";
 
     let {

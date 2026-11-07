@@ -36,9 +36,9 @@
         MenuPopup,
         MenuTrigger,
     } from "$lib/components/ui/menu";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import {
         listPageSize,

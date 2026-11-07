@@ -1,6 +1,6 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
-    import Box from "@lucide/svelte/icons/box";
+    import Box from "phosphor-svelte/lib/CubeIcon";
 </script>
 
 <!-- Placeholder shaped like a container row; only rendered inside a loading Skeleton. -->

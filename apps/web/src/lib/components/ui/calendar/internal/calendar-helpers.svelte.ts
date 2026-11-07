@@ -268,15 +268,15 @@ export function handleCalendarKeydown({
     if (!ARROW_KEYS.includes(event.key) && !SELECT_KEYS.includes(event.key)) return;
     event.preventDefault();
 
-    const kbdFocusMap: Record<string, number> = {
-        [kbd.ARROW_DOWN]: 7,
-        [kbd.ARROW_UP]: -7,
-        [kbd.ARROW_LEFT]: -1,
-        [kbd.ARROW_RIGHT]: 1,
-    };
+    const kbdFocusMap = new Map<string, number>([
+        [kbd.ARROW_DOWN, 7],
+        [kbd.ARROW_UP, -7],
+        [kbd.ARROW_LEFT, -1],
+        [kbd.ARROW_RIGHT, 1],
+    ]);
 
     if (ARROW_KEYS.includes(event.key)) {
-        const add = kbdFocusMap[event.key];
+        const add = kbdFocusMap.get(event.key);
 
         if (add !== undefined) {
             shiftFocus(currentCell, add);
@@ -596,6 +596,7 @@ export function getFirstNonDisabledDateInView(calendarRef: HTMLElement): DateVal
 
     if (!value || !type) return;
 
+    // SAFETY: data-type is only written by day cells, from getDateValueType.
     return parseAnyDateValue(value, type as DateValueType);
 }
 

@@ -9,8 +9,8 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
-    import LayoutList from "@lucide/svelte/icons/layout-list";
-    import Plus from "@lucide/svelte/icons/plus";
+    import LayoutList from "phosphor-svelte/lib/ListDashesIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
     import {
         ConnectionMode,
         MarkerType,
@@ -1458,10 +1458,7 @@
                 "group absolute bottom-0 z-30 w-3 cursor-col-resize touch-none transition-[top] duration-300",
                 panelFull ? "top-0" : "top-6",
             ]}
-            style:right="{Math.min(
-                panelWidth - 6,
-                canvasWidth - 12,
-            )}px"
+            style:right="{Math.min(panelWidth, canvasWidth) - 12}px"
             aria-hidden="true"
             onpointerdown={startPanelResize}
             onpointermove={resizePanel}

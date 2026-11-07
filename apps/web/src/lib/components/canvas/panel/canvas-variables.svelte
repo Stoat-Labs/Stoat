@@ -25,14 +25,14 @@
     } from "$lib/components/ui/menu";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import Braces from "@lucide/svelte/icons/braces";
-    import Check from "@lucide/svelte/icons/check";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
-    import FileCode from "@lucide/svelte/icons/file-code";
-    import Link2 from "@lucide/svelte/icons/link-2";
-    import Plus from "@lucide/svelte/icons/plus";
-    import X from "@lucide/svelte/icons/x";
+    import Braces from "phosphor-svelte/lib/BracketsCurlyIcon";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import EllipsisVertical from "phosphor-svelte/lib/DotsThreeVerticalIcon";
+    import FileCode from "phosphor-svelte/lib/FileCodeIcon";
+    import Link2 from "phosphor-svelte/lib/LinkSimpleIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import type { EditorView } from "@codemirror/view";
     import { createQuery } from "@tanstack/svelte-query";
     import {

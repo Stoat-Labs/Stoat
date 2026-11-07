@@ -85,9 +85,9 @@ export class PinInputRootState {
     #regexPattern = $derived.by(() => {
         const pattern = this.opts.pattern.current;
 
-        if (typeof pattern === "string") return new RegExp(pattern);
+        if (pattern === undefined || pattern instanceof RegExp) return pattern;
 
-        return pattern;
+        return new RegExp(pattern);
     });
     #prevInputMetadata: PrevInputMetadata = {
         prev: [null, null, "none"],
@@ -131,7 +131,7 @@ export class PinInputRootState {
             this.#prevInputMetadata.prev = [
                 input.selectionStart,
                 input.selectionEnd,
-                (input.selectionDirection as SelectionDirection) ?? "none",
+                input.selectionDirection ?? "none",
             ];
 
             const unsub = on(
@@ -183,7 +183,7 @@ export class PinInputRootState {
 
                 const start = input.selectionStart;
                 const end = input.selectionEnd;
-                const dir = (input.selectionDirection as SelectionDirection) ?? "none";
+                const dir = input.selectionDirection ?? "none";
 
                 if (start !== null && end !== null) {
                     this.#mirrorSelectionStart = start;
@@ -318,7 +318,7 @@ export class PinInputRootState {
 
         const selStart = input.selectionStart;
         const selEnd = input.selectionEnd;
-        const selDir = (input.selectionDirection as SelectionDirection) ?? "none";
+        const selDir = input.selectionDirection ?? "none";
         const maxLength = input.maxLength;
         const val = input.value;
         const prev = this.#prevInputMetadata.prev;
@@ -400,7 +400,7 @@ export class PinInputRootState {
         }
 
         const maybeHasDeleted =
-            typeof this.#previousValue.current === "string" &&
+            this.#previousValue.current !== undefined &&
             newValue.length < this.#previousValue.current.length;
 
         if (maybeHasDeleted) {

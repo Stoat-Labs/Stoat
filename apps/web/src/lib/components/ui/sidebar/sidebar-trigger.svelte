@@ -1,5 +1,5 @@
 <script lang="ts">
-    import PanelLeftIcon from "@lucide/svelte/icons/panel-left";
+    import PanelLeftIcon from "phosphor-svelte/lib/SidebarSimpleIcon";
     import type { HTMLButtonAttributes } from "svelte/elements";
     import { Button } from "$lib/components/ui/button";
     import { cn, type WithElementRef } from "$lib/utils.js";

@@ -8,11 +8,11 @@
         DeploymentStep,
         StepState,
     } from "$lib/deployments/steps";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import CornerDownRight from "@lucide/svelte/icons/corner-down-right";
-    import Minus from "@lucide/svelte/icons/minus";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Server from "@lucide/svelte/icons/server";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import CornerDownRight from "phosphor-svelte/lib/ArrowElbowDownRightIcon";
+    import Minus from "phosphor-svelte/lib/MinusIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import StepNode from "./step-node.svelte";
 
     let {
@@ -55,15 +55,14 @@
         );
     }
 
-    const stateLabel = $derived(
-        step.state === "active"
-            ? "In progress:"
-            : step.state === "error"
-              ? "Failed:"
-              : step.state === "stopped"
-                ? "Stopped:"
-                : "Done:",
-    );
+    const stateLabels: Record<StepState, string> = {
+        active: "In progress:",
+        error: "Failed:",
+        stopped: "Stopped:",
+        done: "Done:",
+    };
+
+    const stateLabel = $derived(stateLabels[step.state]);
 
     const tones: Record<StepState, string> = {
         error: "text-destructive-foreground",

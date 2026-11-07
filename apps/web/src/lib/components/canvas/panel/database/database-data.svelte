@@ -33,20 +33,20 @@
         ToggleGroupItem,
     } from "$lib/components/ui/toggle-group";
     import { buttonVariants } from "$lib/components/ui/button";
-    import ArrowUpDown from "@lucide/svelte/icons/arrow-up-down";
-    import ChevronLeft from "@lucide/svelte/icons/chevron-left";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import Columns3 from "@lucide/svelte/icons/columns-3";
-    import Database from "@lucide/svelte/icons/database";
-    import FileCode from "@lucide/svelte/icons/file-code";
-    import ListFilter from "@lucide/svelte/icons/list-filter";
-    import Network from "@lucide/svelte/icons/network";
-    import Plus from "@lucide/svelte/icons/plus";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
-    import Search from "@lucide/svelte/icons/search";
-    import Sheet from "@lucide/svelte/icons/sheet";
-    import TableIcon from "@lucide/svelte/icons/table";
-    import X from "@lucide/svelte/icons/x";
+    import ArrowUpDown from "phosphor-svelte/lib/ArrowsDownUpIcon";
+    import ChevronLeft from "phosphor-svelte/lib/CaretLeftIcon";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import Columns3 from "phosphor-svelte/lib/ColumnsIcon";
+    import Database from "phosphor-svelte/lib/DatabaseIcon";
+    import FileCode from "phosphor-svelte/lib/FileCodeIcon";
+    import ListFilter from "phosphor-svelte/lib/FunnelSimpleIcon";
+    import Network from "phosphor-svelte/lib/TreeStructureIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
+    import Sheet from "phosphor-svelte/lib/RowsIcon";
+    import TableIcon from "phosphor-svelte/lib/TableIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,

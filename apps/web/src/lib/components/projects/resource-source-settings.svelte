@@ -21,7 +21,7 @@
         gitProviderLabels,
         gitProviders,
     } from "$lib/params/git-query-params";
-    import FileCode2 from "@lucide/svelte/icons/file-code-2";
+    import FileCode2 from "phosphor-svelte/lib/FileCodeIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
 

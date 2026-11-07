@@ -83,14 +83,11 @@ export const svelteFeatures: FeatureImplementation = {
     },
 };
 
-// Create a reactive proxy for ItemInstance
-type ReactiveItemInstance<T> = ItemInstance<T> & {
-    [K in keyof ItemInstance<T>]: ItemInstance<T>[K] extends (...args: never[]) => unknown
-        ? (...args: Parameters<ItemInstance<T>[K]>) => ReturnType<ItemInstance<T>[K]>
-        : ItemInstance<T>[K];
-};
+// A reactive proxy has the same API as the ItemInstance it wraps.
+type ReactiveItemInstance<T> = ItemInstance<T>;
 
 export class ReactiveTree<T> {
+    // SAFETY: the constructor assigns #tree before anything can read it.
     #tree = $state.raw<TreeInstance<T>>() as TreeInstance<T>;
     #subscribe: () => void;
     #itemProxies = new WeakMap<ItemInstance<T>, ReactiveItemInstance<T>>();
@@ -119,6 +116,7 @@ export class ReactiveTree<T> {
             };
 
             // Override applySubStateUpdate to handle for example selection and drag-and-drop changes
+            // SAFETY: forwards its arguments unchanged; only the original's generic signature is lost.
             this.#tree.applySubStateUpdate = ((
                 ...args: Parameters<typeof originalApplySubStateUpdate>
             ) => {
@@ -158,15 +156,18 @@ export class ReactiveTree<T> {
 
         const proxy = new Proxy(item, {
             get: (target, prop: string | symbol) => {
+                // SAFETY: reads go straight to the item; a key it lacks just reads undefined.
                 const value = target[prop as keyof ItemInstance<T>];
 
                 // If it's a function, check if it should be reactive
                 // !TODO: this is a hack to make all methods reactive, we should only make the methods that are needed reactive
-                if (typeof value === "function" && typeof prop === "string") {
+                if (value instanceof Function) {
                     return (...args: unknown[]) => {
                         // Make the call reactive
                         this.#subscribe();
 
+                        // SAFETY: `value` is the item's method, called with the caller's own arguments.
+                        // oxlint-disable-next-line anti-slop/no-unknown-returns -- forwards whatever the wrapped method returns.
                         return (value as (...args: unknown[]) => unknown).apply(target, args);
                     };
                 }
@@ -174,7 +175,7 @@ export class ReactiveTree<T> {
                 // For non-reactive methods and properties, return as-is
                 return value;
             },
-        }) as ReactiveItemInstance<T>;
+        });
 
         // Cache the proxy
         this.#itemProxies.set(item, proxy);

@@ -46,13 +46,13 @@
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import { s3BucketStatusVariant } from "$lib/s3";
     import { cn } from "$lib/utils";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Boxes from "@lucide/svelte/icons/boxes";
-    import Container from "@lucide/svelte/icons/container";
-    import FolderOpen from "@lucide/svelte/icons/folder-open";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Workflow from "@lucide/svelte/icons/workflow";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Workflow from "phosphor-svelte/lib/FlowArrowIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { onMount } from "svelte";
 

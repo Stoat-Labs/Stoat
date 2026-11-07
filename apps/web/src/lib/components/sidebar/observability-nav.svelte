@@ -18,11 +18,25 @@
         observabilityHref,
         observabilityView,
         observabilityViews,
+        type ObservabilityView,
     } from "$lib/observability/navigation";
-    import Activity from "@lucide/svelte/icons/activity";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
+    import ArrowsLeftRight from "phosphor-svelte/lib/ArrowsLeftRightIcon";
+    import Cube from "phosphor-svelte/lib/CubeIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import Heartbeat from "phosphor-svelte/lib/HeartbeatIcon";
+    import Activity from "phosphor-svelte/lib/PulseIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import SquaresFour from "phosphor-svelte/lib/SquaresFourIcon";
 
     const { onNavigate }: { onNavigate: () => void } = $props();
+
+    const viewIcons: Record<ObservabilityView, typeof Cube> = {
+        overview: SquaresFour,
+        dns: Globe,
+        http: ArrowsLeftRight,
+        services: Cube,
+        health: Heartbeat,
+    };
 
     const sidebar = useSidebar();
 
@@ -44,7 +58,10 @@
                     open = true;
                 }}
             >
-                <Activity aria-hidden="true" />
+                <Activity
+                    aria-hidden="true"
+                    weight={current ? "fill" : undefined}
+                />
             </SidebarMenuButton>
         {:else}
             <CollapsibleTrigger
@@ -52,7 +69,10 @@
                 data-active={current ? true : undefined}
                 title="Observability"
             >
-                <Activity aria-hidden="true" />
+                <Activity
+                    aria-hidden="true"
+                    weight={current ? "fill" : undefined}
+                />
                 <span>Observability</span>
                 <ChevronDown
                     aria-hidden="true"
@@ -66,6 +86,7 @@
         <CollapsibleContent>
             <SidebarMenuSub>
                 {#each observabilityViews as view (view.id)}
+                    {@const Icon = viewIcons[view.id]}
                     <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                             href={observabilityHref(
@@ -78,6 +99,11 @@
                                 : undefined}
                             onclick={onNavigate}
                         >
+                            <Icon
+                                weight={current?.id === view.id
+                                    ? "fill"
+                                    : undefined}
+                            />
                             <span>{view.title}</span>
                         </SidebarMenuSubButton>
                     </SidebarMenuSubItem>

@@ -18,16 +18,16 @@
         projectHref,
     } from "$lib/api/canvas-mode.svelte";
     import { orpc } from "$lib/api/orpc";
-    import Activity from "@lucide/svelte/icons/activity";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Braces from "@lucide/svelte/icons/braces";
-    import Container from "@lucide/svelte/icons/container";
-    import FolderOpen from "@lucide/svelte/icons/folder-open";
-    import Globe from "@lucide/svelte/icons/globe";
-    import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
-    import Rocket from "@lucide/svelte/icons/rocket";
-    import Settings from "@lucide/svelte/icons/settings-2";
-    import ScrollText from "@lucide/svelte/icons/scroll-text";
+    import Activity from "phosphor-svelte/lib/PulseIcon";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Braces from "phosphor-svelte/lib/BracketsCurlyIcon";
+    import SquaresFour from "phosphor-svelte/lib/SquaresFourIcon";
+    import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
+    import Globe from "phosphor-svelte/lib/GlobeIcon";
+    import House from "phosphor-svelte/lib/HouseIcon";
+    import Rocket from "phosphor-svelte/lib/RocketIcon";
+    import Settings from "phosphor-svelte/lib/GearSixIcon";
+    import ScrollText from "phosphor-svelte/lib/ScrollIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import OrgSwitcher from "./org-switcher.svelte";
     import ResourceList from "./resource-list.svelte";
@@ -106,7 +106,7 @@
     type ResourceLink = {
         title: string;
         href: string;
-        icon: typeof Container;
+        icon: typeof SquaresFour;
         active: boolean;
         current?: boolean;
     };
@@ -114,7 +114,7 @@
     const overviewLink = $derived<ResourceLink>({
         title: "Overview",
         href: resourceBase,
-        icon: Container,
+        icon: SquaresFour,
         active: pathname === resourceBase,
     });
 
@@ -197,7 +197,7 @@
                     <SidebarNavLink
                         href="/"
                         title="Home"
-                        icon={LayoutDashboard}
+                        icon={House}
                         active={false}
                         onclick={closeNavigation}
                     >

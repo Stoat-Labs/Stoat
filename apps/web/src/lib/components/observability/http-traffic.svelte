@@ -52,7 +52,7 @@
         unpackMetric,
         type ChartSeries,
     } from "$lib/observability";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
     import {
         httpTrafficMetricNames,
         type HttpBreakdown as Breakdown,

@@ -37,10 +37,10 @@
     } from "$lib/components/ui/menu";
     import { Separator } from "$lib/components/ui/separator";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
-    import KeyRound from "@lucide/svelte/icons/key-round";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
+    import KeyRound from "phosphor-svelte/lib/KeyIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
     import ConfirmDialog from "./confirm-dialog.svelte";
     import SettingsSection from "./settings-section.svelte";
 

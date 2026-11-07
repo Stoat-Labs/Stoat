@@ -174,11 +174,10 @@
         const map = mapCtx.getMap();
         const loaded = mapCtx.isStyleReady();
 
-        if (!loaded || !map || typeof data === "string") return;
+        if (!loaded || !map || !(data instanceof Object)) return;
 
-        const source = map.getSource(sourceId) as
-            | MapLibreGL.GeoJSONSource
-            | undefined;
+        const source =
+            map.getSource<MapLibreGL.GeoJSONSource>(sourceId);
 
         if (source) {
             source.setData(data);
@@ -245,12 +244,15 @@
 
             const feature = features[0];
 
+            // SAFETY: maplibre sets cluster_id on every clustered feature.
             const clusterId = feature.properties
                 ?.cluster_id as number;
 
+            // SAFETY: maplibre sets point_count on every clustered feature.
             const pointCount = feature.properties
                 ?.point_count as number;
 
+            // SAFETY: clusters are points, with a longitude and latitude.
             const coordinates = (feature.geometry as GeoJSON.Point)
                 .coordinates as [number, number];
 
@@ -258,6 +260,7 @@
                 onclusterclick(clusterId, coordinates, pointCount);
             } else {
                 // Default behavior: zoom to cluster expansion zoom
+                // SAFETY: this source feeds the layer that was just clicked.
                 const source = map.getSource(
                     sourceId,
                 ) as MapLibreGL.GeoJSONSource;
@@ -282,6 +285,7 @@
 
             const feature = e.features[0];
 
+            // SAFETY: `data` only holds points, with a longitude and latitude.
             const coordinates = (
                 feature.geometry as GeoJSON.Point
             ).coordinates.slice() as [number, number];
@@ -293,6 +297,8 @@
             }
 
             onpointclick(
+                // SAFETY: `data` is a FeatureCollection of points with properties P.
+                // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- an open P isn't comparable to maplibre's properties.
                 feature as unknown as GeoJSON.Feature<
                     GeoJSON.Point,
                     P

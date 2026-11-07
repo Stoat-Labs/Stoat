@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronLeft from "@lucide/svelte/icons/chevron-left";
+    import ChevronLeft from "phosphor-svelte/lib/CaretLeftIcon";
     import { cn } from "$lib/utils";
     import PaginationLink, {
         type Props as PaginationLinkProps,

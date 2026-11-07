@@ -54,6 +54,9 @@
         "serviceMemory",
         "serviceNetworkIn",
         "serviceNetworkOut",
+        // Machine capacity is what the services table's bars measure unlimited containers against.
+        "cores",
+        "memoryTotal",
     ] as const;
 
     const paused = useQueryState(

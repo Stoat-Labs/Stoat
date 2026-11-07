@@ -1,5 +1,5 @@
 <script lang="ts">
-    import LoaderCircle from "@lucide/svelte/icons/loader-circle";
+    import LoaderCircle from "phosphor-svelte/lib/CircleNotchIcon";
     import type { ComponentProps } from "svelte";
     import { cn } from "$lib/utils";
 

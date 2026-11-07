@@ -28,9 +28,7 @@
 
     const itemProps = $derived.by(() => {
         const props =
-            typeof item.getProps === "function"
-                ? item.getProps()
-                : {};
+            item.getProps instanceof Function ? item.getProps() : {};
 
         return props;
     });
@@ -56,23 +54,23 @@
                 className,
             ),
             "data-drag-target":
-                typeof item.isDragTarget === "function"
+                item.isDragTarget instanceof Function
                     ? item.isDragTarget() || false
                     : undefined,
             "data-focus":
-                typeof item.isFocused === "function"
+                item.isFocused instanceof Function
                     ? item.isFocused() || false
                     : undefined,
             "data-folder":
-                typeof item.isFolder === "function"
+                item.isFolder instanceof Function
                     ? item.isFolder() || false
                     : undefined,
             "data-search-match":
-                typeof item.isMatchingSearch === "function"
+                item.isMatchingSearch instanceof Function
                     ? item.isMatchingSearch() || false
                     : undefined,
             "data-selected":
-                typeof item.isSelected === "function"
+                item.isSelected instanceof Function
                     ? item.isSelected() || false
                     : undefined,
             "data-slot": "tree-item",

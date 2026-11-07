@@ -20,10 +20,10 @@
     } from "$lib/components/ui/dialog";
     import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import Layers from "@lucide/svelte/icons/layers";
-    import Package from "@lucide/svelte/icons/package";
-    import Plug from "@lucide/svelte/icons/plug";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import Layers from "phosphor-svelte/lib/StackIcon";
+    import Package from "phosphor-svelte/lib/PackageIcon";
+    import Plug from "phosphor-svelte/lib/PlugIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
     import {
         createMutation,
         createQuery,

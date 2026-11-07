@@ -1,5 +1,5 @@
 <script lang="ts">
-    import MinusIcon from "@lucide/svelte/icons/minus";
+    import MinusIcon from "phosphor-svelte/lib/MinusIcon";
     import type { Snippet } from "svelte";
     import { getContext } from "svelte";
     import type { HTMLButtonAttributes } from "svelte/elements";

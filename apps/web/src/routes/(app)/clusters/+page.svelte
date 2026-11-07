@@ -46,11 +46,11 @@
         listPageSize,
         pageParser,
     } from "$lib/params/query-params";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Search from "@lucide/svelte/icons/search";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
     import {
         createMutation,
         createQuery,

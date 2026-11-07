@@ -2,13 +2,14 @@
     import { untrack, type Snippet } from "svelte";
     import { watch } from "runed";
     import { useFlowNodeAnchorContext } from "./node-context.svelte";
+    import type { HTMLAttributes } from "svelte/elements";
     import { withElementAttachment } from "./render-props";
 
     interface FlowAnchorProps {
         type?: "start" | "end";
         children?: Snippet;
 
-        render?: Snippet<[{ props: Record<string, unknown> }]>;
+        render?: Snippet<[{ props: HTMLAttributes<HTMLElement> }]>;
     }
 
     let { type, children, render }: FlowAnchorProps = $props();

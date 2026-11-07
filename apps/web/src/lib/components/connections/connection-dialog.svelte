@@ -245,11 +245,11 @@
     const oauthServerUrl = $derived.by(() => {
         const raw = serverUrl.trim();
 
-        // eslint-disable-next-line no-control-regex -- Reject controls before URL parsing can discard them.
+        // Reject controls before URL parsing can discard them.
         if (
             fields.provider.current === "generic" ||
             raw.length > 2048 ||
-            /[\s\x00-\x1f\x7f\\]/u.test(raw)
+            /[\s\p{Cc}\\]/u.test(raw)
         )
             return "";
         const match = /^https:\/\/[^/?#@]+(\/[^?#]*)?$/iu.exec(raw);

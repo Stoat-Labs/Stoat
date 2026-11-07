@@ -1,8 +1,8 @@
 <script lang="ts">
     import { hueyColor } from "@hueycolor/core";
     import { useHueyContext } from "@hueycolor/svelte";
-    import PlusIcon from "@lucide/svelte/icons/plus";
-    import XIcon from "@lucide/svelte/icons/x";
+    import PlusIcon from "phosphor-svelte/lib/PlusIcon";
+    import XIcon from "phosphor-svelte/lib/XIcon";
 
     let {
         swatches = $bindable(),

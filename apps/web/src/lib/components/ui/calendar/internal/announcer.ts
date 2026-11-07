@@ -55,17 +55,8 @@ export function getAnnouncer(doc: Document | null) {
         if (!announcer || !isBrowser || !doc) return;
         const log = announcer.getLog(kind);
         const content = doc.createElement("div");
-        let text: string;
 
-        if (typeof value === "number") {
-            text = value.toString();
-        } else if (value === null) {
-            text = "Empty";
-        } else {
-            text = value.trim();
-        }
-
-        content.innerText = text;
+        content.innerText = value === null ? "Empty" : String(value).trim();
 
         if (kind === "assertive") {
             log?.replaceChildren(content);

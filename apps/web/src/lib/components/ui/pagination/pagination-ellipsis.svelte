@@ -1,5 +1,5 @@
 <script lang="ts">
-    import Ellipsis from "@lucide/svelte/icons/ellipsis";
+    import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
     import type { HTMLAttributes } from "svelte/elements";
     import {
         cn,

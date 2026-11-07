@@ -40,7 +40,7 @@
         setServiceCaddy,
         type IngressEntry,
     } from "@stoat/workflows/ingress";
-    import ArrowRight from "@lucide/svelte/icons/arrow-right";
+    import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
     import { untrack } from "svelte";
 
     let {

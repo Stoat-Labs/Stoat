@@ -9,8 +9,8 @@
         EmptyMedia,
         EmptyTitle,
     } from "$lib/components/ui/empty";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import TriangleAlert from "phosphor-svelte/lib/WarningIcon";
 
     const notFound = $derived(page.status === 404);
 </script>

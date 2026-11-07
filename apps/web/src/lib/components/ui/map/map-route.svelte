@@ -119,9 +119,8 @@
 
         if (!loaded || !map || coordinates.length < 2) return;
 
-        const source = map.getSource(sourceId) as
-            | MapLibreGL.GeoJSONSource
-            | undefined;
+        const source =
+            map.getSource<MapLibreGL.GeoJSONSource>(sourceId);
 
         if (source) {
             source.setData({

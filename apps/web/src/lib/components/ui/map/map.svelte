@@ -206,9 +206,7 @@
     );
 
     const currentStyleKey = $derived(
-        typeof currentStyle === "string"
-            ? currentStyle
-            : (JSON.stringify(currentStyle) ?? ""),
+        JSON.stringify(currentStyle) ?? "",
     );
 
     const isReady = $derived(isMounted && isLoaded && isStyleLoaded);

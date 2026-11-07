@@ -2,7 +2,7 @@
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
-    import Search from "@lucide/svelte/icons/search";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
 
     let {
         query = $bindable(""),

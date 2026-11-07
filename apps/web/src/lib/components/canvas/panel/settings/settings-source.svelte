@@ -9,10 +9,10 @@
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import type { GitSourceActions } from "$lib/resources/git-source-actions.svelte";
-    import FileCode2 from "@lucide/svelte/icons/file-code-2";
-    import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
-    import GitBranch from "@lucide/svelte/icons/git-branch";
-    import Pencil from "@lucide/svelte/icons/pencil";
+    import FileCode2 from "phosphor-svelte/lib/FileCodeIcon";
+    import FolderGit2 from "phosphor-svelte/lib/GitBranchIcon";
+    import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import CanvasSourceDialog from "../canvas-source-dialog.svelte";

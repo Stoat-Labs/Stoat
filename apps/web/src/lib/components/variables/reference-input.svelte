@@ -6,7 +6,7 @@
         keymap,
         placeholder,
     } from "@codemirror/view";
-    import Braces from "@lucide/svelte/icons/braces";
+    import Braces from "phosphor-svelte/lib/BracketsCurlyIcon";
     import { onMount } from "svelte";
     import VariableReferencePicker from "./variable-reference-picker.svelte";
     import type { ReferenceTarget } from "./reference-options";

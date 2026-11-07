@@ -27,7 +27,7 @@
         MenuTrigger,
     } from "$lib/components/ui/menu";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
-    import Boxes from "@lucide/svelte/icons/boxes";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
     import { watch } from "runed";
     import type { Snippet } from "svelte";
 

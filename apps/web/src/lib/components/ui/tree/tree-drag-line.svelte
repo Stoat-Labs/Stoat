@@ -19,7 +19,7 @@
 
     if (
         !ctx.tree ||
-        typeof ctx.tree.current.getDragLineStyle !== "function"
+        !(ctx.tree.current.getDragLineStyle instanceof Function)
     ) {
         console.warn(
             "TreeDragLine: No tree provided via context or tree does not have getDragLineStyle method",

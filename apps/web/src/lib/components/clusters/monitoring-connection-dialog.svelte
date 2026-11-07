@@ -15,8 +15,8 @@
     } from "$lib/components/ui/dialog";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
-    import Database from "@lucide/svelte/icons/database";
-    import Info from "@lucide/svelte/icons/info";
+    import Database from "phosphor-svelte/lib/DatabaseIcon";
+    import Info from "phosphor-svelte/lib/InfoIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import ConnectionField from "./connection-field.svelte";
 

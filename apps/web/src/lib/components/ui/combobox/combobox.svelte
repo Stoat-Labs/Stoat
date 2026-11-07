@@ -21,6 +21,7 @@
 </script>
 
 <script lang="ts">
+    import type { ComponentProps } from "svelte";
     import { Combobox as ComboboxPrimitive } from "@shardsui/svelte/combobox";
 
     type ComboboxItemDef = { label: string; value: string };
@@ -35,22 +36,29 @@
         defaultValue,
         multiple = false,
         ...restProps
-    }: {
+    }: Omit<
+        ComponentProps<typeof ComboboxPrimitive.Root>,
+        | "value"
+        | "inputValue"
+        | "open"
+        | "items"
+        | "defaultValue"
+        | "multiple"
+    > & {
         value?: string | string[];
         inputValue?: string;
         open?: boolean;
         items?: ComboboxItemDef[];
         defaultValue?: DefaultValue;
         multiple?: boolean;
-        [key: string]: unknown;
     } = $props();
 
     // Uncontrolled seed: only applies when the consumer hasn't already bound `value`.
     if (value === undefined && defaultValue !== undefined) {
         value =
-            typeof defaultValue === "string"
-                ? defaultValue
-                : defaultValue.value;
+            defaultValue instanceof Object
+                ? defaultValue.value
+                : defaultValue;
     }
 
     let chipsRef = $state<HTMLElement | null>(null);
@@ -71,5 +79,5 @@
     bind:open
     {multiple}
     items={items as never}
-    {...restProps as Record<string, unknown>}
+    {...restProps}
 />

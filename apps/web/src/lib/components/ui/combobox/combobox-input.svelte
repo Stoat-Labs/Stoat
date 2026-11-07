@@ -1,6 +1,6 @@
 <script lang="ts">
-    import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
-    import X from "@lucide/svelte/icons/x";
+    import ChevronsUpDown from "phosphor-svelte/lib/CaretUpDownIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { Combobox as ComboboxPrimitive } from "@shardsui/svelte/combobox";
     import type { Snippet } from "svelte";
     import type {
@@ -41,7 +41,7 @@
         if (!clearProps) return {};
         const { class: _, ...rest } = clearProps;
 
-        return rest as Omit<NonNullable<typeof clearProps>, "class">;
+        return rest;
     });
 
     const triggerPropsClass = $derived(triggerProps?.class);
@@ -50,10 +50,7 @@
         if (!triggerProps) return {};
         const { class: _, ...rest } = triggerProps;
 
-        return rest as Omit<
-            NonNullable<typeof triggerProps>,
-            "class"
-        >;
+        return rest;
     });
 </script>
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import X from "@lucide/svelte/icons/x";
+    import X from "phosphor-svelte/lib/XIcon";
     import { Dialog as SheetPrimitive } from "@shardsui/svelte/dialog";
     import type { ComponentProps, Snippet } from "svelte";
     import { buttonVariants } from "$lib/components/ui/button/button-variants";

@@ -41,11 +41,11 @@
     } from "$lib/components/ui/tooltip";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { ORPCError } from "@orpc/client";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import Boxes from "@lucide/svelte/icons/boxes";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import Container from "@lucide/svelte/icons/container";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import Boxes from "phosphor-svelte/lib/CubeIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import Container from "phosphor-svelte/lib/ShippingContainerIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
     import { databaseEngine } from "@stoat/api/databases";
     import {
         createMutation,

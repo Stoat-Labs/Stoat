@@ -252,6 +252,7 @@
     }
 
     function chooseRange(value: string) {
+        // SAFETY: the range select only offers logRange's literals, and other callers pass logRange itself.
         view.logRange.current = value as typeof view.logRange.current;
 
         if (value === "custom") return;

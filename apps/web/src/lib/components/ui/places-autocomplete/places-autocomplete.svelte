@@ -1,5 +1,5 @@
 <script lang="ts">
-    import MapPin from "@lucide/svelte/icons/map-pin";
+    import MapPin from "phosphor-svelte/lib/MapPinIcon";
     import {
         Autocomplete,
         AutocompleteCollection,

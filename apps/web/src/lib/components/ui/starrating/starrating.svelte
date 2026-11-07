@@ -24,7 +24,7 @@
 </script>
 
 <script lang="ts">
-    import Star from "@lucide/svelte/icons/star";
+    import Star from "phosphor-svelte/lib/StarIcon";
     import type { Snippet } from "svelte";
     import type { HTMLAttributes } from "svelte/elements";
     import { cn } from "$lib/utils";
@@ -99,6 +99,7 @@
         event: { clientX: number; currentTarget: EventTarget | null },
     ): number {
         if (!allowHalf) return index;
+        // SAFETY: only called from the handlers on each star's element.
         const target = event.currentTarget as HTMLElement;
         const rect = target.getBoundingClientRect();
         const fraction = (event.clientX - rect.left) / rect.width;
@@ -192,7 +193,7 @@
                     class="absolute inset-0 overflow-hidden"
                     style="width: {percent}%"
                 >
-                    <Star class="fill-yellow-400 text-yellow-400" />
+                    <Star class="text-yellow-400" weight="fill" />
                 </span>
             {/if}
         </span>

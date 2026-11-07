@@ -9,7 +9,7 @@
         PopoverTitle,
         PopoverTrigger,
     } from "$lib/components/ui/popover";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
 
     let {
         services,

@@ -416,6 +416,9 @@ importers:
       nuqs-svelte:
         specifier: ^1.2.2
         version: 1.2.2(patch_hash=8821d8dee4c7ee2a25e7751318053e2b8bd4a06c82f7da7b7bac6247f63b749f)(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)
+      phosphor-svelte:
+        specifier: 3.1.1
+        version: 3.1.1(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)
       runed:
         specifier: 0.37.1
         version: 0.37.1(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(svelte@5.57.0)(zod@4.6.2)
@@ -438,9 +441,6 @@ importers:
       '@fontsource-variable/outfit':
         specifier: ^5.3.0
         version: 5.3.0
-      '@lucide/svelte':
-        specifier: ^1.45.0
-        version: 1.45.0(svelte@5.57.0)
       '@stoat/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -1458,11 +1458,6 @@ packages:
 
   '@lit/reactive-element@2.1.2':
     resolution: {integrity: sha512-pbCDiVMnne1lYUIaYNN5wrwQXDtHaYtg7YEFPeW+hws6U47WeFvISGUWekPGKWOP1ygrs0ef0o1VJMk1exos5A==}
-
-  '@lucide/svelte@1.45.0':
-    resolution: {integrity: sha512-SBqLvcYGEDz82Lwz7meR4qM+SGeDKRU/RBo8BhAhARNUzIXTrykbFLabW9X1Fokp01Yw2kOFx/AsLUUIxj0NLA==}
-    peerDependencies:
-      svelte: ^5
 
   '@mapbox/jsonlint-lines-primitives@2.0.3':
     resolution: {integrity: sha512-0SElaV0uMxEnxzBhhX9WTuPyUeMsAN/SS0i16tjuba4/mio63MG9khjC1a0JAiPGXAwvwm4UfHJURCN7nyudQg==}
@@ -4682,6 +4677,15 @@ packages:
   pgpass@1.0.5:
     resolution: {integrity: sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==}
 
+  phosphor-svelte@3.1.1:
+    resolution: {integrity: sha512-M+CeN2s7YAFHWVxctLj41SyXsjWxoIoNi/rZ15XIYh9XEpbgJ2mE2hn54tA30l6WSagaBg2bA/OazlZJVDUkpQ==}
+    peerDependencies:
+      svelte: ^5.0.0 || ^5.0.0-next.96
+      vite: '>=5'
+    peerDependenciesMeta:
+      vite:
+        optional: true
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -6238,10 +6242,6 @@ snapshots:
     dependencies:
       '@lit-labs/ssr-dom-shim': 1.6.0
     optional: true
-
-  '@lucide/svelte@1.45.0(svelte@5.57.0)':
-    dependencies:
-      svelte: 5.57.0
 
   '@mapbox/jsonlint-lines-primitives@2.0.3': {}
 
@@ -9020,6 +9020,14 @@ snapshots:
   pgpass@1.0.5:
     dependencies:
       split2: 4.2.0
+
+  phosphor-svelte@3.1.1(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0):
+    dependencies:
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+      svelte: 5.57.0
+    optionalDependencies:
+      vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1)'
 
   picocolors@1.1.1: {}
 

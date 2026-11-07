@@ -4,6 +4,7 @@
     import { QueryClientProvider } from "@tanstack/svelte-query";
     import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
     import { NuqsAdapter } from "nuqs-svelte/adapters/svelte-kit";
+    import IconContext from "phosphor-svelte/lib/IconContext";
     import { smart } from "skullet";
     import { SkulletProvider } from "skullet/svelte";
     import { ToastProvider } from "$lib/components/ui/toast";
@@ -54,15 +55,20 @@
     }}
 />
 
-<QueryClientProvider {client}>
-    <NuqsAdapter>
-        <ToastProvider>
-            <!-- Sends skullet's server-render measuring script once a page instead of per skeleton.
+<!-- App-wide icon defaults: bold matches the text weight, and icons are decorative unless they say otherwise. -->
+<IconContext
+    values={{ weight: "bold", size: 24, "aria-hidden": "true" }}
+>
+    <QueryClientProvider {client}>
+        <NuqsAdapter>
+            <ToastProvider>
+                <!-- Sends skullet's server-render measuring script once a page instead of per skeleton.
                  No hold, so a skeleton shows the moment its query starts. -->
-            <SkulletProvider reveal={{ ...smart, hold: 0 }}>
-                {@render children()}
-            </SkulletProvider>
-        </ToastProvider>
-    </NuqsAdapter>
-    <SvelteQueryDevtools />
-</QueryClientProvider>
+                <SkulletProvider reveal={{ ...smart, hold: 0 }}>
+                    {@render children()}
+                </SkulletProvider>
+            </ToastProvider>
+        </NuqsAdapter>
+        <SvelteQueryDevtools />
+    </QueryClientProvider>
+</IconContext>

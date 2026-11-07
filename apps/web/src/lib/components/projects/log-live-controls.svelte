@@ -1,9 +1,9 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
-    import Pause from "@lucide/svelte/icons/pause";
-    import Play from "@lucide/svelte/icons/play";
-    import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+    import Pause from "phosphor-svelte/lib/PauseIcon";
+    import Play from "phosphor-svelte/lib/PlayIcon";
+    import RefreshCw from "phosphor-svelte/lib/ArrowsClockwiseIcon";
 
     let {
         status,

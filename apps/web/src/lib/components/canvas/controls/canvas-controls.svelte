@@ -20,13 +20,13 @@
         TooltipPopup,
         TooltipTrigger,
     } from "$lib/components/ui/tooltip";
-    import Grip from "@lucide/svelte/icons/grip";
-    import Layers from "@lucide/svelte/icons/layers";
-    import Maximize2 from "@lucide/svelte/icons/maximize-2";
-    import Minus from "@lucide/svelte/icons/minus";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Redo2 from "@lucide/svelte/icons/redo-2";
-    import Undo2 from "@lucide/svelte/icons/undo-2";
+    import Grip from "phosphor-svelte/lib/DotsNineIcon";
+    import Layers from "phosphor-svelte/lib/StackIcon";
+    import Maximize2 from "phosphor-svelte/lib/ArrowsOutSimpleIcon";
+    import Minus from "phosphor-svelte/lib/MinusIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Redo2 from "phosphor-svelte/lib/ArrowUUpRightIcon";
+    import Undo2 from "phosphor-svelte/lib/ArrowUUpLeftIcon";
     import { useSvelteFlow } from "@xyflow/svelte";
     import type { Component } from "svelte";
     import { tick } from "svelte";

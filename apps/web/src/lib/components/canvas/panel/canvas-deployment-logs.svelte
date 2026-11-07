@@ -31,13 +31,13 @@
     import { orpc, queryClient } from "$lib/api/orpc";
     import { DeploymentStream } from "$lib/deployments/deployment-stream.svelte";
     import { logsAsText } from "$lib/deployments/log-text";
-    import Box from "@lucide/svelte/icons/box";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
-    import Download from "@lucide/svelte/icons/download";
-    import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
-    import Search from "@lucide/svelte/icons/search";
-    import X from "@lucide/svelte/icons/x";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
+    import EllipsisVertical from "phosphor-svelte/lib/DotsThreeVerticalIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { createMutation } from "@tanstack/svelte-query";
     import {
         parseAsBoolean,
@@ -261,7 +261,7 @@
         {:else}
             <Box
                 class="size-8 shrink-0"
-                strokeWidth={1.5}
+                weight="regular"
                 aria-hidden="true"
             />
         {/if}

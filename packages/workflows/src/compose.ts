@@ -845,7 +845,7 @@ export function composeServiceVariables(
     domain?: string,
     references?: VariableReferences,
     identity?: ResourceIdentity,
-): Record<string, string> {
+) {
     const doc = YAML.parseDocument(
         interpolateCompose(compose, envText, prefix, domain, references, identity),
     );

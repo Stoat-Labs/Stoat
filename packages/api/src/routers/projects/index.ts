@@ -289,6 +289,10 @@ export const projectsRouter = {
                         // Specs stay server-side; the card only needs what its tile shows.
                         const image = firstImage(item.draftSpec ?? item.spec);
 
+                        // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
+                        // column; the subquery alias only widens its type to string.
+                        const deploymentStatus = (item.status ?? null) as DeploymentStatus | null;
+
                         return {
                             id: item.id,
                             name: item.name,
@@ -303,9 +307,7 @@ export const projectsRouter = {
                             template: templateFor(image),
                             status: item.bucketStatus
                                 ? bucketDeploymentStatus[item.bucketStatus]
-                                : // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
-                                  // column; the subquery alias only widens its type to string.
-                                  ((item.status ?? null) as DeploymentStatus | null),
+                                : deploymentStatus,
                         };
                     }),
                 };

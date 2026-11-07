@@ -14,6 +14,7 @@ function loadGoogleMapsScript(apiKey: string): Promise<void> {
     }
 
     scriptPromise = new Promise((resolve, reject) => {
+        // SAFETY: SCRIPT_ID is only set on the <script> created below.
         const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
 
         if (existing) {

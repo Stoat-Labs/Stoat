@@ -5,7 +5,7 @@
         TooltipPopup,
         TooltipTrigger,
     } from "$lib/components/ui/tooltip";
-    import Server from "@lucide/svelte/icons/server";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import { Match } from "effect";
 
     type Machine = { id: string; name: string; state: string };

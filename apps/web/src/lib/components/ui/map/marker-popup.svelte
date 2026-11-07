@@ -1,5 +1,5 @@
 <script lang="ts">
-    import X from "@lucide/svelte/icons/x";
+    import X from "phosphor-svelte/lib/XIcon";
     import type { PopupOptions } from "maplibre-gl";
     import * as MapLibreGL from "maplibre-gl";
     import { getContext } from "svelte";

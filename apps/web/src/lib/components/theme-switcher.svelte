@@ -9,9 +9,9 @@
         themeLabels,
         themes,
     } from "$lib/theme.svelte";
-    import Monitor from "@lucide/svelte/icons/monitor";
-    import Moon from "@lucide/svelte/icons/moon";
-    import Sun from "@lucide/svelte/icons/sun";
+    import Monitor from "phosphor-svelte/lib/MonitorIcon";
+    import Moon from "phosphor-svelte/lib/MoonIcon";
+    import Sun from "phosphor-svelte/lib/SunIcon";
     import { onMount } from "svelte";
 
     const options = [

@@ -7,10 +7,10 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
-    import FileCog from "@lucide/svelte/icons/file-cog";
-    import Trash2 from "@lucide/svelte/icons/trash-2";
-    import Unplug from "@lucide/svelte/icons/unplug";
-    import X from "@lucide/svelte/icons/x";
+    import FileCog from "$lib/components/shared/file-gear-icon.svelte";
+    import Trash2 from "phosphor-svelte/lib/TrashIcon";
+    import Unplug from "phosphor-svelte/lib/PlugsIcon";
+    import X from "phosphor-svelte/lib/XIcon";
     import { parseAsStringLiteral, useQueryState } from "nuqs-svelte";
     import { untrack } from "svelte";
     import { cubicOut, expoOut } from "svelte/easing";
@@ -252,7 +252,7 @@
     <header class="flex items-center gap-4 px-12 pt-12 pb-6">
         <FileCog
             class="size-8 shrink-0"
-            strokeWidth={1.5}
+            weight="regular"
             aria-hidden="true"
         />
         <h2 class="min-w-0 flex-1 truncate text-2xl font-semibold">

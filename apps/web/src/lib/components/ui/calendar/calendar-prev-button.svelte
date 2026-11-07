@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronLeft from "@lucide/svelte/icons/chevron-left";
+    import ChevronLeft from "phosphor-svelte/lib/CaretLeftIcon";
     import {
         type ButtonVariant,
         buttonVariants,

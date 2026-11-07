@@ -16,10 +16,10 @@
     } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
-    import Check from "@lucide/svelte/icons/check";
-    import Copy from "@lucide/svelte/icons/copy";
-    import Eye from "@lucide/svelte/icons/eye";
-    import EyeOff from "@lucide/svelte/icons/eye-off";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import Copy from "phosphor-svelte/lib/CopyIcon";
+    import Eye from "phosphor-svelte/lib/EyeIcon";
+    import EyeOff from "phosphor-svelte/lib/EyeSlashIcon";
     import {
         createMutation,
         createQuery,

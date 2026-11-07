@@ -10,6 +10,10 @@ import type {
 
 export type OnChangeFn<T> = (value: T) => void;
 
+// Each primitive renders a different element, and `child` may swap it for another.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ChildAttributes = HTMLAttributes<any>;
+
 export type DateMatcher = (date: DateValue) => boolean;
 
 export type WeekStartsOn = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -30,8 +34,8 @@ export type WithChild<
     SnippetProps = never,
 > = Omit<Props, "child" | "children"> & {
     child?: [SnippetProps] extends [never]
-        ? Snippet<[{ props: Record<string, unknown> }]>
-        : Snippet<[SnippetProps & { props: Record<string, unknown> }]>;
+        ? Snippet<[{ props: ChildAttributes }]>
+        : Snippet<[SnippetProps & { props: ChildAttributes }]>;
     children?: [SnippetProps] extends [never] ? Snippet : Snippet<[SnippetProps]>;
     ref?: HTMLElement | null;
 };

@@ -28,6 +28,8 @@ import {
     usageLevel,
     usageText,
     percent,
+    containerHealth,
+    serviceHealth,
     serviceRows,
     serviceSeries,
     rankMemory,
@@ -49,6 +51,95 @@ const container = (overrides: Partial<ObservabilityContainer>): ObservabilityCon
     memoryLimit: null,
     cpuLimit: null,
     ...overrides,
+});
+
+const healthCluster = (containers: ObservabilityContainer[]): ClusterData => ({
+    id: "a",
+    name: "A",
+    available: true,
+    start: 0,
+    end: 60,
+    step: 15,
+    unavailable: [],
+    machines: [],
+    services: [{ id: "web", name: "Web", resource: null, containers }],
+    metrics: {},
+});
+
+const healthAt = (containers: ObservabilityContainer[], now: number) =>
+    serviceHealth(serviceRows([healthCluster(containers)])[0]!, now);
+
+it("flags only live problems in a service's health", () => {
+    const now = Date.parse("2026-11-06T12:00:00Z");
+    const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+
+    expect(healthAt([container({})], now)).toEqual({ level: "ok", reason: "1/1 running" });
+    expect(healthAt([], now)).toEqual({ level: "warning", reason: "No containers" });
+
+    // Restarts never reset, so an old one must not flag the service forever.
+    expect(healthAt([container({ restarts: 3, startedAt: minutesAgo(90) })], now).level).toBe("ok");
+
+    expect(healthAt([container({ restarts: 4290, startedAt: minutesAgo(2) })], now)).toEqual({
+        level: "warning",
+        reason: "Restarted recently · 4290 restarts",
+    });
+
+    expect(
+        healthAt([container({ running: false, state: "restarting", restarts: 1 })], now),
+    ).toEqual({ level: "warning", reason: "0/1 running · Restarted recently · 1 restart" });
+
+    expect(
+        healthAt([container({}), container({ id: "c2", running: false, state: "exited" })], now),
+    ).toEqual({ level: "warning", reason: "1/2 running" });
+
+    expect(healthAt([container({ health: "unhealthy" })], now)).toEqual({
+        level: "error",
+        reason: "1 unhealthy",
+    });
+
+    const [row] = serviceRows([healthCluster([container({ restarts: 3, oomKilled: true })])]);
+
+    expect(containerHealth(row!.containers[0]!, now)).toEqual({
+        level: "error",
+        reason: "running · OOM killed · 3 restarts",
+    });
+});
+
+it("measures unlimited services against each machine's capacity once", () => {
+    const sample = (name: string, machineId: string, value: number, serviceId = "") => ({
+        name,
+        machineId,
+        serviceId,
+        container: "",
+        points: [{ time: 60000, value }],
+    });
+
+    const cluster: ClusterData = {
+        ...healthCluster([
+            container({}),
+            container({ id: "c2", name: "web-2" }),
+            container({ id: "c3", name: "web-3", machineId: "other" }),
+        ]),
+        metrics: {
+            cores: [sample("cores", "node", 4), sample("cores", "other", 4)],
+            memoryTotal: [
+                sample("memoryTotal", "node", 1000),
+                sample("memoryTotal", "other", 1000),
+            ],
+            serviceCpu: [sample("serviceCpu", "node", 200, "web")],
+            serviceMemory: [sample("serviceMemory", "node", 500, "web")],
+        },
+    };
+
+    expect(serviceRows([cluster])[0]).toMatchObject({ cpuPercent: 25, memoryPercent: 25 });
+
+    // Without every machine's capacity the share would be overstated, so there is none.
+    const { memoryTotal: _, ...partial } = cluster.metrics;
+
+    expect(serviceRows([{ ...cluster, metrics: partial }])[0]).toMatchObject({
+        cpuPercent: 25,
+        memoryPercent: null,
+    });
 });
 
 it("detects Postgres metrics from a Postgres server and postgres-exporter in any services", () => {

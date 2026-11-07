@@ -1,5 +1,5 @@
 <script lang="ts">
-    import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
+    import ChevronsUpDown from "phosphor-svelte/lib/CaretUpDownIcon";
     import type { Snippet } from "svelte";
     import type { HTMLButtonAttributes } from "svelte/elements";
     import { cn } from "$lib/utils";

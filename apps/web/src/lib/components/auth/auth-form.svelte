@@ -17,9 +17,9 @@
     } from "$lib/components/ui/input-group";
     import { Label } from "$lib/components/ui/label";
     import { safeNextPath } from "$lib/params/safe-next";
-    import AtSign from "@lucide/svelte/icons/at-sign";
-    import Lock from "@lucide/svelte/icons/lock";
-    import User from "@lucide/svelte/icons/user";
+    import AtSign from "phosphor-svelte/lib/AtIcon";
+    import Lock from "phosphor-svelte/lib/LockIcon";
+    import User from "phosphor-svelte/lib/UserIcon";
     import { onMount } from "svelte";
     import AuthShell from "./auth-shell.svelte";
 

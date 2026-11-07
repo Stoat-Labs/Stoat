@@ -14,8 +14,8 @@
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { client, orpc } from "$lib/api/orpc";
     import { bucketJobPollInterval } from "$lib/s3";
-    import Braces from "@lucide/svelte/icons/braces";
-    import EllipsisVertical from "@lucide/svelte/icons/ellipsis-vertical";
+    import Braces from "phosphor-svelte/lib/BracketsCurlyIcon";
+    import EllipsisVertical from "phosphor-svelte/lib/DotsThreeVerticalIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import type { CanvasResource } from "../graph";

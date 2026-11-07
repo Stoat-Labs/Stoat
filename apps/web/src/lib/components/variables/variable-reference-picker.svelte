@@ -1,9 +1,9 @@
 <script lang="ts">
     import { Compartment, StateEffect } from "@codemirror/state";
     import type { EditorView } from "@codemirror/view";
-    import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-    import ChevronRight from "@lucide/svelte/icons/chevron-right";
-    import Search from "@lucide/svelte/icons/search";
+    import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import {
         Command,
         CommandCollection,
@@ -62,13 +62,16 @@
         new Map(targets.map((target) => [target.id, target.name])),
     );
 
-    const placeholder = $derived(
-        page.level === "projects"
-            ? "Search projects"
-            : page.level === "resources"
-              ? `Search resources in ${projectName(targets, page.projectId)}`
-              : `Search variables in ${page.target.name}`,
-    );
+    const placeholder = $derived.by(() => {
+        switch (page.level) {
+            case "projects":
+                return "Search projects";
+            case "resources":
+                return `Search resources in ${projectName(targets, page.projectId)}`;
+            default:
+                return `Search variables in ${page.target.name}`;
+        }
+    });
 
     const anchor = {
         getBoundingClientRect: () => {

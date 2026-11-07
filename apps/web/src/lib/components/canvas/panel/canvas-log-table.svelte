@@ -5,9 +5,9 @@
         type LogLevel,
         type LogRow,
     } from "$lib/resources/logs";
-    import ArrowDown from "@lucide/svelte/icons/arrow-down";
-    import ArrowUp from "@lucide/svelte/icons/arrow-up";
-    import WrapText from "@lucide/svelte/icons/wrap-text";
+    import ArrowDown from "phosphor-svelte/lib/ArrowDownIcon";
+    import ArrowUp from "phosphor-svelte/lib/ArrowUpIcon";
+    import WrapText from "$lib/components/shared/wrap-text-icon.svelte";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import {
         createTable,

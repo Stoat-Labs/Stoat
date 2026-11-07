@@ -4,7 +4,7 @@
     import { formatDate } from "$lib/format";
     import { client, orpc } from "$lib/api/orpc";
     import { bytes } from "$lib/observability";
-    import Download from "@lucide/svelte/icons/download";
+    import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
     import {
         FileTree,
         createFileTree,

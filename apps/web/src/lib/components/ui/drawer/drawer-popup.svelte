@@ -1,5 +1,5 @@
 <script lang="ts">
-    import XIcon from "@lucide/svelte/icons/x";
+    import XIcon from "phosphor-svelte/lib/XIcon";
     import { Drawer as DrawerPrimitive } from "@shardsui/svelte/drawer";
     import type { ComponentProps, Snippet } from "svelte";
     import { getContext } from "svelte";

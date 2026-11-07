@@ -12,7 +12,7 @@ function getPinchDistance(touches: TouchList): number {
     );
 }
 
-function getPinchCenter(touches: TouchList): { x: number; y: number } {
+function getPinchCenter(touches: TouchList) {
     return {
         x: (touches[0].clientX + touches[1].clientX) / 2,
         y: (touches[0].clientY + touches[1].clientY) / 2,
@@ -78,8 +78,8 @@ export class CropperState {
     #containerEl: HTMLDivElement | null = null;
     #resizeObserver: ResizeObserver | null = null;
     #isInitialSetupDone = false;
-    #dragStartPoint: { x: number; y: number } = { x: 0, y: 0 };
-    #dragStartOffset: { x: number; y: number } = { x: 0, y: 0 };
+    #dragStartPoint = { x: 0, y: 0 };
+    #dragStartOffset = { x: 0, y: 0 };
     #isPinching = false;
     #initialPinchDistance = 0;
     #initialPinchZoom = 1;
@@ -199,7 +199,7 @@ export class CropperState {
         this.#options.onZoomChange(clamp(value, this.#options.minZoom(), this.#options.maxZoom()));
     }
 
-    #restrictOffset(x: number, y: number, zoom: number): { x: number; y: number } {
+    #restrictOffset(x: number, y: number, zoom: number) {
         const wrapperWidth = this.imageWrapperWidth;
         const wrapperHeight = this.imageWrapperHeight;
 

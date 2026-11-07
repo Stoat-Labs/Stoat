@@ -21,11 +21,11 @@
 
     treeContext.set({
         indent,
-        tree: tree as unknown as ReactiveTree<unknown> | undefined,
+        tree,
     });
 
     const containerProps = $derived.by(() =>
-        tree && typeof tree.current.getContainerProps === "function"
+        tree && tree.current.getContainerProps instanceof Function
             ? tree.current.getContainerProps()
             : {},
     );

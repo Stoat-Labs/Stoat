@@ -41,13 +41,13 @@
         segmentedControlRootClassName,
     } from "$lib/components/ui/tabs/segmented-control";
     import { orpc } from "$lib/api/orpc";
-    import Check from "@lucide/svelte/icons/check";
-    import ChevronDown from "@lucide/svelte/icons/chevron-down";
-    import FolderOpen from "@lucide/svelte/icons/folder-open";
-    import LayoutGrid from "@lucide/svelte/icons/layout-grid";
-    import List from "@lucide/svelte/icons/list";
-    import Plus from "@lucide/svelte/icons/plus";
-    import Search from "@lucide/svelte/icons/search";
+    import Check from "phosphor-svelte/lib/CheckIcon";
+    import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
+    import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
+    import LayoutGrid from "phosphor-svelte/lib/GridFourIcon";
+    import List from "phosphor-svelte/lib/ListIcon";
+    import Plus from "phosphor-svelte/lib/PlusIcon";
+    import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import {
         parseAsString,

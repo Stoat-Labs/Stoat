@@ -1,7 +1,7 @@
 <!-- Railway's favorite star; it sits above the card's full-size link. -->
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
-    import Star from "@lucide/svelte/icons/star";
+    import Star from "phosphor-svelte/lib/StarIcon";
 
     let {
         name,
@@ -27,7 +27,8 @@
     onclick={() => onfavorite?.(!favorite)}
 >
     <Star
-        class={["size-4", favorite && "fill-warning text-warning"]}
+        class={["size-4", favorite && "text-warning"]}
+        weight={favorite ? "fill" : undefined}
         aria-hidden="true"
     />
 </Button>
