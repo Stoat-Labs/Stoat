@@ -13,9 +13,9 @@
         observabilityHref,
         observabilityView,
     } from "$lib/observability/navigation";
-    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsBoolean, useQueryState } from "nuqs-svelte";
+    import Pencil from "phosphor-svelte/lib/PencilSimpleIcon";
     import { onMount } from "svelte";
     import BreadcrumbTrail, {
         type Crumb,
@@ -294,6 +294,19 @@
     onMount(() => {
         ready = true;
     });
+
+    let isTheHeaderPinned = $state(false);
+
+    function observePinned(node) {
+        const observer = new IntersectionObserver(
+            ([e]) => (isTheHeaderPinned = e.intersectionRatio < 1),
+            { threshold: [1] },
+        );
+
+        observer.observe(node);
+
+        return () => observer.disconnect();
+    }
 </script>
 
 <SidebarProvider
@@ -307,7 +320,11 @@
             : "overflow-visible border"}
     >
         <header
-            class="sticky top-0 z-40 flex min-h-12 rounded-t-xl shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg"
+            {@attach observePinned}
+            class={[
+                "sticky -top-px z-40 flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-popover/80 px-4 py-2 backdrop-blur-lg",
+                isTheHeaderPinned ? "rounded-t-none" : "rounded-t-xl",
+            ]}
         >
             <div class="flex min-w-0 max-w-full items-center gap-2">
                 <SidebarTrigger disabled={!ready} />
