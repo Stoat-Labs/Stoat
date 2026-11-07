@@ -137,12 +137,11 @@
             },
             serialize: serializeSort,
             eq: (a, b) => serializeSort(a) === serializeSort(b),
-        })
-            .withDefault(defaultSort)
-            .withOptions({ shallow: true, scroll: false }),
+        }).withOptions({ shallow: true, scroll: false }),
     );
 
-    const sorting = $derived(sortParam.current);
+    // No param means the default, health-first order; an explicit "cpu.desc" sorts by CPU alone.
+    const sorting = $derived(sortParam.current ?? defaultSort);
 
     let viewport = $state<HTMLDivElement>();
 
@@ -230,8 +229,7 @@
     const services = $derived.by(() => {
         const rows = table.getRowModel().rows;
 
-        if (serializeSort(sorting) !== serializeSort(defaultSort))
-            return rows;
+        if (sortParam.current !== null) return rows;
 
         return rows.toSorted(
             (a, b) =>

@@ -36,9 +36,15 @@
             data-indeterminate={indeterminate ? "" : undefined}
         >
             {#if indeterminate}
-                <MinusIcon class="size-3.5 sm:size-3" aria-hidden="true" />
+                <MinusIcon
+                    class="size-3.5 sm:size-3"
+                    aria-hidden="true"
+                />
             {:else if checked}
-                <CheckIcon class="size-3.5 sm:size-3" aria-hidden="true" />
+                <CheckIcon
+                    class="size-3.5 sm:size-3"
+                    aria-hidden="true"
+                />
             {/if}
         </span>
     {/snippet}

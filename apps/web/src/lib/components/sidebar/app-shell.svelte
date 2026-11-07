@@ -297,7 +297,7 @@
 
     let isTheHeaderPinned = $state(false);
 
-    function observePinned(node) {
+    function observePinned(node: HTMLElement) {
         const observer = new IntersectionObserver(
             ([e]) => (isTheHeaderPinned = e.intersectionRatio < 1),
             { threshold: [1] },
