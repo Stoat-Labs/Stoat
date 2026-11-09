@@ -4,6 +4,7 @@ import {
     clientHeaders,
     memberStorageState,
     openCreatedResource,
+    resourcePath,
     rpc,
     sql,
     storageState,
@@ -15,7 +16,8 @@ const confirmDialog = (page: Page) => page.getByRole("alertdialog");
 
 const editor = (page: Page) => page.locator(".cm-content");
 
-const panel = (page: Page) => page.getByRole("region", { name: "Git source" });
+// A resource's Git source lives in the Source section of its canvas settings.
+const panel = (page: Page) => page.getByRole("tabpanel");
 
 let created = 0;
 
@@ -73,7 +75,11 @@ async function gitResource(page: Page) {
         },
     });
 
-    return { id, path: `/projects/${project.id}/${id}` };
+    return {
+        id,
+        settings: resourcePath(project.id, id, "settings"),
+        compose: resourcePath(project.id, id, "compose"),
+    };
 }
 
 /** Replaces the whole Compose draft in the editor. */
@@ -171,49 +177,57 @@ test("a resource is created from a repository's Compose file", async ({ page }) 
     await page.getByLabel("Branch").fill("main");
     await page.getByLabel("Compose file or directory").fill("compose.yaml");
     await page.getByRole("button", { name: "Create resource" }).click();
-    await openCreatedResource(page, project.id);
+    const id = await openCreatedResource(page, project.id);
 
-    await expect(page.getByRole("navigation", { name: "breadcrumb" })).toContainText(name);
+    await expect(page.getByRole("heading", { level: 2 })).toContainText(name);
+    await page.goto(resourcePath(project.id, id, "compose"));
     await expect(editor(page)).toContainText("image: nginx:alpine");
-    await page.goto(`${new URL(page.url()).pathname}/settings`);
-    await expect(panel(page)).toContainText("/ main / compose.yaml");
+    await page.goto(resourcePath(project.id, id, "settings"));
+    await expect(panel(page).getByRole("button", { name: "Change branch" })).toBeVisible();
+    await expect(panel(page)).toContainText("compose.yaml");
 });
 
 test("pulling replaces the draft with what was pushed elsewhere", async ({ page }) => {
     const target = await gitResource(page);
     commitOnServer("compose.yaml", "services:\n  web:\n    image: caddy:2\n", "Switch to Caddy");
-    await page.goto(`${target.path}/settings`);
+    await page.goto(target.settings);
 
     await panel(page).getByRole("button", { name: "Pull from Git" }).click();
     await expect(confirmDialog(page)).toContainText("Replace the Compose draft?");
     await confirmDialog(page).getByRole("button", { name: "Replace" }).click();
 
     await expect(page.getByText("Compose imported from Git.")).toBeVisible();
-    await page.goto(target.path);
+    await page.goto(target.compose);
     await expect(editor(page)).toContainText("image: caddy:2");
 });
 
 test("a pull can be called off", async ({ page }) => {
     const target = await gitResource(page);
     commitOnServer("compose.yaml", "services:\n  web:\n    image: caddy:2\n", "Switch to Caddy");
-    await page.goto(`${target.path}/settings`);
+    await page.goto(target.settings);
 
     await panel(page).getByRole("button", { name: "Pull from Git" }).click();
     await confirmDialog(page).getByRole("button", { name: "Cancel" }).click();
 
     await expect(confirmDialog(page)).toHaveCount(0);
-    await page.goto(target.path);
+    await page.goto(target.compose);
     await expect(editor(page)).toContainText("image: nginx:alpine");
 });
 
 test("commit and push sends the draft to the repository", async ({ page }) => {
     const target = await gitResource(page);
     const edited = "services:\n  web:\n    image: nginx:1.29\n";
-    await page.goto(target.path);
+    await page.goto(target.compose);
 
     await replaceCompose(page, edited);
-    await expect(page.getByText("Saved — not deployed")).toBeVisible();
-    await page.goto(`${target.path}/settings`);
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect
+        .poll(
+            async () =>
+                (await sql("SELECT draft_spec FROM resources WHERE id = $1", [target.id]))[0],
+        )
+        .toEqual({ draft_spec: edited });
+    await page.goto(target.settings);
     await panel(page).getByLabel("Commit message").fill("Pin nginx");
     await panel(page).getByRole("button", { name: "Commit & push" }).click();
 
@@ -223,13 +237,13 @@ test("commit and push sends the draft to the repository", async ({ page }) => {
 
 test("detaching keeps the draft but forgets the repository", async ({ page }) => {
     const target = await gitResource(page);
-    await page.goto(`${target.path}/settings`);
+    await page.goto(target.settings);
 
-    await panel(page).getByRole("button", { name: "Detach" }).click();
+    await panel(page).getByRole("button", { name: "Disconnect" }).click();
     await confirmDialog(page).getByRole("button", { name: "Detach" }).click();
 
-    await expect(page.getByRole("tab", { name: "Raw", selected: true })).toBeVisible();
-    await page.goto(target.path);
+    await expect(panel(page).getByRole("button", { name: "Connect Repo" })).toBeVisible();
+    await page.goto(target.compose);
     await expect(editor(page)).toContainText("image: nginx:alpine");
     expect(await sql("SELECT git_connection_id FROM resources WHERE id = $1", [target.id])).toEqual(
         [{ git_connection_id: null }],

@@ -33,10 +33,7 @@
     import { Spinner } from "$lib/components/ui/spinner";
     import { DeploymentStream } from "$lib/deployments/deployment-stream.svelte";
     import { formatDurationMs } from "$lib/format";
-    import {
-        createCanvasModeQuery,
-        resourceHref as canvasAwareResourceHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { resourceHref as canvasAwareResourceHref } from "$lib/api/hrefs";
     import { orpc, queryClient } from "$lib/api/orpc";
     import { logsAsText } from "$lib/deployments/log-text";
     import Check from "phosphor-svelte/lib/CheckIcon";
@@ -104,14 +101,11 @@
             : "",
     );
 
-    const canvasModeQuery = createCanvasModeQuery();
-
     const resourceHref = $derived(
         stream.origin.projectId && deployment?.resourceId
             ? canvasAwareResourceHref(
                   stream.origin.projectId,
                   deployment.resourceId,
-                  canvasModeQuery.data.canvasMode,
               )
             : null,
     );

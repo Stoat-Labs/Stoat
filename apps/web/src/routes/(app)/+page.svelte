@@ -1,9 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import {
-        createCanvasModeQuery,
-        resourceHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { resourceHref } from "$lib/api/hrefs";
     import { orpc, queryClient } from "$lib/api/orpc";
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
     import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
@@ -78,15 +75,8 @@
         { shallow: true, scroll: false },
     );
 
-    const canvasModeQuery = createCanvasModeQuery();
-
     function deploymentsHref(projectId: string, resourceId: string) {
-        const canvasMode = canvasModeQuery.data.canvasMode;
-        const href = resourceHref(projectId, resourceId, canvasMode);
-
-        return canvasMode
-            ? `${href}&tab=deployments`
-            : `${href}/deployments`;
+        return `${resourceHref(projectId, resourceId)}&tab=deployments`;
     }
 
     const projectsQuery = createQuery(() =>

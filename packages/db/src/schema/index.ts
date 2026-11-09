@@ -15,6 +15,7 @@ export const instanceSettings = t.pgTable(
     (table) => [t.check("instance_settings_singleton", sql`${table.id} = 1`)],
 );
 
+// Nothing reads this since the list view was removed; kept so no migration drops user data.
 export const userSettings = t.pgTable("user_settings", {
     userId: t
         .text("user_id")

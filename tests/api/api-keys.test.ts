@@ -94,10 +94,6 @@ describe("organization API keys (PostgreSQL)", () => {
         await expect(
             call(appRouter.cluster.listClusters, undefined, { context }),
         ).resolves.toBeDefined();
-        // User-bound procedures reject keys.
-        await expect(call(appRouter.userSettings.get, undefined, { context })).rejects.toMatchObject({
-            code: "UNAUTHORIZED",
-        });
 
         const wrong = await keyContext(
             "stoat_not-a-real-key-at-all-000000000000000000000000000000",

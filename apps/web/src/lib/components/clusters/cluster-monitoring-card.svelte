@@ -13,10 +13,7 @@
         CardPanel,
         CardTitle,
     } from "$lib/components/ui/card";
-    import {
-        createCanvasModeQuery,
-        projectHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { projectHref } from "$lib/api/hrefs";
     import { formatDate } from "$lib/format";
     import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
     import type { AppRouterClient } from "@stoat/api/routers/index";
@@ -42,8 +39,6 @@
             dialog: "monitoring" | "retention" | "reinitialize",
         ) => void;
     } = $props();
-
-    const canvasModeQuery = createCanvasModeQuery();
 
     const initializationStatus = $derived(
         cluster.initializationStatus ?? "uninitialized",
@@ -126,7 +121,6 @@
                         class="max-w-full"
                         href={projectHref(
                             cluster.internalProjectId,
-                            canvasModeQuery.data.canvasMode,
                         )}
                     >
                         <span class="truncate">

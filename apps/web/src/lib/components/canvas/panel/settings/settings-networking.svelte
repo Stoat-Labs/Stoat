@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { resourceHref } from "$lib/api/hrefs";
     import { orpc } from "$lib/api/orpc";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
@@ -209,12 +210,15 @@
             {/if}
             {#if entry && !isInternal}
                 {#if entry.kind === "caddy"}
-                    <!-- A Caddyfile has no Railway form; the Ingress page edits it. -->
+                    <!-- Custom x-caddy config has no Railway form; it is edited in the Compose file. -->
                     <Button
                         size="icon-sm"
                         variant="ghost"
-                        aria-label="Edit {name} on the Ingress page"
-                        href="/projects/{resource.projectId}/{resource.id}/ingress"
+                        aria-label="Edit {name} in Compose"
+                        href="{resourceHref(
+                            resource.projectId,
+                            resource.id,
+                        )}&tab=compose"
                     >
                         <Pencil class="size-4" aria-hidden="true" />
                     </Button>

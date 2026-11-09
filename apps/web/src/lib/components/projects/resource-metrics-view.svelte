@@ -6,9 +6,7 @@
     import MetricChart from "$lib/components/observability/metric-chart.svelte";
     import RangeControls from "$lib/components/observability/range-controls.svelte";
     import { useObservabilityRange } from "$lib/components/observability/range";
-    import ServicesTable from "$lib/components/observability/services-table.svelte";
     import AddDatabaseMetrics from "./add-database-metrics.svelte";
-    import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertDescription,
@@ -85,12 +83,9 @@
     let {
         projectId,
         resourceId,
-        embedded = false,
     }: {
         projectId: string;
         resourceId: string;
-        /** Inside the project canvas panel the toolbar renders inline, not in the app header. */
-        embedded?: boolean;
     } = $props();
 
     const range = useObservabilityRange();
@@ -529,188 +524,6 @@
         }),
     );
 
-    // Services without traffic report gaps, so HTTP totals skip them instead of blanking the sum.
-    const latest = (series: ChartSeries[]) =>
-        series.flatMap((item) => {
-            const value = current(
-                item.points,
-                cluster.end,
-                cluster.step,
-            );
-
-            return value === null ? [] : [value];
-        });
-
-    const requestRate = $derived(
-        latest(httpSeries.requests).reduce(
-            (total, value) => total + value,
-            0,
-        ),
-    );
-
-    const errorRate = $derived(
-        requestRate
-            ? (100 *
-                  latest(httpSeries.errors).reduce(
-                      (total, value) => total + value,
-                      0,
-                  )) /
-                  requestRate
-            : null,
-    );
-
-    // ponytail: slowest service's p95, not a true combined p95; merge histogram buckets if that matters.
-    const latency = $derived(
-        latest(httpSeries.latency).reduce<number | null>(
-            (slowest, value) => Math.max(slowest ?? 0, value),
-            null,
-        ),
-    );
-
-    const containers = $derived(
-        rows.flatMap((row) => row.containers),
-    );
-
-    const cpuLimit = $derived(
-        containers.length &&
-            containers.every((item) => item.cpuLimit !== null)
-            ? sum(containers.map((item) => item.cpuLimit))
-            : null,
-    );
-
-    const memoryLimit = $derived(
-        containers.length &&
-            containers.every((item) => item.memoryLimit !== null)
-            ? sum(containers.map((item) => item.memoryLimit))
-            : null,
-    );
-
-    const lastDeploy = $derived(
-        deployments.data?.items.find(
-            (item) =>
-                item.status === "ready" || item.status === "failed",
-        ),
-    );
-
-    const summary = $derived.by(() => {
-        const running = containers.filter(
-            (item) => item.running,
-        ).length;
-
-        const unhealthy = containers.filter(
-            (item) => item.health === "unhealthy",
-        ).length;
-
-        const oom = containers.filter(
-            (item) => item.oomKilled,
-        ).length;
-
-        const restarts = containers.reduce(
-            (total, item) => total + item.restarts,
-            0,
-        );
-
-        const cpu = sum(rows.map((row) => row.cpu));
-        const memory = sum(rows.map((row) => row.memory));
-        const connections = databaseLatest(0);
-
-        const maxConnections = databaseLatest(1);
-
-        return [
-            {
-                label: "Containers",
-                value: `${running}/${containers.length} running`,
-                detail: unhealthy
-                    ? `${unhealthy} unhealthy`
-                    : running < containers.length
-                      ? "Some containers are not running"
-                      : "All running",
-                tone:
-                    running < containers.length || unhealthy
-                        ? "warning"
-                        : "",
-            },
-            {
-                label: "Restarts",
-                value: String(restarts),
-                detail: oom
-                    ? `${oom} out-of-memory kill${oom === 1 ? "" : "s"}`
-                    : "Since containers were created",
-                tone: oom ? "error" : restarts ? "warning" : "",
-            },
-            {
-                label: "CPU",
-                value: percent(cpu),
-                detail: cpuLimit
-                    ? `of ${cpuLimit.toLocaleString()} core limit${cpu !== null ? ` · ${percent(cpu / cpuLimit)}` : ""}`
-                    : "No CPU limit · 100% = one core",
-                tone:
-                    cpu !== null && cpuLimit && cpu / cpuLimit >= 90
-                        ? "warning"
-                        : "",
-            },
-            {
-                label: "Memory",
-                value: bytes(memory),
-                detail: memoryLimit
-                    ? `of ${bytes(memoryLimit)} limit${memory !== null ? ` · ${percent((100 * memory) / memoryLimit)}` : ""}`
-                    : "No memory limit",
-                tone:
-                    memory !== null &&
-                    memoryLimit &&
-                    memory / memoryLimit >= 0.9
-                        ? "error"
-                        : "",
-            },
-            ...(httpStatus === "ok"
-                ? [
-                      {
-                          label: "HTTP",
-                          value: requests(requestRate),
-                          detail: `${percent(errorRate)} 5xx · p95 ${duration(latency)}`,
-                          tone:
-                              errorRate !== null && errorRate >= 5
-                                  ? "error"
-                                  : "",
-                      },
-                  ]
-                : []),
-            ...(databaseCollecting
-                ? [
-                      {
-                          label: "Connections",
-                          value: count(connections),
-                          detail: maxConnections
-                              ? `of ${count(maxConnections)} max`
-                              : "Max connections unknown",
-                          tone:
-                              connections !== null &&
-                              maxConnections &&
-                              connections / maxConnections >= 0.8
-                                  ? "warning"
-                                  : "",
-                      },
-                  ]
-                : []),
-            {
-                label: "Last deploy",
-                value: lastDeploy
-                    ? ago(
-                          lastDeploy.finishedAt ??
-                              lastDeploy.createdAt,
-                          Date.now(),
-                      )
-                    : "—",
-                detail: lastDeploy
-                    ? lastDeploy.status === "failed"
-                        ? "Failed"
-                        : "Succeeded"
-                    : "No deployments yet",
-                tone: lastDeploy?.status === "failed" ? "error" : "",
-            },
-        ];
-    });
-
     const markers = $derived(
         (deployments.data?.items ?? []).flatMap((item) => {
             const time = new Date(item.createdAt).getTime();
@@ -758,25 +571,13 @@
     }
 
     function logsHref(from: number, to: number) {
-        // The canvas panel opens its own Logs tab on that range instead of leaving the canvas.
-        if (embedded) {
-            const params = new URLSearchParams(page.url.searchParams);
-            params.set("tab", "logs");
-            params.set("logStart", new Date(from).toISOString());
-            params.set("logEnd", new Date(to).toISOString());
+        // Opens the panel's own Logs tab on that range instead of leaving the canvas.
+        const params = new URLSearchParams(page.url.searchParams);
+        params.set("tab", "logs");
+        params.set("logStart", new Date(from).toISOString());
+        params.set("logEnd", new Date(to).toISOString());
 
-            return `?${params}`;
-        }
-
-        const params = new URLSearchParams({
-            logMode: "search",
-            logRange: "custom",
-            logStart: new Date(from).toISOString(),
-            logEnd: new Date(to).toISOString(),
-            logServices: rows.map((row) => row.name).join(","),
-        });
-
-        return `/projects/${projectId}/${resourceId}/logs?${params}`;
+        return `?${params}`;
     }
 
     function clock(time: number) {
@@ -785,8 +586,6 @@
             minute: "2-digit",
         });
     }
-
-    useHeaderActions(toolbar, () => !embedded);
 
     // Railway's list or grid of charts in the canvas panel.
     const layout = useQueryState(
@@ -801,38 +600,33 @@
     <div
         class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
     >
-        {#if embedded}
-            <div
-                class="flex overflow-hidden rounded-md border"
-                role="group"
-                aria-label="Chart layout"
-            >
-                {#each [{ value: "list", label: "List", icon: Rows3 }, { value: "grid", label: "Grid", icon: LayoutGrid }] as const as option (option.value)}
-                    <button
-                        type="button"
-                        class={[
-                            "flex size-8 items-center justify-center transition-colors",
-                            layout.current === option.value
-                                ? "bg-accent text-foreground"
-                                : "text-muted-foreground hover:text-foreground",
-                        ]}
-                        aria-label="{option.label} layout"
-                        aria-pressed={layout.current === option.value}
-                        onclick={() =>
-                            void layout.set(
-                                option.value === "grid"
-                                    ? null
-                                    : option.value,
-                            )}
-                    >
-                        <option.icon
-                            class="size-4"
-                            aria-hidden="true"
-                        />
-                    </button>
-                {/each}
-            </div>
-        {/if}
+        <div
+            class="flex overflow-hidden rounded-md border"
+            role="group"
+            aria-label="Chart layout"
+        >
+            {#each [{ value: "list", label: "List", icon: Rows3 }, { value: "grid", label: "Grid", icon: LayoutGrid }] as const as option (option.value)}
+                <button
+                    type="button"
+                    class={[
+                        "flex size-8 items-center justify-center transition-colors",
+                        layout.current === option.value
+                            ? "bg-accent text-foreground"
+                            : "text-muted-foreground hover:text-foreground",
+                    ]}
+                    aria-label="{option.label} layout"
+                    aria-pressed={layout.current === option.value}
+                    onclick={() =>
+                        void layout.set(
+                            option.value === "grid"
+                                ? null
+                                : option.value,
+                        )}
+                >
+                    <option.icon class="size-4" aria-hidden="true" />
+                </button>
+            {/each}
+        </div>
         {#if cluster.available && rows.length}<a
                 class={buttonVariants({
                     variant: "outline",
@@ -872,58 +666,28 @@
     total?: string;
     series: ChartSeries[];
 })}
-    {#if embedded}
-        <!-- Railway's chart card: one flat surface, the title and current value on top. -->
-        <section class="min-w-0 rounded-lg border bg-card p-4">
-            <header
-                class="mb-3 flex items-center justify-between gap-2"
-            >
-                <h4 class="font-medium">{chart.title}</h4>
-                {#if chart.total}<span
-                        class="text-xs text-muted-foreground tabular-nums"
-                    >
-                        {chart.total}
-                    </span>{/if}
-            </header>
-            <MetricChart
-                series={chart.series}
-                start={cluster.start}
-                end={cluster.end}
-                unit={chart.unit}
-                {markers}
-                onselecttime={(time) => (selectedTime = time)}
-            />
-        </section>
-    {:else}
-        <Frame class="min-w-0">
-            <FrameHeader
-                class="flex-row flex-wrap items-center justify-between gap-2"
-            >
-                <FrameTitle>
-                    {chart.title}
-                </FrameTitle>{#if chart.total}<span
-                        class="text-xs font-medium tabular-nums"
-                    >
-                        {chart.total}
-                    </span>{/if}
-            </FrameHeader>
-            <FramePanel class="min-w-0 p-4">
-                <MetricChart
-                    series={chart.series}
-                    start={cluster.start}
-                    end={cluster.end}
-                    unit={chart.unit}
-                    {markers}
-                    onselecttime={(time) => (selectedTime = time)}
-                />
-            </FramePanel>
-        </Frame>
-    {/if}
+    <!-- Railway's chart card: one flat surface, the title and current value on top. -->
+    <section class="min-w-0 rounded-lg border bg-card p-4">
+        <header class="mb-3 flex items-center justify-between gap-2">
+            <h4 class="font-medium">{chart.title}</h4>
+            {#if chart.total}<span
+                    class="text-xs text-muted-foreground tabular-nums"
+                >
+                    {chart.total}
+                </span>{/if}
+        </header>
+        <MetricChart
+            series={chart.series}
+            start={cluster.start}
+            end={cluster.end}
+            unit={chart.unit}
+            {markers}
+            onselecttime={(time) => (selectedTime = time)}
+        />
+    </section>
 {/snippet}
 
-{#if embedded}
-    {@render toolbar()}
-{/if}
+{@render toolbar()}
 
 <div
     class="@container min-w-0 w-full space-y-4 overflow-x-clip pt-4 sm:space-y-6 sm:pt-6"
@@ -994,43 +758,10 @@
             </EmptyHeader>
         </Empty>
     {:else if cluster.available}
-        {#if !embedded}<div class="flex flex-wrap gap-3">
-                {#each summary as item (item.label)}
-                    <div
-                        class="min-w-36 flex-1 rounded-lg border p-3 {item.tone ===
-                        'error'
-                            ? 'border-destructive/40'
-                            : item.tone === 'warning'
-                              ? 'border-warning/40'
-                              : ''}"
-                    >
-                        <p class="text-xs text-muted-foreground">
-                            {item.label}
-                        </p>
-                        <p
-                            class="mt-1 text-xl font-semibold tabular-nums"
-                        >
-                            {item.value}
-                        </p>
-                        <p
-                            class="mt-0.5 text-xs {item.tone ===
-                            'error'
-                                ? 'text-destructive-foreground'
-                                : item.tone === 'warning'
-                                  ? 'text-warning-foreground'
-                                  : 'text-muted-foreground'}"
-                        >
-                            {item.detail}
-                        </p>
-                    </div>
-                {/each}
-            </div>{/if}
         <div
-            class={embedded
-                ? layout.current === "grid"
-                    ? "grid gap-4 @2xl:grid-cols-2"
-                    : "grid gap-4"
-                : "grid gap-4 lg:grid-cols-2"}
+            class={layout.current === "grid"
+                ? "grid gap-4 @2xl:grid-cols-2"
+                : "grid gap-4"}
         >
             {#each charts as chart (chart.title)}{@render chartFrame(
                     chart,
@@ -1086,7 +817,6 @@
                 </AlertDescription>
             </Alert>
         {/if}
-        {#if !embedded}<ServicesTable data={rows} expandAll />{/if}
         <p class="text-xs text-muted-foreground" role="status">
             One line per service, all containers combined · 100% CPU =
             one core · dotted lines mark deployments · dashed latency

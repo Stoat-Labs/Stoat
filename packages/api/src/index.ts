@@ -25,8 +25,6 @@ export const requireAuth = o.middleware(async ({ context, next }) => {
     });
 });
 
-export const protectedProcedure = publicProcedure.use(requireAuth);
-
 export const organizationProcedure = publicProcedure.use(async ({ context, next }) => {
     const { session } = context;
 

@@ -14,7 +14,6 @@
     } from "$lib/resources/log-stream.svelte";
     import { selectedLogServices } from "$lib/resources/logs";
     import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
-    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
     import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import X from "phosphor-svelte/lib/XIcon";
     import {
@@ -238,15 +237,6 @@
             onclick={downloadLogs}
         >
             <Download class="size-4" aria-hidden="true" />
-        </Button>
-        <Button
-            variant="outline"
-            size="icon"
-            aria-label="Open logs page"
-            title="Open the logs page to search stored logs"
-            href="/projects/{projectId}/{resourceId}/logs"
-        >
-            <ExternalLink class="size-4" aria-hidden="true" />
         </Button>
     </div>
 

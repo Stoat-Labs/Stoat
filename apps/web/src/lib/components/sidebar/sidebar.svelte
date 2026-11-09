@@ -13,8 +13,6 @@
         SidebarSeparator,
     } from "$lib/components/ui/sidebar";
     import { useSidebar } from "$lib/components/ui/sidebar/context.svelte";
-    import { orpc } from "$lib/api/orpc";
-    import Activity from "phosphor-svelte/lib/PulseIcon";
     import FolderOpen from "phosphor-svelte/lib/FolderOpenIcon";
     import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
     import HardDrive from "phosphor-svelte/lib/DatabaseIcon";
@@ -23,10 +21,8 @@
     import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import Settings from "phosphor-svelte/lib/GearSixIcon";
     import Shield from "phosphor-svelte/lib/ShieldCheckIcon";
-    import { createQuery } from "@tanstack/svelte-query";
     import OrgSwitcher from "./org-switcher.svelte";
     import ObservabilityNav from "./observability-nav.svelte";
-    import ResourceList from "./resource-list.svelte";
     import SidebarAppFooter from "./sidebar-footer.svelte";
     import SidebarNavLink from "./sidebar-nav-link.svelte";
 
@@ -54,21 +50,6 @@
     }
 
     const pathname = $derived(page.url.pathname);
-
-    // The queries below reuse the TanStack cache warmed by the layout and the
-    // detail pages, so they don't trigger extra requests.
-    const projectId = $derived(page.params.projectId);
-
-    const resourceId = $derived(page.params.resourceId);
-
-    const isProjectPage = $derived(Boolean(projectId) && !resourceId);
-
-    const projectQuery = createQuery(() =>
-        orpc.projects.getProject.queryOptions({
-            input: { projectId: projectId ?? "" },
-            enabled: Boolean(projectId),
-        }),
-    );
 
     const mainLinks = [
         { title: "Home", url: "/", icon: LayoutDashboard },
@@ -154,48 +135,6 @@
                             Admin
                         </SidebarNavLink>
                     </SidebarMenu>
-                </SidebarGroupContent>
-            </SidebarGroup>
-        {/if}
-        {#if isProjectPage}
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel class="truncate">
-                    {projectQuery.data?.name ?? "Project"}
-                </SidebarGroupLabel>
-                <SidebarGroupContent>
-                    <SidebarMenu>
-                        <SidebarNavLink
-                            href="/projects/{projectId}"
-                            title="Project overview"
-                            icon={FolderOpen}
-                            active={pathname ===
-                                `/projects/${projectId}`}
-                            onclick={closeNavigation}
-                        >
-                            Overview
-                        </SidebarNavLink>
-                        <SidebarNavLink
-                            href="/projects/{projectId}/metrics"
-                            title="Project metrics"
-                            icon={Activity}
-                            active={pathname ===
-                                `/projects/${projectId}/metrics`}
-                            onclick={closeNavigation}
-                        >
-                            Metrics
-                        </SidebarNavLink>
-                    </SidebarMenu>
-                </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarSeparator />
-            <SidebarGroup>
-                <SidebarGroupLabel>Resources</SidebarGroupLabel>
-                <SidebarGroupContent>
-                    <ResourceList
-                        highlightCurrent
-                        onNavigate={closeNavigation}
-                    />
                 </SidebarGroupContent>
             </SidebarGroup>
         {/if}

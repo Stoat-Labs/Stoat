@@ -56,11 +56,9 @@
     import { onMount } from "svelte";
 
     let {
-        resourceId,
         latest,
         onDeploymentChange,
     }: {
-        resourceId?: string;
         /** Show the newest N deployments (1–100) with live updates, without pagination. */
         latest?: number;
         onDeploymentChange?: () => void;
@@ -142,7 +140,6 @@
             status: status === "all" ? undefined : status,
             limit,
             offset: (currentPage - 1) * limit,
-            resourceId,
         };
 
         if (isTerminalFilter)
@@ -301,9 +298,7 @@
         id: string;
         projectId: string | null;
     }) {
-        return resourceId && deployment.projectId
-            ? `/projects/${deployment.projectId}/${resourceId}/deployments/${deployment.id}`
-            : `/deployments/${deployment.id}`;
+        return `/deployments/${deployment.id}`;
     }
 </script>
 
@@ -395,9 +390,7 @@
                 ? "No deployments yet"
                 : `No ${status} deployments`}
             emptyDescription={status === "all"
-                ? resourceId
-                    ? "Deploy this resource to create its first deployment."
-                    : "Deploy a resource or initialize cluster monitoring to create the first deployment."
+                ? "Deploy a resource or initialize cluster monitoring to create the first deployment."
                 : "No deployments currently match this filter."}
             bind:page={
                 () => list.page.current,
@@ -438,7 +431,7 @@
                 {/each}
             {/snippet}
         </DataTable>
-        {#if latest !== undefined && !resourceId}
+        {#if latest !== undefined}
             <div class="flex justify-end">
                 <Button size="sm" variant="ghost" href="/deployments">
                     View all deployments <ArrowRight

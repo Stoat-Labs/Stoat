@@ -7,7 +7,6 @@
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Button } from "$lib/components/ui/button";
     import Box from "phosphor-svelte/lib/CubeIcon";
-    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
     import X from "phosphor-svelte/lib/XIcon";
     import {
         parseAsString,
@@ -210,14 +209,6 @@
         <Button
             size="icon-sm"
             variant="ghost"
-            href="/projects/{resource.projectId}/{resource.id}"
-            aria-label="Open resource page"
-        >
-            <ExternalLink class="size-4" aria-hidden="true" />
-        </Button>
-        <Button
-            size="icon-sm"
-            variant="ghost"
             aria-label="Close details"
             onclick={onclose}
         >
@@ -297,7 +288,6 @@
             <ResourceMetricsView
                 projectId={resource.projectId}
                 resourceId={resource.id}
-                embedded
             />
         {:else if active === "logs"}
             <CanvasResourceLogs

@@ -9,7 +9,6 @@
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
     import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
-    import LayoutList from "phosphor-svelte/lib/ListDashesIcon";
     import Plus from "phosphor-svelte/lib/PlusIcon";
     import {
         ConnectionMode,
@@ -1118,15 +1117,6 @@
                 <ApplyBar {projectId} {changes} />
             </div>
         {/if}
-        <Button
-            size="sm"
-            variant="ghost"
-            href="/projects/{projectId}"
-            aria-label="List view"
-        >
-            <LayoutList class="size-4" aria-hidden="true" />
-            <span class="max-sm:hidden">List view</span>
-        </Button>
         {#if !empty && !isInternal}
             <Button
                 size="sm"
