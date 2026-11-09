@@ -95,7 +95,7 @@ describe("organization API keys (PostgreSQL)", () => {
             call(appRouter.cluster.listClusters, undefined, { context }),
         ).resolves.toBeDefined();
         // User-bound procedures reject keys.
-        await expect(call(appRouter.privateData, undefined, { context })).rejects.toMatchObject({
+        await expect(call(appRouter.userSettings.get, undefined, { context })).rejects.toMatchObject({
             code: "UNAUTHORIZED",
         });
 

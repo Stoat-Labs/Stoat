@@ -1,6 +1,6 @@
 import type { RouterClient } from "@orpc/server";
 
-import { protectedProcedure, publicProcedure } from "../index";
+import { publicProcedure } from "../index";
 
 import { clusterRouter } from "./cluster";
 
@@ -15,13 +15,6 @@ const healthCheck = publicProcedure.handler(() => {
     return "OK";
 });
 
-const privateData = protectedProcedure.handler(({ context }) => {
-    return {
-        message: "This is private",
-        user: context.session?.user,
-    };
-});
-
 // Declared by reference: inferring the whole tree exceeds what tsc will serialize (TS7056).
 export type AppRouter = {
     cluster: typeof clusterRouter;
@@ -32,7 +25,6 @@ export type AppRouter = {
     buckets: typeof bucketsRouter;
     userSettings: typeof userSettingsRouter;
     healthCheck: typeof healthCheck;
-    privateData: typeof privateData;
 };
 
 export const appRouter: AppRouter = {
@@ -44,7 +36,6 @@ export const appRouter: AppRouter = {
     buckets: bucketsRouter,
     userSettings: userSettingsRouter,
     healthCheck,
-    privateData,
 };
 
 export type AppRouterClient = RouterClient<AppRouter>;
