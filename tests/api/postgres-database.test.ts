@@ -201,48 +201,6 @@ describe("addConnectionPooler", () => {
         );
     });
 
-    it("refuses SQL and database changes from a member who isn't an owner or admin", async () => {
-        const organizationId = context.session!.session.activeOrganizationId;
-
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('member', 'Member', 'member@example.test')`,
-        );
-        await db.$client.query(
-            `INSERT INTO member (id, organization_id, user_id, role, created_at)
-             VALUES ($1, $2, 'member', 'member', now())`,
-            [randomUUID(), organizationId],
-        );
-
-        // SAFETY: as above, with a plain member's identity.
-        const member = {
-            ...context,
-            session: {
-                user: { id: "member" },
-                session: { activeOrganizationId: organizationId },
-            },
-        } as Context;
-
-        const input = { clusterId, projectId, resourceId };
-
-        for (const procedure of [
-            resourcesRouter.renamePostgresRole,
-            resourcesRouter.regeneratePostgresPassword,
-            resourcesRouter.enableQueryStatistics,
-            resourcesRouter.addConnectionPooler,
-        ])
-            await expect(call(procedure, input, { context: member })).rejects.toThrow(
-                "owner or admin",
-            );
-
-        await expect(
-            call(
-                resourcesRouter.queryPostgres,
-                { ...input, query: "CREATE ROLE intruder SUPERUSER" },
-                { context: member },
-            ),
-        ).rejects.toThrow("owner or admin");
-    });
-
     it("keeps the old password when the server can't take the new one", async () => {
         await db
             .update(resources)

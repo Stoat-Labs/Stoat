@@ -1,5 +1,4 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { isOrganizationAdmin } from "@stoat/api";
 import { listUserOrganizations } from "@stoat/db/organizations";
 import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
 import { isSetupRequired } from "@stoat/db/setup";
@@ -29,7 +28,7 @@ export const load = async ({ locals: { session } }) => {
         organizations.find(({ id }) => id === session.session.activeOrganizationId) ??
         organizations[0];
 
-    if (!isOrganizationAdmin(activeOrganization?.role ?? "")) redirect(303, "/");
+    if (!/\b(owner|admin)\b/u.test(activeOrganization?.role ?? "")) redirect(303, "/");
 
     return {
         step: "cluster" as const,

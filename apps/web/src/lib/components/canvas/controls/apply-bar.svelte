@@ -26,8 +26,6 @@
         changes.filter(({ pendingDelete }) => pendingDelete),
     );
 
-    const isAdmin = $derived(page.data.isOrganizationAdmin === true);
-
     const removals = $derived(
         changes.flatMap(({ resource, removed, pendingDelete }) =>
             pendingDelete
@@ -261,18 +259,18 @@
             {error}
         </span>
     {/if}
-    {#if isAdmin}
-        <!-- Narrow headers drop it; the details dialog can discard too. -->
-        <Button
-            size="sm"
-            variant="ghost"
-            class="text-muted-foreground max-md:hidden"
-            disabled={deploying || discarding}
-            onclick={startDiscard}
-        >
-            Discard
-        </Button>
-    {/if}
+
+    <!-- Narrow headers drop it; the details dialog can discard too. -->
+    <Button
+        size="sm"
+        variant="ghost"
+        class="text-muted-foreground max-md:hidden"
+        disabled={deploying || discarding}
+        onclick={startDiscard}
+    >
+        Discard
+    </Button>
+
     <Button
         size="sm"
         variant="outline"
@@ -280,27 +278,21 @@
     >
         Details
     </Button>
-    {#if isAdmin}
-        <Button
-            size="sm"
-            loading={deploying}
-            disabled={deploying}
-            onclick={startDeploy}
-        >
-            Deploy
-        </Button>
-    {:else}
-        <span class="text-muted-foreground max-md:hidden">
-            An admin can deploy these.
-        </span>
-    {/if}
+
+    <Button
+        size="sm"
+        loading={deploying}
+        disabled={deploying}
+        onclick={startDeploy}
+    >
+        Deploy
+    </Button>
 </div>
 
 <ChangesDialog
     bind:open={details.current}
     {projectId}
     {changes}
-    canDeploy={isAdmin}
     {deploying}
     ondeploy={() => {
         details.current = false;

@@ -13,7 +13,7 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure } from "../..";
+import { organizationProcedure } from "../..";
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
 import { removeResources } from "../../resources/removal";
@@ -92,7 +92,7 @@ export const projectsRouter = {
 
     getProject: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const [row] = await db
                 .select({
                     id: projects.id,
@@ -115,8 +115,7 @@ export const projectsRouter = {
                 )
                 .limit(1);
 
-            if (!row || (row.isInternal && !isOrganizationAdmin(organizationRole)))
-                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+            if (!row) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
 
             // Read with the row itself: a separate cache would serve another replica's stale
             // layout for its whole TTL and saves nothing over this primary-key lookup.
@@ -445,7 +444,7 @@ export const projectsRouter = {
 
     // Removes every resource's services from the cluster, then the project. Buckets go first,
     // through their own flow, so their provider keys are revoked.
-    deleteProject: organizationAdminProcedure
+    deleteProject: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {

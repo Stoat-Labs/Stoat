@@ -12,7 +12,7 @@ import {
 import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
-import { isOrganizationAdmin, organizationProcedure } from "../..";
+import { organizationProcedure } from "../..";
 import { formatComposeFile, resourceComposePrefix } from "../../compose";
 import { pinnedVolumeName } from "../../compose/volumes";
 import {
@@ -612,9 +612,9 @@ export const observabilityRouter = {
     getObservabilityServices: organizationProcedure
         .input(clusterInput)
         .use(monitoringMiddleware)
-        .handler(({ context: { db, organizationRole, cluster, uc } }) =>
+        .handler(({ context: { db, cluster, uc } }) =>
             swr(
-                `services:${cluster.id}:${isOrganizationAdmin(organizationRole)}`,
+                `services:${cluster.id}`,
                 currentWindow(),
                 async (): Promise<ObservabilityService[]> => {
                     const [services, resourceList] = await Promise.all([
@@ -623,14 +623,7 @@ export const observabilityRouter = {
                             .select(getTableColumns(resources))
                             .from(resources)
                             .innerJoin(projects, eq(projects.id, resources.projectId))
-                            .where(
-                                and(
-                                    eq(projects.clusterId, cluster.id),
-                                    isOrganizationAdmin(organizationRole)
-                                        ? undefined
-                                        : sql`${projects.isInternal} is not true`,
-                                ),
-                            ),
+                            .where(and(eq(projects.clusterId, cluster.id))),
                     ]);
 
                     const links = new Map<string, ObservabilityService["resource"]>();
@@ -657,11 +650,7 @@ export const observabilityRouter = {
                         }
                     }
 
-                    if (
-                        isOrganizationAdmin(organizationRole) &&
-                        cluster.monitoringResource &&
-                        cluster.monitoringProject
-                    )
+                    if (cluster.monitoringResource && cluster.monitoringProject)
                         for (const name of [GREPTIME_SERVICE, ALLOY_SERVICE])
                             links.set(name, {
                                 projectId: cluster.monitoringProject,

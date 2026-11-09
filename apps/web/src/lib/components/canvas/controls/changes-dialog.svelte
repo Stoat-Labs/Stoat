@@ -25,7 +25,6 @@
         open = $bindable(false),
         projectId,
         changes,
-        canDeploy,
         deploying,
         ondeploy,
         ondiscard,
@@ -37,7 +36,6 @@
             removed: string[];
             pendingDelete: boolean;
         }[];
-        canDeploy: boolean;
         deploying: boolean;
         ondeploy: () => void;
         ondiscard: () => void;
@@ -203,28 +201,26 @@
             {/each}
         </DialogPanel>
         <DialogFooter>
-            {#if canDeploy}
-                <Button
-                    class="sm:me-auto"
-                    variant="destructive-outline"
-                    disabled={deploying}
-                    onclick={ondiscard}
-                >
-                    Discard changes
-                </Button>
-            {/if}
+            <Button
+                class="sm:me-auto"
+                variant="destructive-outline"
+                disabled={deploying}
+                onclick={ondiscard}
+            >
+                Discard changes
+            </Button>
+
             <Button variant="outline" onclick={() => (open = false)}>
                 Close
             </Button>
-            {#if canDeploy}
-                <Button
-                    loading={deploying}
-                    disabled={deploying}
-                    onclick={ondeploy}
-                >
-                    Deploy changes
-                </Button>
-            {/if}
+
+            <Button
+                loading={deploying}
+                disabled={deploying}
+                onclick={ondeploy}
+            >
+                Deploy changes
+            </Button>
         </DialogFooter>
     </DialogContent>
 </Dialog>

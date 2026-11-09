@@ -5,7 +5,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
-import { organizationAdminProcedure, organizationProcedure, requireAuth } from "../..";
+import { organizationProcedure, requireAuth } from "../..";
 import { gitWebhookSecret, gitWebhookUrl } from "../../git/webhook";
 import {
     type GitCredentials,
@@ -340,10 +340,10 @@ export async function registerGitWebhook(
 }
 
 export const connectionsRouter = {
-    oauthSetup: organizationAdminProcedure.handler(() => ({
+    oauthSetup: organizationProcedure.handler(() => ({
         callbackUrl: getGitOAuthCallbackUrl(),
     })),
-    createOAuthProvider: organizationAdminProcedure
+    createOAuthProvider: organizationProcedure
         .use(requireAuth)
         .use(async ({ next }) => {
             try {
@@ -393,23 +393,18 @@ export const connectionsRouter = {
                 configuration,
             );
         }),
-    list: organizationProcedure.handler(
-        async ({ context: { db, organizationId, organizationRole } }) => ({
-            organizationId,
-            connections: (
-                await db
-                    .select()
-                    .from(gitConnections)
-                    .where(eq(gitConnections.organizationId, organizationId))
-                    .orderBy(asc(gitConnections.name))
-            ).map(publicConnection),
-            canManage: organizationRole
-                .split(",")
-                .some((role) => ["owner", "admin"].includes(role.trim())),
-            oauthProviders: await getPublicOrganizationGitOAuthProviders(db, organizationId),
-        }),
-    ),
-    testConnection: organizationAdminProcedure
+    list: organizationProcedure.handler(async ({ context: { db, organizationId } }) => ({
+        organizationId,
+        connections: (
+            await db
+                .select()
+                .from(gitConnections)
+                .where(eq(gitConnections.organizationId, organizationId))
+                .orderBy(asc(gitConnections.name))
+        ).map(publicConnection),
+        oauthProviders: await getPublicOrganizationGitOAuthProviders(db, organizationId),
+    })),
+    testConnection: organizationProcedure
         .input(
             v.union([
                 v.object(accountInput),
@@ -441,7 +436,7 @@ export const connectionsRouter = {
                 truncated: result.truncated,
             };
         }),
-    create: organizationAdminProcedure
+    create: organizationProcedure
         .input(v.object({ name, ...accountInput }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const result = await verifyAccount(input);
@@ -469,7 +464,7 @@ export const connectionsRouter = {
 
             return publicConnection(connection!);
         }),
-    update: organizationAdminProcedure
+    update: organizationProcedure
         .input(
             v.object({
                 connectionId: id,
@@ -519,7 +514,7 @@ export const connectionsRouter = {
 
             return publicConnection(updated);
         }),
-    delete: organizationAdminProcedure
+    delete: organizationProcedure
         .input(v.object({ connectionId: id }))
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
@@ -554,7 +549,7 @@ export const connectionsRouter = {
             }),
         ),
     // Paste both into the repository's push webhook so pushes deploy without waiting for a poll.
-    webhook: organizationAdminProcedure
+    webhook: organizationProcedure
         .input(v.object({ connectionId: id }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [connection] = await db
@@ -608,7 +603,7 @@ export const connectionsRouter = {
                 input.path,
             ),
         ),
-    pushFile: organizationAdminProcedure
+    pushFile: organizationProcedure
         .use(requireAuth)
         .input(
             v.object({

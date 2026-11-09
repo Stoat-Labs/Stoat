@@ -355,7 +355,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
         vi.clearAllMocks();
     });
 
-    it("lists only the active organization's connections with role flags and no credentials", async () => {
+    it("lists only the active organization's connections without credentials", async () => {
         const stored = await storedConnection();
         expect(stored.organizationId).toBe(organizationId);
         expect(stored.encryptedCredentials).toMatch(/^v1\./);
@@ -363,7 +363,6 @@ describe("Git connections/resources (PostgreSQL)", () => {
 
         for (const context of [ownerContext, adminContext, memberContext]) {
             const result = await call(connectionsRouter.list, undefined, { context });
-            expect(result.canManage).toBe(context !== memberContext);
             expect(result.connections.some((connection) => connection.id === connectionId)).toBe(
                 true,
             );
@@ -1596,53 +1595,6 @@ describe("Git connections/resources (PostgreSQL)", () => {
         );
         expectNoCredentials({ files, file });
     });
-
-    it.each(["create", "testConnection", "update", "delete", "pushFile", "pushGitSource"] as const)(
-        "denies member %s before Git I/O or mutation",
-        async (action) => {
-            const context = memberContext;
-            const before = await storedConnection();
-            const resourceBefore = await storedResource();
-
-            const actions = {
-                testConnection: () =>
-                    call(connectionsRouter.testConnection, genericAccount, { context }),
-                create: () =>
-                    call(
-                        connectionsRouter.create,
-                        { name: "Forbidden", ...genericAccount },
-                        { context },
-                    ),
-                update: () =>
-                    call(
-                        connectionsRouter.update,
-                        { connectionId, name: "Forbidden" },
-                        { context },
-                    ),
-                delete: () => call(connectionsRouter.delete, { connectionId }, { context }),
-                pushFile: () =>
-                    call(
-                        connectionsRouter.pushFile,
-                        {
-                            connectionId,
-                            repositoryUrl,
-                            branch: "main",
-                            path: "compose.yaml",
-                            content: draftSpec,
-                            expectedRevision: revision,
-                            message: "Forbidden",
-                        },
-                        { context },
-                    ),
-                pushGitSource: () => call(resourcesRouter.pushGitSource, pushInput(), { context }),
-            };
-
-            await expect(actions[action]()).rejects.toMatchObject({ code: "FORBIDDEN" });
-            expect(await storedConnection()).toEqual(before);
-            expect(await storedResource()).toEqual(resourceBefore);
-            expectNoGitIO();
-        },
-    );
 
     it("rejects unauthenticated and stale/forged organization membership", async () => {
         await expect(

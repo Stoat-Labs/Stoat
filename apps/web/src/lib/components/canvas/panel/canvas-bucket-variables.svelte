@@ -188,9 +188,7 @@
         {/if}
         <ul>
             {#each shown as variable (variable.key)}
-                {@const locked =
-                    variable.secret &&
-                    (!page.data.isOrganizationAdmin || !ready)}
+                {@const locked = variable.secret && !ready}
                 <VariableRow name={variable.key}>
                     {#snippet icon()}
                         <Braces

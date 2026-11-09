@@ -106,8 +106,8 @@ function pageEntry(id: AddPage, label: string, icon: Component): Entry {
     };
 }
 
-/** The first page. Volumes and configs need a service to attach to; buckets need an admin. */
-export function rootEntries(hasVolumeTargets: boolean, isAdmin: boolean): Entry[] {
+/** The first page. Volumes and configs need a service to attach to. */
+export function rootEntries(hasVolumeTargets: boolean): Entry[] {
     return [
         pageEntry("git", "Git Repository", GitBranch),
         pageEntry("database", "Database", Database),
@@ -116,7 +116,7 @@ export function rootEntries(hasVolumeTargets: boolean, isAdmin: boolean): Entry[
         ...(hasVolumeTargets
             ? [pageEntry("volume", "Volume", HardDrive), pageEntry("config", "Config", FileCog)]
             : []),
-        ...(isAdmin ? [pageEntry("bucket", "Bucket", HardDrive)] : []),
+        pageEntry("bucket", "Bucket", HardDrive),
         {
             id: "empty",
             label: "Empty Service",

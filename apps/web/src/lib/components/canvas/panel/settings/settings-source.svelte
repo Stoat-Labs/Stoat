@@ -21,11 +21,9 @@
 
     let {
         git,
-        isAdmin,
         shows,
     }: {
         git: GitSourceActions;
-        isAdmin: boolean;
         shows: (...words: string[]) => boolean;
     } = $props();
 
@@ -203,7 +201,7 @@
         </div>
     {/if}
 
-    {#if isAdmin && shows("watch directory", "auto deploy", "deploy")}
+    {#if shows("watch directory", "auto deploy", "deploy")}
         <form
             onsubmit={(event) => {
                 event.preventDefault();
@@ -269,37 +267,35 @@
                     Pull from Git
                 </Button>
             </div>
-            {#if isAdmin}
-                <form
-                    class="mt-3 flex gap-2"
-                    onsubmit={async (event) => {
-                        event.preventDefault();
 
-                        if (
-                            await git.run(
-                                "push",
-                                undefined,
-                                commitMessage,
-                            )
+            <form
+                class="mt-3 flex gap-2"
+                onsubmit={async (event) => {
+                    event.preventDefault();
+
+                    if (
+                        await git.run(
+                            "push",
+                            undefined,
+                            commitMessage,
                         )
-                            commitMessage = "";
-                    }}
+                    )
+                        commitMessage = "";
+                }}
+            >
+                <Input
+                    bind:value={commitMessage}
+                    placeholder="Update Compose configuration"
+                    aria-label="Commit message"
+                    disabled={git.pending}
+                />
+                <Button
+                    type="submit"
+                    disabled={git.pending || !commitMessage.trim()}
                 >
-                    <Input
-                        bind:value={commitMessage}
-                        placeholder="Update Compose configuration"
-                        aria-label="Commit message"
-                        disabled={git.pending}
-                    />
-                    <Button
-                        type="submit"
-                        disabled={git.pending ||
-                            !commitMessage.trim()}
-                    >
-                        Commit &amp; push
-                    </Button>
-                </form>
-            {/if}
+                    Commit &amp; push
+                </Button>
+            </form>
         </div>
     {/if}
 {:else}

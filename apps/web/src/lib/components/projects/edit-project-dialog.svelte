@@ -145,16 +145,15 @@
             </form>
         </DialogPanel>
         <DialogFooter>
-            {#if page.data.isOrganizationAdmin}
-                <Button
-                    variant="destructive-outline"
-                    class="sm:mr-auto"
-                    disabled={mutation.isPending}
-                    onclick={askDelete}
-                >
-                    Delete project
-                </Button>
-            {/if}
+            <Button
+                variant="destructive-outline"
+                class="sm:mr-auto"
+                disabled={mutation.isPending}
+                onclick={askDelete}
+            >
+                Delete project
+            </Button>
+
             <Button
                 variant="outline"
                 disabled={mutation.isPending}

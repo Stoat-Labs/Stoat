@@ -8,7 +8,7 @@ import {
     gitOAuthCookieName,
     gitOAuthCookieOptions,
     readGitOAuthFlow,
-    requireGitOAuthAdmin,
+    requireGitOAuthMember,
     saveGitOAuthConnection,
 } from "@stoat/api/git/oauth";
 import { getAuth, getDb } from "../../../../services";
@@ -38,7 +38,7 @@ export const GET: RequestHandler = async ({ request, url, cookies }) => {
             query: { disableCookieCache: true },
         });
 
-        const identity = await requireGitOAuthAdmin(db, session);
+        const identity = await requireGitOAuthMember(db, session);
         const providers = await getOrganizationGitOAuthProviders(db, identity.organizationId);
         const flow = readGitOAuthFlow(cookie, url.searchParams.get("state"), identity, providers);
         const account = await exchangeGitOAuthCode(flow, url.searchParams.get("code")!, providers);
@@ -49,7 +49,7 @@ export const GET: RequestHandler = async ({ request, url, cookies }) => {
             query: { disableCookieCache: true },
         });
 
-        const currentIdentity = await requireGitOAuthAdmin(db, currentSession);
+        const currentIdentity = await requireGitOAuthMember(db, currentSession);
         readGitOAuthFlow(
             cookie,
             url.searchParams.get("state"),

@@ -291,21 +291,10 @@ describe("cluster initialization API (PostgreSQL)", () => {
         expect(
             (await call(clusterRouter.getCluster, { clusterId }, { context })).projectCount,
         ).toBe(0);
-        // Owners/admins may read internal projects by ID but never create resources in them.
+        // Internal projects can be read by ID but never have resources created in them.
         await expect(
             call(resourcesRouter.createResource, { projectId, name: "Injected" }, { context }),
         ).rejects.toMatchObject({ code: "NOT_FOUND" });
-        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'initializer'`);
-
-        try {
-            await expect(
-                call(resourcesRouter.listResources, { projectId }, { context }),
-            ).rejects.toMatchObject({ code: "NOT_FOUND" });
-        } finally {
-            await db.$client.query(
-                `UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`,
-            );
-        }
     });
 
     it("records an InitializeCluster deployment with logs for every request", async () => {
@@ -412,7 +401,6 @@ describe("cluster initialization API (PostgreSQL)", () => {
         );
 
         expect(afterCancel.status).toBe("cancelled");
-        expect(afterCancel.canCancel).toBe(true);
         await expect(
             call(
                 clusterRouter.cancelDeployment,
@@ -481,7 +469,6 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 ingestUrl: "http://stoat-monitoring-greptimedb.internal:4006",
                 httpUrl: "http://stoat-monitoring-greptimedb.internal:4000",
                 password: "greptime-pw",
-                canReveal: true,
             });
         } finally {
             if (previous === undefined) delete process.env.APP_SECRET;
@@ -500,7 +487,6 @@ describe("cluster initialization API (PostgreSQL)", () => {
             expect(rotated).toMatchObject({
                 configured: true,
                 password: null,
-                canReveal: true,
             });
         } finally {
             if (previous === undefined) delete process.env.APP_SECRET;
@@ -644,77 +630,73 @@ describe("cluster initialization API (PostgreSQL)", () => {
         ).toEqual([]);
     });
 
-    it.each(["owner", "admin", "member", "member, admin"])(
-        "reveals monitoring passwords only to privileged roles: %s",
-        async (role) => {
-            const clusterId = randomUUID();
-            const projectId = randomUUID();
-            const resourceId = randomUUID();
-            const userId = randomUUID();
-            const secret = "test-monitoring-role-secret-at-least-32-characters";
-            await db.$client.query(
-                `INSERT INTO "user" (id, name, email) VALUES ($1, 'Role test', $2)`,
-                [userId, `${userId}@test.example`],
-            );
-            await db.$client.query(
-                `INSERT INTO member (id, user_id, organization_id, role, created_at) VALUES ($1, $2, $3, $4, now())`,
-                [randomUUID(), userId, organizationId, role],
-            );
-            await db.insert(clusters).values({
-                id: clusterId,
-                organizationId,
-                name: "Secret roles",
-                sidecarUrl: "http://sidecar.test",
-                sidecarToken: "private-sidecar-token",
-            });
-            await db
-                .insert(projects)
-                .values({ id: projectId, clusterId, name: "Monitoring", isInternal: true });
-            await db.insert(resources).values({ id: resourceId, projectId, name: "Monitoring" });
-            await db.insert(clusterMonitoring).values({
+    it("reveals the monitoring password to every member of the organization", async () => {
+        const role = "member";
+        const clusterId = randomUUID();
+        const projectId = randomUUID();
+        const resourceId = randomUUID();
+        const userId = randomUUID();
+        const secret = "test-monitoring-role-secret-at-least-32-characters";
+        await db.$client.query(
+            `INSERT INTO "user" (id, name, email) VALUES ($1, 'Role test', $2)`,
+            [userId, `${userId}@test.example`],
+        );
+        await db.$client.query(
+            `INSERT INTO member (id, user_id, organization_id, role, created_at) VALUES ($1, $2, $3, $4, now())`,
+            [randomUUID(), userId, organizationId, role],
+        );
+        await db.insert(clusters).values({
+            id: clusterId,
+            organizationId,
+            name: "Secret roles",
+            sidecarUrl: "http://sidecar.test",
+            sidecarToken: "private-sidecar-token",
+        });
+        await db
+            .insert(projects)
+            .values({ id: projectId, clusterId, name: "Monitoring", isInternal: true });
+        await db.insert(resources).values({ id: resourceId, projectId, name: "Monitoring" });
+        await db.insert(clusterMonitoring).values({
+            clusterId,
+            projectId,
+            resourceId,
+            encryptedPassword: encryptMonitoringPassword(
+                "private-monitoring-password",
+                secret,
                 clusterId,
-                projectId,
-                resourceId,
-                encryptedPassword: encryptMonitoringPassword(
-                    "private-monitoring-password",
-                    secret,
-                    clusterId,
-                ),
+            ),
+        });
+
+        // SAFETY: authorization reads the test user's identity and selected organization only.
+        const roleContext = {
+            db,
+            session: {
+                user: { id: userId },
+                session: { activeOrganizationId: organizationId },
+            },
+        } as Context;
+
+        vi.stubEnv("APP_SECRET", secret);
+
+        try {
+            const connection = await call(
+                clusterRouter.getMonitoringConnection,
+                { clusterId },
+                { context: roleContext },
+            );
+
+            expect(connection).toMatchObject({
+                configured: true,
+                password: "private-monitoring-password",
             });
+            expect(connection).not.toHaveProperty("encryptedPassword");
+            expect(connection).not.toHaveProperty("sidecarToken");
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
 
-            // SAFETY: authorization reads the test user's identity and selected organization only.
-            const roleContext = {
-                db,
-                session: {
-                    user: { id: userId },
-                    session: { activeOrganizationId: organizationId },
-                },
-            } as Context;
-
-            vi.stubEnv("APP_SECRET", secret);
-
-            try {
-                const connection = await call(
-                    clusterRouter.getMonitoringConnection,
-                    { clusterId },
-                    { context: roleContext },
-                );
-
-                const canReveal = role !== "member";
-                expect(connection).toMatchObject({
-                    configured: true,
-                    canReveal,
-                    password: canReveal ? "private-monitoring-password" : null,
-                });
-                expect(connection).not.toHaveProperty("encryptedPassword");
-                expect(connection).not.toHaveProperty("sidecarToken");
-            } finally {
-                vi.unstubAllEnvs();
-            }
-        },
-    );
-
-    it("rejects dangerous storage paths, missing machines, and ordinary members", async () => {
+    it("rejects dangerous storage paths and missing machines", async () => {
         const added = await call(
             clusterRouter.createCluster,
             { name: "Validation", sidecarUrl: "http://sidecar.test", sidecarToken: "secret" },
@@ -750,22 +732,9 @@ describe("cluster initialization API (PostgreSQL)", () => {
                 { context },
             ),
         ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'initializer'`);
-        await expect(
-            call(clusterRouter.getInitializationOptions, { clusterId: added.id! }, { context }),
-        ).rejects.toMatchObject({ code: "FORBIDDEN" });
-        await expect(
-            call(
-                clusterRouter.initializeCluster,
-                { clusterId: added.id!, configuration: config },
-                { context },
-            ),
-        ).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 
-    it("updates retention without redeploying, validating input and membership", async () => {
-        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
-
+    it("updates retention without redeploying, validating input", async () => {
         const added = await call(
             clusterRouter.createCluster,
             { name: "Retention", sidecarUrl: "http://sidecar.test", sidecarToken: "secret" },
@@ -824,16 +793,9 @@ describe("cluster initialization API (PostgreSQL)", () => {
 
         const [untouched] = await db.select().from(clusters).where(eq(clusters.id, clusterId));
         expect(untouched?.initializationConfiguration).toEqual(configuration);
-
-        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'initializer'`);
-        await expect(
-            call(clusterRouter.updateRetention, { clusterId, retentionDays: 30 }, { context }),
-        ).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 
     it("rejects sidecar URLs that are not http(s) URLs", async () => {
-        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'initializer'`);
-
         for (const sidecarUrl of ["sidecar.test", "ftp://sidecar.test", "not a url"]) {
             await expect(
                 call(

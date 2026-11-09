@@ -173,10 +173,6 @@
         }),
     );
 
-    const canDelete = $derived(
-        deploymentsQuery.data?.canDelete === true,
-    );
-
     useHeaderActions(statusFilters, () => latest === undefined);
 
     onMount(() => {
@@ -384,7 +380,7 @@
             {meta}
             loading={deploymentsQuery.isPending}
             loadingRows={limit}
-            colSpan={5 + (canDelete ? 1 : 0)}
+            colSpan={6}
             isEmpty={items.length === 0}
             emptyTitle={status === "all"
                 ? "No deployments yet"
@@ -419,7 +415,7 @@
                     >
                         Duration
                     </TableHead>
-                    {#if canDelete}<TableHead class="w-10" />{/if}
+                    <TableHead class="w-10" />
                 </TableRow>
             {/snippet}
             {#snippet placeholderRow()}
@@ -491,39 +487,34 @@
                 )}
             </span>
         </TableCell>
-        {#if canDelete}
-            <TableCell class="w-10 text-right">
-                {#if isSettled(deployment.status) && deployment.id !== "placeholder"}
-                    <Menu>
-                        <MenuTrigger
-                            aria-label="Deployment actions"
-                            class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                            onclick={(event) =>
-                                event.stopPropagation()}
+
+        <TableCell class="w-10 text-right">
+            {#if isSettled(deployment.status) && deployment.id !== "placeholder"}
+                <Menu>
+                    <MenuTrigger
+                        aria-label="Deployment actions"
+                        class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                        onclick={(event) => event.stopPropagation()}
+                    >
+                        <Ellipsis class="size-4" aria-hidden="true" />
+                    </MenuTrigger>
+                    <MenuPopup align="end">
+                        <MenuItem
+                            variant="destructive"
+                            onclick={(event) => {
+                                event.stopPropagation();
+                                void list.set({
+                                    deleteId: deployment.id,
+                                });
+                            }}
                         >
-                            <Ellipsis
-                                class="size-4"
-                                aria-hidden="true"
-                            />
-                        </MenuTrigger>
-                        <MenuPopup align="end">
-                            <MenuItem
-                                variant="destructive"
-                                onclick={(event) => {
-                                    event.stopPropagation();
-                                    void list.set({
-                                        deleteId: deployment.id,
-                                    });
-                                }}
-                            >
-                                <Trash2 aria-hidden="true" />
-                                Delete
-                            </MenuItem>
-                        </MenuPopup>
-                    </Menu>
-                {/if}
-            </TableCell>
-        {/if}
+                            <Trash2 aria-hidden="true" />
+                            Delete
+                        </MenuItem>
+                    </MenuPopup>
+                </Menu>
+            {/if}
+        </TableCell>
     </TableRow>
 {/snippet}
 

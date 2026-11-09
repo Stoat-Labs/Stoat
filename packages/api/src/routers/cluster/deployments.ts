@@ -22,12 +22,8 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
 import YAML from "yaml";
-import { organizationAdminProcedure, organizationProcedure } from "../..";
+import { organizationProcedure } from "../..";
 import { cancellableStream } from "../../stream";
-
-function canInitializeRole(role: string) {
-    return role.split(",").some((part) => part.trim() === "owner" || part.trim() === "admin");
-}
 
 function isTerminalStatus(status: string) {
     return status === "ready" || status === "failed" || status === "cancelled";
@@ -83,7 +79,7 @@ export const deploymentsRouter = {
                 afterId: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
             }),
         )
-        .handler(({ context: { db, organizationId, organizationRole }, input, signal }) =>
+        .handler(({ context: { db, organizationId }, input, signal }) =>
             cancellableStream(async function* (signal) {
                 const [deployment] = await db
                     .select({ clusterId: deployments.clusterId })
@@ -99,7 +95,7 @@ export const deploymentsRouter = {
                     afterId: input.afterId,
                     signal,
                 })) {
-                    yield { ...event, canCancel: canInitializeRole(organizationRole) };
+                    yield event;
                 }
             }, signal),
         ),
@@ -149,11 +145,10 @@ export const deploymentsRouter = {
 
     getDeployment: organizationProcedure
         .input(v.object({ deploymentId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const key = `deployment:${input.deploymentId}`;
 
             // Terminal deployments are immutable, so a cached copy stays valid.
-            // canCancel depends on the caller's role and is recomputed per request.
 
             const cached =
                 await cache.getItem<Awaited<ReturnType<typeof getDeploymentWithLogs>>>(key);
@@ -161,7 +156,7 @@ export const deploymentsRouter = {
             if (cached && isTerminalStatus(cached.status)) {
                 await requireOrgCluster(db, organizationId, cached.clusterId);
 
-                return { ...cached, canCancel: canInitializeRole(organizationRole) };
+                return cached;
             }
 
             const deployment = await getDeploymentWithLogs(db, input.deploymentId);
@@ -171,10 +166,10 @@ export const deploymentsRouter = {
 
             if (isTerminalStatus(deployment.status)) await cache.setItem(key, deployment);
 
-            return { ...deployment, canCancel: canInitializeRole(organizationRole) };
+            return deployment;
         }),
 
-    cancelDeployment: organizationAdminProcedure
+    cancelDeployment: organizationProcedure
         .input(v.object({ deploymentId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const deployment = await getDeploymentWithLogs(db, input.deploymentId);
@@ -221,7 +216,7 @@ export const deploymentsRouter = {
             return { id: cancelled.id, status: "cancelled" as const };
         }),
 
-    deleteDeployment: organizationAdminProcedure
+    deleteDeployment: organizationProcedure
         .input(v.object({ deploymentId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [deployment] = await db
@@ -261,7 +256,7 @@ export const deploymentsRouter = {
                 }),
             ),
         )
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
             const status = input?.status ?? "all";
@@ -334,7 +329,6 @@ export const deploymentsRouter = {
                       load,
                   );
 
-            // The cached page is shared by the whole org, so the role is attached per request.
-            return { ...page, canDelete: canInitializeRole(organizationRole) };
+            return page;
         }),
 };

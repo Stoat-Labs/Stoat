@@ -62,7 +62,6 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
     cache.setQueryData(orpc.connections.list.queryKey(), {
         organizationId: "organization",
         oauthProviders: [],
-        canManage: true,
         connections: [
             {
                 id: "connection-a",
@@ -92,7 +91,6 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
         setQueryClientContext(cache);
         setContext("__request__", {
             page: {
-                data: { isOrganizationAdmin: true },
                 params: { projectId: "project", source },
                 url: new URL(`https://stoat.test/projects/project/create/${source}?${search}`),
             },

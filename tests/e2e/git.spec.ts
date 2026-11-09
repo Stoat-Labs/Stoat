@@ -1,14 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { commitOnServer, committedFile, gitServer, initialCompose } from "./git-server";
-import {
-    clientHeaders,
-    memberStorageState,
-    openCreatedResource,
-    resourcePath,
-    rpc,
-    sql,
-    storageState,
-} from "./fixtures";
+import { openCreatedResource, resourcePath, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 
@@ -248,27 +240,4 @@ test("detaching keeps the draft but forgets the repository", async ({ page }) =>
     expect(await sql("SELECT git_connection_id FROM resources WHERE id = $1", [target.id])).toEqual(
         [{ git_connection_id: null }],
     );
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("connections are read-only and pushing is left to admins", async ({ page, browser }) => {
-        // The owner sets up a Git-backed resource for the member to look at.
-        const owner = await browser.newPage({
-            baseURL: process.env.E2E_BASE_URL,
-            storageState,
-            extraHTTPHeaders: clientHeaders(),
-        });
-
-        const target = await gitResource(owner);
-        await owner.close();
-
-        await page.goto("/git");
-        await expect(page.getByRole("button", { name: "Add connection" })).toHaveCount(0);
-
-        await page.goto(`${target.path}/settings`);
-        await expect(panel(page)).toContainText("Only administrators can push to Git.");
-        await expect(panel(page).getByRole("button", { name: "Commit & push" })).toHaveCount(0);
-    });
 });

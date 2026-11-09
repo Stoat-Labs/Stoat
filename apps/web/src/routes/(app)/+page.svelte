@@ -503,25 +503,20 @@
                     <EmptyDescription>
                         {!needsCluster
                             ? "Create your first project to get started."
-                            : page.data.isOrganizationAdmin
-                              ? "Projects run on a cluster. Connect one first, then create your project."
-                              : "Projects run on a cluster. Ask an organization admin to connect one."}
+                            : "Projects run on a cluster. Connect one first, then create your project."}
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
                     {#if needsCluster}
-                        {#if page.data.isOrganizationAdmin}<Button
-                                size="sm"
-                                href="/clusters?dialog=create-cluster&next={encodeURIComponent(
-                                    '/?dialog=create-project',
-                                )}"
-                            >
-                                <Plus
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                                Connect a cluster
-                            </Button>{/if}
+                        <Button
+                            size="sm"
+                            href="/clusters?dialog=create-cluster&next={encodeURIComponent(
+                                '/?dialog=create-project',
+                            )}"
+                        >
+                            <Plus class="size-4" aria-hidden="true" />
+                            Connect a cluster
+                        </Button>
                     {:else}
                         <Button
                             size="sm"

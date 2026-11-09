@@ -9,7 +9,6 @@ import {
 import { expect, test, type Page } from "@playwright/test";
 import {
     ids,
-    memberStorageState,
     openCreatedResource,
     resourcePath,
     rpc,
@@ -286,29 +285,5 @@ test.describe("buckets", () => {
         expect(await sql("SELECT id FROM resources WHERE id = $1", [id])).toEqual([]);
         expect(await bucketExists(bucket)).toBe(false);
         await expect(s3(keys).send(new ListObjectsV2Command({ Bucket: bucket }))).rejects.toThrow();
-    });
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("connections and buckets are read-only", async ({ page }) => {
-        await page.goto("/s3");
-        await expect(page.getByRole("link", { name: /^RustFS RustFS/u })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Add connection" })).toHaveCount(0);
-
-        const [assets] = await sql<{ id: string }>(
-            "SELECT id FROM resources WHERE project_id = $1 AND name = 'assets'",
-            [ids.shop],
-        );
-
-        await page.goto(`/projects/${ids.shop}/${assets!.id}/variables`);
-        await expect(page.getByRole("button", { name: "Show values" })).toHaveCount(0);
-        await page.goto(`/projects/${ids.shop}/${assets!.id}/settings`);
-        await expect(page.getByRole("button", { name: /Set limit|Edit limit/u })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Delete bucket" })).toHaveCount(0);
-
-        await page.goto(`/projects/${ids.shop}/create`);
-        await expect(page.getByRole("link", { name: /S3 bucket/u })).toHaveCount(0);
     });
 });

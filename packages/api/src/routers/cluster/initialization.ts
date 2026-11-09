@@ -9,7 +9,7 @@ import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import * as v from "valibot";
-import { organizationAdminProcedure, organizationProcedure, uncloudMiddleware } from "../..";
+import { organizationProcedure, uncloudMiddleware } from "../..";
 
 const clusterInput = v.object({ clusterId: v.pipe(v.string(), v.uuid()) });
 
@@ -56,7 +56,7 @@ export const initializationConfigurationInput = v.pipe(
 );
 
 export const initializationRouter = {
-    getInitializationOptions: organizationAdminProcedure
+    getInitializationOptions: organizationProcedure
         .input(clusterInput)
         .use(uncloudMiddleware)
         .handler(async ({ context: { db, uc, organizationId }, input }) => {
@@ -87,7 +87,7 @@ export const initializationRouter = {
                 },
             };
         }),
-    initializeCluster: organizationAdminProcedure
+    initializeCluster: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),
@@ -153,7 +153,7 @@ export const initializationRouter = {
                 };
             });
         }),
-    retryInitialization: organizationAdminProcedure
+    retryInitialization: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),
@@ -271,7 +271,7 @@ export const initializationRouter = {
                 };
             });
         }),
-    updateRetention: organizationAdminProcedure
+    updateRetention: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),
@@ -390,7 +390,7 @@ function dashboardUrlFor(ingestUrl: string | null) {
 export const monitoringRouter = {
     getMonitoringConnection: organizationProcedure
         .input(clusterInput)
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
                 .select({ id: clusters.id, greptimeUrl: clusters.greptimeUrl })
                 .from(clusters)
@@ -412,25 +412,18 @@ export const monitoringRouter = {
 
             if (!monitoring) return { configured: false as const };
 
-            const isAdmin = organizationRole
-                .split(",")
-                .some((part) => part.trim() === "owner" || part.trim() === "admin");
-
-            // The password only ever leaves the server for owners/admins. A null
-            // password for an admin means the app secret rotated since issuance;
-            // re-running initialization issues fresh credentials.
+            // A null password means the app secret rotated since issuance; re-running
+            // initialization issues fresh credentials.
             let password: string | null = null;
 
-            if (isAdmin) {
-                try {
-                    password = decryptMonitoringPassword(
-                        monitoring.encryptedPassword,
-                        appSecret(),
-                        cluster.id,
-                    );
-                } catch {
-                    password = null;
-                }
+            try {
+                password = decryptMonitoringPassword(
+                    monitoring.encryptedPassword,
+                    appSecret(),
+                    cluster.id,
+                );
+            } catch {
+                password = null;
             }
 
             return {
@@ -441,7 +434,6 @@ export const monitoringRouter = {
                     cluster.greptimeUrl ?? "http://stoat-monitoring-greptimedb.internal:4006",
                 httpUrl: dashboardUrlFor(cluster.greptimeUrl),
                 password,
-                canReveal: isAdmin,
             };
         }),
 };

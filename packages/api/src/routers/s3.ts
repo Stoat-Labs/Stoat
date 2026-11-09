@@ -13,7 +13,7 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
-import { organizationAdminProcedure, organizationProcedure } from "..";
+import { organizationProcedure } from "..";
 
 const id = v.pipe(v.string(), v.uuid());
 
@@ -141,7 +141,7 @@ export const s3Router = {
 
             return { ...publicConnection(connection), buckets };
         }),
-    create: organizationAdminProcedure
+    create: organizationProcedure
         .input(v.object({ name, connection: s3ConnectionInput }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const connectionId = randomUUID();
@@ -169,7 +169,7 @@ export const s3Router = {
 
             return publicConnection(connection);
         }),
-    update: organizationAdminProcedure
+    update: organizationProcedure
         .input(v.object({ connectionId: id, version, name, connection: s3ConnectionInput }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const saved = await getConnection(db, organizationId, input.connectionId);
@@ -221,7 +221,7 @@ export const s3Router = {
 
             return publicConnection(updated);
         }),
-    remove: organizationAdminProcedure
+    remove: organizationProcedure
         .input(v.object({ connectionId: id, version }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             await getConnection(db, organizationId, input.connectionId);
@@ -252,7 +252,7 @@ export const s3Router = {
 
             return { success: true };
         }),
-    test: organizationAdminProcedure
+    test: organizationProcedure
         .input(
             v.object({
                 connection: s3ConnectionInput,

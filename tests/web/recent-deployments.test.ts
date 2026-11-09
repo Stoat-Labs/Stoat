@@ -47,7 +47,6 @@ function renderDeployments(latest: number | undefined, search: string) {
     cache.setQueryData(orpc.cluster.listAllDeployments.queryKey({ input }), {
         items,
         total: 80,
-        canDelete: false,
     });
 
     function TableWithContext(...args: Parameters<typeof DeploymentsTable>) {

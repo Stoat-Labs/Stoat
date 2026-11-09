@@ -479,7 +479,6 @@ describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
 
         try {
             expect((await stream.next()).value).toMatchObject({
-                canCancel: true,
                 deployment: { resourceId },
             });
         } finally {

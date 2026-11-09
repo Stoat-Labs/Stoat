@@ -16,7 +16,7 @@ import {
     gitOAuthCookieOptions,
     readGitOAuthFlow,
     refreshGitOAuthCredentials,
-    requireGitOAuthAdmin,
+    requireGitOAuthMember,
     type GitOAuthProvider,
 } from "../../packages/api/src/git/oauth";
 import * as gitOAuth from "../../packages/api/src/git/oauth";
@@ -37,7 +37,7 @@ const mocks = {
     update: vi.fn(),
     // SAFETY: fixtures below populate the connection fields read by the OAuth handlers.
     connection: undefined as Partial<typeof gitConnections.$inferSelect> | undefined,
-    lockedRole: "admin",
+    stillMember: true,
 };
 
 const identity = { userId: "user-1", sessionId: "session-1", organizationId: "org-1" };
@@ -112,7 +112,7 @@ beforeEach(() => {
     mocks.membership.mockResolvedValue({ role: "admin" });
     mocks.session.mockResolvedValue(session);
     mocks.connection = undefined;
-    mocks.lockedRole = "admin";
+    mocks.stillMember = true;
     mocks.db.select.mockImplementation(() => ({
         from: (table: PgTable) => ({
             where: () => ({
@@ -120,7 +120,9 @@ beforeEach(() => {
                 limit: async () => (mocks.connection ? [mocks.connection] : []),
                 for: async () =>
                     table === member
-                        ? [{ role: mocks.lockedRole }]
+                        ? mocks.stillMember
+                            ? [{ role: "member" }]
+                            : []
                         : mocks.connection
                           ? [mocks.connection]
                           : [],
@@ -286,22 +288,20 @@ describe("Git OAuth state and authorization", () => {
         );
     });
 
-    it("requires an active session and current owner/admin membership", async () => {
+    it("requires an active session and current membership", async () => {
         // Membership is mocked, so this lazily connecting handle never opens a connection.
         const db = createDb({ DATABASE_URL: process.env.DATABASE_URL! });
-        await expect(requireGitOAuthAdmin(db, null)).rejects.toThrow("forbidden");
+        await expect(requireGitOAuthMember(db, null)).rejects.toThrow("forbidden");
         await expect(
-            requireGitOAuthAdmin(db, {
+            requireGitOAuthMember(db, {
                 ...session!,
                 session: { ...session!.session, activeOrganizationId: null },
             }),
         ).rejects.toThrow("forbidden");
-        mocks.membership.mockResolvedValue({ role: "member" });
-        await expect(requireGitOAuthAdmin(db, session)).rejects.toThrow("forbidden");
         mocks.membership.mockResolvedValue(undefined);
-        await expect(requireGitOAuthAdmin(db, session)).rejects.toThrow("forbidden");
-        mocks.membership.mockResolvedValue({ role: "member, owner" });
-        await expect(requireGitOAuthAdmin(db, session)).resolves.toEqual(identity);
+        await expect(requireGitOAuthMember(db, session)).rejects.toThrow("forbidden");
+        mocks.membership.mockResolvedValue({ role: "member" });
+        await expect(requireGitOAuthMember(db, session)).resolves.toEqual(identity);
         await db.$client.end();
     });
 
@@ -818,7 +818,7 @@ describe("Git OAuth endpoints", () => {
         "wrong-state",
         "wrong-session",
         "revoked-during-exchange",
-        "demoted-during-write",
+        "removed-during-write",
         "provider-failure",
         "repository-failure",
     ])("clears the cookie and never saves on %s", async (failure) => {
@@ -833,7 +833,7 @@ describe("Git OAuth endpoints", () => {
         if (failure === "revoked-during-exchange")
             mocks.session.mockResolvedValueOnce(session).mockResolvedValueOnce(null);
 
-        if (failure === "demoted-during-write") mocks.lockedRole = "member";
+        if (failure === "removed-during-write") mocks.stillMember = false;
 
         if (failure === "provider-failure")
             vi.mocked(gitProvider.gitProviderRequest).mockRejectedValue(
@@ -856,7 +856,7 @@ describe("Git OAuth endpoints", () => {
         const expected =
             failure === "denied"
                 ? "invalid_request"
-                : ["revoked-during-exchange", "demoted-during-write"].includes(failure)
+                : ["revoked-during-exchange", "removed-during-write"].includes(failure)
                   ? "forbidden"
                   : failure === "provider-failure"
                     ? "token_exchange_failed"

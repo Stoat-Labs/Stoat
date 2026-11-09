@@ -8,7 +8,7 @@ import { sshKeyPair } from "@stoat/workflows/ssh-setup";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { organizationAdminProcedure, uncloudMiddleware } from "../..";
+import { organizationProcedure, uncloudMiddleware } from "../..";
 import { assertNoAttempt, assertReachableHost, serverInput } from "./provisioning";
 
 const clusterId = v.pipe(v.string(), v.uuid());
@@ -108,7 +108,7 @@ function removalError(error: Error) {
 
 export const machinesRouter = {
     // Saves the server to add with a new single-use key; adding it starts once the key is authorized.
-    prepareMachine: organizationAdminProcedure
+    prepareMachine: organizationProcedure
         .input(v.object({ clusterId, ...serverInput, name: v.optional(machineName) }))
         .handler(async ({ context: { db, organizationId }, input }) => {
             assertReachableHost(input.host);
@@ -145,7 +145,7 @@ export const machinesRouter = {
         }),
 
     // What to authorize and how far adding the server got; null when none is waiting.
-    getPendingMachine: organizationAdminProcedure
+    getPendingMachine: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
@@ -180,7 +180,7 @@ export const machinesRouter = {
         }),
 
     // Starts or retries adding the pending server. The queued deployment is the outbox.
-    addMachine: organizationAdminProcedure
+    addMachine: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
@@ -208,7 +208,7 @@ export const machinesRouter = {
         ),
 
     // Forgets the pending server and deletes its key. A server that already joined stays in the cluster.
-    discardPendingMachine: organizationAdminProcedure
+    discardPendingMachine: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
@@ -225,7 +225,7 @@ export const machinesRouter = {
         ),
 
     // Like `uc machine rm`: removes its containers and resets it when it answers, then drops it from the cluster.
-    removeMachine: organizationAdminProcedure
+    removeMachine: organizationProcedure
         .input(v.object({ clusterId, machineId }))
         .use(uncloudMiddleware)
         .handler(async ({ context: { db, uc }, input }) =>

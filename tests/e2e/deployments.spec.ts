@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { FAILING_IMAGE, HANGING_IMAGE, LOG_LINES } from "./fake-sidecar";
 import {
-    memberStorageState,
     receivedComposes,
     resourcePath,
     resetSidecar,
@@ -318,54 +317,5 @@ test.describe("deleting", () => {
         expect(await sql("SELECT id FROM projects WHERE id = $1", [target.projectId])).toHaveLength(
             1,
         );
-    });
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("deploying is left to admins", async ({ page }) => {
-        const [api] = await sql<{ id: string; project_id: string }>(
-            "SELECT id, project_id FROM resources WHERE name = 'api'",
-        );
-
-        await page.goto(`/projects/${api!.project_id}/${api!.id}`);
-        await expect(page.locator(".cm-content")).toContainText("nginx:alpine");
-        await expect(page.getByRole("button", { name: /^Deploy/u })).toHaveCount(0);
-
-        const refused = await page.request.post("/rpc/api/resources/deploy", {
-            data: { projectId: api!.project_id, resourceId: api!.id },
-            headers: { origin: process.env.E2E_BASE_URL! },
-        });
-
-        expect(refused.status()).toBe(403);
-    });
-
-    test("deleting is left to admins", async ({ page }) => {
-        const [api] = await sql<{ id: string; project_id: string }>(
-            "SELECT id, project_id FROM resources WHERE name = 'api'",
-        );
-
-        await page.goto(`/projects/${api!.project_id}/${api!.id}/settings`);
-        await expect(page.getByRole("textbox", { name: /^Name/u })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Delete resource" })).toHaveCount(0);
-
-        await page.goto(`/projects/${api!.project_id}`);
-        await page.getByRole("button", { name: "Edit project" }).click();
-        await expect(
-            page.getByRole("dialog").getByRole("button", { name: "Delete project" }),
-        ).toHaveCount(0);
-
-        for (const [path, input] of [
-            ["resources/deleteResource", { projectId: api!.project_id, resourceIds: [api!.id] }],
-            ["projects/deleteProject", { projectId: api!.project_id }],
-        ] as const) {
-            const refused = await page.request.post(`/rpc/api/${path}`, {
-                data: input,
-                headers: { origin: process.env.E2E_BASE_URL! },
-            });
-
-            expect(refused.status()).toBe(403);
-        }
     });
 });

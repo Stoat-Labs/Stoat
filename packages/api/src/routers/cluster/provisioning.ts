@@ -12,7 +12,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import * as v from "valibot";
-import { organizationAdminProcedure } from "../..";
+import { organizationProcedure } from "../..";
 
 const clusterInput = v.object({ clusterId: v.pipe(v.string(), v.uuid()) });
 
@@ -110,7 +110,7 @@ export type ProvisioningStatus = ReturnType<typeof provisioningStatus>;
 
 export const provisioningRouter = {
     // The cluster exists from the start; each setup attempt is a ProvisionCluster deployment of it.
-    provisionCluster: organizationAdminProcedure
+    provisionCluster: organizationProcedure
         .input(
             v.object({
                 name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
@@ -151,7 +151,7 @@ export const provisioningRouter = {
         }),
 
     // What to authorize, where setup is, and the latest attempt.
-    getProvisioning: organizationAdminProcedure
+    getProvisioning: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
@@ -188,7 +188,7 @@ export const provisioningRouter = {
         }),
 
     // Starts or retries setup. The queued deployment is the outbox; the worker picks it up.
-    startProvisioning: organizationAdminProcedure
+    startProvisioning: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),

@@ -50,7 +50,8 @@ export class DeploymentStream {
 
     rows = $state.raw<DeploymentRow[]>([]);
 
-    cancelAllowed = $state(false);
+    // Cleared once a cancel went through, so its button goes before the stream reports the new status.
+    cancelAllowed = $state(true);
 
     streamError = $state("");
 
@@ -69,9 +70,9 @@ export class DeploymentStream {
 
     statusVariant = $derived(deploymentStatusVariant(this.status));
 
-    canCancel = $derived(this.cancelAllowed && this.isActive);
+    canCancel = $derived(this.cancelAllowed && this.isActive && !!this.deployment);
 
-    canDelete = $derived(this.cancelAllowed && !this.isActive && !!this.deployment);
+    canDelete = $derived(!this.isActive && !!this.deployment);
 
     steps = $derived(
         deploymentSteps(
@@ -118,7 +119,7 @@ export class DeploymentStream {
         this.deployment = null;
         this.origin = { projectId: null, projectName: null, resourceName: null };
         this.rows = [];
-        this.cancelAllowed = false;
+        this.cancelAllowed = true;
         this.streamError = "";
         this.reconnecting = false;
         // View state setters read their own state; tracking it would restart the stream on every view change.
@@ -149,7 +150,6 @@ export class DeploymentStream {
                     if (disposed) return;
                     streamComplete = event.complete;
                     this.deployment = event.deployment;
-                    this.cancelAllowed = event.canCancel;
                     this.streamError = "";
                     this.reconnecting = false;
                     appendLines(event.logs);
@@ -166,7 +166,6 @@ export class DeploymentStream {
                                 ...event.deployment,
                                 ...this.origin,
                                 logs: rawLogs,
-                                canCancel: event.canCancel,
                             },
                         );
                         void queryClient.invalidateQueries({
@@ -213,7 +212,6 @@ export class DeploymentStream {
 
                 const {
                     logs: snapshotLogs,
-                    canCancel,
                     projectId,
                     projectName,
                     resourceName,
@@ -222,7 +220,6 @@ export class DeploymentStream {
 
                 this.deployment = snapshotDeployment;
                 this.origin = { projectId, projectName, resourceName };
-                this.cancelAllowed = canCancel;
                 this.rows = snapshotLogs.map(toRow);
                 rawLogs.push(...snapshotLogs);
                 afterId = snapshotLogs.at(-1)?.id ?? 0;

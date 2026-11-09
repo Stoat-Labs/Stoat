@@ -255,24 +255,18 @@
                                 />
                             </SelectTrigger>
                         </Select>
-                        {#if page.data.isOrganizationAdmin}
-                            <FieldDescription>
-                                Projects run on a cluster. Your draft
-                                is kept while you connect one.
-                            </FieldDescription>
-                            <Button
-                                size="sm"
-                                class="mt-2 w-fit"
-                                href={connectClusterHref}
-                            >
-                                Connect a cluster
-                            </Button>
-                        {:else}
-                            <FieldDescription>
-                                Projects run on a cluster. Ask an
-                                organization admin to connect one.
-                            </FieldDescription>
-                        {/if}
+
+                        <FieldDescription>
+                            Projects run on a cluster. Your draft is
+                            kept while you connect one.
+                        </FieldDescription>
+                        <Button
+                            size="sm"
+                            class="mt-2 w-fit"
+                            href={connectClusterHref}
+                        >
+                            Connect a cluster
+                        </Button>
                     {:else}
                         <Select
                             bind:value={clusterId}

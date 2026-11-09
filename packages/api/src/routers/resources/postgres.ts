@@ -23,7 +23,7 @@ import { parseEnv } from "node:util";
 import * as v from "valibot";
 import YAML, { isSeq } from "yaml";
 
-import { organizationAdminProcedure, resourceMiddleware, uncloudMiddleware } from "../..";
+import { organizationProcedure, resourceMiddleware, uncloudMiddleware } from "../..";
 import { postgresService } from "../../compose";
 import { databaseEngine } from "../../databases";
 import { composeServices } from "../../project-graph";
@@ -331,7 +331,7 @@ export function preloadStatements(compose: string, preloaded: string) {
 
 export const resourcePostgresRouter = {
     /** Runs SQL as the database's own user, last statement's rows as text. */
-    queryPostgres: organizationAdminProcedure
+    queryPostgres: organizationProcedure
         .input(v.object({ ...postgresInput.entries, query: v.pipe(v.string(), v.minLength(1)) }))
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -343,7 +343,7 @@ export const resourcePostgresRouter = {
      * Renames the database's role to its POSTGRES_USER Variable. Deploys used to give template
      * databases the prefixed service name as their user; Variables and references said otherwise.
      */
-    renamePostgresRole: organizationAdminProcedure
+    renamePostgresRole: organizationProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -352,7 +352,7 @@ export const resourcePostgresRouter = {
         }),
 
     /** Changes the role's password on the server, then the Variable, rolling back if the server refuses. */
-    regeneratePostgresPassword: organizationAdminProcedure
+    regeneratePostgresPassword: organizationProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -417,7 +417,7 @@ export const resourcePostgresRouter = {
         ),
 
     /** Creates pg_stat_statements once the server preloads it, or stages the preload for the next deploy. */
-    enableQueryStatistics: organizationAdminProcedure
+    enableQueryStatistics: organizationProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .use(uncloudMiddleware)
@@ -473,7 +473,7 @@ export const resourcePostgresRouter = {
         }),
 
     /** Adds a draft PgDog resource that pools connections to this database through references. */
-    addConnectionPooler: organizationAdminProcedure
+    addConnectionPooler: organizationProcedure
         .input(postgresInput)
         .use(resourceMiddleware)
         .handler(async ({ context: { db, resource }, input }) => {

@@ -842,14 +842,6 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         const input = { projectId, resourceIds: [live.id, draft.id] };
 
         try {
-            // Discarding throws away work, so it is for admins, like deploying.
-            await expect(client.discardChanges(input)).rejects.toMatchObject({
-                code: "FORBIDDEN",
-            });
-            await db.$client.query(
-                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
-            );
-
             expect(await client.discardChanges(input)).toEqual({ restored: 1, removed: 1 });
             expect(await storedResource(live.id)).toMatchObject({
                 draftSpec: spec,
@@ -858,9 +850,6 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             });
             expect(await db.select().from(resources).where(eq(resources.id, draft.id))).toEqual([]);
         } finally {
-            await db.$client.query(
-                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
-            );
             await db.delete(deployments).where(eq(deployments.id, deploymentId));
             await db.delete(resources).where(inArray(resources.id, [live.id, draft.id]));
         }
@@ -992,16 +981,30 @@ describe("core project and resource isolation (PostgreSQL)", () => {
         },
         { label: "missing project", projectId: randomUUID(), resourceId },
         { label: "missing resource", projectId, resourceId: randomUUID() },
-        { label: "internal project", projectId: internalProjectId, resourceId: internalResourceId },
+        // Internal projects can be read; only changing them is refused.
+        {
+            label: "internal project",
+            projectId: internalProjectId,
+            resourceId: internalResourceId,
+            readable: true,
+        },
     ])("$label", (input) => {
-        it.each([
-            "getResource",
-            "getFormattedCompose",
-            "getContainers",
-            "updateSettings",
-            "updateVariables",
-            "updateDetails",
-        ] as const)("denies %s without writes or external IO", async (operation) => {
+        it.each(
+            (
+                [
+                    "getResource",
+                    "getFormattedCompose",
+                    "getContainers",
+                    "updateSettings",
+                    "updateVariables",
+                    "updateDetails",
+                ] as const
+            ).filter(
+                (operation) =>
+                    !("readable" in input) ||
+                    (operation !== "getResource" && operation !== "getContainers"),
+            ),
+        )("denies %s without writes or external IO", async (operation) => {
             const before = await db.select().from(resources).orderBy(asc(resources.id));
             await expect(
                 client[operation]({
@@ -1020,38 +1023,22 @@ describe("core project and resource isolation (PostgreSQL)", () => {
     });
 
     describe.each([
-        ["foreign", foreignProjectId],
-        ["internal", internalProjectId],
-        ["missing", randomUUID()],
-    ])("%s project", (_label, deniedProjectId) => {
-        it.each(["listResources", "createResource"] as const)(
-            "denies %s without writes",
-            async (operation) => {
-                const before = await db.select().from(resources).orderBy(asc(resources.id));
-                await expect(
-                    client[operation]({ projectId: deniedProjectId, name: "Injected" }),
-                ).rejects.toMatchObject({ code: "NOT_FOUND" });
-                expect(await db.select().from(resources).orderBy(asc(resources.id))).toEqual(
-                    before,
-                );
-                expect(fetch).not.toHaveBeenCalled();
-            },
-        );
+        ["foreign", foreignProjectId, ["listResources", "createResource"]],
+        // Internal projects can be listed, not added to.
+        ["internal", internalProjectId, ["createResource"]],
+        ["missing", randomUUID(), ["listResources", "createResource"]],
+    ] as const)("%s project", (_label, deniedProjectId, operations) => {
+        it.each(operations)("denies %s without writes", async (operation) => {
+            const before = await db.select().from(resources).orderBy(asc(resources.id));
+            await expect(
+                client[operation]({ projectId: deniedProjectId, name: "Injected" }),
+            ).rejects.toMatchObject({ code: "NOT_FOUND" });
+            expect(await db.select().from(resources).orderBy(asc(resources.id))).toEqual(before);
+            expect(fetch).not.toHaveBeenCalled();
+        });
     });
 
-    describe("internal projects for organization admins", () => {
-        beforeAll(async () => {
-            await db.$client.query(
-                `UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`,
-            );
-        });
-
-        afterAll(async () => {
-            await db.$client.query(
-                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
-            );
-        });
-
+    describe("internal projects", () => {
         it("reads the internal project under a derived cluster name", async () => {
             expect(
                 await call(
@@ -1181,12 +1168,6 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             expect(await db.select().from(resources).orderBy(asc(resources.id))).toEqual(before);
             expect(fetch).not.toHaveBeenCalled();
         });
-    });
-
-    it("hides the internal project from members by id", async () => {
-        await expect(
-            call(projectsRouter.getProject, { projectId: internalProjectId }, { context }),
-        ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
     it.each(["updateSettings", "updateVariables", "updateDetails"] as const)(
@@ -1445,18 +1426,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
 
         fetch.mockImplementation(async () => Response.json({ status: "ok" }));
 
-        await expect(client.setRunning(input)).rejects.toMatchObject({ code: "FORBIDDEN" });
-        expect(fetch).not.toHaveBeenCalled();
-
-        await db.$client.query(`UPDATE member SET role = 'admin' WHERE user_id = 'core-member'`);
-
-        try {
-            await client.setRunning(input);
-        } finally {
-            await db.$client.query(
-                `UPDATE member SET role = 'member' WHERE user_id = 'core-member'`,
-            );
-        }
+        await client.setRunning(input);
 
         expect(fetch.mock.calls.map(([request]) => request.url).sort()).toEqual([
             `http://owned.test/api/v1/services/web/${action}`,

@@ -201,7 +201,7 @@ describe("resource deployment API", () => {
         expect(JSON.stringify(items)).not.toContain("hidden");
     });
 
-    it("rejects empty/invalid Compose, wrong projects, internal resources and non-admins", async () => {
+    it("rejects empty/invalid Compose, wrong projects, and internal resources", async () => {
         for (const spec of [null, "", "services: {}", "services: [bad"]) {
             const input = await resource(spec, {}, draftSpec);
             await expect(call(resourcesRouter.deploy, input, { context })).rejects.toMatchObject({
@@ -224,9 +224,5 @@ describe("resource deployment API", () => {
             code: "NOT_FOUND",
         });
         await db.update(projects).set({ isInternal: false }).where(eq(projects.id, projectId));
-        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'deployer'`);
-        await expect(call(resourcesRouter.deploy, input, { context })).rejects.toMatchObject({
-            code: "FORBIDDEN",
-        });
     });
 });

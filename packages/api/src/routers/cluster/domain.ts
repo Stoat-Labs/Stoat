@@ -2,12 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { UcApiError, unwrap, type UcClient } from "@stoat/uncloud";
 import { isClusterDomain } from "@stoat/workflows/ingress";
 import * as v from "valibot";
-import {
-    isOrganizationAdmin,
-    organizationAdminProcedure,
-    organizationProcedure,
-    uncloudMiddleware,
-} from "../..";
+import { organizationProcedure, uncloudMiddleware } from "../..";
 
 const clusterId = v.pipe(v.string(), v.uuid());
 
@@ -56,19 +51,20 @@ export const domainRouter = {
     getDomain: organizationProcedure
         .input(v.object({ clusterId }))
         .use(uncloudMiddleware)
-        .handler(async ({ context: { uc, organizationRole }, signal }) => {
+        .handler(async ({ context: { uc }, signal }) => {
             const current = await currentDomain(uc, signal);
 
             return {
                 domain: current?.domain ?? null,
                 // Reserved in Uncloud DNS, which keeps its records up to date.
                 reserved: current?.reserved ?? false,
-                canManage: isOrganizationAdmin(organizationRole),
+                // shortcut: always true since roles were removed; drop it once the cluster cards stop reading it.
+                canManage: true,
             };
         }),
 
     // Uncloud keeps one domain, so a different one replaces it.
-    setDomain: organizationAdminProcedure
+    setDomain: organizationProcedure
         .input(v.object({ clusterId, domain: domainName, release }))
         .use(uncloudMiddleware)
         .handler(async ({ context: { uc }, input }) => {
@@ -83,7 +79,7 @@ export const domainRouter = {
             );
         }),
 
-    clearDomain: organizationAdminProcedure
+    clearDomain: organizationProcedure
         .input(v.object({ clusterId, release }))
         .use(uncloudMiddleware)
         .handler(async ({ context: { uc }, input }) => {

@@ -320,8 +320,7 @@
                 deploymentId={deployment.current}
                 name={resource.name}
                 {icon}
-                redeploy={page.data.isOrganizationAdmin === true &&
-                !changed
+                redeploy={!changed
                     ? {
                           projectId: resource.projectId,
                           resourceId: resource.id,

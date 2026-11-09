@@ -9,7 +9,7 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 
-import { organizationAdminProcedure } from "../..";
+import { organizationProcedure } from "../..";
 import { composeResourceTypes } from "../../databases";
 import { removeResources } from "../../resources/removal";
 
@@ -19,7 +19,7 @@ export const resourceDiscardRouter = {
      * with, and one that never deployed is removed. Done together, because one canvas edit can
      * span resources (a service moved out of a group changes both).
      */
-    discardChanges: organizationAdminProcedure
+    discardChanges: organizationProcedure
         .input(
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),

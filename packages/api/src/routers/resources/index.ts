@@ -32,8 +32,6 @@ import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
 
 import {
-    isOrganizationAdmin,
-    organizationAdminProcedure,
     organizationProcedure,
     resourceMiddleware,
     resourceReadMiddleware,
@@ -311,7 +309,7 @@ export const resourcesRouter = {
     ...resourceMetricsRouter,
     ...resourceLogsRouter,
     ...resourcePostgresRouter,
-    deploy: organizationAdminProcedure
+    deploy: organizationProcedure
         .input(
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),
@@ -493,7 +491,7 @@ export const resourcesRouter = {
             return { id, status: "queued" as const };
         }),
     // Railway's "Delete Service" on the canvas: staged like any other change, applied from the bar.
-    setPendingDelete: organizationAdminProcedure
+    setPendingDelete: organizationProcedure
         .input(
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),
@@ -515,7 +513,7 @@ export const resourcesRouter = {
         }),
     // Removes the resources' services from the cluster (volumes stay), then the resources. One
     // batch, so resources that reference each other can be deleted together.
-    deleteResource: organizationAdminProcedure
+    deleteResource: organizationProcedure
         .input(
             v.object({
                 projectId: v.pipe(v.string(), v.uuid()),
@@ -566,7 +564,7 @@ export const resourcesRouter = {
                 removeEmptySource: v.optional(v.boolean(), false),
             }),
         )
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             if (input.fromResourceId === input.toResourceId)
                 throw new ORPCError("BAD_REQUEST", { message: "The service is already there." });
 
@@ -691,11 +689,6 @@ export const resourcesRouter = {
                 if (moved.sourceEmpty && !input.removeEmptySource)
                     throw new ORPCError("PRECONDITION_FAILED", {
                         message: `Moving "${input.service}" leaves "${from.resource.name}" empty, so it would be removed.`,
-                    });
-
-                if (moved.sourceEmpty && !isOrganizationAdmin(organizationRole))
-                    throw new ORPCError("FORBIDDEN", {
-                        message: "Only owners and admins can remove resources.",
                     });
 
                 if (existing)
@@ -1131,8 +1124,8 @@ export const resourcesRouter = {
 
     listResources: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
-            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            await assertProjectVisible(db, organizationId, input.projectId);
 
             const latest = db
                 .selectDistinctOn([deployments.resourceId], {
@@ -1189,8 +1182,8 @@ export const resourcesRouter = {
     // `listResources`. Only resource ids leave the server, never `.env` values.
     getProjectGraph: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
-            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            await assertProjectVisible(db, organizationId, input.projectId);
 
             const [cluster] = await db
                 .select({
@@ -1930,7 +1923,6 @@ export const resourcesRouter = {
             if (!monitoring) return resource;
 
             // Monitoring values are injected at deploy time and never stored as resource env.
-            // Only admins reach this branch: internal resources are admin-only reads.
             let password = "";
 
             try {
@@ -2016,13 +2008,8 @@ export const resourcesRouter = {
             }),
         )
         .use(uncloudMiddleware)
-        .handler(async ({ context: { db, organizationId, organizationRole, uc }, input }) => {
-            const project = await assertProjectVisible(
-                db,
-                organizationId,
-                organizationRole,
-                input.projectId,
-            );
+        .handler(async ({ context: { db, organizationId, uc }, input }) => {
+            const project = await assertProjectVisible(db, organizationId, input.projectId);
 
             if (project.clusterId !== input.clusterId)
                 throw new ORPCError("NOT_FOUND", { message: "Project not found." });
@@ -2088,7 +2075,7 @@ export const resourcesRouter = {
         }),
 
     // Stops or starts the resource's containers in place. Nothing records it, so the next deploy starts them again.
-    setRunning: organizationAdminProcedure
+    setRunning: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),

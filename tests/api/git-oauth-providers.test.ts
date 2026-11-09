@@ -19,7 +19,6 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Context } from "../../packages/api/src/context";
 import {
     createGitOAuthFlow,
-    createOrganizationGitOAuthProvider,
     getOrganizationGitOAuthProviders,
     readGitOAuthFlow,
 } from "../../packages/api/src/git/oauth";
@@ -340,8 +339,8 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         },
     );
 
-    it("allows only current org owners/admins to configure apps and returns the exact callback", async () => {
-        for (const context of [ownerContext, adminContext]) {
+    it("lets every current member of the organization configure apps and returns the exact callback", async () => {
+        for (const context of [ownerContext, adminContext, memberContext]) {
             await expect(
                 call(connectionsRouter.oauthSetup, undefined, { context }),
             ).resolves.toEqual({ callbackUrl: "https://stoat.example.com/git/oauth/callback" });
@@ -349,7 +348,6 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         }
 
         for (const context of [
-            memberContext,
             { ...ownerContext, session: null },
             {
                 ...ownerContext,
@@ -380,11 +378,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             }
         }
 
-        // Defense in depth: the write checks the live role under a transaction lock.
-        await expect(
-            createOrganizationGitOAuthProvider(db, identity(memberContext), input),
-        ).rejects.toMatchObject({ code: "forbidden" });
-        expect(await db.select().from(gitOAuthProviders)).toHaveLength(2);
+        expect(await db.select().from(gitOAuthProviders)).toHaveLength(3);
     });
 
     it("rejects a dialog opened in org A after the same admin switches to org B", async () => {

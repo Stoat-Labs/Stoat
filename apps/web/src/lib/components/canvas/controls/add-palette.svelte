@@ -208,10 +208,7 @@
                 current === "database",
             );
 
-        return rootEntries(
-            volumeTargets.length > 0,
-            page.data.isOrganizationAdmin === true,
-        );
+        return rootEntries(volumeTargets.length > 0);
     });
 
     const s3Connections = $derived(s3ConnectionsQuery.data ?? []);
