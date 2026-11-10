@@ -25,6 +25,7 @@
     import ObservabilityNav from "./observability-nav.svelte";
     import SidebarAppFooter from "./sidebar-footer.svelte";
     import SidebarNavLink from "./sidebar-nav-link.svelte";
+    import SearchButton from "$lib/components/search/search-button.svelte";
 
     let {
         variant = "inset",
@@ -80,6 +81,7 @@
             <SidebarGroupLabel>Main</SidebarGroupLabel>
             <SidebarGroupContent>
                 <SidebarMenu>
+                    <SearchButton />
                     {#each mainLinks as link (link.url)}
                         <SidebarNavLink
                             href={link.url}

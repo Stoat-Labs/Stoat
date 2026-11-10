@@ -6,6 +6,7 @@
     import AppSidebar from "$lib/components/sidebar/sidebar.svelte";
     import AdminSidebar from "$lib/components/sidebar/admin-sidebar.svelte";
     import SettingsSidebar from "$lib/components/sidebar/settings-sidebar.svelte";
+    import SearchPalette from "$lib/components/search/search-palette.svelte";
 
     const { children, data } = $props();
 
@@ -58,3 +59,5 @@
         {/snippet}
     </AppShell>
 {/if}
+
+<SearchPalette />

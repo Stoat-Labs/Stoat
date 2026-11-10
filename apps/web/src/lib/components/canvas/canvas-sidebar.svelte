@@ -3,6 +3,7 @@
     import { page } from "$app/state";
     import { orpc } from "$lib/api/orpc";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
+    import SearchButton from "$lib/components/search/search-button.svelte";
     import SidebarAppFooter from "$lib/components/sidebar/sidebar-footer.svelte";
     import {
         Sidebar,
@@ -92,6 +93,7 @@
         <SidebarGroup class="px-0">
             <SidebarGroupContent>
                 <SidebarMenu class="items-center gap-2">
+                    <SearchButton class={railButton} />
                     {#each links as link (link.title)}
                         {@const active =
                             page.url.pathname === link.href}

@@ -8,7 +8,6 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
     import Plus from "phosphor-svelte/lib/PlusIcon";
     import {
         ConnectionMode,
@@ -1014,10 +1013,6 @@
             >
                 <Plus class="size-4" aria-hidden="true" />
                 <span class="max-sm:hidden">Add</span>
-                <KbdGroup class="hidden sm:inline-flex">
-                    <Kbd>Ctrl</Kbd>
-                    <Kbd>K</Kbd>
-                </KbdGroup>
             </Button>
         {/if}
     </div>
@@ -1045,20 +1040,6 @@
 
                 return;
             }
-        }
-
-        // Ctrl/Cmd+K opens the add palette, from anywhere on the page.
-        if (
-            (event.ctrlKey || event.metaKey) &&
-            event.key.toLowerCase() === "k" &&
-            !empty &&
-            !isInternal &&
-            !add.current
-        ) {
-            event.preventDefault();
-            void add.set("root");
-
-            return;
         }
 
         // Railway: Escape closes the details panel, unless a dialog or field has focus.
