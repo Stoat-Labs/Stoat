@@ -12,7 +12,11 @@
         decorateLogs,
         LogStream,
     } from "$lib/resources/log-stream.svelte";
-    import { selectedLogServices } from "$lib/resources/logs";
+    import {
+        isHealthCheck,
+        selectedLogServices,
+    } from "$lib/resources/logs";
+    import Heartbeat from "phosphor-svelte/lib/HeartbeatIcon";
     import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
     import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import X from "phosphor-svelte/lib/XIcon";
@@ -50,6 +54,7 @@
             logQuery: parseAsString.withDefault(""),
             logWrap: parseAsBoolean.withDefault(false),
             logFollowing: parseAsBoolean.withDefault(true),
+            logHideHealth: parseAsBoolean.withDefault(false),
             // Set by the metrics tab's "Logs for this range": stored logs instead of the live tail.
             logStart: parseAsString,
             logEnd: parseAsString,
@@ -139,11 +144,15 @@
     const query = $derived(view.logQuery.current.toLowerCase());
 
     const visibleLogs = $derived(
-        query
-            ? logs.filter((log) =>
-                  log.message.toLowerCase().includes(query),
-              )
-            : logs,
+        logs.filter(
+            (log) =>
+                (!query ||
+                    log.message.toLowerCase().includes(query)) &&
+                !(
+                    view.logHideHealth.current &&
+                    isHealthCheck(log.message)
+                ),
+        ),
     );
 
     const loading = $derived(servicesQuery.isPending);
@@ -176,8 +185,9 @@
         URL.revokeObjectURL(url);
     }
 
+    // The table puts the date on a line of its own where each day starts.
     const formatTime = (value: string) =>
-        toLocalDateInput(new Date(value)).replace("T", " ");
+        toLocalDateInput(new Date(value)).slice(11);
 </script>
 
 <svelte:window onkeydown={focusFilter} />
@@ -231,6 +241,21 @@
         <Button
             variant="outline"
             size="icon"
+            aria-label="Hide health checks"
+            title={view.logHideHealth.current
+                ? "Show health checks"
+                : "Hide health checks"}
+            aria-pressed={view.logHideHealth.current}
+            class={view.logHideHealth.current ? "bg-accent" : ""}
+            onclick={() =>
+                (view.logHideHealth.current =
+                    !view.logHideHealth.current)}
+        >
+            <Heartbeat class="size-4" aria-hidden="true" />
+        </Button>
+        <Button
+            variant="outline"
+            size="icon"
             aria-label="Download logs"
             title="Download logs"
             disabled={!visibleLogs.length}
@@ -256,8 +281,9 @@
         <CanvasLogTable
             logs={visibleLogs}
             label="Resource logs"
-            timeChars={19}
+            timeChars={8}
             {formatTime}
+            days
             highlight={view.logQuery.current}
             source={(log) =>
                 log.container?.replace(COMPOSE_PREFIX, "") ??

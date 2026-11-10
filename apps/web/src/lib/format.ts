@@ -87,3 +87,8 @@ export function parseDateInput(value: string) {
 
     return Number.isFinite(time) ? toLocalDateInput(new Date(time)) : "";
 }
+
+/** The local date a log line belongs to, for the line that starts each day. */
+export function logDay(value: string | number) {
+    return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
+}

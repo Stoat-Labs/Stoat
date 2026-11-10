@@ -1,6 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import {
     classifyLog,
+    isHealthCheck,
     logActivity,
     logBucketIndex,
     logEntryKey,
@@ -156,4 +157,25 @@ it("strips duplicated timestamps, thread IDs and levels from messages", () => {
     expect(stripLogPrefix("Error connecting")).toBe("Error connecting");
     expect(stripLogPrefix("    at foo()")).toBe("    at foo()");
     expect(stripLogPrefix('{"level":"warn"}')).toBe('{"level":"warn"}');
+});
+
+it("recognises health-check probes without hiding ordinary requests", () => {
+    for (const message of [
+        "200 GET /api/health-check with 15 bytes took 0ms",
+        '10.0.0.1 - - "GET /healthz HTTP/1.1" 200 2',
+        "HEAD /ready 204",
+        "GET /livez?verbose 200",
+        'GET /status 200 "kube-probe/1.30"',
+        "ELB-HealthChecker/2.0",
+    ])
+        expect(isHealthCheck(message), message).toBe(true);
+
+    for (const message of [
+        "200 GET /api/orders with 512 bytes",
+        "GET /ready-to-ship 200",
+        "GET /pinged-users 200",
+        "Server is healthy and ready to accept connections",
+        "POST /health 201",
+    ])
+        expect(isHealthCheck(message), message).toBe(false);
 });
