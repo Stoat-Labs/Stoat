@@ -36,6 +36,7 @@
     <AppShell
         {children}
         fullWidth={fullPage ||
+            page.url.pathname === "/" ||
             page.url.pathname === "/observability" ||
             page.url.pathname.startsWith("/observability/")}
         fullHeight={fullPage}

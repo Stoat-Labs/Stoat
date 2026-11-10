@@ -70,7 +70,7 @@
                 "recent",
                 "name",
                 "attention",
-            ]).withDefault("recent"),
+            ]).withDefault("attention"),
         },
         { shallow: true, scroll: false },
     );
@@ -203,7 +203,8 @@
     const attentionLimit = 5;
 
     // Home shows the projects to act on; the Projects page is the full directory.
-    const homeProjectLimit = 6;
+    // Divides into the 2, 3 and 4 card columns, so the last row is never half empty.
+    const homeProjectLimit = 12;
 
     const visibleDegradedClusters = $derived(
         params.attention.current
@@ -459,8 +460,10 @@
         </header>
         {#if projectsQuery.isPending}
             <Skeleton loading label="Loading projects">
-                <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {#each { length: 6 }, index (index)}
+                <ul
+                    class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                >
+                    {#each { length: homeProjectLimit }, index (index)}
                         <li class="min-w-0">
                             <ProjectCard
                                 name="Project workspace"
@@ -548,7 +551,9 @@
                 </Button>
             </p>
         {:else}
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul
+                class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            >
                 {#each filtered.slice(0, homeProjectLimit) as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard
