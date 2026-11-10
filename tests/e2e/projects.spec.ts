@@ -195,6 +195,29 @@ test.describe("resources", () => {
         ).toEqual([{ engine: "postgresql" }]);
     });
 
+    test("a resource is renamed from its settings", async ({ page }) => {
+        const { id: projectId } = await project(page);
+
+        const { id: resourceId } = await rpc(page, "resources/createResource", {
+            projectId,
+            name: unique("old"),
+            type: "compose",
+        });
+
+        const renamed = unique("new");
+        await page.goto(resourcePath(projectId, resourceId, "settings"));
+
+        await page.getByRole("button", { name: "Rename" }).click();
+        await page.getByRole("dialog").getByLabel("Resource name").fill(renamed);
+        await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+
+        await expect(panelTitle(page)).toContainText(renamed);
+        expect(await sql("SELECT name FROM resources WHERE id = $1", [resourceId])).toEqual([
+            { name: renamed },
+        ]);
+    });
+
     test("Back and Forward walk through the canvas panels that were opened", async ({ page }) => {
         const { id: projectId } = await project(page);
 
