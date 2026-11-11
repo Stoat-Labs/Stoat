@@ -10,12 +10,24 @@ const tabs = new Map([
     ["ingress", "settings"],
 ]);
 
-// Old resource pages (/projects/:project/:resource/<tab>) open that resource's canvas panel.
-export const GET = ({ params }) => {
-    const tab = tabs.get(params.rest.split("/")[0] ?? "");
+// Saved log links carried their range; the canvas Logs tab reads the same names.
+const keptParams = ["logStart", "logEnd"];
+
+// Old resource pages (/projects/:project/:resource/<tab>[/<deployment>]) open that resource's canvas panel.
+export const GET = ({ params, url }) => {
+    const [segment = "", deploymentId] = params.rest.split("/");
+    const tab = tabs.get(segment);
     const query = new URLSearchParams({ node: params.resourceId });
 
     if (tab) query.set("tab", tab);
+
+    if (segment === "deployments" && deploymentId) query.set("deployment", deploymentId);
+
+    for (const name of keptParams) {
+        const value = url.searchParams.get(name);
+
+        if (value) query.set(name, value);
+    }
 
     redirect(308, `/projects/${params.projectId}/canvas?${query}`);
 };

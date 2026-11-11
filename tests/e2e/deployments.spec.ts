@@ -112,7 +112,7 @@ test("a deploy streams to ready, then the resource shows its running container",
     // It is in the organization-wide list.
 
     await page.goto("/deployments");
-    await expect(page.getByRole("row").filter({ hasText: target.name }).first()).toContainText(
+    await expect(page.getByRole("listitem").filter({ hasText: target.name }).first()).toContainText(
         "Ready",
     );
 });

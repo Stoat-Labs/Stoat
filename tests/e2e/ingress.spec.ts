@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { receivedComposes, resetSidecar, resourcePath, rpc, sql } from "./fixtures";
 
-const dialog = (page: Page) => page.getByRole("dialog");
+// The inline editor under Networking, labelled by its submit action.
+const editor = (page: Page) => page.getByRole("form", { name: "Add Domain" });
 
 let created = 0;
 
@@ -54,15 +55,15 @@ test.beforeEach(async () => {
     await resetSidecar();
 });
 
-test("an HTTP route is added in a dialog, deployed, and removed again", async ({ page }) => {
+test("an HTTP route is added inline, deployed, and removed again", async ({ page }) => {
     const target = await resource(page);
     await page.goto(target.settings);
 
     await page.getByRole("button", { name: "Custom Domain" }).click();
-    await dialog(page).getByLabel("Domain").fill("shop.example.test");
-    await dialog(page).getByLabel("Port").fill("8080");
-    await dialog(page).getByRole("button", { name: "Add Domain" }).click();
-    await expect(dialog(page)).toHaveCount(0);
+    await editor(page).getByLabel("Domain").fill("shop.example.test");
+    await editor(page).getByLabel("Port").fill("8080");
+    await editor(page).getByRole("button", { name: "Add Domain" }).click();
+    await expect(editor(page)).toHaveCount(0);
 
     const route = "shop.example.test:8080/https";
     await expect(page.getByText("shop.example.test").first()).toBeVisible();

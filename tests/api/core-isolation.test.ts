@@ -945,6 +945,59 @@ describe("core project and resource isolation (PostgreSQL)", () => {
             ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
+    it("only leaves out exporters the canvas folds into a database card", async () => {
+        const [database, folded, unreferenced, exporterFirst] = [
+            randomUUID(),
+            randomUUID(),
+            randomUUID(),
+            randomUUID(),
+        ];
+
+        const exporter = "    image: prometheuscommunity/postgres-exporter:v0.17.1\n";
+
+        await db.insert(resources).values([
+            {
+                id: database,
+                projectId,
+                name: "Database",
+                spec: "services:\n  db:\n    image: postgres:18\n",
+            },
+            {
+                id: folded,
+                projectId,
+                name: "Folded exporter",
+                spec: `services:\n  metrics:\n${exporter}`,
+                settings: { env: `DSN={{ ${database}.STOAT_PREFIX }}\n` },
+            },
+            {
+                id: unreferenced,
+                projectId,
+                name: "Unreferenced exporter",
+                spec: `services:\n  metrics:\n${exporter}`,
+            },
+            {
+                id: exporterFirst,
+                projectId,
+                name: "Exporter first",
+                spec: `services:\n  metrics:\n${exporter}  app:\n    image: nginx:alpine\n`,
+                settings: { env: `DSN={{ ${database}.STOAT_PREFIX }}\n` },
+            },
+        ]);
+
+        try {
+            const ids = (await call(projectsRouter.listProjectOverviews, undefined, { context }))
+                .find((row) => row.id === projectId)
+                ?.resources.map((row) => row.id);
+
+            expect(ids).toEqual(expect.arrayContaining([database, unreferenced, exporterFirst]));
+            expect(ids).not.toContain(folded);
+        } finally {
+            await db
+                .delete(resources)
+                .where(inArray(resources.id, [database, folded, unreferenced, exporterFirst]));
+        }
+    });
+
     it("rejects an invalid Compose draft and one combined with a template", async () => {
         const before = await db.select().from(resources).orderBy(asc(resources.id));
 
