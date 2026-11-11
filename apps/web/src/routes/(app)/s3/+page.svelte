@@ -60,9 +60,14 @@
 <svelte:head><title>S3 connections / Stoat</title></svelte:head>
 
 {#snippet connectionActions()}
-    <Button size="sm" disabled={!ready} onclick={openCreate}>
+    <Button
+        size="sm"
+        disabled={!ready}
+        onclick={openCreate}
+        aria-label="Add connection"
+    >
         <Plus aria-hidden="true" />
-        Add connection
+        <span class="max-sm:hidden">Add connection</span>
     </Button>
 {/snippet}
 

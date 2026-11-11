@@ -75,13 +75,15 @@
             {activeOrganizationId}
             onNavigate={closeNavigation}
         />
+        <SidebarMenu>
+            <SearchButton />
+        </SidebarMenu>
     </SidebarHeader>
     <SidebarContent class="overflow-x-hidden">
         <SidebarGroup>
             <SidebarGroupLabel>Main</SidebarGroupLabel>
             <SidebarGroupContent>
                 <SidebarMenu>
-                    <SearchButton />
                     {#each mainLinks as link (link.url)}
                         <SidebarNavLink
                             href={link.url}

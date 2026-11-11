@@ -42,6 +42,7 @@
     import { orpc, queryClient } from "$lib/api/orpc";
     import Activity from "phosphor-svelte/lib/PulseIcon";
     import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
+    import ChartLine from "phosphor-svelte/lib/ChartLineIcon";
     import Check from "phosphor-svelte/lib/CheckIcon";
     import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
     import CircleCheck from "phosphor-svelte/lib/CheckCircleIcon";
@@ -231,13 +232,20 @@
                         healthCheckState.mutate({
                             clusterId: cluster.id,
                         })}
+                    aria-label={healthCheckState.isSuccess
+                        ? "Health check queued"
+                        : "Run health check"}
                 >
                     {#if healthCheckState.isSuccess}
                         <Check aria-hidden="true" />
-                        Health check queued
+                        <span class="max-sm:hidden">
+                            Health check queued
+                        </span>
                     {:else}
                         <Activity aria-hidden="true" />
-                        Run health check
+                        <span class="max-sm:hidden">
+                            Run health check
+                        </span>
                     {/if}
                 </Button>
             {/if}
@@ -245,15 +253,18 @@
                 variant="outline"
                 size="sm"
                 href={`/observability?clusters=${cluster.id}`}
+                aria-label="Observability"
             >
-                Observability
+                <ChartLine aria-hidden="true" />
+                <span class="max-sm:hidden">Observability</span>
             </Button>
             {#if canInitialize}
                 <Button
                     size="sm"
                     onclick={() => openDialog("initialize")}
                 >
-                    Initialize monitoring
+                    Initialize
+                    <span class="max-sm:hidden">monitoring</span>
                 </Button>
             {:else if cluster.canInitialize && initializationStatus === "failed"}
                 <Button
@@ -262,7 +273,8 @@
                     disabled={retryMutationState.isPending}
                     onclick={retryInitialization}
                 >
-                    Retry initialization
+                    Retry
+                    <span class="max-sm:hidden">initialization</span>
                 </Button>
             {:else if cluster.canInitialize && initializationStatus === "ready"}
                 <Button
@@ -286,7 +298,7 @@
                 {:else}
                     <CircleAlert aria-hidden="true" />
                 {/if}
-                {statusLabel}
+                <span class="max-sm:sr-only">{statusLabel}</span>
             </Badge>
         </div>
     {/if}
@@ -448,24 +460,26 @@
                 </Frame>
             {/if}
 
-            <ClusterMonitoringCard
-                {cluster}
-                {canViewMonitoring}
-                retryPending={retryMutationState.isPending}
-                retryError={retryErrorMessage}
-                onretry={retryInitialization}
-                onopendialog={openDialog}
-            />
+            <div class="grid gap-6 lg:grid-cols-3">
+                <ClusterMonitoringCard
+                    {cluster}
+                    {canViewMonitoring}
+                    retryPending={retryMutationState.isPending}
+                    retryError={retryErrorMessage}
+                    onretry={retryInitialization}
+                    onopendialog={openDialog}
+                />
 
-            <ClusterCaddyCard
-                clusterId={cluster.id}
-                onconfigure={() => openDialog("caddy")}
-            />
+                <ClusterCaddyCard
+                    clusterId={cluster.id}
+                    onconfigure={() => openDialog("caddy")}
+                />
 
-            <ClusterDomainCard
-                clusterId={cluster.id}
-                onopendialog={openDialog}
-            />
+                <ClusterDomainCard
+                    clusterId={cluster.id}
+                    onopendialog={openDialog}
+                />
+            </div>
         {:else}
             <Alert variant="error">
                 <CircleAlert aria-hidden="true" />

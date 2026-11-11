@@ -16,6 +16,7 @@ import * as v from "valibot";
 import { organizationProcedure } from "../..";
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
+import { databaseExporterEngine } from "../../observability";
 import { removeResources } from "../../resources/removal";
 
 /** The first service's image, or null for an empty or unreadable spec. */
@@ -284,9 +285,12 @@ export const projectsRouter = {
                     ...project,
                     favorite: favorites.has(project.id),
                     lastActivityAt: new Date(activity),
-                    resources: items.map((item) => {
+                    resources: items.flatMap((item) => {
                         // Specs stay server-side; the card only needs what its tile shows.
                         const image = firstImage(item.draftSpec ?? item.spec);
+
+                        // A database's exporter folds into its card on the canvas, so it gets no tile.
+                        if (image && databaseExporterEngine(image)) return [];
 
                         // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
                         // column; the subquery alias only widens its type to string.

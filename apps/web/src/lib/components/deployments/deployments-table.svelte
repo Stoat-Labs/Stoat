@@ -1,13 +1,17 @@
 <script lang="ts">
-    import { goto } from "$app/navigation";
     import { useHeaderActions } from "$lib/components/sidebar/header-actions";
     import {
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
-    import { DataTable } from "$lib/components/ui/data-table";
+    import DataPagination from "$lib/components/ui/data-table/data-pagination.svelte";
+    import {
+        Empty,
+        EmptyDescription,
+        EmptyHeader,
+        EmptyTitle,
+    } from "$lib/components/ui/empty";
     import {
         Select,
         SelectContent,
@@ -15,20 +19,14 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
-    import {
-        TableCell,
-        TableHead,
-        TableRow,
-    } from "$lib/components/ui/table";
+    import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         streamErrorToast,
         subscribeToStream,
     } from "$lib/deployments/stream";
-    import {
-        deploymentStatusLabel,
-        deploymentStatusVariant,
-    } from "$lib/deployments/status";
+    import { deploymentStatusLabel } from "$lib/deployments/status";
     import { ago, deploymentDuration } from "$lib/format";
+    import { imageIcon } from "$lib/resources/image-icons";
     import ConfirmDialog from "$lib/components/settings/confirm-dialog.svelte";
     import {
         Menu,
@@ -39,6 +37,9 @@
     import Ellipsis from "phosphor-svelte/lib/DotsThreeIcon";
     import Trash2 from "phosphor-svelte/lib/TrashIcon";
     import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
+    import Box from "phosphor-svelte/lib/CubeIcon";
+    import GitCommit from "phosphor-svelte/lib/GitCommitIcon";
+    import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import {
         listPageSize,
@@ -65,10 +66,10 @@
     } = $props();
 
     // Rows that fit the viewport, so the list fills the page without scrolling.
-    // 49px per row; the rest is header, table chrome, pagination and padding.
-    const rowHeight = 49;
+    // 45px per row; the rest is the page header, pagination and padding.
+    const rowHeight = 45;
 
-    const pageChrome = 290;
+    const pageChrome = 200;
 
     let viewportHeight = $state(900);
 
@@ -245,12 +246,13 @@
         | "id"
         | "status"
         | "name"
+        | "metadata"
+        | "images"
         | "clusterId"
         | "clusterName"
-        | "projectId"
         | "projectName"
-        | "resourceId"
         | "resourceName"
+        | "resourceIcon"
         | "createdAt"
         | "finishedAt"
     >;
@@ -260,26 +262,70 @@
         id: "placeholder",
         status: "ready",
         name: "deployment-name",
+        metadata: null,
+        images: { app: "ghcr.io/example/app:latest" },
         clusterId: "placeholder",
         clusterName: "cluster",
-        projectId: "placeholder",
-        projectName: "Project name",
-        resourceId: "placeholder",
+        projectName: "Project",
         resourceName: "resource",
+        resourceIcon: null,
         createdAt: new Date(),
         finishedAt: new Date(),
     };
 
-    function deploymentLabel(name: string) {
-        if (name === "InitializeCluster") return "Cluster setup";
+    const placeholderRows = $derived(
+        Array.from({ length: limit }, (_, index) => index),
+    );
 
-        if (name === "DeployCaddy") return "Caddy";
+    const jobLabels = new Map([
+        ["InitializeCluster", "Cluster setup"],
+        ["DeployCaddy", "Caddy"],
+        ["ProvisionCluster", "Cluster creation"],
+        ["AddMachine", "New machine"],
+    ]);
 
-        if (name === "ProvisionCluster") return "Cluster creation";
+    const sources = {
+        forgejo: "Forgejo",
+        github: "GitHub",
+        git: "Git",
+        docker: "Docker",
+    };
 
-        if (name === "AddMachine") return "New machine";
+    const dots = new Map([
+        ["queued", "bg-warning"],
+        ["running", "bg-info animate-pulse"],
+        ["ready", "bg-success"],
+        ["failed", "bg-destructive"],
+    ]);
 
-        return name;
+    function label(deployment: DeploymentRow) {
+        if (!deployment.resourceName)
+            return jobLabels.get(deployment.name) ?? deployment.name;
+
+        return deployment.projectName
+            ? `${deployment.projectName} / ${deployment.resourceName}`
+            : deployment.resourceName;
+    }
+
+    // What shipped: a Git deploy's commit message, a Docker deploy's image.
+    function shipped(deployment: DeploymentRow) {
+        const message =
+            deployment.metadata?.commit?.message.split("\n")[0];
+
+        if (message) return message;
+
+        const [first, ...rest] = Object.values(deployment.images);
+
+        if (!first) return undefined;
+
+        return rest.length ? `${first} + ${rest.length} more` : first;
+    }
+
+    function logo(deployment: DeploymentRow) {
+        return (
+            deployment.resourceIcon ??
+            imageIcon(Object.values(deployment.images)[0])
+        );
     }
 
     function isSettled(status: string) {
@@ -290,11 +336,14 @@
         );
     }
 
-    function deploymentHref(deployment: {
-        id: string;
-        projectId: string | null;
-    }) {
-        return `/deployments/${deployment.id}`;
+    function setStatus(value: string) {
+        const filter = filters.find((item) => item.value === value);
+
+        if (filter && list.status.current !== filter.value)
+            void list.set(
+                { status: filter.value, page: 1 },
+                { history: "push" },
+            );
     }
 </script>
 
@@ -304,20 +353,7 @@
     <!-- Six buttons crowd a phone header, so small screens get one select. -->
     <Select
         items={filters}
-        bind:value={
-            () => list.status.current,
-            (status) => {
-                const filter = filters.find(
-                    (item) => item.value === status,
-                );
-
-                if (filter && list.status.current !== filter.value)
-                    void list.set(
-                        { status: filter.value, page: 1 },
-                        { history: "push" },
-                    );
-            }
-        }
+        bind:value={() => list.status.current, setStatus}
     >
         <SelectTrigger
             aria-label="Filter by status"
@@ -345,14 +381,7 @@
                 variant={list.status.current === filter.value
                     ? "default"
                     : "outline"}
-                onclick={() => {
-                    if (list.status.current !== filter.value) {
-                        void list.set(
-                            { status: filter.value, page: 1 },
-                            { history: "push" },
-                        );
-                    }
-                }}
+                onclick={() => setStatus(filter.value)}
             >
                 {filter.label}
             </Button>
@@ -362,9 +391,32 @@
 
 <div
     class={latest === undefined
-        ? "w-full space-y-6 pt-6"
+        ? "mx-auto w-full max-w-[96rem] space-y-4 pt-6"
         : "w-full space-y-3"}
 >
+    {#if latest !== undefined}
+        <div class="flex items-center justify-between gap-2">
+            <h2 class="flex min-w-0 items-baseline gap-2">
+                <span class="truncate font-medium">
+                    Recent deployments
+                </span>
+                {#if meta}
+                    <span
+                        class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                    >
+                        {meta}
+                    </span>
+                {/if}
+            </h2>
+            <Button size="sm" variant="ghost" href="/deployments">
+                View all deployments <ArrowRight
+                    class="size-4"
+                    aria-hidden="true"
+                />
+            </Button>
+        </div>
+    {/if}
+
     {#if deploymentsQuery.isError}
         <Alert variant="error">
             <AlertDescription>
@@ -372,150 +424,182 @@
                     .message}
             </AlertDescription>
         </Alert>
-    {:else}
-        <DataTable
-            title={latest === undefined
-                ? "Deployments"
-                : "Recent deployments"}
-            {meta}
-            loading={deploymentsQuery.isPending}
-            loadingRows={limit}
-            colSpan={6}
-            isEmpty={items.length === 0}
-            emptyTitle={status === "all"
-                ? "No deployments yet"
-                : `No ${status} deployments`}
-            emptyDescription={status === "all"
-                ? "Deploy a resource or initialize cluster monitoring to create the first deployment."
-                : "No deployments currently match this filter."}
-            bind:page={
-                () => list.page.current,
-                (page) => {
-                    void list.set({ page }, { history: "push" });
-                }
-            }
-            {totalPages}
-        >
-            {#snippet header()}
-                <TableRow>
-                    <TableHead class="text-center">Status</TableHead>
-                    <TableHead>Deployment</TableHead>
-                    <TableHead
-                        class="hidden text-center sm:table-cell"
-                    >
-                        Cluster
-                    </TableHead>
-                    <TableHead
-                        class="hidden text-center md:table-cell"
-                    >
-                        Created
-                    </TableHead>
-                    <TableHead
-                        class="hidden text-center sm:table-cell"
-                    >
-                        Duration
-                    </TableHead>
-                    <TableHead class="w-10" />
-                </TableRow>
-            {/snippet}
-            {#snippet placeholderRow()}
-                {@render deploymentRow(placeholderDeployment)}
-            {/snippet}
-            {#snippet children()}
-                {#each items as deployment (deployment.id)}
-                    {@render deploymentRow(deployment)}
+    {:else if deploymentsQuery.isPending}
+        <Skeleton loading label="Loading deployments">
+            <ul class="divide-y rounded-xl border bg-card">
+                {#each placeholderRows as row (row)}
+                    {@render deploymentRow(placeholderDeployment)}
                 {/each}
-            {/snippet}
-        </DataTable>
-        {#if latest !== undefined}
-            <div class="flex justify-end">
-                <Button size="sm" variant="ghost" href="/deployments">
-                    View all deployments <ArrowRight
-                        class="size-4"
-                        aria-hidden="true"
-                    />
-                </Button>
-            </div>
-        {/if}
+            </ul>
+        </Skeleton>
+    {:else if items.length === 0}
+        <Empty class="rounded-xl border py-10 md:py-10">
+            <EmptyHeader>
+                <EmptyTitle class="text-base">
+                    {status === "all"
+                        ? "No deployments yet"
+                        : `No ${status} deployments`}
+                </EmptyTitle>
+                <EmptyDescription>
+                    {status === "all"
+                        ? "Deploy a resource or initialize cluster monitoring to create the first deployment."
+                        : "No deployments currently match this filter."}
+                </EmptyDescription>
+            </EmptyHeader>
+        </Empty>
+    {:else}
+        <ul class="divide-y rounded-xl border bg-card">
+            {#each items as deployment (deployment.id)}
+                {@render deploymentRow(deployment)}
+            {/each}
+        </ul>
+    {/if}
+
+    {#if latest === undefined && total > 0}
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-sm text-muted-foreground tabular-nums">
+                {meta}
+            </span>
+            {#if totalPages > 1}
+                <DataPagination
+                    bind:page={
+                        () => list.page.current,
+                        (page) => {
+                            void list.set(
+                                { page },
+                                { history: "push" },
+                            );
+                        }
+                    }
+                    {totalPages}
+                />
+            {/if}
+        </div>
     {/if}
 </div>
 
 {#snippet deploymentRow(deployment: DeploymentRow)}
-    <TableRow
-        class="group cursor-pointer"
-        onclick={() => goto(deploymentHref(deployment))}
+    {@const icon = logo(deployment)}
+    {@const commit = deployment.metadata?.commit}
+    {@const what = shipped(deployment)}
+    <li
+        class="relative grid h-11 grid-cols-[minmax(0,1fr)_9rem_8rem] items-center gap-x-4 px-3 text-sm transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/50 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_9rem_8rem] lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_9rem_7rem_8rem_8rem]"
     >
-        <TableCell class="text-center">
-            <Badge
-                variant={deploymentStatusVariant(deployment.status)}
-            >
-                {deploymentStatusLabel(deployment.status)}
-            </Badge>
-        </TableCell>
-        <TableCell>
+        <div class="flex min-w-0 items-center gap-2.5">
+            {#if !deployment.resourceName}
+                <Server
+                    class="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                />
+            {:else if icon}
+                <img
+                    src={icon}
+                    alt=""
+                    aria-hidden="true"
+                    class="size-4 shrink-0 object-contain"
+                />
+            {:else}
+                <Box
+                    class="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                />
+            {/if}
+            <!-- Its hit area stretches over the whole row, so clicking anywhere opens the deployment. -->
             <a
-                href={deploymentHref(deployment)}
-                onclick={(event) => event.stopPropagation()}
-                class="font-medium hover:underline"
+                href={`/deployments/${deployment.id}`}
+                class="truncate font-medium outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
             >
-                {deployment.resourceName
-                    ? `${deployment.projectName ? `${deployment.projectName} / ` : ""}${deployment.resourceName}`
-                    : deploymentLabel(deployment.name)}
+                {label(deployment)}
             </a>
-        </TableCell>
-        <TableCell class="hidden text-center sm:table-cell">
-            <a
-                href={`/clusters/${deployment.clusterId}`}
-                onclick={(event) => event.stopPropagation()}
-                class="hover:underline"
-            >
-                {deployment.clusterName}
-            </a>
-        </TableCell>
-        <TableCell class="hidden text-center md:table-cell">
-            <span class="text-sm text-muted-foreground">
-                {latest === undefined
-                    ? new Date(deployment.createdAt).toLocaleString()
-                    : ago(deployment.createdAt, now)}
-            </span>
-        </TableCell>
-        <TableCell class="hidden text-center sm:table-cell">
-            <span class="text-sm text-muted-foreground">
+        </div>
+
+        <span class="hidden truncate md:block" title={what}>
+            {what}
+        </span>
+
+        <span class="flex items-center gap-2 whitespace-nowrap">
+            <span
+                class={[
+                    "size-2 shrink-0 rounded-full",
+                    dots.get(deployment.status) ??
+                        "bg-muted-foreground",
+                ]}
+                aria-hidden="true"
+            ></span>
+            {deploymentStatusLabel(deployment.status)}
+            <span class="text-muted-foreground tabular-nums">
                 {deploymentDuration(
                     deployment.createdAt,
                     deployment.finishedAt,
+                    now,
                 )}
             </span>
-        </TableCell>
+        </span>
 
-        <TableCell class="w-10 text-right">
-            {#if isSettled(deployment.status) && deployment.id !== "placeholder"}
-                <Menu>
-                    <MenuTrigger
-                        aria-label="Deployment actions"
-                        class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-popup-open:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                        onclick={(event) => event.stopPropagation()}
-                    >
-                        <Ellipsis class="size-4" aria-hidden="true" />
-                    </MenuTrigger>
-                    <MenuPopup align="end">
-                        <MenuItem
-                            variant="destructive"
-                            onclick={(event) => {
-                                event.stopPropagation();
-                                void list.set({
-                                    deleteId: deployment.id,
-                                });
-                            }}
-                        >
-                            <Trash2 aria-hidden="true" />
-                            Delete
-                        </MenuItem>
-                    </MenuPopup>
-                </Menu>
+        <span
+            class="hidden min-w-0 items-center gap-1.5 text-muted-foreground lg:flex"
+        >
+            {#if commit}
+                <GitCommit
+                    class="size-4 shrink-0"
+                    aria-hidden="true"
+                />
+                <span class="truncate font-mono text-xs">
+                    {commit.sha.slice(0, 7)}
+                </span>
+            {:else if deployment.metadata}
+                <span class="truncate">
+                    via {sources[deployment.metadata.source]}
+                </span>
             {/if}
-        </TableCell>
-    </TableRow>
+        </span>
+
+        <a
+            href={`/clusters/${deployment.clusterId}`}
+            class="relative z-10 hidden min-w-0 items-center gap-1.5 text-muted-foreground hover:text-foreground hover:underline lg:flex"
+        >
+            <Server class="size-4 shrink-0" aria-hidden="true" />
+            <span class="truncate">{deployment.clusterName}</span>
+        </a>
+
+        <span class="flex items-center justify-end gap-1">
+            <span
+                class="whitespace-nowrap text-muted-foreground"
+                title={new Date(
+                    deployment.createdAt,
+                ).toLocaleString()}
+            >
+                {ago(deployment.createdAt, now)}
+            </span>
+            <span class="relative z-10 size-7">
+                {#if isSettled(deployment.status) && deployment.id !== "placeholder"}
+                    <Menu>
+                        <MenuTrigger
+                            aria-label="Deployment actions"
+                            class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                            <Ellipsis
+                                class="size-4"
+                                aria-hidden="true"
+                            />
+                        </MenuTrigger>
+                        <MenuPopup align="end">
+                            <MenuItem
+                                variant="destructive"
+                                onclick={() =>
+                                    void list.set({
+                                        deleteId: deployment.id,
+                                    })}
+                            >
+                                <Trash2 aria-hidden="true" />
+                                Delete
+                            </MenuItem>
+                        </MenuPopup>
+                    </Menu>
+                {/if}
+            </span>
+        </span>
+    </li>
 {/snippet}
 
 <ConfirmDialog

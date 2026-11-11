@@ -11,8 +11,8 @@ import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/head
 import { orpc } from "../../apps/web/src/lib/api/orpc";
 
 // The full view fits rows to the viewport; during SSR that is the 900px
-// default, so floor((900 - 290) / 49) rows.
-const ssrPageSize = 12;
+// default, so floor((900 - 200) / 45) rows.
+const ssrPageSize = 15;
 
 function renderDeployments(latest: number | undefined, search: string) {
     const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
@@ -39,6 +39,7 @@ function renderDeployments(latest: number | undefined, search: string) {
         projectName: "Storefront",
         resourceId: `resource-${index}`,
         resourceName: `Service ${index}`,
+        resourceIcon: null,
         createdAt: new Date("2026-09-30T12:00:00Z"),
         updatedAt: new Date("2026-09-30T12:01:00Z"),
         finishedAt: new Date("2026-09-30T12:01:00Z"),

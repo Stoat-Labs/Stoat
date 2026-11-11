@@ -7,15 +7,16 @@
     import { Badge } from "$lib/components/ui/badge";
     import { Button } from "$lib/components/ui/button";
     import {
-        Card,
-        CardDescription,
-        CardHeader,
-        CardPanel,
-        CardTitle,
-    } from "$lib/components/ui/card";
+        Frame,
+        FrameHeader,
+        FramePanel,
+        FrameTitle,
+    } from "$lib/components/ui/frame";
     import { projectHref } from "$lib/api/hrefs";
     import { formatDate } from "$lib/format";
+    import ArrowSquareOut from "phosphor-svelte/lib/ArrowSquareOutIcon";
     import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
+    import PencilSimple from "phosphor-svelte/lib/PencilSimpleIcon";
     import type { AppRouterClient } from "@stoat/api/routers/index";
 
     type Cluster = NonNullable<
@@ -83,104 +84,112 @@
     }
 </script>
 
-<Card>
-    <CardHeader
-        class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+<Frame class="min-w-0">
+    <FrameHeader
+        class="flex-row items-center justify-between gap-2 px-2.5 py-3"
     >
-        <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-                <CardTitle class="text-base">
-                    Monitoring stack
-                </CardTitle>
-                <Badge variant={statusVariant(initializationStatus)}>
-                    {statusLabel(initializationStatus)}
-                </Badge>
-            </div>
-            <CardDescription class="mt-1">
-                Metrics and logs on the internal network.
-            </CardDescription>
-            {#if initializationStatus === "ready" && cluster.initializedAt}
-                <p class="mt-1 text-xs text-muted-foreground">
-                    Initialized {formatDate(cluster.initializedAt)}
-                </p>
-            {/if}
+        <div class="flex min-w-0 items-center gap-2">
+            <FrameTitle>Monitoring</FrameTitle>
+            <Badge variant={statusVariant(initializationStatus)}>
+                {statusLabel(initializationStatus)}
+            </Badge>
         </div>
         {#if canViewMonitoring}
-            <div class="flex shrink-0 flex-wrap items-center gap-2">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={() => onopendialog("monitoring")}
-                >
-                    Connection details
-                </Button>
-                {#if cluster.internalProjectId}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        class="max-w-full"
-                        href={projectHref(
-                            cluster.internalProjectId,
-                        )}
-                    >
-                        <span class="truncate">
-                            Open {cluster.name}-internal
-                        </span>
-                    </Button>
-                {/if}
-            </div>
-        {/if}
-    </CardHeader>
-    {#if initializationStatus === "ready" && cluster.retentionDays !== null}
-        <CardPanel class="p-4 pt-0 sm:p-5 sm:pt-0">
-            <div
-                class="flex flex-wrap items-center justify-between gap-2"
+            <Button
+                variant="outline"
+                size="sm"
+                onclick={() => onopendialog("monitoring")}
             >
-                <p class="text-sm text-muted-foreground">
-                    Retention <span
-                        class="font-medium text-foreground"
+                Connection details
+            </Button>
+        {/if}
+    </FrameHeader>
+    <FramePanel class="flex-1 p-0">
+        {#if initializationStatus === "ready"}
+            <dl class="divide-y text-sm">
+                {#if cluster.retentionDays !== null}
+                    <div
+                        class="flex h-11 items-center justify-between gap-4 px-4"
                     >
-                        {cluster.retentionDays} days
-                    </span>
-                </p>
-                {#if cluster.canInitialize}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onclick={() => onopendialog("retention")}
-                    >
-                        Edit retention
-                    </Button>
+                        <dt class="text-muted-foreground">
+                            Retention
+                        </dt>
+                        <dd class="flex items-center gap-1.5">
+                            {cluster.retentionDays} days
+                            {#if cluster.canInitialize}
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    aria-label="Edit retention"
+                                    onclick={() =>
+                                        onopendialog("retention")}
+                                >
+                                    <PencilSimple
+                                        aria-hidden="true"
+                                    />
+                                </Button>
+                            {/if}
+                        </dd>
+                    </div>
                 {/if}
-            </div>
-        </CardPanel>
-    {/if}
-    {#if initializationStatus !== "ready"}
-        <CardPanel class="space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
-            {#if initializationStatus === "uninitialized"}
-                <p class="text-sm text-muted-foreground">
-                    Initialize the monitoring stack to collect cluster
-                    health, metrics, and logs. The stack stays on the
-                    internal Uncloud network.
-                </p>
-            {:else if initializationInProgress}
-                <Alert variant="warning">
-                    <CircleAlert aria-hidden="true" />
-                    <AlertTitle>
-                        Monitoring initialization is in progress
-                    </AlertTitle>
-                    <AlertDescription>
-                        Stoat is deploying the internal services. This
-                        page checks for updates automatically.
-                    </AlertDescription>
-                </Alert>
-            {:else if initializationStatus === "failed"}
-                <div class="space-y-3">
-                    <Alert variant="error">
+                {#if cluster.initializedAt}
+                    <div
+                        class="flex h-11 items-center justify-between gap-4 px-4"
+                    >
+                        <dt class="text-muted-foreground">
+                            Initialized
+                        </dt>
+                        <dd>{formatDate(cluster.initializedAt)}</dd>
+                    </div>
+                {/if}
+                {#if cluster.internalProjectId}
+                    <div
+                        class="flex h-11 items-center justify-between gap-4 px-4"
+                    >
+                        <dt class="text-muted-foreground">Project</dt>
+                        <dd class="min-w-0">
+                            <a
+                                class="flex min-w-0 items-center gap-1.5 hover:underline"
+                                href={projectHref(
+                                    cluster.internalProjectId,
+                                )}
+                            >
+                                <span class="truncate">
+                                    {cluster.name}-internal
+                                </span>
+                                <ArrowSquareOut
+                                    class="size-3.5 shrink-0 text-muted-foreground"
+                                    aria-hidden="true"
+                                />
+                            </a>
+                        </dd>
+                    </div>
+                {/if}
+            </dl>
+        {:else}
+            <div class="space-y-3 p-4">
+                {#if initializationStatus === "uninitialized"}
+                    <p class="text-sm text-muted-foreground">
+                        Initialize the monitoring stack to collect
+                        cluster health, metrics, and logs. The stack
+                        stays on the internal Uncloud network.
+                    </p>
+                {:else if initializationInProgress}
+                    <Alert variant="warning">
                         <CircleAlert aria-hidden="true" />
                         <AlertTitle>
-                            Monitoring initialization failed
+                            Initialization in progress
                         </AlertTitle>
+                        <AlertDescription>
+                            Stoat is deploying the internal services.
+                            This page checks for updates
+                            automatically.
+                        </AlertDescription>
+                    </Alert>
+                {:else if initializationStatus === "failed"}
+                    <Alert variant="error">
+                        <CircleAlert aria-hidden="true" />
+                        <AlertTitle>Initialization failed</AlertTitle>
                         <AlertDescription class="break-words">
                             {cluster.initializationError ??
                                 "The initialization worker did not provide an error message."}
@@ -214,8 +223,8 @@
                             </Button>
                         </div>
                     {/if}
-                </div>
-            {/if}
-        </CardPanel>
-    {/if}
-</Card>
+                {/if}
+            </div>
+        {/if}
+    </FramePanel>
+</Frame>

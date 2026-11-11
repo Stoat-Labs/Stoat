@@ -25,7 +25,7 @@ export class PanelSize {
     // The width the user dragged the panel to, kept in a cookie.
     private chosen = $state(readPanelWidth());
 
-    // Railway hides the graph on narrow screens and gives the panel all of it, inset 20px per side.
+    // Narrow screens hide the graph and give the panel the whole canvas.
     narrow = $derived(this.canvasWidth < 900);
 
     // Wider canvases step the docked panel up to a fixed width, as Railway does: 70% to 1150px, then 904, 1008 and 1184px.
@@ -40,7 +40,7 @@ export class PanelSize {
     });
 
     private target = $derived.by(() => {
-        if (this.narrow) return Math.max(this.canvasWidth - 40, 0);
+        if (this.narrow) return this.canvasWidth;
 
         if (this.chosen === "full") return this.canvasWidth;
 
@@ -55,7 +55,7 @@ export class PanelSize {
 
     width = $derived(this.tween.current);
 
-    full = $derived(!this.narrow && this.chosen === "full");
+    full = $derived(this.narrow || this.chosen === "full");
 
     /** @param close Called when the panel is dragged shut. */
     constructor(private close: () => void) {

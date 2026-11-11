@@ -200,9 +200,10 @@
         size="sm"
         {disabled}
         onclick={() => changeDialog("add-connection")}
+        aria-label="Add connection"
     >
         <Plus aria-hidden="true" />
-        Add connection
+        <span class="max-sm:hidden">Add connection</span>
     </Button>
 {/snippet}
 

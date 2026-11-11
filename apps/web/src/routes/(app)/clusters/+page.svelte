@@ -242,9 +242,10 @@
             <MenuTrigger
                 class={buttonVariants({ size: "sm" })}
                 disabled={!ready}
+                aria-label="Create cluster"
             >
                 <Plus class="size-4" aria-hidden="true" />
-                Create cluster
+                <span class="max-sm:hidden">Create cluster</span>
                 <ChevronDown class="size-3.5" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end" class="min-w-44">

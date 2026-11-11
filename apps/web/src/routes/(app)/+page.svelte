@@ -276,9 +276,14 @@
                 <Search aria-hidden="true" />
             </InputGroupAddon>
         </InputGroup>
-        <Button size="sm" disabled={!ready} onclick={openCreate}>
+        <Button
+            size="sm"
+            disabled={!ready}
+            onclick={openCreate}
+            aria-label="Create project"
+        >
             <Plus class="size-4" aria-hidden="true" />
-            Create project
+            <span class="max-sm:hidden">Create project</span>
         </Button>
     </div>
 {/snippet}

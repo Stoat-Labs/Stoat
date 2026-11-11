@@ -33,6 +33,7 @@
     import { CanvasLayout } from "./canvas-layout.svelte";
     import CanvasResourceDialogs from "./canvas-resource-dialogs.svelte";
     import CanvasFocus from "./canvas-focus.svelte";
+    import CanvasList from "./canvas-list.svelte";
     import {
         setCanvasActions,
         setCanvasClock,
@@ -350,9 +351,9 @@
             select(serviceNodeId(resourceId, service)),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
-        selectMetrics: (nodeId) => {
+        selectTab: (nodeId, panelTab) => {
             select(nodeId);
-            void tab.set("metrics");
+            void tab.set(panelTab);
         },
         removeVolume: (nodeId) => dialogs?.askRemoveVolume(nodeId),
         disconnectVolume: (nodeId) =>
@@ -1063,155 +1064,163 @@
     bind:this={panel.canvasElement}
     bind:clientWidth={panel.canvasWidth}
 >
-    <CanvasContextMenu
-        {projectId}
-        target={menuTarget}
-        groups={framedGroups}
-        canAdd={!isInternal}
-        canAddVolume={volumeTargetList.length > 0}
-        onaddpage={(addPage) => void add.set(addPage)}
-        onopen={openPanel}
-    >
-        <SvelteFlow
-            bind:nodes
-            bind:edges
-            {nodeTypes}
-            connectionMode={ConnectionMode.Loose}
-            nodesConnectable={false}
-            elementsSelectable
-            deleteKey={null}
-            fitView={fitOnLoad}
-            fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
-            minZoom={0.5}
-            maxZoom={1.26}
-            panOnScroll
-            selectionMode={SelectionMode.Partial}
-            snapGrid={[SNAP_GRID, SNAP_GRID]}
-            defaultEdgeOptions={{
-                type: "smoothstep",
-                selectable: false,
-            }}
-            onnodeclick={({ node, event }) =>
-                clickNode(node.id, event)}
-            onpaneclick={() => {
-                clearTimeout(pendingSelect);
-                select(null);
-            }}
-            onnodecontextmenu={({ node, event }) => {
-                // A resource's own frame opens that resource's menu.
-                if (node.type === "stack") {
-                    menuTarget = node.data.group
-                        ? { kind: "group", groupId: node.id }
-                        : {
-                              kind: "node",
-                              nodeId: node.id,
-                              groupId: undefined,
-                              services: 1,
-                          };
-
-                    return;
-                }
-
-                // A volume or config in a service's tray has its own menu, like Railway's.
-                const tray =
-                    event.target instanceof Element
-                        ? event.target.closest<HTMLElement>(
-                              "[data-volume], [data-config]",
-                          )?.dataset
-                        : undefined;
-
-                const resourceId = node.data.resource.id;
-
-                menuTarget = {
-                    kind: "node",
-                    nodeId: tray?.config
-                        ? configNodeId(resourceId, tray.config)
-                        : tray?.volume
-                          ? volumeNodeId(resourceId, tray.volume)
-                          : node.id,
-                    groupId: node.data.groupId,
-                    services: node.data.service ? 1 : 0,
-                };
-            }}
-            onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
-            onnodedragstart={({ targetNode }) => {
-                if (!targetNode) return;
-
-                frameStart = { ...targetNode.position };
-                startDrag(targetNode);
-            }}
-            onnodedrag={({ targetNode, event }) => {
-                if (!targetNode) return;
-
-                const pointer =
-                    "clientX" in event
-                        ? { x: event.clientX, y: event.clientY }
-                        : event.touches[0]
-                          ? {
-                                x: event.touches[0].clientX,
-                                y: event.touches[0].clientY,
-                            }
-                          : undefined;
-
-                moveDrag(targetNode, pointer);
-            }}
-            onnodedragstop={({ targetNode }) => {
-                if (targetNode) endDrag(targetNode);
-            }}
-            onselectiondragstart={() => {
-                // A box selection moves as one; live refetches wait for it like a single drag.
-                drag = {
-                    starts: new Map(),
-                    frameId: undefined,
-                    target: undefined,
-                };
-            }}
-            onselectiondrag={() => {
-                nodes = refitFrames(nodes);
-                edges = styleEdges(
-                    buildEdges(nodes, graph),
-                    selected.current,
-                    hidden.current,
-                );
-            }}
-            onselectiondragstop={() => {
-                drag = undefined;
-
-                // Each moved node settles in turn, so the selection never lands on anything.
-                for (const node of nodes.filter(
-                    (item) => item.selected,
-                ))
-                    settleDragged(node.id);
-
-                persistCards();
-            }}
+    <!-- Phones get a plain list; the width is unknown until mounted, so the first render is the canvas. -->
+    {#if panel.canvasWidth > 0 && panel.narrow}
+        <CanvasList {nodes} onselect={select} />
+    {:else}
+        <CanvasContextMenu
+            {projectId}
+            target={menuTarget}
+            groups={framedGroups}
+            canAdd={!isInternal}
+            canAddVolume={volumeTargetList.length > 0}
+            onaddpage={(addPage) => void add.set(addPage)}
+            onopen={openPanel}
         >
-            <CanvasDots />
-            <CanvasApi bind:toFlow />
-            <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->
-            {#if !empty}
-                <Panel position="bottom-left" class="m-4!">
-                    <CanvasControls
-                        hidden={hidden.current}
-                        canUndo={canvasLayout.canUndo}
-                        canRedo={canvasLayout.canRedo}
-                        onlayers={(next) =>
-                            void hidden.set(
-                                next.length ? next : null,
-                            )}
-                        onautolayout={resetLayout}
-                        onrepair={repairLayout}
-                        onundo={() => canvasLayout.undo()}
-                        onredo={() => canvasLayout.redo()}
-                    />
-                </Panel>
-            {/if}
-            <CanvasFocus
-                nodeId={selectedResource ? focusNodeId : undefined}
-                coveredWidth={panel.narrow ? 0 : panel.width}
-            />
-        </SvelteFlow>
-    </CanvasContextMenu>
+            <SvelteFlow
+                bind:nodes
+                bind:edges
+                {nodeTypes}
+                connectionMode={ConnectionMode.Loose}
+                nodesConnectable={false}
+                elementsSelectable
+                deleteKey={null}
+                fitView={fitOnLoad}
+                fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+                minZoom={0.5}
+                maxZoom={1.26}
+                panOnScroll
+                selectionMode={SelectionMode.Partial}
+                snapGrid={[SNAP_GRID, SNAP_GRID]}
+                defaultEdgeOptions={{
+                    type: "smoothstep",
+                    selectable: false,
+                }}
+                onnodeclick={({ node, event }) =>
+                    clickNode(node.id, event)}
+                onpaneclick={() => {
+                    clearTimeout(pendingSelect);
+                    select(null);
+                }}
+                onnodecontextmenu={({ node, event }) => {
+                    // A resource's own frame opens that resource's menu.
+                    if (node.type === "stack") {
+                        menuTarget = node.data.group
+                            ? { kind: "group", groupId: node.id }
+                            : {
+                                  kind: "node",
+                                  nodeId: node.id,
+                                  groupId: undefined,
+                                  services: 1,
+                              };
+
+                        return;
+                    }
+
+                    // A volume or config in a service's tray has its own menu, like Railway's.
+                    const tray =
+                        event.target instanceof Element
+                            ? event.target.closest<HTMLElement>(
+                                  "[data-volume], [data-config]",
+                              )?.dataset
+                            : undefined;
+
+                    const resourceId = node.data.resource.id;
+
+                    menuTarget = {
+                        kind: "node",
+                        nodeId: tray?.config
+                            ? configNodeId(resourceId, tray.config)
+                            : tray?.volume
+                              ? volumeNodeId(resourceId, tray.volume)
+                              : node.id,
+                        groupId: node.data.groupId,
+                        services: node.data.service ? 1 : 0,
+                    };
+                }}
+                onpanecontextmenu={() =>
+                    (menuTarget = { kind: "pane" })}
+                onnodedragstart={({ targetNode }) => {
+                    if (!targetNode) return;
+
+                    frameStart = { ...targetNode.position };
+                    startDrag(targetNode);
+                }}
+                onnodedrag={({ targetNode, event }) => {
+                    if (!targetNode) return;
+
+                    const pointer =
+                        "clientX" in event
+                            ? { x: event.clientX, y: event.clientY }
+                            : event.touches[0]
+                              ? {
+                                    x: event.touches[0].clientX,
+                                    y: event.touches[0].clientY,
+                                }
+                              : undefined;
+
+                    moveDrag(targetNode, pointer);
+                }}
+                onnodedragstop={({ targetNode }) => {
+                    if (targetNode) endDrag(targetNode);
+                }}
+                onselectiondragstart={() => {
+                    // A box selection moves as one; live refetches wait for it like a single drag.
+                    drag = {
+                        starts: new Map(),
+                        frameId: undefined,
+                        target: undefined,
+                    };
+                }}
+                onselectiondrag={() => {
+                    nodes = refitFrames(nodes);
+                    edges = styleEdges(
+                        buildEdges(nodes, graph),
+                        selected.current,
+                        hidden.current,
+                    );
+                }}
+                onselectiondragstop={() => {
+                    drag = undefined;
+
+                    // Each moved node settles in turn, so the selection never lands on anything.
+                    for (const node of nodes.filter(
+                        (item) => item.selected,
+                    ))
+                        settleDragged(node.id);
+
+                    persistCards();
+                }}
+            >
+                <CanvasDots />
+                <CanvasApi bind:toFlow />
+                <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->
+                {#if !empty}
+                    <Panel position="bottom-left" class="m-4!">
+                        <CanvasControls
+                            hidden={hidden.current}
+                            canUndo={canvasLayout.canUndo}
+                            canRedo={canvasLayout.canRedo}
+                            onlayers={(next) =>
+                                void hidden.set(
+                                    next.length ? next : null,
+                                )}
+                            onautolayout={resetLayout}
+                            onrepair={repairLayout}
+                            onundo={() => canvasLayout.undo()}
+                            onredo={() => canvasLayout.redo()}
+                        />
+                    </Panel>
+                {/if}
+                <CanvasFocus
+                    nodeId={selectedResource
+                        ? focusNodeId
+                        : undefined}
+                    coveredWidth={panel.narrow ? 0 : panel.width}
+                />
+            </SvelteFlow>
+        </CanvasContextMenu>
+    {/if}
 
     <!-- Stops where the resource panel starts, so notices and actions never sit on top of it. -->
     <div

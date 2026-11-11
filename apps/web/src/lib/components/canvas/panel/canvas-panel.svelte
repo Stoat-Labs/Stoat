@@ -47,7 +47,7 @@
         changed: boolean;
         /** Pixel width, shared with the canvas so it can keep the opened node in view. */
         width: number;
-        /** Narrow canvases hide the graph: the panel floats over all of it, inset from the sides. */
+        /** Narrow canvases hide the graph: the panel covers all of it, flush to every edge. */
         inset: boolean;
         /** The panel fills the canvas, so it rises to the top edge. */
         full: boolean;
@@ -153,9 +153,7 @@
     const stacked = $derived(Boolean(deployment.current));
 
     const edge = $derived(
-        inset
-            ? "right-5 rounded-t-xl border"
-            : "right-0 rounded-tl-xl border-t border-l",
+        inset ? "right-0" : "right-0 rounded-tl-xl border-t border-l",
     );
 </script>
 
@@ -196,7 +194,9 @@
     in:fly|global={enter}
     out:fly|global={leave}
 >
-    <header class="flex items-center gap-4 px-12 pt-12 pb-6">
+    <header
+        class="flex items-center gap-4 px-5 sm:px-12 pt-6 sm:pt-12 pb-6"
+    >
         {@render resourceIcon()}
         <h2 class="min-w-0 flex-1 truncate text-2xl font-semibold">
             {resource.name}
@@ -218,7 +218,7 @@
 
     <!-- Railway's tabs: 16px labels 32px apart, a 1px underline on the active one. -->
     <div
-        class="no-scrollbar flex shrink-0 gap-8 overflow-x-auto border-b border-border px-12"
+        class="no-scrollbar flex shrink-0 gap-8 overflow-x-auto border-b border-border px-5 sm:px-12"
         role="tablist"
         aria-label="{resource.name} sections"
     >
@@ -251,7 +251,7 @@
             active === "compose"
                 ? "overflow-hidden"
                 : "overflow-y-auto",
-            !fullBleed && "px-12 pt-8 pb-12",
+            !fullBleed && "px-5 sm:px-12 pt-8 pb-6 sm:pb-12",
         ]}
         role="tabpanel"
     >

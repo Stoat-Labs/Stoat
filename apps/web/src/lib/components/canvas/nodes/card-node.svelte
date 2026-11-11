@@ -4,6 +4,7 @@
     import { cn } from "$lib/utils";
     import Box from "phosphor-svelte/lib/CubeIcon";
     import ChartLine from "phosphor-svelte/lib/ChartLineIcon";
+    import Folder from "phosphor-svelte/lib/FolderIcon";
     import FileCog from "$lib/components/shared/file-gear-icon.svelte";
     import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import type { Node, NodeProps } from "@xyflow/svelte";
@@ -260,7 +261,9 @@
                     if (kind === "config")
                         actions.selectConfig(resource.id, name);
                     else if (kind === "metrics")
-                        actions.selectMetrics(id);
+                        actions.selectTab(id, "metrics");
+                    else if (kind === "bind")
+                        actions.selectTab(id, "compose");
                     else actions.selectVolume(resource.id, name);
                 }}
             >
@@ -274,6 +277,8 @@
                             class="size-4"
                             aria-hidden="true"
                         />
+                    {:else if kind === "bind"}
+                        <Folder class="size-4" aria-hidden="true" />
                     {:else}
                         <HardDrive
                             class="size-4"

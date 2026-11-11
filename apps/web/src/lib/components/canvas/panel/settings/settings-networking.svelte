@@ -26,9 +26,9 @@
     import { createQuery } from "@tanstack/svelte-query";
     import type { Component, Snippet } from "svelte";
     import type { CanvasResource, CanvasService } from "../../graph";
-    import CanvasIngressDialog, {
+    import CanvasIngressEditor, {
         type IngressMode,
-    } from "../canvas-ingress-dialog.svelte";
+    } from "../canvas-ingress-editor.svelte";
     import SettingsTitle from "./settings-title.svelte";
 
     let {
@@ -63,7 +63,8 @@
 
     const ingressEntries = $derived(ingress?.entries ?? []);
 
-    let ingressDialog = $state<{
+    // Raw, so the entry being edited keeps its identity and its row can be swapped for the editor.
+    let ingressEditor = $state.raw<{
         mode: IngressMode;
         entry: HttpIngress | HostIngress | null;
     } | null>(null);
@@ -229,7 +230,7 @@
                         aria-label="Edit {name}"
                         disabled={!canEditIngress}
                         onclick={() =>
-                            (ingressDialog = {
+                            (ingressEditor = {
                                 mode:
                                     entry.kind === "http"
                                         ? "domain"
@@ -280,27 +281,36 @@
                         · {entry.service}
                     {/if}
                 {/snippet}
-                {@render networkRow(
-                    entry.kind === "http" ? Globe : Cable,
-                    "text-muted-foreground",
-                    ingressLabel(entry),
-                    url,
-                    detail,
-                    url ??
-                        (entry.kind === "host"
-                            ? ingressLabel(entry)
-                            : undefined),
-                    entry,
-                )}
+                {#if ingressEditor?.entry === entry}
+                    {@render editor(ingressEditor)}
+                {:else}
+                    {@render networkRow(
+                        entry.kind === "http" ? Globe : Cable,
+                        "text-muted-foreground",
+                        ingressLabel(entry),
+                        url,
+                        detail,
+                        url ??
+                            (entry.kind === "host"
+                                ? ingressLabel(entry)
+                                : undefined),
+                        entry,
+                    )}
+                {/if}
             {:else}
-                <p
-                    class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-                >
-                    {ingress === null
-                        ? "The Compose draft is not valid YAML, so its ingress can't be read."
-                        : "Nothing is public yet."}
-                </p>
+                {#if !ingressEditor}
+                    <p
+                        class="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+                    >
+                        {ingress === null
+                            ? "The Compose draft is not valid YAML, so its ingress can't be read."
+                            : "Nothing is public yet."}
+                    </p>
+                {/if}
             {/each}
+            {#if ingressEditor && !ingressEditor.entry}
+                {@render editor(ingressEditor)}
+            {/if}
         </div>
         {#if ingressError}
             <Alert variant="error" class="mt-3">
@@ -309,13 +319,13 @@
                 </AlertDescription>
             </Alert>
         {/if}
-        {#if !isInternal}
+        {#if !isInternal && !ingressEditor}
             <div class="mt-3 flex flex-wrap gap-2">
                 <Button
                     variant="outline"
                     disabled={!canEditIngress}
                     onclick={() =>
-                        (ingressDialog = {
+                        (ingressEditor = {
                             mode: "domain",
                             entry: null,
                         })}
@@ -327,7 +337,7 @@
                     variant="outline"
                     disabled={!canEditIngress}
                     onclick={() =>
-                        (ingressDialog = {
+                        (ingressEditor = {
                             mode: "tcp",
                             entry: null,
                         })}
@@ -374,22 +384,26 @@
     </div>
 {/if}
 
-{#if ingressDialog}
-    <CanvasIngressDialog
-        mode={ingressDialog.mode}
-        entry={ingressDialog.entry}
+{#snippet editor(open: {
+    mode: IngressMode;
+    entry: HttpIngress | HostIngress | null;
+})}
+    <CanvasIngressEditor
+        mode={open.mode}
+        entry={open.entry}
         entries={ingressEntries}
         services={ingress?.services ?? []}
         compose={draftCompose}
+        clusterDomain={systemValue("STOAT_DOMAIN")}
         busy={savingDraft}
         onsubmit={(compose) => {
             ingressError = "";
 
             return saveDraft(compose);
         }}
-        onclose={() => (ingressDialog = null)}
+        onclose={() => (ingressEditor = null)}
     />
-{/if}
+{/snippet}
 
 <ConfirmDialog
     bind:open={

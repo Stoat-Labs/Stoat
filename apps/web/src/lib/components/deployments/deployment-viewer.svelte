@@ -297,7 +297,8 @@
             size="sm"
             onclick={() => (view.dialog.current = "delete")}
         >
-            Delete deployment
+            Delete
+            <span class="max-sm:hidden">deployment</span>
         </Button>
     {/if}
     {#if stream.canCancel}
@@ -308,7 +309,8 @@
             disabled={cancelMutationState.isPending}
             onclick={cancelDeployment}
         >
-            Cancel deployment
+            Cancel
+            <span class="max-sm:hidden">deployment</span>
         </Button>
     {/if}
 {/snippet}

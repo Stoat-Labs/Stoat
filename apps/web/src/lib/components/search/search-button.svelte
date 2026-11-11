@@ -23,9 +23,11 @@
         onclick={() => void open.set(true)}
     >
         <Search aria-hidden="true" />
-        <span class="group-data-[collapsible=icon]:hidden">Search</span>
+        <span class="group-data-[collapsible=icon]:hidden">
+            Search
+        </span>
         <KbdGroup
-            class="ms-auto group-data-[collapsible=icon]:hidden"
+            class="ms-auto group-data-[collapsible=icon]:hidden max-md:hidden"
         >
             <Kbd>Ctrl</Kbd>
             <Kbd>K</Kbd>

@@ -149,6 +149,17 @@ configs:
             [logging]
             level = "info"
 
+            # Cache defaults scale with host RAM (the page cache alone takes 1/8 of it), which
+            # put Greptime near 4GB on a 20GB host. A few machines' metrics fit far smaller.
+            [[region_engine]]
+            [region_engine.mito]
+            global_write_buffer_size = "256MB"
+            page_cache_size = "256MB"
+            sst_meta_cache_size = "64MB"
+            vector_cache_size = "64MB"
+            selector_result_cache_size = "64MB"
+            range_result_cache_size = "64MB"
+
     alloy_config:
         content: |
             logging {
@@ -223,9 +234,10 @@ configs:
 
               // Every metric kind except those that need extra host setup (perf_event needs a
               // perf config, resctrl needs Intel RDT) or rewrite every process's page
-              // reference bits (referenced_memory). "disk" walks each container's writable
-              // layer, so the kernel's inode cache charged to Alloy grows with container files.
-              disabled_metrics = ["perf_event", "resctrl", "referenced_memory"]
+              // reference bits (referenced_memory), or walk each container's writable layer
+              // (disk), which filled ~2GB of inode cache charged to Alloy on a busy host.
+              // container_fs_usage_bytes is unused; fs reads/writes come from diskIO.
+              disabled_metrics = ["perf_event", "resctrl", "referenced_memory", "disk"]
 
               allowlisted_container_labels = [
                 "com.docker.compose.project",

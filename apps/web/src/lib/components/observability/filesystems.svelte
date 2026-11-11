@@ -23,6 +23,14 @@
     } from "$lib/observability";
     import { usageDisplay } from "$lib/observability/usage-display.svelte";
     import { Skeleton } from "$lib/components/ui/skeleton";
+    import { Button } from "$lib/components/ui/button";
+    import Eye from "phosphor-svelte/lib/EyeIcon";
+    import EyeOff from "phosphor-svelte/lib/EyeSlashIcon";
+    import {
+        parseAsArrayOf,
+        parseAsString,
+        useQueryState,
+    } from "nuqs-svelte";
 
     let {
         rows,
@@ -40,11 +48,32 @@
 
     const showPercent = $derived(usageDisplay.current === "percent");
 
-    const series = $derived(
-        showPercent
-            ? rows
-            : rows.map((row) => ({ ...row, points: row.usedPoints })),
+    // Labels, not row keys: keys are already URL-encoded and would not survive the round trip.
+    // Hidden rather than shown, so filesystems that appear later are charted by default.
+    const hidden = useQueryState(
+        "hiddenFilesystems",
+        parseAsArrayOf(parseAsString)
+            .withDefault([])
+            .withOptions({ shallow: true, scroll: false }),
     );
+
+    const series = $derived(
+        rows
+            .filter((row) => !hidden.current.includes(row.label))
+            .map((row) =>
+                showPercent
+                    ? row
+                    : { ...row, points: row.usedPoints },
+            ),
+    );
+
+    function toggle(key: string) {
+        void hidden.set(
+            hidden.current.includes(key)
+                ? hidden.current.filter((item) => item !== key)
+                : [...hidden.current, key],
+        );
+    }
 </script>
 
 <Frame class="min-w-0">
@@ -75,9 +104,38 @@
                 </TableHeader>
                 <TableBody>
                     {#each rows as row (row.key)}
-                        <TableRow>
+                        {@const shown = !hidden.current.includes(
+                            row.label,
+                        )}
+                        <TableRow
+                            class="transition-opacity {shown
+                                ? ''
+                                : 'opacity-50'}"
+                        >
                             <TableCell>
                                 <span class="flex items-center gap-2">
+                                    <Button
+                                        size="icon-xs"
+                                        variant="ghost"
+                                        aria-pressed={shown}
+                                        aria-label={shown
+                                            ? `Hide ${row.label} from chart`
+                                            : `Show ${row.label} in chart`}
+                                        onclick={() =>
+                                            toggle(row.label)}
+                                    >
+                                        {#if shown}
+                                            <Eye
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        {:else}
+                                            <EyeOff
+                                                class="size-4"
+                                                aria-hidden="true"
+                                            />
+                                        {/if}
+                                    </Button>
                                     <span
                                         class="size-2 shrink-0 rounded-full"
                                         style:background={row.color}

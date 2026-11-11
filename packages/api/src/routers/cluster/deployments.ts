@@ -285,6 +285,7 @@ export const deploymentsRouter = {
                         finishedAt: deployments.finishedAt,
                         resourceId: deployments.resourceId,
                         resourceName: resources.name,
+                        resourceIcon: resources.icon,
                         projectId: projects.id,
                         projectName: projects.name,
                         env: resourceDeploymentInputs.env,

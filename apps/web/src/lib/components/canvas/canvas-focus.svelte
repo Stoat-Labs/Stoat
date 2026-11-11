@@ -31,9 +31,6 @@
 
     const padding = 48;
 
-    // Below this the cards are too small to read, so a bigger graph centres the opened card instead.
-    const minFitZoom = 0.5;
-
     // Live refetches rebuild the nodes; only a newly opened node moves the camera.
     let focused: string | undefined;
 
@@ -92,7 +89,7 @@
         });
     }
 
-    // Shows the whole graph in the canvas the panel leaves visible, when it fits at a readable zoom.
+    // Shows the whole graph in the canvas the panel leaves visible, when it fits without zooming out.
     function fitBeside(covered: number) {
         const bounds = flow.getNodesBounds(flow.getNodes());
 
@@ -101,15 +98,15 @@
 
         const height = store.height - padding * 2;
 
-        // Never zoom in past the zoom the user chose, or past 100% like Railway.
-        const zoom = Math.min(
-            flow.getZoom(),
-            1,
-            width / bounds.width,
-            height / bounds.height,
-        );
+        // Keep the zoom the user chose, but never zoom in past 100% like Railway.
+        const zoom = Math.min(flow.getZoom(), 1);
 
-        if (!(zoom >= minFitZoom)) return false;
+        // Zooming out to fit shrinks the cards past reading, so a bigger graph centres the opened card instead.
+        if (
+            bounds.width * zoom > width ||
+            bounds.height * zoom > height
+        )
+            return false;
 
         void flow.setViewport(
             {

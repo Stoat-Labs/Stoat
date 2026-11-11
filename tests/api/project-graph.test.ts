@@ -15,7 +15,7 @@ const elsewhere = "33333333-3333-4333-8333-333333333333";
 const project = "44444444-4444-4444-8444-444444444444";
 
 describe("composeServices", () => {
-    it("reads both depends_on forms and keeps only named volumes", () => {
+    it("reads both depends_on forms and splits named volumes from bind mounts", () => {
         const services = composeServices(`services:
   web:
     image: nginx
@@ -40,9 +40,15 @@ describe("composeServices", () => {
 `);
 
         expect(services).toEqual([
-            { name: "web", image: "nginx", dependsOn: ["api"], volumes: [] },
-            { name: "api", image: undefined, dependsOn: ["db"], volumes: [] },
-            { name: "db", image: "postgres:18", dependsOn: [], volumes: ["pg-data", "wal"] },
+            { name: "web", image: "nginx", dependsOn: ["api"], volumes: [], binds: [] },
+            { name: "api", image: undefined, dependsOn: ["db"], volumes: [], binds: ["./config"] },
+            {
+                name: "db",
+                image: "postgres:18",
+                dependsOn: [],
+                volumes: ["pg-data", "wal"],
+                binds: ["/srv"],
+            },
         ]);
     });
 });

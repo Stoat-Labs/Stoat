@@ -11,7 +11,6 @@
         Alert,
         AlertDescription,
     } from "$lib/components/ui/alert";
-    import { buttonVariants } from "$lib/components/ui/button/button-variants";
     import {
         Empty,
         EmptyDescription,
@@ -600,8 +599,9 @@
     <div
         class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
     >
+        <!-- Phones show one column of charts whatever the layout, so the toggle would do nothing. -->
         <div
-            class="flex overflow-hidden rounded-md border"
+            class="hidden overflow-hidden rounded-md border sm:flex"
             role="group"
             aria-label="Chart layout"
         >
@@ -627,18 +627,6 @@
                 </button>
             {/each}
         </div>
-        {#if cluster.available && rows.length}<a
-                class={buttonVariants({
-                    variant: "outline",
-                    size: "sm",
-                })}
-                href={logsHref(
-                    cluster.start * 1000,
-                    cluster.end * 1000,
-                )}
-            >
-                Logs for this range
-            </a>{/if}
         <!-- Nothing to range over or refresh until the cluster has monitoring. -->
         {#if cluster.reason !== "uninitialized"}
             <RangeControls
