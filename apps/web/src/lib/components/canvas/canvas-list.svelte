@@ -170,9 +170,15 @@
                                         name,
                                     );
                                 else if (kind === "metrics")
-                                    actions.selectTab(card.id, "metrics");
+                                    actions.selectTab(
+                                        card.id,
+                                        "metrics",
+                                    );
                                 else if (kind === "bind")
-                                    actions.selectTab(card.id, "compose");
+                                    actions.selectTab(
+                                        card.id,
+                                        "compose",
+                                    );
                                 else
                                     actions.selectVolume(
                                         data.resource.id,

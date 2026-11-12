@@ -9,7 +9,9 @@ const row = (page: Page, name: string) => page.getByRole("row").filter({ hasText
 const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
 
 const domainCard = (page: Page) =>
-    page.locator("[data-slot=card]").filter({ hasText: "Cluster domain" });
+    page
+        .locator("[data-slot=frame]")
+        .filter({ has: page.locator("[data-slot=frame-panel-title]", { hasText: /^Domain$/u }) });
 
 /** Opens the delete confirmation from a cluster row's actions menu. */
 async function askDelete(page: Page, name: string) {
@@ -269,7 +271,7 @@ test("an admin replaces the cluster's domain with their own, then removes it", a
     await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
     await expect(domainCard(page)).toContainText("Uncloud DNS");
 
-    await domainCard(page).getByRole("button", { name: "Change domain" }).click();
+    await domainCard(page).getByRole("button", { name: "Change" }).click();
     const edit = page.getByRole("dialog", { name: "Cluster domain" });
     await edit.getByLabel("Domain").fill("Apps.Example.com");
     await edit.getByRole("button", { name: "Save domain" }).click();
@@ -282,7 +284,7 @@ test("an admin replaces the cluster's domain with their own, then removes it", a
     await expect(domainCard(page)).toContainText("Your DNS");
     await expect(domainCard(page)).toContainText("*.apps.example.com");
 
-    await domainCard(page).getByRole("button", { name: "Remove" }).click();
+    await domainCard(page).getByRole("button", { name: "Remove domain" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Remove domain" }).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(domainCard(page)).toContainText("Not set");
@@ -368,7 +370,7 @@ test.describe("monitoring", () => {
         await expect(page.getByText(/^Initialized /u)).toBeVisible();
         await expect(page.getByText("14 days")).toBeVisible();
         await expect(
-            page.getByRole("link", { name: `Open ${cluster.name}-internal` }),
+            page.getByRole("link", { name: `${cluster.name}-internal`, exact: true }),
         ).toBeVisible();
 
         // GreptimeDB first, on its own; then the whole stack with the collectors.
