@@ -316,15 +316,15 @@
         "serviceNetworkOut",
     ] as const;
 
-    // The charts show the top services among those matching the shared filter.
+    // The charts show the top services among those matching the shared filter, matched per field like the table.
     const chartServices = $derived.by(() => {
-        const query = filters.q.current.trim().toLowerCase();
+        const query = filters.q.current.toLowerCase();
 
         return query
             ? services.filter((row) =>
-                  `${row.name} ${row.clusterName}`
-                      .toLowerCase()
-                      .includes(query),
+                  [row.name, row.clusterName, ...row.machines].some(
+                      (field) => field.toLowerCase().includes(query),
+                  ),
               )
             : services;
     });

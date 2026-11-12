@@ -31,7 +31,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Slider } from "$lib/components/ui/slider";
-    import { onMount } from "svelte";
+    import { onDestroy, onMount } from "svelte";
     import SettingsSection from "./settings-section.svelte";
 
     let {
@@ -159,7 +159,7 @@
         }
     }
 
-    function pickImage(
+    async function pickImage(
         event: Event & { currentTarget: HTMLInputElement },
     ) {
         const file = event.currentTarget.files?.[0];
@@ -168,6 +168,17 @@
 
         if (!file) return;
         imageError = "";
+
+        // Decode up front: the cropper gives no signal when an image fails to load.
+        try {
+            (await createImageBitmap(file)).close();
+        } catch {
+            imageError =
+                "Unable to use that image. Try another file.";
+
+            return;
+        }
+
         zoom = 1;
         cropArea = null;
         cropFile = file;
@@ -179,6 +190,9 @@
         cropFile = null;
         cropUrl = "";
     }
+
+    // Leaving settings with the dialog open would otherwise keep the file in memory.
+    onDestroy(closeCrop);
 
     function applyCrop() {
         if (cropFile && cropArea)
