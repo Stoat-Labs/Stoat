@@ -12,9 +12,25 @@
         AvatarImage,
     } from "$lib/components/ui/avatar";
     import { Button } from "$lib/components/ui/button";
+    import {
+        type Area,
+        Cropper,
+        CropperCropArea,
+        CropperDescription,
+        CropperImage,
+    } from "$lib/components/ui/cropper";
+    import {
+        Dialog,
+        DialogContent,
+        DialogFooter,
+        DialogHeader,
+        DialogPanel,
+        DialogTitle,
+    } from "$lib/components/ui/dialog";
     import { Field } from "$lib/components/ui/field";
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
+    import { Slider } from "$lib/components/ui/slider";
     import { onMount } from "svelte";
     import SettingsSection from "./settings-section.svelte";
 
@@ -82,11 +98,17 @@
 
     let imageError = $state("");
 
-    // Center-crops to a square and stores it inline as a small WebP data URL,
-    // since Stoat has no file storage.
-    async function resizeImage(file: File) {
+    let cropFile = $state<File | null>(null);
+
+    let cropUrl = $state("");
+
+    let cropArea = $state<Area | null>(null);
+
+    let zoom = $state(1);
+
+    // Stores the crop inline as a small WebP data URL, since Stoat has no file storage.
+    async function resizeImage(file: File, area: Area) {
         const bitmap = await createImageBitmap(file);
-        const side = Math.min(bitmap.width, bitmap.height);
         const canvas = document.createElement("canvas");
         canvas.width = AVATAR_SIZE;
         canvas.height = AVATAR_SIZE;
@@ -95,10 +117,10 @@
         if (!context) throw new Error("Canvas is unavailable.");
         context.drawImage(
             bitmap,
-            (bitmap.width - side) / 2,
-            (bitmap.height - side) / 2,
-            side,
-            side,
+            area.x,
+            area.y,
+            area.width,
+            area.height,
             0,
             0,
             AVATAR_SIZE,
@@ -109,14 +131,14 @@
         return canvas.toDataURL("image/webp", 0.85);
     }
 
-    async function saveImage(file: File | null) {
+    async function saveImage(image: Promise<string> | null) {
         if (imagePending) return;
         imagePending = true;
         imageError = "";
 
         try {
             const result = await authClient.updateUser({
-                image: file ? await resizeImage(file) : null,
+                image: image ? await image : null,
             });
 
             if (result.error) {
@@ -128,6 +150,7 @@
             }
 
             await invalidateAll();
+            closeCrop();
         } catch {
             imageError =
                 "Unable to use that image. Try another file.";
@@ -143,7 +166,23 @@
         // Clear it so picking the same file again still fires change.
         event.currentTarget.value = "";
 
-        if (file) void saveImage(file);
+        if (!file) return;
+        imageError = "";
+        zoom = 1;
+        cropArea = null;
+        cropFile = file;
+        cropUrl = URL.createObjectURL(file);
+    }
+
+    function closeCrop() {
+        if (cropUrl) URL.revokeObjectURL(cropUrl);
+        cropFile = null;
+        cropUrl = "";
+    }
+
+    function applyCrop() {
+        if (cropFile && cropArea)
+            void saveImage(resizeImage(cropFile, cropArea));
     }
 </script>
 
@@ -186,7 +225,7 @@
                         {/if}
                     </div>
                     <p class="text-xs text-muted-foreground">
-                        Cropped to a square.
+                        You can crop it after choosing.
                     </p>
                 </div>
                 <input
@@ -198,7 +237,7 @@
                     onchange={pickImage}
                 />
             </div>
-            {#if imageError}
+            {#if imageError && !cropFile}
                 <Alert variant="error">
                     <AlertDescription>{imageError}</AlertDescription>
                 </Alert>
@@ -252,3 +291,58 @@
         </CardPanel>
     </Card>
 </SettingsSection>
+
+<Dialog
+    bind:open={
+        () => cropFile !== null,
+        (open) => {
+            if (!open && !imagePending) closeCrop();
+        }
+    }
+>
+    <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+            <DialogTitle>Crop picture</DialogTitle>
+        </DialogHeader>
+        <DialogPanel class="space-y-4">
+            <Cropper
+                class="h-72 rounded-lg"
+                image={cropUrl}
+                bind:zoom
+                onCropChange={(area) => (cropArea = area)}
+            >
+                <CropperDescription />
+                <CropperImage />
+                <CropperCropArea class="rounded-full" />
+            </Cropper>
+            <Slider
+                min={1}
+                max={3}
+                step={0.1}
+                bind:value={zoom}
+                aria-label="Zoom"
+            />
+            {#if imageError}
+                <Alert variant="error">
+                    <AlertDescription>{imageError}</AlertDescription>
+                </Alert>
+            {/if}
+        </DialogPanel>
+        <DialogFooter>
+            <Button
+                variant="outline"
+                disabled={imagePending}
+                onclick={closeCrop}
+            >
+                Cancel
+            </Button>
+            <Button
+                loading={imagePending}
+                disabled={!cropArea}
+                onclick={applyCrop}
+            >
+                Apply
+            </Button>
+        </DialogFooter>
+    </DialogContent>
+</Dialog>

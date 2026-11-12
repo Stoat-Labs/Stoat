@@ -45,6 +45,7 @@
         tooltipRows = 16,
         markers = [],
         hoveredMachine = $bindable(""),
+        pickLines = true,
         onselecttime,
     }: {
         series: ChartSeries[];
@@ -58,6 +59,8 @@
         tooltipRows?: number;
         markers?: { key: string; time: number; label: string }[];
         hoveredMachine?: string;
+        /** Hovering or clicking a line highlights its series. */
+        pickLines?: boolean;
         onselecttime?: (time: number) => void;
     } = $props();
 
@@ -334,6 +337,8 @@
     let pinned = $state("");
 
     function nearestLine(event: PointerEvent) {
+        if (!pickLines) return "";
+
         const position = interaction?.clientToScene(
             event.clientX,
             event.clientY,

@@ -5,6 +5,11 @@
 <!-- Railway's "Add Custom Domain" and "Add TCP Proxy" forms, inline where the entry will appear. -->
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
+    import {
+        Frame,
+        FrameFooter,
+        FramePanel,
+    } from "$lib/components/ui/frame";
     import { Input } from "$lib/components/ui/input";
     import {
         Select,
@@ -29,7 +34,6 @@
     import Check from "phosphor-svelte/lib/CheckIcon";
     import Copy from "phosphor-svelte/lib/CopyIcon";
     import Globe from "phosphor-svelte/lib/GlobeIcon";
-    import Info from "phosphor-svelte/lib/InfoIcon";
     import { untrack } from "svelte";
 
     let {
@@ -185,6 +189,13 @@
 
     const hint = $derived(
         error ? { text: error, invalid: true } : check,
+    );
+
+    // The footer shows the DNS record unless something more urgent needs saying.
+    const showRecord = $derived(
+        !!dnsRecord &&
+            !hint.invalid &&
+            !(usesVariables && !unchanged()),
     );
 
     function otherEntries() {
@@ -347,195 +358,190 @@
     onsubmit={submit}
     oninput={() => (error = "")}
     aria-label={submitLabel}
-    class="overflow-hidden rounded-md border border-primary/40 bg-card ring-4 ring-primary/8 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200"
+    class="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200"
 >
-    <div class="flex items-center gap-4 px-4 py-3">
-        {#if mode === "domain"}
-            <Globe
-                class="size-5 shrink-0 text-primary"
-                aria-hidden="true"
-            />
-        {:else}
-            <Cable
-                class="size-5 shrink-0 text-primary"
-                aria-hidden="true"
-            />
-        {/if}
-
-        <!-- Reads as the address it will publish: https://host → :port. -->
-        <div
-            class="flex min-w-0 flex-1 items-center gap-2 font-mono text-sm"
-        >
+    <!-- Inverted frame: the inputs sit in the panel, the record and actions on the surround below. -->
+    <Frame>
+        <FramePanel class="flex items-center gap-4 px-4 py-3">
             {#if mode === "domain"}
-                <span class="text-muted-foreground select-none">
-                    https://
-                </span>
-                {@render field(
-                    "Domain",
-                    hostname,
-                    (value) => (hostname = value),
-                    "app.example.com",
-                    false,
-                    true,
-                )}
-                <ArrowRight
-                    class="size-3.5 shrink-0 text-muted-foreground"
+                <Globe
+                    class="size-5 shrink-0 text-primary"
                     aria-hidden="true"
                 />
-                <span class="text-muted-foreground select-none">
-                    :
-                </span>
-                {@render field(
-                    "Port",
-                    port,
-                    (value) => (port = value),
-                    "8080",
-                    true,
-                    false,
-                )}
             {:else}
-                <span class="text-muted-foreground select-none">
-                    :
-                </span>
-                {@render field(
-                    "Application port",
-                    port,
-                    (value) => (port = value),
-                    "5432",
-                    true,
-                    true,
-                )}
-                <ArrowRight
-                    class="size-3.5 shrink-0 text-muted-foreground"
+                <Cable
+                    class="size-5 shrink-0 text-primary"
                     aria-hidden="true"
                 />
-                <span class="text-muted-foreground select-none">
-                    *:
-                </span>
-                {@render field(
-                    "Public port",
-                    publicPort,
-                    (value) => (publicPort = value),
-                    port.trim() || "same",
-                    true,
-                    false,
-                )}
             {/if}
-        </div>
 
-        {#if mode === "tcp"}
-            <Select
-                value={protocol}
-                items={[
-                    { value: "tcp", label: "TCP" },
-                    { value: "udp", label: "UDP" },
-                ]}
-                onValueChange={(value) =>
-                    (protocol = value ?? protocol)}
+            <!-- Reads as the address it will publish: https://host → :port. -->
+            <div
+                class="flex min-w-0 flex-1 items-center gap-2 font-mono text-sm"
             >
-                <SelectTrigger
-                    size="sm"
-                    class="w-20 min-w-0 shrink-0"
-                    aria-label="Protocol"
-                >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="tcp" label="TCP" />
-                    <SelectItem value="udp" label="UDP" />
-                </SelectContent>
-            </Select>
-        {/if}
-
-        {#if services.length > 1}
-            <Select
-                value={service}
-                items={services.map((name) => ({
-                    value: name,
-                    label: name,
-                }))}
-                onValueChange={(value) =>
-                    (service = value ?? service)}
-            >
-                <SelectTrigger
-                    size="sm"
-                    class="w-auto min-w-0 max-w-40 shrink-0"
-                    aria-label="Service"
-                >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {#each services as name (name)}
-                        <SelectItem value={name} label={name} />
-                    {/each}
-                </SelectContent>
-            </Select>
-        {/if}
-    </div>
-
-    {#if dnsRecord}
-        <div
-            class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-t bg-muted/40 px-4 py-2.5 font-mono text-xs motion-safe:animate-in motion-safe:fade-in-0"
-        >
-            <span
-                class="rounded-sm bg-primary/12 px-1.5 py-0.5 font-semibold text-primary"
-            >
-                {dnsRecord.type}
-            </span>
-            <p class="flex min-w-0 items-center gap-2">
-                <span class="truncate">{dnsRecord.name}</span>
-                <ArrowRight
-                    class="size-3 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                <span class="truncate text-muted-foreground">
-                    {dnsRecord.target}
-                </span>
-            </p>
-            <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Copy {dnsRecord.target}"
-                onclick={() => void copyTarget(dnsRecord.target)}
-            >
-                {#if copied}
-                    <Check
-                        class="size-3.5 text-success-foreground"
+                {#if mode === "domain"}
+                    <span class="text-muted-foreground select-none">
+                        https://
+                    </span>
+                    {@render field(
+                        "Domain",
+                        hostname,
+                        (value) => (hostname = value),
+                        "app.example.com",
+                        false,
+                        true,
+                    )}
+                    <span class="text-muted-foreground select-none">
+                        :
+                    </span>
+                    {@render field(
+                        "Port",
+                        port,
+                        (value) => (port = value),
+                        "8080",
+                        true,
+                        false,
+                    )}
+                {:else}
+                    <span class="text-muted-foreground select-none">
+                        :
+                    </span>
+                    {@render field(
+                        "Application port",
+                        port,
+                        (value) => (port = value),
+                        "5432",
+                        true,
+                        true,
+                    )}
+                    <ArrowRight
+                        class="size-3.5 shrink-0 text-muted-foreground"
                         aria-hidden="true"
                     />
-                {:else}
-                    <Copy class="size-3.5" aria-hidden="true" />
+                    <span class="text-muted-foreground select-none">
+                        *:
+                    </span>
+                    {@render field(
+                        "Public port",
+                        publicPort,
+                        (value) => (publicPort = value),
+                        port.trim() || "same",
+                        true,
+                        false,
+                    )}
                 {/if}
-            </Button>
-        </div>
-    {/if}
+            </div>
 
-    <div
-        class="flex items-center justify-between gap-4 border-t px-4 py-2.5"
-    >
-        <p
-            class={[
-                "flex min-w-0 items-center gap-2 text-xs",
-                hint.invalid
-                    ? "text-destructive-foreground"
-                    : "text-muted-foreground",
-            ]}
-            role={hint.invalid ? "alert" : undefined}
+            {#if mode === "tcp"}
+                <Select
+                    value={protocol}
+                    items={[
+                        { value: "tcp", label: "TCP" },
+                        { value: "udp", label: "UDP" },
+                    ]}
+                    onValueChange={(value) =>
+                        (protocol = value ?? protocol)}
+                >
+                    <SelectTrigger
+                        size="sm"
+                        class="w-20 min-w-0 shrink-0"
+                        aria-label="Protocol"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="tcp" label="TCP" />
+                        <SelectItem value="udp" label="UDP" />
+                    </SelectContent>
+                </Select>
+            {/if}
+
+            {#if services.length > 1}
+                <Select
+                    value={service}
+                    items={services.map((name) => ({
+                        value: name,
+                        label: name,
+                    }))}
+                    onValueChange={(value) =>
+                        (service = value ?? service)}
+                >
+                    <SelectTrigger
+                        size="sm"
+                        class="w-auto min-w-0 max-w-40 shrink-0"
+                        aria-label="Service"
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {#each services as name (name)}
+                            <SelectItem value={name} label={name} />
+                        {/each}
+                    </SelectContent>
+                </Select>
+            {/if}
+        </FramePanel>
+
+        <FrameFooter
+            class="flex items-center justify-between gap-4 py-2 pr-1.5 pl-4"
         >
-            <Info class="size-3.5 shrink-0" aria-hidden="true" />
-            {hint.text}
-        </p>
-        <div class="flex shrink-0 gap-2">
-            <Button size="sm" variant="ghost" onclick={onclose}>
-                Cancel
-            </Button>
-            <Button
-                size="sm"
-                type="submit"
-                disabled={busy || !port.trim() || check.invalid}
-            >
-                {submitLabel}
-            </Button>
-        </div>
-    </div>
+            {#if showRecord && dnsRecord}
+                <p
+                    class="flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground"
+                    title="Add this record at your DNS host. HTTPS is issued on the first visit."
+                >
+                    <span
+                        class="shrink-0 font-semibold text-foreground"
+                    >
+                        {dnsRecord.type}
+                    </span>
+                    <span class="shrink-0">→</span>
+                    <span class="truncate">{dnsRecord.target}</span>
+                    <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label="Copy {dnsRecord.target}"
+                        onclick={() =>
+                            void copyTarget(dnsRecord.target)}
+                    >
+                        {#if copied}
+                            <Check
+                                class="size-3.5 text-success-foreground"
+                                aria-hidden="true"
+                            />
+                        {:else}
+                            <Copy
+                                class="size-3.5"
+                                aria-hidden="true"
+                            />
+                        {/if}
+                    </Button>
+                </p>
+            {:else}
+                <p
+                    class={[
+                        "min-w-0 text-xs",
+                        hint.invalid
+                            ? "text-destructive-foreground"
+                            : "text-muted-foreground",
+                    ]}
+                    role={hint.invalid ? "alert" : undefined}
+                >
+                    {hint.text}
+                </p>
+            {/if}
+            <div class="flex shrink-0 gap-2">
+                <Button size="sm" variant="ghost" onclick={onclose}>
+                    Cancel
+                </Button>
+                <Button
+                    size="sm"
+                    type="submit"
+                    disabled={busy || !port.trim() || check.invalid}
+                >
+                    {submitLabel}
+                </Button>
+            </div>
+        </FrameFooter>
+    </Frame>
 </form>
