@@ -148,12 +148,7 @@ export async function createOrganizationGitOAuthProvider(
                 )
                 .for("share");
 
-            if (
-                !membership?.role
-                    .split(",")
-                    .some((role) => ["owner", "admin"].includes(role.trim()))
-            )
-                throw new GitOAuthError("forbidden");
+            if (!membership) throw new GitOAuthError("forbidden");
             const { clientSecret, ...configuration } = provider;
             await tx.insert(gitOAuthProviders).values({
                 ...configuration,
@@ -216,7 +211,7 @@ export function assertGitOAuthOrigin(request: Request): void {
         throw new GitOAuthError("forbidden");
 }
 
-export async function requireGitOAuthAdmin(
+export async function requireGitOAuthMember(
     db: Database,
     session: Context["session"],
 ): Promise<GitOAuthIdentity> {
@@ -225,9 +220,7 @@ export async function requireGitOAuthAdmin(
     if (!session || !organizationId) throw new GitOAuthError("forbidden");
     const membership = await getOrganizationMembership(db, session.user.id, organizationId);
 
-    if (!membership?.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()))) {
-        throw new GitOAuthError("forbidden");
-    }
+    if (!membership) throw new GitOAuthError("forbidden");
 
     return { userId: session.user.id, sessionId: session.session.id, organizationId };
 }
@@ -280,7 +273,7 @@ export async function saveGitOAuthConnection(
     const { provider, account, credentials } = result;
     const connectionId = flow.connectionId ?? randomUUID();
     await db.transaction(async (tx) => {
-        // Hold the membership through the write so a concurrent role change cannot authorize it.
+        // Hold the membership through the write so a concurrent removal cannot authorize it.
         const [membership] = await tx
             .select()
             .from(member)
@@ -289,8 +282,7 @@ export async function saveGitOAuthConnection(
             )
             .for("share");
 
-        if (!membership?.role.split(",").some((role) => ["owner", "admin"].includes(role.trim())))
-            throw new GitOAuthError("forbidden");
+        if (!membership) throw new GitOAuthError("forbidden");
 
         const encryptedCredentials = encryptGitCredentials(credentials, {
             organizationId: flow.organizationId,

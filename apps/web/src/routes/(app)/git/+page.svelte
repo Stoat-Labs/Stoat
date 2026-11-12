@@ -58,10 +58,6 @@
         connectionsQuery.data?.connections ?? [],
     );
 
-    const canManage = $derived(
-        connectionsQuery.data?.canManage === true,
-    );
-
     const editingConnection = $derived(
         connections.find(
             (connection) => connection.id === params.edit.current,
@@ -74,11 +70,7 @@
     );
 
     const form = $derived.by(() => {
-        if (
-            !connectionsQuery.data ||
-            !canManage ||
-            !connectionDialogOpen
-        )
+        if (!connectionsQuery.data || !connectionDialogOpen)
             return null;
 
         if (
@@ -105,9 +97,8 @@
     const invalidDialog = $derived(
         connectionsQuery.isSuccess &&
             connectionDialogOpen &&
-            (!canManage ||
-                (params.dialog.current === "edit-connection" &&
-                    !editingConnection)),
+            params.dialog.current === "edit-connection" &&
+            !editingConnection,
     );
 
     const providerNames = {
@@ -205,14 +196,15 @@
 <svelte:head><title>Git / Stoat</title></svelte:head>
 
 {#snippet gitActions()}
-    {#if canManage}<Button
-            size="sm"
-            {disabled}
-            onclick={() => changeDialog("add-connection")}
-        >
-            <Plus aria-hidden="true" />
-            Add connection
-        </Button>{/if}
+    <Button
+        size="sm"
+        {disabled}
+        onclick={() => changeDialog("add-connection")}
+        aria-label="Add connection"
+    >
+        <Plus aria-hidden="true" />
+        <span class="max-sm:hidden">Add connection</span>
+    </Button>
 {/snippet}
 
 <div class="w-full min-w-0 space-y-6 pt-6">
@@ -243,9 +235,8 @@
     {#if invalidDialog}
         <Alert variant="error">
             <AlertDescription>
-                {canManage
-                    ? "This connection is unavailable. It may have been deleted or belong to another organization."
-                    : "Only organization owners and administrators can manage account connections."}
+                "This connection is unavailable. It may have been
+                deleted or belong to another organization."
             </AlertDescription>
         </Alert>
         <Button variant="outline" onclick={() => changeDialog(null)}>
@@ -262,7 +253,7 @@
     >
         {status}
     </p>
-    {#if form && canManage}
+    {#if form}
         {#key formKey}
             {@const identity = formKey}
             <ConnectionDialog
@@ -297,23 +288,20 @@
                 </EmptyMedia>
                 <EmptyTitle>No Git connections yet</EmptyTitle>
                 <EmptyDescription>
-                    {canManage
-                        ? "Add a connection using OAuth or an access token."
-                        : "An administrator can add a connection using OAuth or an access token."}
+                    "Add a connection using OAuth or an access token."
                 </EmptyDescription>
             </EmptyHeader>
-            {#if canManage}
-                <EmptyContent>
-                    <Button
-                        size="sm"
-                        {disabled}
-                        onclick={() => changeDialog("add-connection")}
-                    >
-                        <Plus aria-hidden="true" />
-                        Add connection
-                    </Button>
-                </EmptyContent>
-            {/if}
+
+            <EmptyContent>
+                <Button
+                    size="sm"
+                    {disabled}
+                    onclick={() => changeDialog("add-connection")}
+                >
+                    <Plus aria-hidden="true" />
+                    Add connection
+                </Button>
+            </EmptyContent>
         </Empty>
     {:else if connectionsQuery.isSuccess}
         <Frame role="region" aria-labelledby="connections-heading">

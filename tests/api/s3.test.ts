@@ -317,16 +317,6 @@ describe("S3 connections and buckets API", () => {
         ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
 
-    it("lets only admins manage connections", async () => {
-        await expect(
-            call(
-                s3Router.create,
-                { name: "Member", connection: generic },
-                { context: memberContext },
-            ),
-        ).rejects.toBeInstanceOf(ORPCError);
-    });
-
     it("provisions a bucket resource through the durable outbox", async () => {
         const connection = await createConnection();
 
@@ -422,10 +412,6 @@ describe("S3 connections and buckets API", () => {
 
         await markBucketReady(db, provisioning!, null);
 
-        await expect(
-            call(bucketsRouter.setQuota, { ...input, quota: 1024 }, { context: memberContext }),
-        ).rejects.toBeInstanceOf(ORPCError);
-
         // Generic S3 has no quota API, so this never reaches the provider.
         await call(bucketsRouter.setQuota, { ...input, quota: 1024 }, { context: ownerContext });
 
@@ -520,16 +506,12 @@ describe("S3 connections and buckets API", () => {
         expect(everywhere).toEqual(expect.arrayContaining([here, there]));
     });
 
-    it("lets only admins queue a health check, and only for their own clusters", async () => {
+    it("queues a health check only for the caller's own clusters", async () => {
         const queue = vi.spyOn(runtime, "queueClusterHealthCheck").mockResolvedValue();
 
         try {
             await call(clusterRouter.runHealthCheck, { clusterId }, { context: ownerContext });
             expect(queue).toHaveBeenCalledWith(clusterId);
-
-            await expect(
-                call(clusterRouter.runHealthCheck, { clusterId }, { context: memberContext }),
-            ).rejects.toBeInstanceOf(ORPCError);
 
             const [{ id: strangerOrganization }] = (
                 await db.$client.query(

@@ -25,17 +25,10 @@ export const requireAuth = o.middleware(async ({ context, next }) => {
     });
 });
 
-export const protectedProcedure = publicProcedure.use(requireAuth);
-
 export const organizationProcedure = publicProcedure.use(async ({ context, next }) => {
     const { session } = context;
 
-    // Organization API keys act with admin rights inside their organization.
-    if (context.apiKey) {
-        return next({
-            context: { organizationId: context.apiKey.organizationId, organizationRole: "admin" },
-        });
-    }
+    if (context.apiKey) return next({ context: { organizationId: context.apiKey.organizationId } });
 
     if (!session?.user) {
         throw new ORPCError("UNAUTHORIZED");
@@ -51,26 +44,8 @@ export const organizationProcedure = publicProcedure.use(async ({ context, next 
         throw new ORPCError("FORBIDDEN", { message: "Select an organization you belong to." });
     }
 
-    return next({ context: { organizationId, organizationRole: membership.role } });
+    return next({ context: { organizationId } });
 });
-
-export const organizationAdminProcedure = organizationProcedure.use(async ({ context, next }) => {
-    if (!isOrganizationAdmin(context.organizationRole)) {
-        throw new ORPCError("FORBIDDEN", {
-            message: "This action requires an organization owner or admin.",
-        });
-    }
-
-    return next();
-});
-
-export function isOrganizationAdmin(role: string) {
-    return role.split(",").some((part) => {
-        const value = part.trim();
-
-        return value === "owner" || value === "admin";
-    });
-}
 
 export const uncloudMiddleware = organizationProcedure.middleware(
     async ({ context: { db, organizationId }, next }, input: { clusterId: string }) => {
@@ -108,11 +83,11 @@ export const uncloudMiddleware = organizationProcedure.middleware(
     },
 );
 
-// System-managed internal projects are readable by owners/admins only and never writable here.
+// System-managed internal projects are readable but never writable here.
 function resourceAccess(allowInternalRead: boolean) {
     return organizationProcedure.middleware(
         async (
-            { context: { db, organizationId, organizationRole }, next },
+            { context: { db, organizationId }, next },
             input: { projectId: string; resourceId: string; clusterId?: string },
         ) => {
             const [project] = await db
@@ -125,9 +100,7 @@ function resourceAccess(allowInternalRead: boolean) {
                         input.clusterId === undefined
                             ? undefined
                             : eq(projects.clusterId, input.clusterId),
-                        allowInternalRead && isOrganizationAdmin(organizationRole)
-                            ? undefined
-                            : sql`${projects.isInternal} is not true`,
+                        allowInternalRead ? undefined : sql`${projects.isInternal} is not true`,
                         eq(clusters.organizationId, organizationId),
                     ),
                 )

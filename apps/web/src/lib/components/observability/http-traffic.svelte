@@ -513,7 +513,7 @@
 
 {#snippet toolbar()}
     <div
-        class="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto"
+        class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end"
     >
         <Popover>
             <PopoverTrigger

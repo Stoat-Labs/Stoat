@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { FAILING_IMAGE, HANGING_IMAGE, LOG_LINES } from "./fake-sidecar";
 import {
-    memberStorageState,
     receivedComposes,
+    resourcePath,
     resetSidecar,
     rpc,
     runningServices,
@@ -10,7 +10,9 @@ import {
     sql,
 } from "./fixtures";
 
-const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
+// The canvas bar's Deploy, not the Deploy section of a resource's settings.
+const deployButton = (page: Page) =>
+    page.locator("header").getByRole("button", { name: "Deploy", exact: true });
 
 /** The deployment page's own status badge, not the per-step ones in the log. */
 const status = (page: Page) => page.getByRole("status").first();
@@ -55,16 +57,29 @@ async function resource(page: Page, image = "nginx:alpine") {
         name,
         projectName: `Deploy project ${suffix}`,
         projectId: project.id,
-        path: `/projects/${project.id}/${id}`,
+        path: resourcePath(project.id, id),
     };
 }
 
+/** Deploys from the canvas bar, then follows the deployment on its own page. */
 async function deploy(page: Page, path: string) {
     await page.goto(path);
-    const button = page.getByRole("button", { name: /^Deploy/u });
-    await expect(button).toBeEnabled();
-    await button.click();
-    await expect(page).toHaveURL(/\/deployments\/[\w-]+$/u);
+    const before = await sql("SELECT id FROM deployments");
+    await expect(deployButton(page)).toBeEnabled();
+    await deployButton(page).click();
+
+    let id = "";
+
+    await expect
+        .poll(async () => {
+            const rows = await sql<{ id: string }>("SELECT id FROM deployments");
+
+            id = rows.find((row) => !before.some((old) => old.id === row.id))?.id ?? "";
+
+            return id;
+        })
+        .not.toBe("");
+    await page.goto(`/deployments/${id}`);
 }
 
 test.beforeEach(async () => {
@@ -76,7 +91,7 @@ test("a deploy streams to ready, then the resource shows its running container",
 }) => {
     const target = await resource(page);
     await page.goto(target.path);
-    await expect(page.getByRole("button", { name: /undeployed changes/u })).toBeVisible();
+    await expect(page.getByText("1 change", { exact: true })).toBeVisible();
     await deploy(page, target.path);
 
     await expect(
@@ -88,15 +103,16 @@ test("a deploy streams to ready, then the resource shows its running container",
     const [compose] = await receivedComposes();
     expect(compose).toContain("image: nginx:alpine");
 
+    // Nothing is staged any more, and the panel's history shows the deploy and its container.
     await page.goto(target.path);
-    await expect(page.getByLabel(/^Health: /u)).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /^Deploy$/u })).toBeVisible();
+    await expect(page.getByText("1 Container")).toBeVisible();
+    await expect(page.getByText("Deployment successful")).toBeVisible();
+    await expect(deployButton(page)).toHaveCount(0);
 
-    // It is in the resource's history and the organization-wide list.
-    await page.goto(`${target.path}/deployments`);
-    await expect(page.getByRole("row").filter({ hasText: "Ready" })).toHaveCount(1);
+    // It is in the organization-wide list.
+
     await page.goto("/deployments");
-    await expect(page.getByRole("row").filter({ hasText: target.name }).first()).toContainText(
+    await expect(page.getByRole("listitem").filter({ hasText: target.name }).first()).toContainText(
         "Ready",
     );
 });
@@ -155,11 +171,9 @@ test("live logs stream from the running service", async ({ page }) => {
     await deploy(page, target.path);
     await expect(status(page)).toHaveText("Ready");
 
-    await page.goto(`${target.path}/logs`);
-    await expect(breadcrumb(page)).toContainText(target.name);
+    await page.goto(resourcePath(target.projectId, target.id, "logs"));
 
     for (const line of LOG_LINES) await expect(page.getByText(line).first()).toBeVisible();
-    await expect(page.getByRole("status").filter({ hasText: "Live" })).toBeVisible();
 });
 
 test.describe("deleting", () => {
@@ -170,11 +184,14 @@ test.describe("deleting", () => {
         return (await runningServices()).some((name) => name.startsWith(`${slug}-`));
     }
 
-    async function deleteResource(page: Page, path: string) {
-        await page.goto(`${path}/settings`);
+    // Delete stages the deletion on the canvas; deploying the staged changes applies it.
+    async function deleteResource(page: Page, target: { projectId: string; id: string }) {
+        await page.goto(resourcePath(target.projectId, target.id, "settings"));
         await page.getByRole("button", { name: "Delete resource" }).click();
+        await expect(page.getByText("Will be deleted")).toBeVisible();
+        await deployButton(page).click();
         await expect(confirmDialog(page)).toContainText("Volumes stay on the machines.");
-        await confirmDialog(page).getByRole("button", { name: "Delete resource" }).click();
+        await confirmDialog(page).getByRole("button", { name: "Deploy" }).click();
     }
 
     test("a deployed resource's services stop and the resource is gone", async ({ page }) => {
@@ -183,12 +200,12 @@ test.describe("deleting", () => {
         await expect(status(page)).toHaveText("Ready");
         expect(await runsServiceOf(target.slug)).toBe(true);
 
-        await deleteResource(page, target.path);
+        await deleteResource(page, target);
 
-        // Canvas mode is the default, so a delete returns to the canvas.
-        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}/canvas$`, "u"));
+        await expect
+            .poll(() => sql("SELECT id FROM resources WHERE id = $1", [target.id]))
+            .toEqual([]);
         expect(await runsServiceOf(target.slug)).toBe(false);
-        expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toEqual([]);
         expect(await sql("SELECT id FROM deployments WHERE resource_id = $1", [target.id])).toEqual(
             [],
         );
@@ -196,11 +213,11 @@ test.describe("deleting", () => {
 
     test("a never-deployed resource is simply removed", async ({ page }) => {
         const target = await resource(page);
-        await deleteResource(page, target.path);
+        await deleteResource(page, target);
 
-        // Canvas mode is the default, so a delete returns to the canvas.
-        await expect(page).toHaveURL(new RegExp(`/projects/${target.projectId}/canvas$`, "u"));
-        expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toEqual([]);
+        await expect
+            .poll(() => sql("SELECT id FROM resources WHERE id = $1", [target.id]))
+            .toEqual([]);
     });
 
     test("a resource that is still deploying is kept", async ({ page }) => {
@@ -209,7 +226,7 @@ test.describe("deleting", () => {
         await expect(status(page)).toHaveText("Running");
         const deployment = page.url();
 
-        await deleteResource(page, target.path);
+        await deleteResource(page, target);
         await expect(confirmDialog(page)).toContainText("is deploying");
         expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toHaveLength(1);
 
@@ -228,7 +245,7 @@ test.describe("deleting", () => {
             [target.projectId],
         );
 
-        await deleteResource(page, target.path);
+        await deleteResource(page, target);
 
         // Deleting the row anyway would leave its services running with no way to stop them.
         await expect(confirmDialog(page)).toContainText("Could not remove service");
@@ -249,7 +266,7 @@ test.describe("deleting", () => {
             [user, `URL={{ ${target.id}.STOAT_PREFIX }}\n`],
         );
 
-        await deleteResource(page, target.path);
+        await deleteResource(page, target);
 
         await expect(confirmDialog(page)).toContainText(`"user-${created}" still references`);
         expect(await sql("SELECT id FROM resources WHERE id = $1", [target.id])).toHaveLength(1);
@@ -260,8 +277,8 @@ test.describe("deleting", () => {
         await deploy(page, target.path);
         await expect(status(page)).toHaveText("Ready");
 
-        await page.goto(`/projects/${target.projectId}`);
-        await page.getByRole("button", { name: "Edit project" }).click();
+        await page.goto(`/projects/${target.projectId}/canvas`, { waitUntil: "networkidle" });
+        await page.getByRole("button", { name: "Project settings" }).click();
         await page.getByRole("dialog").getByRole("button", { name: "Delete project" }).click();
         await expect(confirmDialog(page)).toContainText("This cannot be undone.");
         await confirmDialog(page).getByRole("button", { name: "Delete project" }).click();
@@ -300,54 +317,5 @@ test.describe("deleting", () => {
         expect(await sql("SELECT id FROM projects WHERE id = $1", [target.projectId])).toHaveLength(
             1,
         );
-    });
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("deploying is left to admins", async ({ page }) => {
-        const [api] = await sql<{ id: string; project_id: string }>(
-            "SELECT id, project_id FROM resources WHERE name = 'api'",
-        );
-
-        await page.goto(`/projects/${api!.project_id}/${api!.id}`);
-        await expect(page.locator(".cm-content")).toContainText("nginx:alpine");
-        await expect(page.getByRole("button", { name: /^Deploy/u })).toHaveCount(0);
-
-        const refused = await page.request.post("/rpc/api/resources/deploy", {
-            data: { projectId: api!.project_id, resourceId: api!.id },
-            headers: { origin: process.env.E2E_BASE_URL! },
-        });
-
-        expect(refused.status()).toBe(403);
-    });
-
-    test("deleting is left to admins", async ({ page }) => {
-        const [api] = await sql<{ id: string; project_id: string }>(
-            "SELECT id, project_id FROM resources WHERE name = 'api'",
-        );
-
-        await page.goto(`/projects/${api!.project_id}/${api!.id}/settings`);
-        await expect(page.getByRole("textbox", { name: /^Name/u })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Delete resource" })).toHaveCount(0);
-
-        await page.goto(`/projects/${api!.project_id}`);
-        await page.getByRole("button", { name: "Edit project" }).click();
-        await expect(
-            page.getByRole("dialog").getByRole("button", { name: "Delete project" }),
-        ).toHaveCount(0);
-
-        for (const [path, input] of [
-            ["resources/deleteResource", { projectId: api!.project_id, resourceIds: [api!.id] }],
-            ["projects/deleteProject", { projectId: api!.project_id }],
-        ] as const) {
-            const refused = await page.request.post(`/rpc/api/${path}`, {
-                data: input,
-                headers: { origin: process.env.E2E_BASE_URL! },
-            });
-
-            expect(refused.status()).toBe(403);
-        }
     });
 });

@@ -6,7 +6,7 @@ import {
     getGitOAuthCookieConfig,
     getOrganizationGitOAuthProviders,
     GitOAuthError,
-    requireGitOAuthAdmin,
+    requireGitOAuthMember,
 } from "@stoat/api/git/oauth";
 import { getAuth, getDb } from "../../../../services";
 
@@ -20,7 +20,7 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
             query: { disableCookieCache: true },
         });
 
-        const identity = await requireGitOAuthAdmin(db, session);
+        const identity = await requireGitOAuthMember(db, session);
 
         if (!request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded"))
             throw new GitOAuthError("invalid_request");

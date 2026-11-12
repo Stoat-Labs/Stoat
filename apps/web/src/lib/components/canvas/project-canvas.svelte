@@ -8,8 +8,6 @@
         AlertDescription,
     } from "$lib/components/ui/alert";
     import { Button } from "$lib/components/ui/button";
-    import { Kbd, KbdGroup } from "$lib/components/ui/kbd";
-    import LayoutList from "phosphor-svelte/lib/ListDashesIcon";
     import Plus from "phosphor-svelte/lib/PlusIcon";
     import {
         ConnectionMode,
@@ -30,13 +28,12 @@
         useQueryStates,
     } from "nuqs-svelte";
     import { onMount, untrack } from "svelte";
-    import { cubicOut } from "svelte/easing";
-    import { prefersReducedMotion, Tween } from "svelte/motion";
     import CanvasApi from "./canvas-api.svelte";
     import CanvasDots from "./canvas-dots.svelte";
     import { CanvasLayout } from "./canvas-layout.svelte";
     import CanvasResourceDialogs from "./canvas-resource-dialogs.svelte";
     import CanvasFocus from "./canvas-focus.svelte";
+    import CanvasList from "./canvas-list.svelte";
     import {
         setCanvasActions,
         setCanvasClock,
@@ -91,14 +88,7 @@
     import CanvasConfigPanel from "./panel/canvas-config-panel.svelte";
     import CanvasPanel from "./panel/canvas-panel.svelte";
     import CanvasVolumePanel from "./panel/canvas-volume-panel.svelte";
-    import {
-        fullPanelGap,
-        minPanelWidth,
-        panelCloseOvershoot,
-        panelSnapSlack,
-        readPanelWidth,
-        savePanelWidth,
-    } from "./panel/panel-width";
+    import { PanelSize } from "./panel/panel-size.svelte";
 
     let {
         projectId,
@@ -361,9 +351,9 @@
             select(serviceNodeId(resourceId, service)),
         selectVolume: (resourceId, volume) =>
             select(volumeNodeId(resourceId, volume)),
-        selectMetrics: (nodeId) => {
+        selectTab: (nodeId, panelTab) => {
             select(nodeId);
-            void tab.set("metrics");
+            void tab.set(panelTab);
         },
         removeVolume: (nodeId) => dialogs?.askRemoveVolume(nodeId),
         disconnectVolume: (nodeId) =>
@@ -607,110 +597,7 @@
             null,
     );
 
-    let canvasWidth = $state(0);
-
-    // Railway hides the graph on narrow screens and gives the panel all of it, inset 20px per side.
-    const narrow = $derived(canvasWidth < 900);
-
-    // Wider canvases step the docked panel up to a fixed width, as Railway does: 70% to 1150px, then 904, 1008 and 1184px.
-    const defaultPanelWidth = $derived.by(() => {
-        if (canvasWidth < 1150) return Math.round(canvasWidth * 0.7);
-
-        if (canvasWidth < 1400) return 904;
-
-        if (canvasWidth < 1700) return 1008;
-
-        return 1184;
-    });
-
-    let canvasElement = $state<HTMLDivElement>();
-
-    // The width the user dragged the panel to, kept in a cookie.
-    let chosenPanelWidth = $state(readPanelWidth());
-
-    let resizingPanel = $state(false);
-
-    const panelTarget = $derived.by(() => {
-        if (narrow) return Math.max(canvasWidth - 40, 0);
-
-        if (chosenPanelWidth === "full") return canvasWidth;
-
-        // A width saved on a wider window still leaves some canvas beside the panel.
-        return Math.min(
-            Math.max(
-                chosenPanelWidth ?? defaultPanelWidth,
-                minPanelWidth,
-            ),
-            canvasWidth - fullPanelGap,
-        );
-    });
-
-    const panelTween = new Tween(0, { easing: cubicOut });
-
-    // Starts from the saved state, so a saved full-screen panel does not animate in on page load.
-    let panelWasFull = readPanelWidth() === "full";
-
-    // Only snapping to or from full screen animates; dragging and window resizes follow at once.
-    $effect.pre(() => {
-        const full = chosenPanelWidth === "full";
-        const snapped = full !== panelWasFull;
-        panelWasFull = full;
-
-        void panelTween.set(panelTarget, {
-            duration:
-                snapped && !prefersReducedMotion.current ? 300 : 0,
-        });
-    });
-
-    const panelWidth = $derived(panelTween.current);
-
-    const panelFull = $derived(
-        !narrow && chosenPanelWidth === "full",
-    );
-
-    function startPanelResize(
-        event: PointerEvent & { currentTarget: HTMLDivElement },
-    ) {
-        if (event.button !== 0) return;
-
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        resizingPanel = true;
-    }
-
-    function resizePanel(event: PointerEvent) {
-        if (!resizingPanel || !canvasElement) return;
-
-        const width =
-            canvasElement.getBoundingClientRect().right -
-            event.clientX;
-
-        // Pulling well past the minimum closes the panel, like collapsing a sidebar; its saved width stays.
-        if (width < minPanelWidth - panelCloseOvershoot) {
-            resizingPanel = false;
-            chosenPanelWidth = readPanelWidth();
-            select(null);
-
-            return;
-        }
-
-        // Leaving full screen takes a further pull, so hovering at the threshold does not flicker between the two.
-        const fullAt =
-            canvasWidth -
-            fullPanelGap -
-            (chosenPanelWidth === "full" ? panelSnapSlack : 0);
-
-        chosenPanelWidth =
-            width > fullAt ? "full" : Math.max(width, minPanelWidth);
-    }
-
-    function endPanelResize() {
-        if (!resizingPanel) return;
-
-        resizingPanel = false;
-
-        if (chosenPanelWidth) savePanelWidth(chosenPanelWidth);
-    }
+    const panel = new PanelSize(() => select(null));
 
     function contains(frame: Rect, point: { x: number; y: number }) {
         return (
@@ -1118,15 +1005,6 @@
                 <ApplyBar {projectId} {changes} />
             </div>
         {/if}
-        <Button
-            size="sm"
-            variant="ghost"
-            href="/projects/{projectId}"
-            aria-label="List view"
-        >
-            <LayoutList class="size-4" aria-hidden="true" />
-            <span class="max-sm:hidden">List view</span>
-        </Button>
         {#if !empty && !isInternal}
             <Button
                 size="sm"
@@ -1136,10 +1014,6 @@
             >
                 <Plus class="size-4" aria-hidden="true" />
                 <span class="max-sm:hidden">Add</span>
-                <KbdGroup class="hidden sm:inline-flex">
-                    <Kbd>Ctrl</Kbd>
-                    <Kbd>K</Kbd>
-                </KbdGroup>
             </Button>
         {/if}
     </div>
@@ -1169,20 +1043,6 @@
             }
         }
 
-        // Ctrl/Cmd+K opens the add palette, from anywhere on the page.
-        if (
-            (event.ctrlKey || event.metaKey) &&
-            event.key.toLowerCase() === "k" &&
-            !empty &&
-            !isInternal &&
-            !add.current
-        ) {
-            event.preventDefault();
-            void add.set("root");
-
-            return;
-        }
-
         // Railway: Escape closes the details panel, unless a dialog or field has focus.
         if (
             event.key !== "Escape" ||
@@ -1201,164 +1061,172 @@
 
 <div
     class="project-canvas relative size-full"
-    bind:this={canvasElement}
-    bind:clientWidth={canvasWidth}
+    bind:this={panel.canvasElement}
+    bind:clientWidth={panel.canvasWidth}
 >
-    <CanvasContextMenu
-        {projectId}
-        target={menuTarget}
-        groups={framedGroups}
-        canAdd={!isInternal}
-        canAddVolume={volumeTargetList.length > 0}
-        onaddpage={(addPage) => void add.set(addPage)}
-        onopen={openPanel}
-    >
-        <SvelteFlow
-            bind:nodes
-            bind:edges
-            {nodeTypes}
-            connectionMode={ConnectionMode.Loose}
-            nodesConnectable={false}
-            elementsSelectable
-            deleteKey={null}
-            fitView={fitOnLoad}
-            fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
-            minZoom={0.5}
-            maxZoom={1.26}
-            panOnScroll
-            selectionMode={SelectionMode.Partial}
-            snapGrid={[SNAP_GRID, SNAP_GRID]}
-            defaultEdgeOptions={{
-                type: "smoothstep",
-                selectable: false,
-            }}
-            onnodeclick={({ node, event }) =>
-                clickNode(node.id, event)}
-            onpaneclick={() => {
-                clearTimeout(pendingSelect);
-                select(null);
-            }}
-            onnodecontextmenu={({ node, event }) => {
-                // A resource's own frame opens that resource's menu.
-                if (node.type === "stack") {
-                    menuTarget = node.data.group
-                        ? { kind: "group", groupId: node.id }
-                        : {
-                              kind: "node",
-                              nodeId: node.id,
-                              groupId: undefined,
-                              services: 1,
-                          };
-
-                    return;
-                }
-
-                // A volume or config in a service's tray has its own menu, like Railway's.
-                const tray =
-                    event.target instanceof Element
-                        ? event.target.closest<HTMLElement>(
-                              "[data-volume], [data-config]",
-                          )?.dataset
-                        : undefined;
-
-                const resourceId = node.data.resource.id;
-
-                menuTarget = {
-                    kind: "node",
-                    nodeId: tray?.config
-                        ? configNodeId(resourceId, tray.config)
-                        : tray?.volume
-                          ? volumeNodeId(resourceId, tray.volume)
-                          : node.id,
-                    groupId: node.data.groupId,
-                    services: node.data.service ? 1 : 0,
-                };
-            }}
-            onpanecontextmenu={() => (menuTarget = { kind: "pane" })}
-            onnodedragstart={({ targetNode }) => {
-                if (!targetNode) return;
-
-                frameStart = { ...targetNode.position };
-                startDrag(targetNode);
-            }}
-            onnodedrag={({ targetNode, event }) => {
-                if (!targetNode) return;
-
-                const pointer =
-                    "clientX" in event
-                        ? { x: event.clientX, y: event.clientY }
-                        : event.touches[0]
-                          ? {
-                                x: event.touches[0].clientX,
-                                y: event.touches[0].clientY,
-                            }
-                          : undefined;
-
-                moveDrag(targetNode, pointer);
-            }}
-            onnodedragstop={({ targetNode }) => {
-                if (targetNode) endDrag(targetNode);
-            }}
-            onselectiondragstart={() => {
-                // A box selection moves as one; live refetches wait for it like a single drag.
-                drag = {
-                    starts: new Map(),
-                    frameId: undefined,
-                    target: undefined,
-                };
-            }}
-            onselectiondrag={() => {
-                nodes = refitFrames(nodes);
-                edges = styleEdges(
-                    buildEdges(nodes, graph),
-                    selected.current,
-                    hidden.current,
-                );
-            }}
-            onselectiondragstop={() => {
-                drag = undefined;
-
-                // Each moved node settles in turn, so the selection never lands on anything.
-                for (const node of nodes.filter(
-                    (item) => item.selected,
-                ))
-                    settleDragged(node.id);
-
-                persistCards();
-            }}
+    <!-- Phones get a plain list; the width is unknown until mounted, so the first render is the canvas. -->
+    {#if panel.canvasWidth > 0 && panel.narrow}
+        <CanvasList {nodes} onselect={select} />
+    {:else}
+        <CanvasContextMenu
+            {projectId}
+            target={menuTarget}
+            groups={framedGroups}
+            canAdd={!isInternal}
+            canAddVolume={volumeTargetList.length > 0}
+            onaddpage={(addPage) => void add.set(addPage)}
+            onopen={openPanel}
         >
-            <CanvasDots />
-            <CanvasApi bind:toFlow />
-            <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->
-            {#if !empty}
-                <Panel position="bottom-left" class="m-4!">
-                    <CanvasControls
-                        hidden={hidden.current}
-                        canUndo={canvasLayout.canUndo}
-                        canRedo={canvasLayout.canRedo}
-                        onlayers={(next) =>
-                            void hidden.set(
-                                next.length ? next : null,
-                            )}
-                        onautolayout={resetLayout}
-                        onrepair={repairLayout}
-                        onundo={() => canvasLayout.undo()}
-                        onredo={() => canvasLayout.redo()}
-                    />
-                </Panel>
-            {/if}
-            <CanvasFocus
-                nodeId={selectedResource ? focusNodeId : undefined}
-                coveredWidth={narrow ? 0 : panelWidth}
-            />
-        </SvelteFlow>
-    </CanvasContextMenu>
+            <SvelteFlow
+                bind:nodes
+                bind:edges
+                {nodeTypes}
+                connectionMode={ConnectionMode.Loose}
+                nodesConnectable={false}
+                elementsSelectable
+                deleteKey={null}
+                fitView={fitOnLoad}
+                fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+                minZoom={0.5}
+                maxZoom={1.26}
+                panOnScroll
+                selectionMode={SelectionMode.Partial}
+                snapGrid={[SNAP_GRID, SNAP_GRID]}
+                defaultEdgeOptions={{
+                    type: "smoothstep",
+                    selectable: false,
+                }}
+                onnodeclick={({ node, event }) =>
+                    clickNode(node.id, event)}
+                onpaneclick={() => {
+                    clearTimeout(pendingSelect);
+                    select(null);
+                }}
+                onnodecontextmenu={({ node, event }) => {
+                    // A resource's own frame opens that resource's menu.
+                    if (node.type === "stack") {
+                        menuTarget = node.data.group
+                            ? { kind: "group", groupId: node.id }
+                            : {
+                                  kind: "node",
+                                  nodeId: node.id,
+                                  groupId: undefined,
+                                  services: 1,
+                              };
+
+                        return;
+                    }
+
+                    // A volume or config in a service's tray has its own menu, like Railway's.
+                    const tray =
+                        event.target instanceof Element
+                            ? event.target.closest<HTMLElement>(
+                                  "[data-volume], [data-config]",
+                              )?.dataset
+                            : undefined;
+
+                    const resourceId = node.data.resource.id;
+
+                    menuTarget = {
+                        kind: "node",
+                        nodeId: tray?.config
+                            ? configNodeId(resourceId, tray.config)
+                            : tray?.volume
+                              ? volumeNodeId(resourceId, tray.volume)
+                              : node.id,
+                        groupId: node.data.groupId,
+                        services: node.data.service ? 1 : 0,
+                    };
+                }}
+                onpanecontextmenu={() =>
+                    (menuTarget = { kind: "pane" })}
+                onnodedragstart={({ targetNode }) => {
+                    if (!targetNode) return;
+
+                    frameStart = { ...targetNode.position };
+                    startDrag(targetNode);
+                }}
+                onnodedrag={({ targetNode, event }) => {
+                    if (!targetNode) return;
+
+                    const pointer =
+                        "clientX" in event
+                            ? { x: event.clientX, y: event.clientY }
+                            : event.touches[0]
+                              ? {
+                                    x: event.touches[0].clientX,
+                                    y: event.touches[0].clientY,
+                                }
+                              : undefined;
+
+                    moveDrag(targetNode, pointer);
+                }}
+                onnodedragstop={({ targetNode }) => {
+                    if (targetNode) endDrag(targetNode);
+                }}
+                onselectiondragstart={() => {
+                    // A box selection moves as one; live refetches wait for it like a single drag.
+                    drag = {
+                        starts: new Map(),
+                        frameId: undefined,
+                        target: undefined,
+                    };
+                }}
+                onselectiondrag={() => {
+                    nodes = refitFrames(nodes);
+                    edges = styleEdges(
+                        buildEdges(nodes, graph),
+                        selected.current,
+                        hidden.current,
+                    );
+                }}
+                onselectiondragstop={() => {
+                    drag = undefined;
+
+                    // Each moved node settles in turn, so the selection never lands on anything.
+                    for (const node of nodes.filter(
+                        (item) => item.selected,
+                    ))
+                        settleDragged(node.id);
+
+                    persistCards();
+                }}
+            >
+                <CanvasDots />
+                <CanvasApi bind:toFlow />
+                <!-- An empty project has nothing to zoom, undo or add beside the palette, as in Railway. -->
+                {#if !empty}
+                    <Panel position="bottom-left" class="m-4!">
+                        <CanvasControls
+                            hidden={hidden.current}
+                            canUndo={canvasLayout.canUndo}
+                            canRedo={canvasLayout.canRedo}
+                            onlayers={(next) =>
+                                void hidden.set(
+                                    next.length ? next : null,
+                                )}
+                            onautolayout={resetLayout}
+                            onrepair={repairLayout}
+                            onundo={() => canvasLayout.undo()}
+                            onredo={() => canvasLayout.redo()}
+                        />
+                    </Panel>
+                {/if}
+                <CanvasFocus
+                    nodeId={selectedResource
+                        ? focusNodeId
+                        : undefined}
+                    coveredWidth={panel.narrow ? 0 : panel.width}
+                />
+            </SvelteFlow>
+        </CanvasContextMenu>
+    {/if}
 
     <!-- Stops where the resource panel starts, so notices and actions never sit on top of it. -->
     <div
         class="pointer-events-none absolute inset-y-0 left-0 z-30"
-        class:hidden={narrow && selectedResource}
-        style:right="{selectedResource ? panelWidth : 0}px"
+        class:hidden={panel.narrow && selectedResource}
+        style:right="{selectedResource ? panel.width : 0}px"
     >
         {#if moveNotice}
             <div
@@ -1412,9 +1280,9 @@
                 resource={selectedResource}
                 config={selectedConfig}
                 services={selectedGraph?.services ?? []}
-                width={panelWidth}
-                inset={narrow}
-                full={panelFull}
+                width={panel.width}
+                inset={panel.narrow}
+                full={panel.full}
                 onclose={() => select(null)}
                 onremove={() =>
                     dialogs?.askRemoveConfig(selected.current ?? "")}
@@ -1426,9 +1294,9 @@
                 resource={selectedResource}
                 volume={selectedVolume}
                 services={selectedGraph?.services ?? []}
-                width={panelWidth}
-                inset={narrow}
-                full={panelFull}
+                width={panel.width}
+                inset={panel.narrow}
+                full={panel.full}
                 onclose={() => select(null)}
                 onremove={() =>
                     dialogs?.askRemoveVolume(selected.current ?? "")}
@@ -1443,32 +1311,33 @@
                 {selectedService}
                 icon={selectedIcon}
                 changed={selectedGraph?.changed ?? false}
-                width={panelWidth}
-                inset={narrow}
-                full={panelFull}
+                width={panel.width}
+                inset={panel.narrow}
+                full={panel.full}
                 onclose={() => select(null)}
             />
         {/key}
     {/if}
 
-    {#if selectedResource && !narrow}
+    {#if selectedResource && !panel.narrow}
         <!-- Like the sidebar rail: drag the panel's left edge to resize it, to the far left to fill the canvas, past the minimum to close it. -->
         <div
             class={[
                 "group absolute bottom-0 z-30 w-3 cursor-col-resize touch-none transition-[top] duration-300",
-                panelFull ? "top-0" : "top-6",
+                panel.full ? "top-0" : "top-6",
             ]}
-            style:right="{Math.min(panelWidth, canvasWidth) - 12}px"
+            style:right="{Math.min(panel.width, panel.canvasWidth) -
+                12}px"
             aria-hidden="true"
-            onpointerdown={startPanelResize}
-            onpointermove={resizePanel}
-            onpointerup={endPanelResize}
-            onlostpointercapture={endPanelResize}
+            onpointerdown={panel.startResize}
+            onpointermove={panel.resize}
+            onpointerup={panel.endResize}
+            onlostpointercapture={panel.endResize}
         >
             <div
                 class={[
                     "absolute top-1/2 left-1/2 h-12 w-1 -translate-1/2 rounded-full bg-border transition-[height,background-color] group-hover:h-16 group-hover:bg-muted-foreground",
-                    resizingPanel && "h-16 bg-muted-foreground",
+                    panel.resizing && "h-16 bg-muted-foreground",
                 ]}
             ></div>
         </div>

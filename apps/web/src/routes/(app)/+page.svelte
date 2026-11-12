@@ -1,9 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import {
-        createCanvasModeQuery,
-        resourceHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { resourceHref } from "$lib/api/hrefs";
     import { orpc, queryClient } from "$lib/api/orpc";
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
     import ClusterUsageRow from "$lib/components/home/cluster-usage-row.svelte";
@@ -73,20 +70,13 @@
                 "recent",
                 "name",
                 "attention",
-            ]).withDefault("recent"),
+            ]).withDefault("attention"),
         },
         { shallow: true, scroll: false },
     );
 
-    const canvasModeQuery = createCanvasModeQuery();
-
     function deploymentsHref(projectId: string, resourceId: string) {
-        const canvasMode = canvasModeQuery.data.canvasMode;
-        const href = resourceHref(projectId, resourceId, canvasMode);
-
-        return canvasMode
-            ? `${href}&tab=deployments`
-            : `${href}/deployments`;
+        return `${resourceHref(projectId, resourceId)}&tab=deployments`;
     }
 
     const projectsQuery = createQuery(() =>
@@ -213,7 +203,8 @@
     const attentionLimit = 5;
 
     // Home shows the projects to act on; the Projects page is the full directory.
-    const homeProjectLimit = 6;
+    // Divides into the 2, 3 and 4 card columns, so the last row is never half empty.
+    const homeProjectLimit = 12;
 
     const visibleDegradedClusters = $derived(
         params.attention.current
@@ -285,9 +276,14 @@
                 <Search aria-hidden="true" />
             </InputGroupAddon>
         </InputGroup>
-        <Button size="sm" disabled={!ready} onclick={openCreate}>
+        <Button
+            size="sm"
+            disabled={!ready}
+            onclick={openCreate}
+            aria-label="Create project"
+        >
             <Plus class="size-4" aria-hidden="true" />
-            Create project
+            <span class="max-sm:hidden">Create project</span>
         </Button>
     </div>
 {/snippet}
@@ -469,8 +465,10 @@
         </header>
         {#if projectsQuery.isPending}
             <Skeleton loading label="Loading projects">
-                <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {#each { length: 6 }, index (index)}
+                <ul
+                    class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                >
+                    {#each { length: homeProjectLimit }, index (index)}
                         <li class="min-w-0">
                             <ProjectCard
                                 name="Project workspace"
@@ -513,25 +511,20 @@
                     <EmptyDescription>
                         {!needsCluster
                             ? "Create your first project to get started."
-                            : page.data.isOrganizationAdmin
-                              ? "Projects run on a cluster. Connect one first, then create your project."
-                              : "Projects run on a cluster. Ask an organization admin to connect one."}
+                            : "Projects run on a cluster. Connect one first, then create your project."}
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
                     {#if needsCluster}
-                        {#if page.data.isOrganizationAdmin}<Button
-                                size="sm"
-                                href="/clusters?dialog=create-cluster&next={encodeURIComponent(
-                                    '/?dialog=create-project',
-                                )}"
-                            >
-                                <Plus
-                                    class="size-4"
-                                    aria-hidden="true"
-                                />
-                                Connect a cluster
-                            </Button>{/if}
+                        <Button
+                            size="sm"
+                            href="/clusters?dialog=create-cluster&next={encodeURIComponent(
+                                '/?dialog=create-project',
+                            )}"
+                        >
+                            <Plus class="size-4" aria-hidden="true" />
+                            Connect a cluster
+                        </Button>
                     {:else}
                         <Button
                             size="sm"
@@ -563,7 +556,9 @@
                 </Button>
             </p>
         {:else}
-            <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul
+                class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            >
                 {#each filtered.slice(0, homeProjectLimit) as project (project.id)}
                     <li class="min-w-0">
                         <ProjectOverviewCard

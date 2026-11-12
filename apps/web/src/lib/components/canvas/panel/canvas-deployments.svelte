@@ -122,8 +122,6 @@
         items.filter((item) => !current.includes(item)),
     );
 
-    const isAdmin = $derived(page.data.isOrganizationAdmin === true);
-
     const domains = $derived(
         services
             .filter(
@@ -378,7 +376,7 @@
                         >
                             View logs
                         </MenuItem>
-                        {#if isLive && isAdmin && !changed}
+                        {#if isLive && !changed}
                             <MenuItem
                                 disabled={pending !== undefined}
                                 onclick={redeploy}
@@ -386,7 +384,7 @@
                                 Redeploy
                             </MenuItem>
                         {/if}
-                        {#if rolling && isAdmin}
+                        {#if rolling}
                             <MenuItem
                                 disabled={pending !== undefined}
                                 onclick={() => cancel(deployment)}
@@ -394,7 +392,7 @@
                                 Cancel
                             </MenuItem>
                         {/if}
-                        {#if !main && deploymentsQuery.data?.canDelete}
+                        {#if !main}
                             <MenuItem
                                 variant="destructive"
                                 onclick={() =>

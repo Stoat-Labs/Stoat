@@ -3,6 +3,7 @@
     import { page } from "$app/state";
     import { orpc } from "$lib/api/orpc";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
+    import SearchButton from "$lib/components/search/search-button.svelte";
     import SidebarAppFooter from "$lib/components/sidebar/sidebar-footer.svelte";
     import {
         Sidebar,
@@ -77,27 +78,46 @@
     const edgeRow =
         "px-0 [&_[data-sidebar=menu-item]]:flex [&_[data-sidebar=menu-item]]:justify-center";
 
+    // The mobile sheet is a regular sidebar, so only the desktop rail centres everything.
+    const rail = $derived(!sidebar.isMobile);
+
     function closeNavigation() {
         sidebar.setOpenMobile(false);
     }
 </script>
 
 <Sidebar variant="inset" collapsible="icon">
-    <SidebarHeader class={edgeRow}>
-        <a href="/" class="w-full flex items-center justify-center">
-            <img src="/stoat.png" class=" size-8" alt="logo" />
+    <SidebarHeader class={rail ? edgeRow : undefined}>
+        <a
+            href="/"
+            class={[
+                "flex w-full items-center gap-2",
+                rail ? "justify-center" : "px-2 py-1",
+            ]}
+        >
+            <img src="/stoat.png" class="size-8" alt="logo" />
+            {#if !rail && project}
+                <span class="truncate font-semibold">
+                    {project.name}
+                </span>
+            {/if}
         </a>
     </SidebarHeader>
     <SidebarContent class="overflow-x-hidden">
-        <SidebarGroup class="px-0">
+        <SidebarGroup class={rail ? "px-0" : undefined}>
             <SidebarGroupContent>
-                <SidebarMenu class="items-center gap-2">
+                <SidebarMenu
+                    class={rail ? "items-center gap-2" : undefined}
+                >
+                    <SearchButton
+                        class={rail ? railButton : undefined}
+                    />
                     {#each links as link (link.title)}
                         {@const active =
                             page.url.pathname === link.href}
                         <SidebarMenuItem>
                             <SidebarMenuButton
-                                class={railButton}
+                                class={rail ? railButton : undefined}
                                 isActive={active}
                                 tooltipContent={link.title}
                             >
@@ -122,7 +142,7 @@
                     {#if project && !project.isInternal}
                         <SidebarMenuItem>
                             <SidebarMenuButton
-                                class={railButton}
+                                class={rail ? railButton : undefined}
                                 tooltipContent="Project settings"
                                 isActive={editProject.current}
                                 onclick={() => {
@@ -139,7 +159,7 @@
             </SidebarGroupContent>
         </SidebarGroup>
     </SidebarContent>
-    <SidebarFooter class={edgeRow}>
+    <SidebarFooter class={rail ? edgeRow : undefined}>
         <SidebarAppFooter {user} />
     </SidebarFooter>
 </Sidebar>

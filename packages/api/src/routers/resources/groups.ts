@@ -20,8 +20,8 @@ const groupDetails = {
 export const resourceGroupsRouter = {
     listGroups: organizationProcedure
         .input(v.object({ projectId: uuid }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
-            await assertProjectVisible(db, organizationId, organizationRole, input.projectId);
+        .handler(async ({ context: { db, organizationId }, input }) => {
+            await assertProjectVisible(db, organizationId, input.projectId);
 
             return db
                 .select({

@@ -34,14 +34,17 @@
         parseAsString,
         parseAsStringLiteral,
         useQueryState,
+        useQueryStates,
     } from "nuqs-svelte";
     import { Debounced } from "runed";
     import {
         addPages,
         bucketEntries,
+        composeEntries,
         dockerEntries,
         dockerHubSearchTerm,
         gitEntries,
+        gitInput,
         pagePlaceholders,
         pageTitles,
         rootEntries,
@@ -52,6 +55,7 @@
         type AddPage,
         type CreateInput,
         type Entry,
+        type GitRepository,
     } from "./add-palette-entries";
     import AddPaletteItem from "./add-palette-item.svelte";
     import {
@@ -109,6 +113,39 @@
         ),
     );
 
+    // A repository whose branch (when it has no default one) or Compose file is still being picked.
+    const repo = useQueryStates(
+        {
+            addRepoConnection: parseAsString,
+            addRepoUrl: parseAsString,
+            addRepoBranch: parseAsString,
+        },
+        { shallow: true, scroll: false },
+    );
+
+    const gitRepository = $derived<GitRepository | undefined>(
+        repo.addRepoConnection.current && repo.addRepoUrl.current
+            ? {
+                  connectionId: repo.addRepoConnection.current,
+                  repositoryUrl: repo.addRepoUrl.current,
+              }
+            : undefined,
+    );
+
+    const gitBranch = $derived(repo.addRepoBranch.current);
+
+    function pickRepository(
+        repository: GitRepository | null,
+        branch: string | null,
+    ) {
+        query = "";
+        void repo.set({
+            addRepoConnection: repository?.connectionId ?? null,
+            addRepoUrl: repository?.repositoryUrl ?? null,
+            addRepoBranch: branch,
+        });
+    }
+
     // Inline, the palette is always open, so no page means the first one.
     const current = $derived(add.current ?? (inline ? "root" : null));
 
@@ -125,8 +162,6 @@
     let creating = $state(false);
 
     let createError = $state("");
-
-    const create = $derived(`/projects/${projectId}/create`);
 
     const templatesQuery = createQuery(() =>
         orpc.resources.listTemplates.queryOptions({
@@ -172,12 +207,36 @@
         ),
     );
 
+    // Picking a Compose file: the repository and branch are known.
+    const composeTarget = $derived(
+        current === "git" && gitRepository && gitBranch
+            ? { ...gitRepository, branch: gitBranch }
+            : undefined,
+    );
+
+    const filesQuery = createQuery(() =>
+        orpc.connections.listFiles.queryOptions({
+            input: composeTarget ?? {
+                connectionId: "",
+                repositoryUrl: "",
+                branch: "",
+            },
+            enabled: composeTarget !== undefined,
+        }),
+    );
+
     const items = $derived.by((): Entry[] => {
         if (step) return [];
 
+        if (composeTarget)
+            return composeEntries(
+                composeTarget,
+                composeTarget.branch,
+                filesQuery.data?.files ?? [],
+            );
+
         if (current === "git")
             return gitEntries(
-                create,
                 connections.map((connection, index) => ({
                     connection,
                     repositories:
@@ -208,10 +267,7 @@
                 current === "database",
             );
 
-        return rootEntries(
-            volumeTargets.length > 0,
-            page.data.isOrganizationAdmin === true,
-        );
+        return rootEntries(volumeTargets.length > 0);
     });
 
     const s3Connections = $derived(s3ConnectionsQuery.data ?? []);
@@ -263,10 +319,16 @@
               ? "bucket"
               : configuredTemplate
                 ? "template"
-                : null,
+                : current === "git" && gitRepository && !gitBranch
+                  ? "branch"
+                  : null,
     );
 
     const placeholder = $derived.by(() => {
+        if (step === "branch") return "Branch, like main";
+
+        if (composeTarget) return "Choose a Compose file...";
+
         if (step === "volume") return "Mount path of the volume";
 
         if (step === "config")
@@ -291,7 +353,13 @@
                         ? [configuredConnection.name]
                         : step === "template" && configuredTemplate
                           ? [configuredTemplate.name, templateKey]
-                          : []),
+                          : current === "git" && gitRepository
+                            ? [
+                                  gitInput(gitRepository, "", ".")
+                                      .name,
+                                  ...(gitBranch ? [gitBranch] : []),
+                              ]
+                            : []),
               ]
             : [],
     );
@@ -323,6 +391,7 @@
         void volumeKey.set(null);
         void configuring.set(null);
         void configuringBucket.set(null);
+        pickRepository(null, null);
         void add.set(next);
     }
 
@@ -367,6 +436,12 @@
                         ...templateValues,
                     }),
                 );
+        } else if (step === "branch" && gitRepository) {
+            if (value)
+                void createResource(
+                    gitInput(gitRepository, value, "."),
+                );
+            else createError = "The branch is required.";
         }
     }
 
@@ -400,6 +475,15 @@
         void volumeKey.set(null);
         void configuringBucket.set(null);
         void configuring.set(null);
+        pickRepository(null, null);
+    }
+
+    // Back from a page: out of the Compose file list first, then to the first page.
+    function pageBack() {
+        if (composeTarget) {
+            createError = "";
+            pickRepository(null, null);
+        } else open("root");
     }
 
     async function showCreated(resourceId: string) {
@@ -433,20 +517,13 @@
 
             if (resource) await showCreated(resource.id);
         } catch (cause) {
-            // No Compose file at the repository root: let the Git form pick the file or branch.
+            // No Compose file at the repository root: list the repository's to pick one.
             if (
-                input.git &&
+                input.git?.path === "." &&
                 cause instanceof ORPCError &&
                 cause.code === "NOT_FOUND"
             ) {
-                open(null);
-                void goto(
-                    `${create}/git?${new URLSearchParams({
-                        connectionId: input.git.connectionId,
-                        repositoryUrl: input.git.repositoryUrl,
-                        branch: input.git.branch,
-                    })}`,
-                );
+                pickRepository(input.git, input.git.branch);
 
                 return;
             }
@@ -537,6 +614,8 @@
         else if ("href" in target) void goto(target.href);
         else if ("create" in target)
             void createResource(target.create);
+        else if ("repository" in target)
+            pickRepository(target.repository, null);
         else if ("volumeService" in target) {
             query = "";
             void volumeKey.set(volumeTargetKey(target.volumeService));
@@ -567,7 +646,7 @@
     {/if}
     <!-- Docker Hub already matched the query, descriptions too, so it isn't filtered again. Steps
          remount it too, so coming back to a list highlights its first row again. -->
-    {#key `${current}:${step}`}
+    {#key `${current}:${step}:${composeTarget !== undefined}`}
         <Command
             {items}
             bind:value={query}
@@ -618,7 +697,7 @@
                     if (current !== "root" && goesBack(event)) {
                         event.preventDefault();
                         event.stopPropagation();
-                        open("root");
+                        pageBack();
                     }
                 }}
             >
@@ -630,7 +709,7 @@
                             class="-ms-0.5 flex rounded-sm p-0.5 hover:bg-accent"
                             onclick={() => {
                                 if (step) stepBack();
-                                else open("root");
+                                else pageBack();
 
                                 input?.focus();
                             }}
@@ -650,7 +729,14 @@
                     <AlertDescription>{createError}</AlertDescription>
                 </Alert>
             {/if}
-            {#if current === "git" && repositoryErrors.length > 0}
+            {#if composeTarget && filesQuery.isError}
+                <Alert variant="error" class="mx-2.5 mb-1.5 w-auto">
+                    <AlertDescription>
+                        {filesQuery.error.message}
+                    </AlertDescription>
+                </Alert>
+            {/if}
+            {#if current === "git" && !gitRepository && repositoryErrors.length > 0}
                 <Alert variant="warning" class="mx-2.5 mb-1.5 w-auto">
                     <AlertDescription>
                         {repositoryErrors.join(" ")}
@@ -721,6 +807,10 @@
                         </div>
                     {:else if current === "bucket" && s3ConnectionsQuery.isPending}
                         Loading connections...
+                    {:else if composeTarget && filesQuery.isPending}
+                        Loading files...
+                    {:else if composeTarget && !query}
+                        No Compose file in {composeTarget.branch}.
                     {:else if current === "git" && repositoriesPending}
                         Loading repositories...
                     {:else if (current === "template" || current === "database") && templatesQuery.isPending}

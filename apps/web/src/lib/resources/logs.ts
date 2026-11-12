@@ -88,6 +88,15 @@ export function stripLogPrefix(message: string) {
     return message.replace(logPrefix, "");
 }
 
+// Probes that repeat every few seconds and bury real output: a request to a health path, or a
+// known prober's user agent.
+const healthCheck =
+    /\b(?:GET|HEAD)\s+\S*\/(?:health|healthz|healthcheck|health-check|health_check|ready|readyz|live|livez|ping)(?=[\s?/"]|$)|kube-probe|ELB-HealthChecker|Consul Health Check/iu;
+
+export function isHealthCheck(message: string) {
+    return healthCheck.test(message);
+}
+
 export function classifyLog(message: string): LogLevel {
     let level: string | number | undefined;
     let status = Number.NaN;

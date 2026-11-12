@@ -4,8 +4,6 @@
         href?: string;
         mono?: boolean;
         title?: string;
-        /** Shows the resource logo (or a fallback icon) before the label. */
-        resource?: { icon?: string | null; type?: string | null };
     };
 </script>
 
@@ -26,8 +24,6 @@
         MenuPopup,
         MenuTrigger,
     } from "$lib/components/ui/menu";
-    import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
-    import Boxes from "phosphor-svelte/lib/CubeIcon";
     import { watch } from "runed";
     import type { Snippet } from "svelte";
 
@@ -56,25 +52,6 @@
 </script>
 
 {#snippet label(crumb: Crumb)}
-    {#if crumb.resource}
-        {#if crumb.resource.icon}
-            <img
-                src={crumb.resource.icon}
-                alt=""
-                class="size-4 shrink-0 rounded object-contain"
-            />
-        {:else if crumb.resource.type === "bucket"}
-            <BucketIcon
-                class="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-            />
-        {:else}
-            <Boxes
-                class="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-            />
-        {/if}
-    {/if}
     <span class="truncate" class:font-mono={crumb.mono}>
         {crumb.label}
     </span>

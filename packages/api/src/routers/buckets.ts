@@ -17,7 +17,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 
-import { organizationAdminProcedure, organizationProcedure } from "..";
+import { organizationProcedure } from "..";
 
 const id = v.pipe(v.string(), v.uuid());
 
@@ -98,7 +98,7 @@ async function request(
 }
 
 export const bucketsRouter = {
-    create: organizationAdminProcedure
+    create: organizationProcedure
         .input(
             v.object({
                 projectId: id,
@@ -209,8 +209,8 @@ export const bucketsRouter = {
                 },
             };
         }),
-    // Separate from `get` so secrets are only fetched when an admin asks to see them.
-    credentials: organizationAdminProcedure
+    // Separate from `get` so secrets are only fetched when someone asks to see them.
+    credentials: organizationProcedure
         .input(v.object(resourceInput))
         .handler(async ({ context: { db, organizationId }, input }) => {
             const row = await getBucket(db, organizationId, input.projectId, input.resourceId);
@@ -218,7 +218,7 @@ export const bucketsRouter = {
             return readyTarget(row).credentials;
         }),
     // The provider is updated first, so a failed save never claims a limit it does not enforce.
-    setQuota: organizationAdminProcedure
+    setQuota: organizationProcedure
         .input(
             v.object({
                 ...resourceInput,
@@ -247,7 +247,7 @@ export const bucketsRouter = {
 
             return { quota: input.quota };
         }),
-    retry: organizationAdminProcedure
+    retry: organizationProcedure
         .input(v.object(resourceInput))
         .handler(async ({ context: { db, organizationId }, input }) =>
             request(
@@ -257,7 +257,7 @@ export const bucketsRouter = {
                 ["failed"],
             ),
         ),
-    remove: organizationAdminProcedure
+    remove: organizationProcedure
         .input(v.object(resourceInput))
         .handler(async ({ context: { db, organizationId }, input }) =>
             request(

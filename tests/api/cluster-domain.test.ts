@@ -230,11 +230,8 @@ describe("cluster domain API", () => {
         expect(await read(member)).toEqual({
             domain: "apps.example.com",
             reserved: false,
-            canManage: false,
+            canManage: true,
         });
-        await expect(
-            call(clusterRouter.clearDomain, { clusterId }, { context: member }),
-        ).rejects.toThrow("owner or admin");
         await expect(read(outsider)).rejects.toThrow("Cluster not found");
         expect(domain).toEqual({ domain: "apps.example.com", reserved: false });
     });

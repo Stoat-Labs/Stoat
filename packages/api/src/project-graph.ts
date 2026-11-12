@@ -16,12 +16,14 @@ const volumeSchema = v.union([
             const [source = ""] = volume.split(":");
 
             // A single segment is an anonymous volume's container path.
-            return volume.includes(":") && NAMED_VOLUME.test(source) ? [source] : [];
+            if (!volume.includes(":")) return [];
+
+            return [{ type: NAMED_VOLUME.test(source) ? "volume" : "bind", source }];
         }),
     ),
     v.pipe(
         v.object({ type: v.optional(v.string(), "volume"), source: v.optional(v.string()) }),
-        v.transform(({ type, source }) => (type === "volume" && source ? [source] : [])),
+        v.transform(({ type, source }) => (source ? [{ type, source }] : [])),
     ),
 ]);
 
@@ -74,6 +76,8 @@ export type GraphService = {
     internalHostname: string | null;
     dependsOn: string[];
     volumes: string[];
+    /** Host paths bind-mounted into the service, like `/mnt/storage`. */
+    binds: string[];
     configs: string[];
 };
 
@@ -113,7 +117,18 @@ function imageRepository(image: string | undefined) {
         ?.toLowerCase();
 }
 
-/** Compose services with their in-stack dependencies and named volumes. */
+function mountSources(
+    mounts: { type: string; source: string }[][] | undefined,
+    type: "volume" | "bind",
+) {
+    return [
+        ...new Set(
+            (mounts ?? []).flat().flatMap((mount) => (mount.type === type ? [mount.source] : [])),
+        ),
+    ];
+}
+
+/** Compose services with their in-stack dependencies, named volumes and bind mounts. */
 export function composeServices(compose: string) {
     const { services } = v.parse(composeSchema, YAML.parse(compose));
     const names = new Set(Object.keys(services));
@@ -123,8 +138,9 @@ export function composeServices(compose: string) {
         image: service?.image,
         // Dependencies on undeclared services are a Compose error, not an edge.
         dependsOn: (service?.depends_on ?? []).filter((dependency) => names.has(dependency)),
-        // One entry per volume, even when a service mounts it at several paths.
-        volumes: [...new Set((service?.volumes ?? []).flat())],
+        // One entry per volume or host path, even when a service mounts it at several paths.
+        volumes: mountSources(service?.volumes, "volume"),
+        binds: mountSources(service?.volumes, "bind"),
     }));
 }
 

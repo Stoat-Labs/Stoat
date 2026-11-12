@@ -274,7 +274,6 @@ describe("adding machines (PostgreSQL)", () => {
     let db: ReturnType<typeof createDb>;
     let context: Context;
     let otherContext: Context;
-    let memberContext: Context;
     let organizationId: string;
 
     function sessionContext(userId: string, activeOrganizationId: string) {
@@ -304,15 +303,6 @@ describe("adding machines (PostgreSQL)", () => {
             "stranger",
             await insertUserWithOrganization(db, "stranger", "Stranger", "stranger@example.test"),
         );
-        await db.$client.query(
-            `INSERT INTO "user" (id, name, email) VALUES ('machine-member', 'Member', 'machine-member@example.test')`,
-        );
-        await db.$client.query(
-            `INSERT INTO member (id, organization_id, user_id, role, created_at)
-             VALUES ($1, $2, 'machine-member', 'member', now())`,
-            [randomUUID(), organizationId],
-        );
-        memberContext = sessionContext("machine-member", organizationId);
 
         bin = await mkdtemp(join(tmpdir(), "stoat-fake-uc-"));
         await writeFile(join(bin, "uc"), fakeUc);
@@ -1013,31 +1003,31 @@ describe("adding machines (PostgreSQL)", () => {
         expect(sidecar.removed).toEqual([]);
     });
 
-    it("lets only the cluster's organization admins see or change its pending server", async () => {
+    it("keeps other organizations away from its pending server", async () => {
         const clusterId = await createCluster();
 
         sidecar.machines.push({ id: OLD_WORKER, name: "old-worker", state: "Up" });
         await prepare(clusterId);
 
-        for (const caller of [otherContext, memberContext]) {
-            await expect(remove(clusterId, OLD_WORKER, caller)).rejects.toThrow();
-            await expect(
-                call(clusterRouter.getPendingMachine, { clusterId }, { context: caller }),
-            ).rejects.toThrow();
-            await expect(
-                call(clusterRouter.addMachine, { clusterId }, { context: caller }),
-            ).rejects.toThrow();
-            await expect(
-                call(clusterRouter.discardPendingMachine, { clusterId }, { context: caller }),
-            ).rejects.toThrow();
-            await expect(
-                call(
-                    clusterRouter.prepareMachine,
-                    { clusterId, host: PUBLIC_HOST },
-                    { context: caller },
-                ),
-            ).rejects.toThrow();
-        }
+        const caller = otherContext;
+
+        await expect(remove(clusterId, OLD_WORKER, caller)).rejects.toThrow();
+        await expect(
+            call(clusterRouter.getPendingMachine, { clusterId }, { context: caller }),
+        ).rejects.toThrow();
+        await expect(
+            call(clusterRouter.addMachine, { clusterId }, { context: caller }),
+        ).rejects.toThrow();
+        await expect(
+            call(clusterRouter.discardPendingMachine, { clusterId }, { context: caller }),
+        ).rejects.toThrow();
+        await expect(
+            call(
+                clusterRouter.prepareMachine,
+                { clusterId, host: PUBLIC_HOST },
+                { context: caller },
+            ),
+        ).rejects.toThrow();
 
         expect(sidecar.removed).toEqual([]);
 

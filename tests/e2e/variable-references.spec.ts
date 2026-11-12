@@ -6,9 +6,10 @@ import {
     receivedComposes,
     ref,
     resetData,
+    rpc,
     routeRpc,
     sql,
-    variablesPath,
+    resourcePath,
     waitForRpc,
 } from "./fixtures";
 
@@ -18,27 +19,31 @@ const items = (page: Page) => popup(page).locator('[data-slot="command-item"]');
 
 const groupLabels = (page: Page) => popup(page).locator('[data-slot="command-group-label"]');
 
-const editor = (page: Page) => page.locator(".cm-content");
+// The Variables panel's Raw Editor dialog holds the whole .env in CodeMirror.
+const editor = (page: Page) => page.getByRole("dialog").locator(".cm-content");
 
 const chips = (page: Page) => editor(page).locator(".cm-reference-name");
 
-/** Opens a resource's Variables page once its reference targets have loaded. */
+/** Opens a resource's Raw Editor once its reference targets have loaded. */
 async function openVariables(
     page: Page,
     projectId: string = ids.shop,
     resourceId: string = ids.api,
+    wait = true,
 ) {
-    const targets = waitForRpc(page, "resources/listVariableReferences");
+    const targets = wait ? waitForRpc(page, "resources/listVariableReferences") : undefined;
 
-    await page.goto(variablesPath(projectId, resourceId));
+    await page.goto(resourcePath(projectId, resourceId, "variables"));
+    await page.getByRole("button", { name: "Raw Editor" }).click();
     await expect(editor(page)).toBeVisible();
     await targets;
 }
 
-/** Puts the cursor at the end of the .env and types on a new line. */
+/** Types on a new line after the first .env line; Compose variables follow the .env part. */
 async function typeOnNewLine(page: Page, text: string) {
     await editor(page).click();
-    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("ControlOrMeta+Home");
+    await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     await page.keyboard.type(text);
 }
@@ -49,12 +54,13 @@ async function savedEnv(resourceId: string = ids.api) {
         [resourceId],
     );
 
-    return row?.env;
+    // The Raw Editor saves the file with a final newline.
+    return row?.env?.trimEnd();
 }
 
 async function save(page: Page) {
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText("Variables saved.")).toBeVisible();
+    await page.getByRole("button", { name: "Update Variables" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 /** Searches the open picker and chooses the only match. */
@@ -228,7 +234,7 @@ test.describe("picking a reference", () => {
         await routeRpc(page, "resources/listVariableReferences", (route) => {
             void held.then(route.forward);
         });
-        await page.goto(variablesPath(ids.shop, ids.api));
+        await openVariables(page, ids.shop, ids.api, false);
         await typeOnNewLine(page, "URL={{");
         await expect(popup(page)).toContainText("Loading resources...");
 
@@ -247,8 +253,7 @@ test.describe("picking a reference", () => {
                 },
             }),
         );
-        await page.goto(variablesPath(ids.shop, ids.api));
-        await expect(editor(page)).toBeVisible();
+        await openVariables(page, ids.shop, ids.api, false);
         await typeOnNewLine(page, "URL={{");
         await expect(popup(page)).toContainText("Unable to load resources");
         await expect(popup(page)).not.toContainText("No other resources");
@@ -328,6 +333,7 @@ test.describe("references in the editor", () => {
         await expect(chips(page)).toHaveText(["postgres.POSTGRES_USER", "worker.QUEUE"]);
         await expect(editor(page)).not.toContainText(ids.postgres);
         await page.reload();
+        await page.getByRole("button", { name: "Raw Editor" }).click();
         await expect(chips(page)).toHaveText(["postgres.POSTGRES_USER", "worker.QUEUE"]);
     });
 
@@ -367,22 +373,8 @@ test.describe("references in the editor", () => {
         expect(await savedEnv()).toBe("A= # user");
     });
 
-    test("chips stay readable whether values are shown or hidden", async ({ page }) => {
-        await sql(
-            `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
-            [ids.api, `A=${ref(ids.postgres, "POSTGRES_USER")}`],
-        );
-        await openVariables(page);
-        await expect(chips(page)).toHaveText(["postgres.POSTGRES_USER"]);
-
-        await page.getByRole("button", { name: "Show values" }).click();
-        await expect(chips(page)).toHaveText(["postgres.POSTGRES_USER"]);
-        await page.getByRole("button", { name: "Hide values" }).click();
-        await expect(chips(page)).toHaveText(["postgres.POSTGRES_USER"]);
-    });
-
     test("read-only internal resources never offer the picker", async ({ page }) => {
-        await page.goto(variablesPath(ids.internal, ids.monitoring));
+        await openVariables(page, ids.internal, ids.monitoring, false);
         await expect(editor(page)).toHaveAttribute("aria-readonly", "true");
         await editor(page).click();
         await page.keyboard.type("{{");
@@ -391,9 +383,15 @@ test.describe("references in the editor", () => {
 });
 
 test.describe("deploying with references", () => {
+    // Deploy in the canvas bar ships every staged resource in order and stops at the first refusal;
+    // the tests that need only api to ship deploy it through the API.
+    async function deployApi(page: Page) {
+        await rpc(page, "resources/deploy", { projectId: ids.shop, resourceId: ids.api });
+    }
+
     async function deploy(page: Page) {
-        await page.goto(`/projects/${ids.shop}/${ids.api}`);
-        const button = page.getByRole("button", { name: "Deploy" }).first();
+        await page.goto(resourcePath(ids.shop, ids.api));
+        const button = page.getByRole("button", { name: "Deploy", exact: true });
         await expect(button).toBeEnabled();
         await button.click();
     }
@@ -403,7 +401,7 @@ test.describe("deploying with references", () => {
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
             [ids.api, `URL=${ref(ids.postgres, "DATABASE_URL")}\n`],
         );
-        await deploy(page);
+        await deployApi(page);
 
         await expect.poll(receivedComposes).toHaveLength(1);
         const [compose] = await receivedComposes();
@@ -440,7 +438,7 @@ test.describe("deploying with references", () => {
                 `URL=${ref(ids.postgres, "POSTGRES_PASSWORD")}@${ref(ids.postgres, "PUBLIC")}\n`,
             ],
         );
-        await deploy(page);
+        await deployApi(page);
 
         await expect.poll(receivedComposes).toHaveLength(1);
         const [compose] = await receivedComposes();
@@ -475,7 +473,8 @@ test.describe("deploying with references", () => {
             );
             await deploy(page);
 
-            await expect(page.getByText(/Unable to deploy:/u)).toContainText(message);
+            // The canvas bar shows why the deploy was refused.
+            await expect(page.getByText(message)).toBeVisible();
             expect(await sql("SELECT id FROM deployments")).toEqual([]);
             expect(await receivedComposes()).toEqual([]);
         });

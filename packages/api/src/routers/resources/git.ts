@@ -5,12 +5,7 @@ import { resources } from "@stoat/db/schema/index";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
 
-import {
-    organizationAdminProcedure,
-    organizationProcedure,
-    requireAuth,
-    resourceMiddleware,
-} from "../..";
+import { organizationProcedure, requireAuth, resourceMiddleware } from "../..";
 import { formatComposeFile } from "../../compose";
 import { gitBlobId, listGitFiles, pushGitFile, readGitFile, validateGitPath } from "../../git";
 import {
@@ -249,7 +244,7 @@ export const resourceGitRouter = {
                 return updated!;
             }),
         ),
-    setGitWatch: organizationAdminProcedure
+    setGitWatch: organizationProcedure
         .input(
             v.object({
                 ...resourceEditInput,
@@ -323,7 +318,7 @@ export const resourceGitRouter = {
 
             return updated;
         }),
-    pushGitSource: organizationAdminProcedure
+    pushGitSource: organizationProcedure
         .use(requireAuth)
         .input(
             v.object({

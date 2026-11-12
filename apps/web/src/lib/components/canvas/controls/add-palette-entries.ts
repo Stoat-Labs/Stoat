@@ -44,6 +44,9 @@ type Repository = Awaited<
     ReturnType<AppRouterClient["connections"]["getRepositories"]>
 >["repositories"][number];
 
+/** A repository being added before its branch or Compose file is known. */
+export type GitRepository = { connectionId: string; repositoryUrl: string };
+
 type S3Connection = Awaited<ReturnType<AppRouterClient["s3"]["list"]>>[number];
 
 type DockerHubResult = Awaited<
@@ -63,6 +66,7 @@ export type Entry = {
         | { page: AddPage }
         | { href: string }
         | { create: CreateInput }
+        | { repository: GitRepository }
         | { template: Template }
         | { bucket: { connectionId: string } }
         | { volumeService: VolumeTarget };
@@ -106,8 +110,8 @@ function pageEntry(id: AddPage, label: string, icon: Component): Entry {
     };
 }
 
-/** The first page. Volumes and configs need a service to attach to; buckets need an admin. */
-export function rootEntries(hasVolumeTargets: boolean, isAdmin: boolean): Entry[] {
+/** The first page. Volumes and configs need a service to attach to. */
+export function rootEntries(hasVolumeTargets: boolean): Entry[] {
     return [
         pageEntry("git", "Git Repository", GitBranch),
         pageEntry("database", "Database", Database),
@@ -116,7 +120,7 @@ export function rootEntries(hasVolumeTargets: boolean, isAdmin: boolean): Entry[
         ...(hasVolumeTargets
             ? [pageEntry("volume", "Volume", HardDrive), pageEntry("config", "Config", FileCog)]
             : []),
-        ...(isAdmin ? [pageEntry("bucket", "Bucket", HardDrive)] : []),
+        pageEntry("bucket", "Bucket", HardDrive),
         {
             id: "empty",
             label: "Empty Service",
@@ -150,7 +154,6 @@ export function templateEntries(templates: Template[], databases: boolean): Entr
 
 /** Railway lists every repository it can reach; here that is every connection's. */
 export function gitEntries(
-    createHref: string,
     connections: { connection: GitConnection; repositories: Repository[] }[],
 ): Entry[] {
     return [
@@ -171,29 +174,68 @@ export function gitEntries(
                 logo: null,
                 icon: GitBranch,
                 provider: connection.provider,
-                // Without a known default branch, the create page asks for one. Quick creation
-                // reads the root; without a Compose file there, it falls back to that page too.
+                // Without a known default branch, the palette asks for one. Quick creation reads
+                // the root; without a Compose file there, the palette lists the repository's.
                 target: repository.defaultBranch
                     ? {
-                          create: {
-                              name: repository.name.split("/").at(-1) ?? repository.name,
-                              git: {
-                                  connectionId: connection.id,
-                                  repositoryUrl: repository.url,
-                                  branch: repository.defaultBranch,
-                                  path: ".",
-                              },
-                          },
+                          create: gitInput(
+                              { connectionId: connection.id, repositoryUrl: repository.url },
+                              repository.defaultBranch,
+                              ".",
+                          ),
                       }
                     : {
-                          href: `${createHref}/git?${new URLSearchParams({
+                          repository: {
                               connectionId: connection.id,
                               repositoryUrl: repository.url,
-                          })}`,
+                          },
                       },
             })),
         ),
     ];
+}
+
+// The names the API resolves a directory to.
+const composeFileNames = new Set([
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+]);
+
+export function gitInput(repository: GitRepository, branch: string, path: string): CreateInput {
+    const name = repository.repositoryUrl
+        .split("/")
+        .at(-1)
+        ?.replace(/\.git$/u, "");
+
+    return {
+        name: name || repository.repositoryUrl,
+        git: { ...repository, branch, path },
+    };
+}
+
+/** The repository's Compose files, to pick one when its root has none. */
+export function composeEntries(
+    repository: GitRepository,
+    branch: string,
+    files: string[],
+): Entry[] {
+    return files.flatMap((path): Entry[] =>
+        composeFileNames.has(path.split("/").at(-1) ?? "")
+            ? [
+                  {
+                      id: path,
+                      label: path,
+                      description: undefined,
+                      logo: null,
+                      icon: Layers,
+                      provider: undefined,
+                      target: { create: gitInput(repository, branch, path) },
+                  },
+              ]
+            : [],
+    );
 }
 
 export function bucketEntries(connections: S3Connection[]): Entry[] {

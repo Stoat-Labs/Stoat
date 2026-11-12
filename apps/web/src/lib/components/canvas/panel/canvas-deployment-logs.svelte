@@ -250,7 +250,9 @@
 
 <!-- Railway's deployment panel: header, tabs, filter bar, then a log table that runs edge to edge. -->
 <div class="flex h-full min-h-0 flex-col">
-    <header class="flex items-center gap-3 px-12 pt-12 pb-6">
+    <header
+        class="flex items-center gap-3 px-5 sm:px-12 pt-6 sm:pt-12 pb-6"
+    >
         {#if icon}
             <img
                 src={icon}
@@ -361,14 +363,16 @@
     </header>
 
     {#if cancelMutation.error || redeployMutation.error}
-        <p class="px-12 pb-3 text-sm text-destructive-foreground">
+        <p
+            class="px-5 sm:px-12 pb-3 text-sm text-destructive-foreground"
+        >
             {(cancelMutation.error ?? redeployMutation.error)
                 ?.message}
         </p>
     {/if}
 
     <div
-        class="flex shrink-0 gap-8 border-b border-border px-12"
+        class="flex shrink-0 gap-8 border-b border-border px-5 sm:px-12"
         role="tablist"
         aria-label="Deployment sections"
     >

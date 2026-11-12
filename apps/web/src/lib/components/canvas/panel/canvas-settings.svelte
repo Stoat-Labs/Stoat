@@ -54,8 +54,6 @@
 
     const isBucket = $derived(resource.type === "bucket");
 
-    const isAdmin = $derived(page.data.isOrganizationAdmin === true);
-
     // System-managed resources keep their source and cannot be deleted.
     // Treated as internal until the project loads, so Source and Delete never flash for one.
     const isInternal = $derived(
@@ -216,8 +214,7 @@
             id: "danger",
             title: "Danger",
             icon: Flame,
-            visible:
-                isAdmin && !isInternal && shows("danger", "delete"),
+            visible: !isInternal && shows("danger", "delete"),
         },
     ]);
 
@@ -252,7 +249,7 @@
 
 {#snippet body(id: string)}
     {#if id === "source"}
-        <SettingsSource {git} {isAdmin} {shows} />
+        <SettingsSource {git} {shows} />
     {:else if id === "networking"}
         <SettingsNetworking
             {resource}
@@ -277,7 +274,7 @@
     {:else if id === "general"}
         <SettingsGeneral {resource} {isBucket} {isInternal} {shows} />
     {:else if id === "storage"}
-        <SettingsStorage {resource} {isAdmin} />
+        <SettingsStorage {resource} />
     {:else}
         <SettingsDanger {resource} {isBucket} />
     {/if}

@@ -1,11 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
-import { memberStorageState, openCreatedResource, rpc, sql } from "./fixtures";
+import { memberStorageState, openCreatedResource, resourcePath, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog");
 
 const editor = (page: Page) => page.locator(".cm-content");
 
-const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
+// The canvas header names the open project.
+const projectSwitcher = (page: Page) => page.getByRole("button", { name: "Switch project" });
+
+// The resource panel's heading.
+const panelTitle = (page: Page) => page.getByRole("heading", { level: 2 });
 
 let created = 0;
 
@@ -74,10 +78,9 @@ test.describe("projects", () => {
         await dialog(page).getByRole("button", { name: "Create Project" }).click();
         await expect(dialog(page)).toHaveCount(0);
 
-        // Creating a project opens it, on the canvas by default.
-        await page.getByRole("link", { name: "List view" }).click();
-        await expect(breadcrumb(page)).toContainText(name);
-        await expect(page.getByRole("main").getByText("No resources yet")).toBeVisible();
+        // Creating a project opens its canvas.
+        await expect(page).toHaveURL(/\/projects\/[\w-]+\/canvas/u);
+        await expect(projectSwitcher(page)).toContainText(name);
         expect(
             await sql(
                 `SELECT p.description, c.name AS cluster FROM projects p
@@ -90,14 +93,14 @@ test.describe("projects", () => {
     test("a project can be renamed", async ({ page }) => {
         const { id } = await project(page);
         const renamed = unique("Renamed");
-        await page.goto(`/projects/${id}`);
+        await page.goto(`/projects/${id}/canvas`, { waitUntil: "networkidle" });
 
-        await page.getByRole("button", { name: "Edit project" }).click();
+        await page.getByRole("button", { name: "Project settings" }).click();
         await dialog(page).getByLabel("Name").fill(renamed);
         await dialog(page).getByRole("button", { name: /save/iu }).click();
         await expect(dialog(page)).toHaveCount(0);
 
-        await expect(breadcrumb(page)).toContainText(renamed);
+        await expect(projectSwitcher(page)).toContainText(renamed);
         expect(await sql("SELECT name FROM projects WHERE id = $1", [id])).toEqual([
             { name: renamed },
         ]);
@@ -105,12 +108,11 @@ test.describe("projects", () => {
 });
 
 test.describe("resources", () => {
-    test("a Compose resource is created, then its draft autosaves", async ({ page }) => {
+    test("a Compose resource is created, then its draft is saved", async ({ page }) => {
         const { id: projectId } = await project(page);
         const name = unique("api");
-        await page.goto(`/projects/${projectId}`);
+        await page.goto(`/projects/${projectId}/create`);
 
-        await page.getByRole("link", { name: "Create resource" }).first().click();
         await page
             .getByRole("link", { name: /^Compose\b/u })
             .first()
@@ -119,39 +121,17 @@ test.describe("resources", () => {
         await page.getByRole("button", { name: "Create resource" }).click();
         const resourceId = await openCreatedResource(page, projectId);
 
-        await expect(breadcrumb(page)).toContainText(name);
+        await expect(panelTitle(page)).toContainText(name);
 
+        await page.getByRole("tab", { name: "Compose" }).click();
         await replaceCompose(page, nginx);
-        await expect(page.getByText("Unsaved changes")).toBeVisible();
-        await expect(page.getByText("Saved — not deployed")).toBeVisible();
-        expect(await draftSpec(resourceId)).toBe(nginx);
+        await page.getByRole("button", { name: "Save draft" }).click();
+        await expect.poll(() => draftSpec(resourceId)).toBe(nginx);
 
-        // The draft survives a reload and marks the deploy as pending.
+        // The draft survives a reload and is staged for the next deploy.
         await page.reload();
         await expect(editor(page)).toContainText("image: nginx:alpine");
-        await expect(
-            page.getByRole("button", { name: /Deploy.*undeployed changes/u }),
-        ).toBeVisible();
-    });
-
-    test("an edit made just before leaving the page is kept", async ({ page }) => {
-        const { id: projectId } = await project(page);
-
-        const { id: resourceId } = await rpc(page, "resources/createResource", {
-            projectId,
-            name: unique("quick"),
-            type: "compose",
-        });
-
-        await page.goto(`/projects/${projectId}/${resourceId}`);
-        await expect(editor(page)).toBeVisible();
-
-        await replaceCompose(page, nginx);
-        // Straight away, before the autosave delay.
-        await page.getByRole("link", { name: "Variables" }).first().click();
-        await expect(page).toHaveURL(/\/variables$/u);
-
-        await expect.poll(() => draftSpec(resourceId)).toBe(nginx);
+        await expect(page.getByText("1 change", { exact: true })).toBeVisible();
     });
 
     test("invalid Compose is saved but cannot be deployed", async ({ page }) => {
@@ -163,15 +143,17 @@ test.describe("resources", () => {
             type: "compose",
         });
 
-        await page.goto(`/projects/${projectId}/${resourceId}`);
+        await page.goto(resourcePath(projectId, resourceId, "compose"));
 
         await replaceCompose(page, "services: [not, a, map\n");
-        await expect(
-            page.getByRole("alert").filter({ hasText: "Saved draft cannot be deployed" }),
-        ).toBeVisible();
-        // Nothing was ever deployed, so there is nothing to fail to look up.
-        await expect(page.getByText("No containers found.")).toBeVisible();
-        await expect(page.getByRole("button", { name: /^Deploy/u })).toBeDisabled();
+        await page.getByRole("button", { name: "Save draft" }).click();
+        await expect.poll(() => draftSpec(resourceId)).toBe("services: [not, a, map\n");
+
+        await page.getByRole("button", { name: "Deploy", exact: true }).click();
+        await expect(page.getByText(/Save a valid Compose spec/u)).toBeVisible();
+        expect(
+            await sql("SELECT id FROM deployments WHERE resource_id = $1", [resourceId]),
+        ).toEqual([]);
     });
 
     test("a template creates a ready-to-deploy resource", async ({ page }) => {
@@ -185,12 +167,13 @@ test.describe("resources", () => {
         await page.getByRole("button", { name: "Create resource" }).click();
         await openCreatedResource(page, projectId);
 
-        await expect(breadcrumb(page)).toContainText(name);
+        await expect(panelTitle(page)).toContainText(name);
+        await page.getByRole("tab", { name: "Compose" }).click();
         await expect(editor(page)).toContainText("ntfy");
-        await expect(page.getByRole("button", { name: /^Deploy/u })).toBeEnabled();
+        await expect(page.getByRole("button", { name: "Deploy", exact: true })).toBeEnabled();
     });
 
-    test("a database template offers its connection details", async ({ page }) => {
+    test("a database template opens with its database tabs", async ({ page }) => {
         const { id: projectId } = await project(page);
         const name = unique("db");
         await page.goto(`/projects/${projectId}/create`);
@@ -203,8 +186,8 @@ test.describe("resources", () => {
         await page.getByRole("button", { name: "Create resource" }).click();
         await openCreatedResource(page, projectId);
 
-        await expect(breadcrumb(page)).toContainText(name);
-        await expect(page.getByRole("region", { name: /connection/iu })).toBeVisible();
+        await expect(panelTitle(page)).toContainText(name);
+        await expect(page.getByRole("tab", { name: "Tables" })).toBeVisible();
         expect(
             await sql("SELECT settings->>'engine' AS engine FROM resources WHERE name = $1", [
                 name,
@@ -212,7 +195,7 @@ test.describe("resources", () => {
         ).toEqual([{ engine: "postgresql" }]);
     });
 
-    test("a resource's name and description are edited in its settings", async ({ page }) => {
+    test("a resource is renamed from its settings", async ({ page }) => {
         const { id: projectId } = await project(page);
 
         const { id: resourceId } = await rpc(page, "resources/createResource", {
@@ -222,18 +205,17 @@ test.describe("resources", () => {
         });
 
         const renamed = unique("new");
-        await page.goto(`/projects/${projectId}/${resourceId}/settings`);
+        await page.goto(resourcePath(projectId, resourceId, "settings"));
 
-        await page.getByRole("textbox", { name: /^Name$/u }).fill(renamed);
-        await page
-            .getByRole("textbox", { name: "Description", exact: true })
-            .fill("Handles payments");
-        await page.getByRole("button", { name: /save/iu }).first().click();
+        await page.getByRole("button", { name: "Rename" }).click();
+        await page.getByRole("dialog").getByLabel("Resource name").fill(renamed);
+        await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
 
-        await expect(breadcrumb(page)).toContainText(renamed);
-        expect(
-            await sql("SELECT name, description FROM resources WHERE id = $1", [resourceId]),
-        ).toEqual([{ name: renamed, description: "Handles payments" }]);
+        await expect(panelTitle(page)).toContainText(renamed);
+        expect(await sql("SELECT name FROM resources WHERE id = $1", [resourceId])).toEqual([
+            { name: renamed },
+        ]);
     });
 
     test("Back and Forward walk through the canvas panels that were opened", async ({ page }) => {
@@ -301,11 +283,10 @@ test.describe("as a member", () => {
     test("projects and resources can be browsed", async ({ page }) => {
         await page.goto("/projects");
         await page.getByRole("link", { name: "Shop" }).first().click();
-        // Projects open on the canvas by default; its cards are not links.
-        await page.getByRole("link", { name: "List view" }).click();
-        const api = page.getByRole("main").getByRole("link", { name: "api", exact: true });
-        await expect(api).toBeVisible();
-        await api.click();
+        // Projects open on the canvas; a card opens its resource's panel.
+        await page.locator(".svelte-flow__node").getByText("api", { exact: true }).click();
+        await expect(panelTitle(page)).toContainText("api");
+        await page.getByRole("tab", { name: "Compose" }).click();
         await expect(editor(page)).toContainText("nginx:alpine");
     });
 });

@@ -121,7 +121,11 @@
                 <span
                     class="flex size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:size-6"
                 >
-                    <img src="/stoat.png" alt="" class="size-8" />
+                    <img
+                        src="/stoat.png"
+                        alt=""
+                        class="size-full object-contain"
+                    />
                 </span>
                 <span
                     class="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"

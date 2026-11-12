@@ -11,10 +11,10 @@ import { setHeaderActions } from "../../apps/web/src/lib/components/sidebar/head
 import { orpc } from "../../apps/web/src/lib/api/orpc";
 
 // The full view fits rows to the viewport; during SSR that is the 900px
-// default, so floor((900 - 290) / 49) rows.
-const ssrPageSize = 12;
+// default, so floor((900 - 200) / 45) rows.
+const ssrPageSize = 15;
 
-function renderDeployments(latest: number | undefined, search: string, resourceId?: string) {
+function renderDeployments(latest: number | undefined, search: string) {
     const cache = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } });
     const limit = latest ?? ssrPageSize;
 
@@ -24,7 +24,6 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
         status,
         limit,
         offset: latest === undefined ? 2 * limit : 0,
-        resourceId,
     };
 
     const items = Array.from({ length: limit }, (_, index) => ({
@@ -38,8 +37,9 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
         clusterName: "Production",
         projectId: "project",
         projectName: "Storefront",
-        resourceId: resourceId ?? `resource-${index}`,
+        resourceId: `resource-${index}`,
         resourceName: `Service ${index}`,
+        resourceIcon: null,
         createdAt: new Date("2026-09-30T12:00:00Z"),
         updatedAt: new Date("2026-09-30T12:01:00Z"),
         finishedAt: new Date("2026-09-30T12:01:00Z"),
@@ -48,7 +48,6 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
     cache.setQueryData(orpc.cluster.listAllDeployments.queryKey({ input }), {
         items,
         total: 80,
-        canDelete: false,
     });
 
     function TableWithContext(...args: Parameters<typeof DeploymentsTable>) {
@@ -62,7 +61,7 @@ function renderDeployments(latest: number | undefined, search: string, resourceI
     }
 
     try {
-        return render(TableWithContext, { props: { latest, resourceId } }).body;
+        return render(TableWithContext, { props: { latest } }).body;
     } finally {
         cache.clear();
     }
@@ -79,15 +78,6 @@ it("shows only the latest N deployments independently of URL page and status fil
         expect(body).not.toContain("Loading table row");
         expect(body).not.toContain('data-slot="pagination"');
     }
-});
-
-it("preserves resource scoping and contextual deployment links in latest mode", () => {
-    const body = renderDeployments(3, "page=3&status=failed", "resource");
-    expect(body).toContain("Recent deployments");
-    expect(
-        body.match(/href="\/projects\/project\/resource\/deployments\/deployment-/g),
-    ).toHaveLength(3);
-    expect(body).not.toContain("View all deployments");
 });
 
 it("keeps URL filtering and pagination for the full deployments view", () => {

@@ -109,31 +109,21 @@
                             value={configured.username}
                         />
                     </div>
-                    {#if configured.canReveal}
-                        {#if configured.password}
-                            <ConnectionField
-                                label="Password"
-                                value={configured.password}
-                                secret
-                            />
-                        {:else}
-                            <Alert variant="warning">
-                                <Info aria-hidden="true" />
-                                <AlertDescription>
-                                    The stored credential couldn't be
-                                    decrypted — the app secret likely
-                                    rotated since issuance. Re-run
-                                    initialization to issue a fresh
-                                    password.
-                                </AlertDescription>
-                            </Alert>
-                        {/if}
+                    {#if configured.password}
+                        <ConnectionField
+                            label="Password"
+                            value={configured.password}
+                            secret
+                        />
                     {:else}
-                        <Alert variant="info">
+                        <Alert variant="warning">
                             <Info aria-hidden="true" />
                             <AlertDescription>
-                                Only organization owners and admins
-                                can reveal the password.
+                                The stored credential couldn't be
+                                decrypted — the app secret likely
+                                rotated since issuance. Re-run
+                                initialization to issue a fresh
+                                password.
                             </AlertDescription>
                         </Alert>
                     {/if}

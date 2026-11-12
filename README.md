@@ -16,7 +16,6 @@
 <!-- <img width="2240" height="1337" alt="image" src="https://github.com/user-attachments/assets/23fdd9c0-b7e0-4926-b6af-1bc202e97e25" /> -->
 <img width="2258" height="1355" alt="image" src="https://github.com/user-attachments/assets/8c89768c-b6ec-4808-9339-f970b037556c" />
 
-
 ## Features
 
 Stoat allows you to manage multiple [Uncloud](https://uncloud.run) clusters from a single dashboard.

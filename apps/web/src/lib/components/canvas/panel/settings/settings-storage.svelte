@@ -9,10 +9,7 @@
     import type { CanvasResource } from "../../graph";
     import SettingsTitle from "./settings-title.svelte";
 
-    let {
-        resource,
-        isAdmin,
-    }: { resource: CanvasResource; isAdmin: boolean } = $props();
+    let { resource }: { resource: CanvasResource } = $props();
 
     const bucketQuery = createQuery(() =>
         orpc.buckets.get.queryOptions({
@@ -56,16 +53,15 @@
                 </p>
             {/if}
         </div>
-        {#if isAdmin}
-            <Button
-                size="sm"
-                variant="outline"
-                disabled={bucket?.status !== "ready"}
-                onclick={() => void limitDialog.set(true)}
-            >
-                {bucket?.quota ? "Edit limit" : "Set limit"}
-            </Button>
-        {/if}
+
+        <Button
+            size="sm"
+            variant="outline"
+            disabled={bucket?.status !== "ready"}
+            onclick={() => void limitDialog.set(true)}
+        >
+            {bucket?.quota ? "Edit limit" : "Set limit"}
+        </Button>
     </div>
 </div>
 

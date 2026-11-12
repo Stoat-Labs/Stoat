@@ -276,33 +276,33 @@
                     {view.label}
                 </ContextMenuItem>
             {/each}
-            {#if page.data.isOrganizationAdmin}
-                {@const runState = actions.runState(id)}
-                <ContextMenuSeparator />
-                <!-- Staged edits ship through the apply bar instead. -->
+
+            {@const runState = actions.runState(id)}
+            <ContextMenuSeparator />
+            <!-- Staged edits ship through the apply bar instead. -->
+            <ContextMenuItem
+                disabled={!actions.canRedeploy(id)}
+                onclick={() => actions.redeploy(id)}
+            >
+                <RotateCw aria-hidden="true" />
+                Redeploy
+            </ContextMenuItem>
+            {#if runState === "stopped"}
                 <ContextMenuItem
-                    disabled={!actions.canRedeploy(id)}
-                    onclick={() => actions.redeploy(id)}
+                    onclick={() => actions.setRunning(id, true)}
                 >
-                    <RotateCw aria-hidden="true" />
-                    Redeploy
+                    <Play aria-hidden="true" />
+                    Start
                 </ContextMenuItem>
-                {#if runState === "stopped"}
-                    <ContextMenuItem
-                        onclick={() => actions.setRunning(id, true)}
-                    >
-                        <Play aria-hidden="true" />
-                        Start
-                    </ContextMenuItem>
-                {:else if runState === "running"}
-                    <ContextMenuItem
-                        onclick={() => actions.setRunning(id, false)}
-                    >
-                        <Square aria-hidden="true" />
-                        Stop
-                    </ContextMenuItem>
-                {/if}
+            {:else if runState === "running"}
+                <ContextMenuItem
+                    onclick={() => actions.setRunning(id, false)}
+                >
+                    <Square aria-hidden="true" />
+                    Stop
+                </ContextMenuItem>
             {/if}
+
             <ContextMenuSeparator />
             <ContextMenuItem
                 onclick={() => actions.edit("duplicate", id)}
@@ -386,14 +386,12 @@
                         Config
                     </ContextMenuItem>
                 {/if}
-                {#if page.data.isOrganizationAdmin}
-                    <ContextMenuItem
-                        onclick={() => onaddpage("bucket")}
-                    >
-                        <HardDrive aria-hidden="true" />
-                        Bucket
-                    </ContextMenuItem>
-                {/if}
+
+                <ContextMenuItem onclick={() => onaddpage("bucket")}>
+                    <HardDrive aria-hidden="true" />
+                    Bucket
+                </ContextMenuItem>
+
                 <ContextMenuItem
                     onclick={() => void goto(`${create}/compose`)}
                 >

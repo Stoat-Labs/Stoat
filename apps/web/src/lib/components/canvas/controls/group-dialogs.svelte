@@ -16,7 +16,7 @@
     } from "$lib/components/ui/dialog";
     import { Input } from "$lib/components/ui/input";
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import type { GroupAction } from "../context";
+    import { getCanvasActions, type GroupAction } from "../context";
     import type { CanvasGroup, CanvasResource } from "../graph";
     import TransferDialog from "./transfer-dialog.svelte";
 
@@ -32,14 +32,17 @@
         action: GroupAction | undefined;
         /** The frame whose menu opened rename or an icon dialog. */
         group: CanvasGroup | undefined;
-        /** The card whose menu opened a new group or a transfer. */
+        /** The card whose menu opened rename, a new group or a transfer. */
         resource: CanvasResource | undefined;
         onclose: () => void;
     } = $props();
 
-    // Rename edits the group's name; New group names the group it creates around the resource.
+    const actions = getCanvasActions();
+
+    // Rename edits the group's or the resource's name; New group names the group it creates around the resource.
     const naming = $derived(
-        (action === "rename" && group !== undefined) ||
+        (action === "rename" &&
+            (group !== undefined || resource !== undefined)) ||
             (action === "new-group" && resource !== undefined),
     );
 
@@ -49,9 +52,20 @@
 
     let error = $state("");
 
+    // Kept while the dialog fades out, when `action` is already cleared.
+    let renaming = $state(false);
+
+    let renamed = $state("");
+
     $effect(() => {
-        if (action === "rename" && group) name = group.name;
-        else if (action === "new-group") name = "";
+        if (action === "rename") {
+            renamed = group?.name ?? resource?.name ?? "";
+            name = renamed;
+            renaming = true;
+        } else if (action === "new-group") {
+            name = "";
+            renaming = false;
+        }
     });
 
     async function refresh() {
@@ -90,6 +104,8 @@
                     name: name.trim(),
                     icon: group.icon ?? undefined,
                 });
+            else if (action === "rename" && resource)
+                await actions.rename(resource.id, name.trim());
             else if (resource)
                 await client.resources.createGroup({
                     projectId,
@@ -128,15 +144,15 @@
         >
             <DialogHeader>
                 <DialogTitle>
-                    {action === "rename"
-                        ? `Rename ${group?.name}`
-                        : "New group"}
+                    {renaming ? `Rename ${renamed}` : "New group"}
                 </DialogTitle>
             </DialogHeader>
             <DialogPanel class="space-y-3">
                 <Input
                     bind:value={name}
-                    aria-label="Group name"
+                    aria-label={group || action === "new-group"
+                        ? "Group name"
+                        : "Resource name"}
                     placeholder="Backend"
                     maxlength={100}
                     autofocus
@@ -160,7 +176,7 @@
                     loading={saving}
                     disabled={saving || !name.trim()}
                 >
-                    {action === "rename" ? "Save" : "Create"}
+                    {renaming ? "Save" : "Create"}
                 </Button>
             </DialogFooter>
         </form>

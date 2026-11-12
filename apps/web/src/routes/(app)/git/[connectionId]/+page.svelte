@@ -45,10 +45,6 @@
         ),
     );
 
-    const canManage = $derived(
-        connectionsQuery.data?.canManage === true,
-    );
-
     const repositoriesQuery = createQuery(() =>
         orpc.connections.getRepositories.queryOptions({
             input: { connectionId },
@@ -63,7 +59,7 @@
     const webhookQuery = createQuery(() =>
         orpc.connections.webhook.queryOptions({
             input: { connectionId },
-            enabled: Boolean(connection) && canManage,
+            enabled: Boolean(connection),
         }),
     );
 
@@ -161,19 +157,16 @@
                     </p>
                 </div>
             </div>
-            {#if canManage}
-                <div class="flex gap-2">
-                    <Button variant="outline" onclick={edit}>
-                        Edit
-                    </Button>
-                    <Button
-                        variant="destructive-outline"
-                        onclick={() => (deleteOpen = true)}
-                    >
-                        Delete
-                    </Button>
-                </div>
-            {/if}
+
+            <div class="flex gap-2">
+                <Button variant="outline" onclick={edit}>Edit</Button>
+                <Button
+                    variant="destructive-outline"
+                    onclick={() => (deleteOpen = true)}
+                >
+                    Delete
+                </Button>
+            </div>
         </div>
 
         <Frame>
@@ -301,54 +294,52 @@
             </FramePanel>
         </Frame>
 
-        {#if canManage}
-            <Frame>
-                <FrameHeader>
-                    <FrameTitle class="text-base">
-                        <h2>Push webhook</h2>
-                    </FrameTitle>
-                </FrameHeader>
-                <FramePanel class="space-y-4">
-                    <p class="text-sm text-muted-foreground">
-                        Turning on auto deploy adds this webhook to
-                        the repository when the token allows it.
-                        Otherwise, add a push webhook with these
-                        values (content type <span class="font-mono">
-                            application/json
-                        </span>
-                        ). Resources with auto deploy on are checked right
-                        after a push instead of on the next minute.
-                    </p>
-                    {#if webhookQuery.isError}
-                        <Alert variant="error">
-                            <AlertDescription>
-                                Unable to load the webhook: {webhookQuery
-                                    .error.message}
-                            </AlertDescription>
-                        </Alert>
-                    {:else}
-                        <Skeleton
-                            loading={webhookQuery.isPending}
-                            label="Loading webhook"
-                        >
-                            <div class="grid gap-4 sm:grid-cols-2">
-                                <ConnectionField
-                                    label="Target URL"
-                                    value={webhookQuery.data?.url ??
-                                        ""}
-                                />
-                                <ConnectionField
-                                    label="Secret"
-                                    value={webhookQuery.data
-                                        ?.secret ?? ""}
-                                    secret
-                                />
-                            </div>
-                        </Skeleton>
-                    {/if}
-                </FramePanel>
-            </Frame>
-        {/if}
+        <Frame>
+            <FrameHeader>
+                <FrameTitle class="text-base">
+                    <h2>Push webhook</h2>
+                </FrameTitle>
+            </FrameHeader>
+            <FramePanel class="space-y-4">
+                <p class="text-sm text-muted-foreground">
+                    Turning on auto deploy adds this webhook to the
+                    repository when the token allows it. Otherwise,
+                    add a push webhook with these values (content type <span
+                        class="font-mono"
+                    >
+                        application/json
+                    </span>
+                    ). Resources with auto deploy on are checked right after
+                    a push instead of on the next minute.
+                </p>
+                {#if webhookQuery.isError}
+                    <Alert variant="error">
+                        <AlertDescription>
+                            Unable to load the webhook: {webhookQuery
+                                .error.message}
+                        </AlertDescription>
+                    </Alert>
+                {:else}
+                    <Skeleton
+                        loading={webhookQuery.isPending}
+                        label="Loading webhook"
+                    >
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <ConnectionField
+                                label="Target URL"
+                                value={webhookQuery.data?.url ?? ""}
+                            />
+                            <ConnectionField
+                                label="Secret"
+                                value={webhookQuery.data?.secret ??
+                                    ""}
+                                secret
+                            />
+                        </div>
+                    </Skeleton>
+                {/if}
+            </FramePanel>
+        </Frame>
 
         <ConfirmDialog
             bind:open={deleteOpen}

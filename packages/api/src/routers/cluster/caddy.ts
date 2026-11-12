@@ -8,12 +8,7 @@ import {
 } from "@stoat/workflows/deploy-caddy";
 import { and, eq, inArray } from "drizzle-orm";
 import * as v from "valibot";
-import {
-    isOrganizationAdmin,
-    organizationAdminProcedure,
-    organizationProcedure,
-    uncloudMiddleware,
-} from "../..";
+import { organizationProcedure, uncloudMiddleware } from "../..";
 
 const clusterInput = v.object({
     clusterId: v.pipe(v.string(), v.uuid()),
@@ -24,7 +19,7 @@ export const caddyRouter = {
     getCaddy: organizationProcedure
         .input(clusterInput)
         .use(uncloudMiddleware)
-        .handler(async ({ context: { db, uc, organizationRole }, input, signal }) => {
+        .handler(async ({ context: { db, uc }, input, signal }) => {
             const [settings, configs, [cluster], [active]] = await Promise.all([
                 unwrap(uc.GET("/api/v1/caddy", { signal })),
                 unwrap(uc.GET("/api/v1/caddy/configs", { signal })),
@@ -46,13 +41,11 @@ export const caddyRouter = {
                     .limit(1),
             ]);
 
-            const canManage = isOrganizationAdmin(organizationRole);
-
             return {
                 deployed: settings.deployed,
                 image: settings.image,
                 // Global configs are where inline DNS provider tokens end up.
-                caddyfile: canManage ? settings.caddyfile : null,
+                caddyfile: settings.caddyfile,
                 hasCaddyfile: settings.caddyfile !== "",
                 // Deploys add HTTP metrics only while monitoring runs.
                 monitoring: !!cluster?.initializedAt,
@@ -65,11 +58,12 @@ export const caddyRouter = {
                         : [],
                 ),
                 activeDeploymentId: active?.id ?? null,
-                canManage,
+                // shortcut: always true since roles were removed; drop it once the cluster cards stop reading it.
+                canManage: true,
             };
         }),
 
-    deployCaddy: organizationAdminProcedure
+    deployCaddy: organizationProcedure
         .input(
             v.object({
                 clusterId: v.pipe(v.string(), v.uuid()),

@@ -913,7 +913,7 @@ describe("resource logs backend", () => {
         ]);
     });
 
-    it("rejects foreign org/project, internal and missing resources before contacting sidecar", async () => {
+    it("rejects foreign org/project and missing resources before contacting sidecar", async () => {
         await expect(
             call(
                 resourcesRouter.listLogServices,
@@ -928,14 +928,6 @@ describe("resource logs backend", () => {
                 { context },
             ),
         ).rejects.toMatchObject({ code: "NOT_FOUND" });
-        await db.update(projects).set({ isInternal: true }).where(eq(projects.id, projectId));
-        // Owners/admins may read internal projects; members may not.
-        await db.$client.query(`UPDATE member SET role = 'member' WHERE user_id = 'logger'`);
-        await expect(
-            call(resourcesRouter.listLogServices, input, { context }),
-        ).rejects.toMatchObject({ code: "NOT_FOUND" });
-        await db.$client.query(`UPDATE member SET role = 'owner' WHERE user_id = 'logger'`);
-        await db.update(projects).set({ isInternal: false }).where(eq(projects.id, projectId));
         const foreign = randomUUID();
         await db.$client.query(
             `INSERT INTO organization (id, name, slug, created_at) VALUES ($1, 'Foreign', $1, now())`,

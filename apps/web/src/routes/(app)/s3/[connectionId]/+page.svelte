@@ -22,10 +22,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Skeleton } from "$lib/components/ui/skeleton";
-    import {
-        createCanvasModeQuery,
-        resourceHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { resourceHref } from "$lib/api/hrefs";
     import { orpc, queryClient } from "$lib/api/orpc";
     import {
         s3BucketStatusVariant,
@@ -43,8 +40,6 @@
 
     const connectionId = $derived(page.params.connectionId ?? "");
 
-    const canvasModeQuery = createCanvasModeQuery();
-
     const connectionQuery = createQuery(() =>
         orpc.s3.get.queryOptions({
             input: { connectionId },
@@ -55,10 +50,6 @@
     const connection = $derived(connectionQuery.data);
 
     // Members see the connection; only admins change, test, or delete it.
-    const canManage = $derived(
-        page.data.isOrganizationAdmin === true,
-    );
-
     let name = $state("");
 
     let draft = $state<S3ConnectionDraft>({
@@ -326,13 +317,13 @@
                                 bind:value={name}
                                 autocomplete="off"
                                 maxlength={100}
-                                disabled={pending || !canManage}
+                                disabled={pending}
                             />
                         </Field>
                         <ConnectionFields
                             provider={connection.provider}
                             editing
-                            disabled={pending || !canManage}
+                            disabled={pending}
                             bind:endpoint={draft.endpoint}
                             bind:region={draft.region}
                             bind:forcePathStyle={draft.forcePathStyle}
@@ -342,41 +333,40 @@
                             bind:apiToken={draft.apiToken}
                         />
                     </div>
-                    {#if canManage}
-                        <FrameFooter
-                            class="mt-auto flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+
+                    <FrameFooter
+                        class="mt-auto flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                    >
+                        <Button
+                            variant="destructive-outline"
+                            onclick={() => {
+                                removeState.reset();
+                                deleteOpen = true;
+                            }}
+                            disabled={pending}
                         >
+                            Delete
+                        </Button>
+                        <div class="flex flex-wrap gap-2">
                             <Button
-                                variant="destructive-outline"
-                                onclick={() => {
-                                    removeState.reset();
-                                    deleteOpen = true;
-                                }}
-                                disabled={pending}
+                                variant="outline"
+                                onclick={test}
+                                loading={testState.isPending}
+                                disabled={!complete || pending}
                             >
-                                Delete
+                                Test connection
                             </Button>
-                            <div class="flex flex-wrap gap-2">
-                                <Button
-                                    variant="outline"
-                                    onclick={test}
-                                    loading={testState.isPending}
-                                    disabled={!complete || pending}
-                                >
-                                    Test connection
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    loading={saveState.isPending}
-                                    disabled={!complete ||
-                                        !name.trim() ||
-                                        pending}
-                                >
-                                    Save
-                                </Button>
-                            </div>
-                        </FrameFooter>
-                    {/if}
+                            <Button
+                                type="submit"
+                                loading={saveState.isPending}
+                                disabled={!complete ||
+                                    !name.trim() ||
+                                    pending}
+                            >
+                                Save
+                            </Button>
+                        </div>
+                    </FrameFooter>
                 </Frame>
             </form>
 
@@ -407,7 +397,6 @@
                             href={resourceHref(
                                 bucket.projectId,
                                 bucket.resourceId,
-                                canvasModeQuery.data.canvasMode,
                             )}
                             class="flex items-center gap-3 p-4 outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50"
                         >

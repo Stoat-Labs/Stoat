@@ -384,7 +384,7 @@
 {/snippet}
 
 <!-- Edge to edge like Settings, so the timeline rule runs to the bottom of the panel. -->
-<div class="@container flex min-h-full px-12 pt-8">
+<div class="@container flex min-h-full px-5 sm:px-12 pt-8">
     <div class="relative max-w-[600px] flex-1">
         <div
             class="absolute top-5 bottom-0 left-5 w-px bg-border"

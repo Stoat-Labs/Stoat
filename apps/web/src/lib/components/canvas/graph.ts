@@ -151,10 +151,11 @@ export function gridDots(origin: number, gap: number, length: number) {
     return dots;
 }
 
-/** Volume trays, then config trays, then metrics trays, each tucked under the one above. */
+/** Volume trays, then bind mount, config and metrics trays, each tucked under the one above. */
 export function cardTrays(service: CanvasService | undefined) {
     return [
         ...(service?.volumes ?? []).map((name) => ({ kind: "volume" as const, name })),
+        ...(service?.binds ?? []).map((name) => ({ kind: "bind" as const, name })),
         ...(service?.configs ?? []).map((name) => ({ kind: "config" as const, name })),
         // Two exporter resources folded into one database can share a service name.
         ...[...new Set(service?.exporters)].map((name) => ({ kind: "metrics" as const, name })),

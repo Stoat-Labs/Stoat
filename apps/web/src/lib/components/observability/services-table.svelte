@@ -1,8 +1,5 @@
 <script lang="ts">
-    import {
-        createCanvasModeQuery,
-        resourceHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { resourceHref } from "$lib/api/hrefs";
     import { Button } from "$lib/components/ui/button";
     import {
         Frame,
@@ -63,8 +60,6 @@
         expandAll?: boolean;
         hovered?: string;
     } = $props();
-
-    const canvasModeQuery = createCanvasModeQuery();
 
     const sortColumns = [
         "name",
@@ -621,9 +616,6 @@
                                                             .projectId,
                                                         row.resource
                                                             .resourceId,
-                                                        canvasModeQuery
-                                                            .data
-                                                            .canvasMode,
                                                     )}
                                                     onclick={(
                                                         event,

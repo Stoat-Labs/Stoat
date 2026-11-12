@@ -4,6 +4,12 @@
     import { Button } from "$lib/components/ui/button";
     import { Input } from "$lib/components/ui/input";
     import { Kbd } from "$lib/components/ui/kbd";
+    import {
+        Select,
+        SelectContent,
+        SelectItem,
+        SelectTrigger,
+    } from "$lib/components/ui/select";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { orpc } from "$lib/api/orpc";
     import { logsAsText } from "$lib/deployments/log-text";
@@ -12,9 +18,13 @@
         decorateLogs,
         LogStream,
     } from "$lib/resources/log-stream.svelte";
-    import { selectedLogServices } from "$lib/resources/logs";
+    import {
+        isHealthCheck,
+        rangeDurationMs,
+        selectedLogServices,
+    } from "$lib/resources/logs";
+    import Heartbeat from "phosphor-svelte/lib/HeartbeatIcon";
     import Download from "phosphor-svelte/lib/DownloadSimpleIcon";
-    import ExternalLink from "phosphor-svelte/lib/ArrowSquareOutIcon";
     import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import X from "phosphor-svelte/lib/XIcon";
     import {
@@ -26,7 +36,7 @@
         parseAsString,
         useQueryStates,
     } from "nuqs-svelte";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import CanvasLogTable from "./canvas-log-table.svelte";
 
     let {
@@ -51,6 +61,7 @@
             logQuery: parseAsString.withDefault(""),
             logWrap: parseAsBoolean.withDefault(false),
             logFollowing: parseAsBoolean.withDefault(true),
+            logHideHealth: parseAsBoolean.withDefault(false),
             // Set by the metrics tab's "Logs for this range": stored logs instead of the live tail.
             logStart: parseAsString,
             logEnd: parseAsString,
@@ -66,6 +77,33 @@
               }
             : null,
     );
+
+    const ranges = [
+        { value: "15m", label: "Last 15 minutes" },
+        { value: "1h", label: "Last hour" },
+        { value: "24h", label: "Last 24 hours" },
+    ];
+
+    function chooseRange(value: string) {
+        const end = Date.now();
+
+        view.set({
+            logStart: new Date(
+                end - rangeDurationMs(value),
+            ).toISOString(),
+            logEnd: new Date(end).toISOString(),
+        });
+    }
+
+    // Stored logs are searched on the server, so wait for a pause in typing before asking again.
+    let searchText = $state(untrack(() => view.logQuery.current));
+
+    $effect(() => {
+        const value = view.logQuery.current;
+        const timer = setTimeout(() => (searchText = value), 300);
+
+        return () => clearTimeout(timer);
+    });
 
     let ready = $state(false);
 
@@ -117,7 +155,7 @@
                 serviceIds: selectedIds,
                 start: range?.start ?? "",
                 end: range?.end ?? "",
-                query: "",
+                query: searchText,
                 cursor,
             }),
             initialPageParam: undefined,
@@ -140,11 +178,15 @@
     const query = $derived(view.logQuery.current.toLowerCase());
 
     const visibleLogs = $derived(
-        query
-            ? logs.filter((log) =>
-                  log.message.toLowerCase().includes(query),
-              )
-            : logs,
+        logs.filter(
+            (log) =>
+                (!query ||
+                    log.message.toLowerCase().includes(query)) &&
+                !(
+                    view.logHideHealth.current &&
+                    isHealthCheck(log.message)
+                ),
+        ),
     );
 
     const loading = $derived(servicesQuery.isPending);
@@ -177,8 +219,9 @@
         URL.revokeObjectURL(url);
     }
 
+    // The table puts the date on a line of its own where each day starts.
     const formatTime = (value: string) =>
-        toLocalDateInput(new Date(value)).replace("T", " ");
+        toLocalDateInput(new Date(value)).slice(11);
 </script>
 
 <svelte:window onkeydown={focusFilter} />
@@ -228,7 +271,41 @@
                 {logDateTime(range.start)} to {logDateTime(range.end)}
                 <X class="size-4" aria-hidden="true" />
             </Button>
+        {:else}
+            <Select items={ranges} bind:value={() => "", chooseRange}>
+                <SelectTrigger
+                    aria-label="Search stored logs"
+                    class="w-36"
+                >
+                    Live
+                </SelectTrigger>
+                <SelectContent>
+                    {#each ranges as option (option.value)}
+                        <SelectItem
+                            value={option.value}
+                            label={option.label}
+                        >
+                            {option.label}
+                        </SelectItem>
+                    {/each}
+                </SelectContent>
+            </Select>
         {/if}
+        <Button
+            variant="outline"
+            size="icon"
+            aria-label="Hide health checks"
+            title={view.logHideHealth.current
+                ? "Show health checks"
+                : "Hide health checks"}
+            aria-pressed={view.logHideHealth.current}
+            class={view.logHideHealth.current ? "bg-accent" : ""}
+            onclick={() =>
+                (view.logHideHealth.current =
+                    !view.logHideHealth.current)}
+        >
+            <Heartbeat class="size-4" aria-hidden="true" />
+        </Button>
         <Button
             variant="outline"
             size="icon"
@@ -238,15 +315,6 @@
             onclick={downloadLogs}
         >
             <Download class="size-4" aria-hidden="true" />
-        </Button>
-        <Button
-            variant="outline"
-            size="icon"
-            aria-label="Open logs page"
-            title="Open the logs page to search stored logs"
-            href="/projects/{projectId}/{resourceId}/logs"
-        >
-            <ExternalLink class="size-4" aria-hidden="true" />
         </Button>
     </div>
 
@@ -266,8 +334,9 @@
         <CanvasLogTable
             logs={visibleLogs}
             label="Resource logs"
-            timeChars={19}
+            timeChars={8}
             {formatTime}
+            days
             highlight={view.logQuery.current}
             source={(log) =>
                 log.container?.replace(COMPOSE_PREFIX, "") ??

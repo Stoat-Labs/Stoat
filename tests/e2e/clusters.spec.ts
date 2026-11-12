@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { MACHINE, SIDECAR_DOMAIN } from "./fake-sidecar";
-import { ids, memberStorageState, receivedComposes, resetSidecar, rpc, sql } from "./fixtures";
+import { ids, receivedComposes, resetSidecar, rpc, sql } from "./fixtures";
 
 const dialog = (page: Page) => page.getByRole("dialog").or(page.getByRole("alertdialog"));
 
@@ -9,7 +9,9 @@ const row = (page: Page, name: string) => page.getByRole("row").filter({ hasText
 const breadcrumb = (page: Page) => page.getByRole("navigation", { name: "breadcrumb" });
 
 const domainCard = (page: Page) =>
-    page.locator("[data-slot=card]").filter({ hasText: "Cluster domain" });
+    page
+        .locator("[data-slot=frame]")
+        .filter({ has: page.locator("[data-slot=frame-panel-title]", { hasText: /^Domain$/u }) });
 
 /** Opens the delete confirmation from a cluster row's actions menu. */
 async function askDelete(page: Page, name: string) {
@@ -269,7 +271,7 @@ test("an admin replaces the cluster's domain with their own, then removes it", a
     await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
     await expect(domainCard(page)).toContainText("Uncloud DNS");
 
-    await domainCard(page).getByRole("button", { name: "Change domain" }).click();
+    await domainCard(page).getByRole("button", { name: "Change" }).click();
     const edit = page.getByRole("dialog", { name: "Cluster domain" });
     await edit.getByLabel("Domain").fill("Apps.Example.com");
     await edit.getByRole("button", { name: "Save domain" }).click();
@@ -282,7 +284,7 @@ test("an admin replaces the cluster's domain with their own, then removes it", a
     await expect(domainCard(page)).toContainText("Your DNS");
     await expect(domainCard(page)).toContainText("*.apps.example.com");
 
-    await domainCard(page).getByRole("button", { name: "Remove" }).click();
+    await domainCard(page).getByRole("button", { name: "Remove domain" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Remove domain" }).click();
     await expect(dialog(page)).toHaveCount(0);
     await expect(domainCard(page)).toContainText("Not set");
@@ -368,7 +370,7 @@ test.describe("monitoring", () => {
         await expect(page.getByText(/^Initialized /u)).toBeVisible();
         await expect(page.getByText("14 days")).toBeVisible();
         await expect(
-            page.getByRole("link", { name: `Open ${cluster.name}-internal` }),
+            page.getByRole("link", { name: `${cluster.name}-internal`, exact: true }),
         ).toBeVisible();
 
         // GreptimeDB first, on its own; then the whole stack with the collectors.
@@ -394,63 +396,5 @@ test.describe("monitoring", () => {
         await expect(
             dialog(page).getByRole("button", { name: "Initialize monitoring" }),
         ).toHaveCount(0);
-    });
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("clusters are visible but cannot be created or deleted", async ({ page }) => {
-        await page.goto("/clusters");
-        await expect(page.getByRole("link", { name: "Main" })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Create cluster" })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Actions for Main" })).toHaveCount(0);
-
-        for (const [path, input] of [
-            ["cluster/createCluster", { name: "x", sidecarUrl: "http://x", sidecarToken: "x" }],
-            ["cluster/deleteCluster", { clusterId: ids.lonelyCluster }],
-        ] as const) {
-            const response = await page.request.post(`/rpc/api/${path}`, {
-                data: input,
-                headers: { origin: process.env.E2E_BASE_URL! },
-            });
-
-            expect(response.status()).toBe(403);
-        }
-    });
-
-    test("monitoring cannot be initialized", async ({ page }) => {
-        await page.goto(`/clusters/${ids.lonelyCluster}`);
-        await expect(breadcrumb(page)).toContainText("Lonely");
-        await expect(page.getByRole("button", { name: "Initialize monitoring" })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Reinitialize" })).toHaveCount(0);
-    });
-
-    test("machines cannot be added or removed", async ({ page }) => {
-        await addWorker();
-        await page.goto(`/clusters/${ids.lonelyCluster}`);
-        await expect(page.getByText(WORKER.name).first()).toBeVisible();
-        await expect(page.getByRole("button", { name: "Add machine" })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: `Actions for ${WORKER.name}` })).toHaveCount(
-            0,
-        );
-
-        for (const [path, input] of [
-            ["prepareMachine", { clusterId: ids.lonelyCluster, host: "worker.invalid" }],
-            ["removeMachine", { clusterId: ids.lonelyCluster, machineId: WORKER.id }],
-        ] as const) {
-            const response = await page.request.post(`/rpc/api/cluster/${path}`, {
-                data: input,
-                headers: { origin: process.env.E2E_BASE_URL! },
-            });
-
-            expect(response.status()).toBe(403);
-        }
-    });
-
-    test("the cluster domain is visible but cannot be changed", async ({ page }) => {
-        await page.goto(`/clusters/${ids.lonelyCluster}`);
-        await expect(domainCard(page)).toContainText(SIDECAR_DOMAIN);
-        await expect(domainCard(page).getByRole("button")).toHaveCount(0);
     });
 });

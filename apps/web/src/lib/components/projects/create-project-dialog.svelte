@@ -30,10 +30,7 @@
     import { Textarea } from "$lib/components/ui/textarea";
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
-    import {
-        createCanvasModeQuery,
-        projectHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { projectHref } from "$lib/api/hrefs";
     import { orpc, queryClient } from "$lib/api/orpc";
     import {
         createMutation,
@@ -54,8 +51,6 @@
     );
 
     let clusterId = $state("");
-
-    const canvasModeQuery = createCanvasModeQuery();
 
     const connectClusterHref = $derived(
         `/clusters?dialog=create-cluster&next=${encodeURIComponent(page.url.pathname + page.url.search)}`,
@@ -139,12 +134,7 @@
                 await queryClient.invalidateQueries({
                     queryKey: orpc.projects.key(),
                 });
-                await goto(
-                    projectHref(
-                        project.id,
-                        canvasModeQuery.data.canvasMode,
-                    ),
-                );
+                await goto(projectHref(project.id));
             },
         }),
     );
@@ -265,24 +255,18 @@
                                 />
                             </SelectTrigger>
                         </Select>
-                        {#if page.data.isOrganizationAdmin}
-                            <FieldDescription>
-                                Projects run on a cluster. Your draft
-                                is kept while you connect one.
-                            </FieldDescription>
-                            <Button
-                                size="sm"
-                                class="mt-2 w-fit"
-                                href={connectClusterHref}
-                            >
-                                Connect a cluster
-                            </Button>
-                        {:else}
-                            <FieldDescription>
-                                Projects run on a cluster. Ask an
-                                organization admin to connect one.
-                            </FieldDescription>
-                        {/if}
+
+                        <FieldDescription>
+                            Projects run on a cluster. Your draft is
+                            kept while you connect one.
+                        </FieldDescription>
+                        <Button
+                            size="sm"
+                            class="mt-2 w-fit"
+                            href={connectClusterHref}
+                        >
+                            Connect a cluster
+                        </Button>
                     {:else}
                         <Select
                             bind:value={clusterId}

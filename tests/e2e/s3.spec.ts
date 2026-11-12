@@ -9,8 +9,8 @@ import {
 import { expect, test, type Page } from "@playwright/test";
 import {
     ids,
-    memberStorageState,
     openCreatedResource,
+    resourcePath,
     rpc,
     rustfsCaFile,
     rustfsRoot,
@@ -98,7 +98,7 @@ async function readyBucket(page: Page) {
 
     await expect.poll(() => bucketStatus(id)).toBe("ready");
 
-    return { id, bucket, connectionId, path: `/projects/${ids.shop}/${id}` };
+    return { id, bucket, connectionId, path: resourcePath(ids.shop, id) };
 }
 
 async function bucketStatus(resourceId: string) {
@@ -110,18 +110,35 @@ async function bucketStatus(resourceId: string) {
     return row?.status;
 }
 
-/** The bucket keys its Variables tab reveals. */
+/** The bucket keys its Variables tab reveals, one Show button per key. */
 async function shownCredentials(page: Page, path: string) {
-    await page.goto(`${path}/variables`);
-    await page.getByRole("button", { name: "Show values" }).click();
-    await expect(page.getByRole("button", { name: "Hide values" })).toBeVisible();
-    const lines = await page.getByText(/^S3_[A-Z_]+=/u).allTextContents();
+    await page.goto(`${path}&tab=variables`);
 
-    const values = Object.fromEntries(
-        lines.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
-    );
+    async function reveal(name: string) {
+        await page.getByRole("button", { name: `Show ${name}` }).click();
+        await expect(page.getByRole("button", { name: `Hide ${name}` })).toBeVisible();
 
-    return { accessKey: values.S3_ACCESS_KEY_ID!, secretKey: values.S3_SECRET_ACCESS_KEY! };
+        return page
+            .getByRole("listitem")
+            .filter({ hasText: name })
+            .locator("span[title]")
+            .getAttribute("title");
+    }
+
+    return {
+        accessKey: (await reveal("S3_ACCESS_KEY_ID"))!,
+        secretKey: (await reveal("S3_SECRET_ACCESS_KEY"))!,
+    };
+}
+
+// Delete stages the bucket's deletion on the canvas; deploying the staged changes applies it.
+async function deleteBucket(page: Page, path: string) {
+    await page.goto(`${path}&tab=settings`);
+    await page.getByRole("button", { name: "Delete bucket" }).click();
+    await expect(page.getByText("Will be deleted")).toBeVisible();
+    await page.locator("header").getByRole("button", { name: "Deploy", exact: true }).click();
+    await expect(confirmDialog(page)).toContainText("Buckets have their keys revoked");
+    await confirmDialog(page).getByRole("button", { name: "Deploy" }).click();
 }
 
 test.describe("connections", () => {
@@ -185,10 +202,10 @@ test.describe("connections", () => {
         await confirmDialog(page).getByRole("button", { name: "Cancel" }).click();
 
         // Without its bucket it goes.
-        await page.goto(`${path}/settings`);
-        await page.getByRole("button", { name: "Delete bucket" }).click();
-        await confirmDialog(page).getByRole("button", { name: "Delete bucket" }).click();
-        await expect.poll(() => bucketStatus(path.split("/").at(-1)!)).toBeUndefined();
+        await deleteBucket(page, path);
+        await expect
+            .poll(() => bucketStatus(new URL(path, "http://x").searchParams.get("node")!))
+            .toBeUndefined();
 
         await page.goto(`/s3/${connectionId}`);
         await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -245,14 +262,14 @@ test.describe("buckets", () => {
 
     test("a storage limit is set in a dialog", async ({ page }) => {
         const { id, path } = await readyBucket(page);
-        await page.goto(`${path}/settings`);
+        await page.goto(`${path}&tab=settings`);
 
         await page.getByRole("button", { name: "Set limit" }).click();
         await dialog(page).getByLabel("Limit (GiB)").fill("2");
         await dialog(page).getByRole("button", { name: /save/iu }).click();
         await expect(dialog(page)).toHaveCount(0);
 
-        await expect(page.getByRole("heading", { name: "2 GiB" })).toBeVisible();
+        await expect(page.getByText("2 GiB", { exact: true })).toBeVisible();
         expect(
             await sql("SELECT quota::text AS quota FROM s3_buckets WHERE resource_id = $1", [id]),
         ).toEqual([{ quota: String(2 * 1024 ** 3) }]);
@@ -262,38 +279,11 @@ test.describe("buckets", () => {
         const { id, bucket, path } = await readyBucket(page);
         const keys = await shownCredentials(page, path);
 
-        await page.goto(`${path}/settings`);
-        await page.getByRole("button", { name: "Delete bucket" }).click();
-        await expect(confirmDialog(page)).toContainText("revokes this bucket's keys");
-        await confirmDialog(page).getByRole("button", { name: "Delete bucket" }).click();
+        await deleteBucket(page, path);
 
         await expect.poll(() => bucketStatus(id)).toBeUndefined();
         expect(await sql("SELECT id FROM resources WHERE id = $1", [id])).toEqual([]);
         expect(await bucketExists(bucket)).toBe(false);
         await expect(s3(keys).send(new ListObjectsV2Command({ Bucket: bucket }))).rejects.toThrow();
-    });
-});
-
-test.describe("as a member", () => {
-    test.use({ storageState: memberStorageState });
-
-    test("connections and buckets are read-only", async ({ page }) => {
-        await page.goto("/s3");
-        await expect(page.getByRole("link", { name: /^RustFS RustFS/u })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Add connection" })).toHaveCount(0);
-
-        const [assets] = await sql<{ id: string }>(
-            "SELECT id FROM resources WHERE project_id = $1 AND name = 'assets'",
-            [ids.shop],
-        );
-
-        await page.goto(`/projects/${ids.shop}/${assets!.id}/variables`);
-        await expect(page.getByRole("button", { name: "Show values" })).toHaveCount(0);
-        await page.goto(`/projects/${ids.shop}/${assets!.id}/settings`);
-        await expect(page.getByRole("button", { name: /Set limit|Edit limit/u })).toHaveCount(0);
-        await expect(page.getByRole("button", { name: "Delete bucket" })).toHaveCount(0);
-
-        await page.goto(`/projects/${ids.shop}/create`);
-        await expect(page.getByRole("link", { name: /S3 bucket/u })).toHaveCount(0);
     });
 });

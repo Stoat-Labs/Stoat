@@ -60,12 +60,15 @@
 <svelte:head><title>S3 connections / Stoat</title></svelte:head>
 
 {#snippet connectionActions()}
-    {#if page.data.isOrganizationAdmin}
-        <Button size="sm" disabled={!ready} onclick={openCreate}>
-            <Plus aria-hidden="true" />
-            Add connection
-        </Button>
-    {/if}
+    <Button
+        size="sm"
+        disabled={!ready}
+        onclick={openCreate}
+        aria-label="Add connection"
+    >
+        <Plus aria-hidden="true" />
+        <span class="max-sm:hidden">Add connection</span>
+    </Button>
 {/snippet}
 
 <div class="flex w-full flex-col gap-6 pt-6">
@@ -119,17 +122,16 @@
                     projects.
                 </EmptyDescription>
             </EmptyHeader>
-            {#if page.data.isOrganizationAdmin}
-                <EmptyContent>
-                    <Button
-                        size="sm"
-                        disabled={!ready}
-                        onclick={openCreate}
-                    >
-                        Add connection
-                    </Button>
-                </EmptyContent>
-            {/if}
+
+            <EmptyContent>
+                <Button
+                    size="sm"
+                    disabled={!ready}
+                    onclick={openCreate}
+                >
+                    Add connection
+                </Button>
+            </EmptyContent>
         </Empty>
     {:else}
         <Frame role="region" aria-labelledby="connections-heading">

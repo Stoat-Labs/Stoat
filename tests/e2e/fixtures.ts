@@ -57,16 +57,15 @@ export const postgresEnv = [
     "DATABASE_URL=postgres://${POSTGRES_USER}@${DB_INTERNAL_HOST}:5432/shop",
 ].join("\n");
 
-export const variablesPath = (projectId: string, resourceId: string) =>
-    `/projects/${projectId}/${resourceId}/variables`;
+/** A resource's card on its project canvas, with its panel open on `tab`. */
+export const resourcePath = (projectId: string, resourceId: string, tab?: string) =>
+    `/projects/${projectId}/canvas?node=${resourceId}${tab ? `&tab=${tab}` : ""}`;
 
-// Canvas mode is the default, so a create page returns to the canvas with the new card selected.
+// A create page returns to the canvas with the new card selected and its panel open.
 export async function openCreatedResource(page: Page, projectId: string) {
     await page.waitForURL(new RegExp(`/projects/${projectId}/canvas\\?node=[\\w-]+$`, "u"));
-    const resourceId = new URL(page.url()).searchParams.get("node")!;
-    await page.goto(`/projects/${projectId}/${resourceId}`);
 
-    return resourceId;
+    return new URL(page.url()).searchParams.get("node")!;
 }
 
 export const ref = (id: string, key: string) => `{{ ${id}.${key} }}`;

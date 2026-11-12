@@ -6,12 +6,7 @@ import { and, asc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
 import { queueClusterHealthCheck } from "@stoat/workflows/runtime";
-import {
-    isOrganizationAdmin,
-    organizationAdminProcedure,
-    organizationProcedure,
-    uncloudMiddleware,
-} from "../..";
+import { organizationProcedure, uncloudMiddleware } from "../..";
 import { caddyRouter } from "./caddy";
 import { deploymentsRouter } from "./deployments";
 import { domainRouter } from "./domain";
@@ -67,7 +62,7 @@ export const clusterRouter = {
                 }),
             ),
         )
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const limit = input?.limit ?? 25;
             const offset = input?.offset ?? 0;
             const q = input?.q;
@@ -152,14 +147,12 @@ export const clusterRouter = {
             return {
                 items: itemsWithDiagnostics,
                 total: row?.count ?? 0,
-                // Only owners and admins can create or delete clusters.
-                canManage: isOrganizationAdmin(organizationRole),
             };
         }),
 
     getCluster: organizationProcedure
         .input(clusterInput)
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db
                 .select({
                     id: clusters.id,
@@ -207,32 +200,24 @@ export const clusterRouter = {
                 ? null
                 : await getClusterDiagnostics(sidecarUrl, sidecarToken, sidecarCertificate);
 
-            const canInitialize = isOrganizationAdmin(organizationRole);
-
-            const [internalProject] = canInitialize
-                ? await db
-                      .select({ id: projects.id })
-                      .from(projects)
-                      .where(
-                          and(
-                              eq(projects.clusterId, cluster.id),
-                              sql`${projects.isInternal} is true`,
-                          ),
-                      )
-                      .limit(1)
-                : [];
+            const [internalProject] = await db
+                .select({ id: projects.id })
+                .from(projects)
+                .where(and(eq(projects.clusterId, cluster.id), sql`${projects.isInternal} is true`))
+                .limit(1);
 
             return {
                 ...item,
                 settingUp: provisioning !== null,
                 retentionDays: initializationConfiguration?.retentionDays ?? null,
                 diagnostics,
-                canInitialize,
+                // shortcut: always true since roles were removed; drop it once the cluster page stops reading it.
+                canInitialize: true,
                 internalProjectId: internalProject?.id ?? null,
             };
         }),
 
-    createCluster: organizationAdminProcedure
+    createCluster: organizationProcedure
         .input(
             v.object({
                 name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
@@ -275,7 +260,7 @@ export const clusterRouter = {
             return { ...cluster, projectCount: 0 };
         }),
 
-    deleteCluster: organizationAdminProcedure
+    deleteCluster: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) =>
             // The row lock makes starting setup or initialization wait until this delete is done.
@@ -346,7 +331,7 @@ export const clusterRouter = {
             }),
         ),
     // Queues the HealthCheck job for this cluster only; it otherwise runs hourly for every cluster.
-    runHealthCheck: organizationAdminProcedure
+    runHealthCheck: organizationProcedure
         .input(clusterInput)
         .handler(async ({ context: { db, organizationId }, input }) => {
             const [cluster] = await db

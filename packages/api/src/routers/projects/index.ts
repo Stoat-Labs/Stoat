@@ -13,41 +13,86 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { isOrganizationAdmin, organizationAdminProcedure, organizationProcedure } from "../..";
+import { referencedResourceIds } from "@stoat/workflows/references";
+import { organizationProcedure } from "../..";
+import { resourceEnv } from "../../compose";
 import { composeServices, templateMatcher } from "../../project-graph";
 import { templates } from "../../templates";
+import { databaseExporterEngine, databaseServerEngine } from "../../observability";
 import { removeResources } from "../../resources/removal";
 
-/** The first service's image, or null for an empty or unreadable spec. */
 /** Served by apps/web/src/routes/resource-icons; the version changes with the icon. */
 function resourceIconUrl(resourceId: string, version: string) {
     return `/resource-icons/${resourceId}?v=${version}`;
 }
 
 // Overviews refetch every minute per open tab and specs rarely change, so parse each one once.
-const firstImages = new Map<string, string | null>();
+const serviceImageCache = new Map<string, (string | undefined)[]>();
 
-function firstImage(compose: string | null) {
-    if (!compose?.trim()) return null;
+/** Each service's image, or none for an empty or unreadable spec. */
+function serviceImages(compose: string | null) {
+    if (!compose?.trim()) return [];
 
-    const cached = firstImages.get(compose);
+    const cached = serviceImageCache.get(compose);
 
-    if (cached !== undefined) return cached;
+    if (cached) return cached;
 
-    let image: string | null;
+    let images: (string | undefined)[];
 
     try {
-        image = composeServices(compose)[0]?.image ?? null;
+        images = composeServices(compose).map((service) => service.image);
     } catch {
-        image = null;
+        images = [];
     }
 
     // Bounded: drop the oldest entry once full, which keeps the hot specs in practice.
-    if (firstImages.size >= 1000) firstImages.delete(firstImages.keys().next().value!);
+    if (serviceImageCache.size >= 1000)
+        serviceImageCache.delete(serviceImageCache.keys().next().value!);
 
-    firstImages.set(compose, image);
+    serviceImageCache.set(compose, images);
 
-    return image;
+    return images;
+}
+
+type SummaryResource = {
+    id: string;
+    spec: string | null;
+    draftSpec: string | null;
+    settings: unknown;
+};
+
+/**
+ * Whether the canvas folds this resource into a database card (see `foldExporters`): every
+ * service exports one engine's metrics, and it references a server of that engine in the project.
+ */
+function foldsIntoDatabase(item: SummaryResource, siblings: SummaryResource[]) {
+    const engines = new Set(
+        serviceImages(item.draftSpec ?? item.spec).map(
+            (image) => image && databaseExporterEngine(image),
+        ),
+    );
+
+    const [engine] = engines;
+
+    if (engines.size !== 1 || !engine) return false;
+
+    let references: string[];
+
+    try {
+        references = referencedResourceIds(resourceEnv(item));
+    } catch {
+        // An unparseable `.env` draws no edge on the canvas either.
+        return false;
+    }
+
+    return siblings.some(
+        (other) =>
+            other.id !== item.id &&
+            references.includes(other.id) &&
+            serviceImages(other.draftSpec ?? other.spec).some(
+                (image) => image && databaseServerEngine(image) === engine,
+            ),
+    );
 }
 
 /** A bucket's reconcile state, as the deployment state the project card counts. */
@@ -92,7 +137,7 @@ export const projectsRouter = {
 
     getProject: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
-        .handler(async ({ context: { db, organizationId, organizationRole }, input }) => {
+        .handler(async ({ context: { db, organizationId }, input }) => {
             const [row] = await db
                 .select({
                     id: projects.id,
@@ -115,8 +160,7 @@ export const projectsRouter = {
                 )
                 .limit(1);
 
-            if (!row || (row.isInternal && !isOrganizationAdmin(organizationRole)))
-                throw new ORPCError("NOT_FOUND", { message: "Project not found." });
+            if (!row) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
 
             // Read with the row itself: a separate cache would serve another replica's stale
             // layout for its whole TTL and saves nothing over this primary-key lookup.
@@ -244,6 +288,8 @@ export const projectsRouter = {
                     type: resources.type,
                     spec: resources.spec,
                     draftSpec: resources.draftSpec,
+                    // Only read to match the canvas's exporter folding; never sent to the client.
+                    settings: resources.settings,
                     updatedAt: resources.updatedAt,
                     status: latest.status,
                     deployedAt: latest.createdAt,
@@ -285,9 +331,12 @@ export const projectsRouter = {
                     ...project,
                     favorite: favorites.has(project.id),
                     lastActivityAt: new Date(activity),
-                    resources: items.map((item) => {
+                    resources: items.flatMap((item) => {
                         // Specs stay server-side; the card only needs what its tile shows.
-                        const image = firstImage(item.draftSpec ?? item.spec);
+                        const image = serviceImages(item.draftSpec ?? item.spec)[0] ?? null;
+
+                        // The canvas shows it as a tray on its database's card, so it gets no tile.
+                        if (foldsIntoDatabase(item, items)) return [];
 
                         // SAFETY: `latest.status` is `deployments.status`, a DeploymentStatus
                         // column; the subquery alias only widens its type to string.
@@ -445,7 +494,7 @@ export const projectsRouter = {
 
     // Removes every resource's services from the cluster, then the project. Buckets go first,
     // through their own flow, so their provider keys are revoked.
-    deleteProject: organizationAdminProcedure
+    deleteProject: organizationProcedure
         .input(v.object({ projectId: v.pipe(v.string(), v.uuid()) }))
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {

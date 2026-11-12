@@ -18,12 +18,14 @@
         type ColumnSizingState,
     } from "@tanstack/table-core";
     import { tick, untrack, type Snippet } from "svelte";
+    import { logDay } from "$lib/format";
 
     let {
         logs,
         label = "Log output",
         timeChars,
         formatTime,
+        days = false,
         highlight = "",
         source,
         empty,
@@ -37,6 +39,8 @@
         /** Width of the time column in characters, e.g. 19. */
         timeChars: number;
         formatTime: (value: string) => string;
+        /** Starts each day with a line showing its date, for times shown without one. */
+        days?: boolean;
         highlight?: string;
         /** Adds a source column, e.g. the service a line came from. */
         source?: (log: T) => string;
@@ -272,6 +276,9 @@
             >
                 {#each $virtualizer.getVirtualItems() as row (row.key)}
                     {@const log = logs[row.index]}
+                    {@const day =
+                        days && log ? logDay(log.timestamp) : ""}
+                    {@const previous = logs[row.index - 1]}
                     {#if log}
                         <div
                             class="absolute inset-x-0 top-0"
@@ -279,6 +286,11 @@
                             data-index={row.index}
                             use:measure
                         >
+                            {#if day && (!previous || logDay(previous.timestamp) !== day)}<p
+                                    class="border-y bg-muted/40 py-1 pl-6 font-mono text-xs text-muted-foreground"
+                                >
+                                    {day}
+                                </p>{/if}
                             <div
                                 class="table-columns relative py-1 pr-3 pl-6 font-mono text-xs leading-[18px] hover:bg-muted/50"
                                 class:nowrap={!wrap}

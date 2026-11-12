@@ -43,10 +43,7 @@
 </script>
 
 <script lang="ts">
-    import {
-        createCanvasModeQuery,
-        projectHref,
-    } from "$lib/api/canvas-mode.svelte";
+    import { projectHref } from "$lib/api/hrefs";
     import { client, orpc, queryClient } from "$lib/api/orpc";
     import ProjectCard from "$lib/components/projects/project-card.svelte";
     import ProjectRow from "$lib/components/projects/project-row.svelte";
@@ -66,8 +63,6 @@
     const View = $derived(
         layout === "list" ? ProjectRow : ProjectCard,
     );
-
-    const canvasModeQuery = createCanvasModeQuery();
 
     // One cached list for every card; the canvas palette reads the same one.
     const templatesQuery = createQuery(() =>
@@ -112,7 +107,7 @@
     name={project.name}
     {resources}
     clusterName={showCluster ? project.clusterName : undefined}
-    href={projectHref(project.id, canvasModeQuery.data.canvasMode)}
+    href={projectHref(project.id)}
     favorite={starred ?? project.favorite}
     onfavorite={(favorite: boolean) => void setFavorite(favorite)}
 />

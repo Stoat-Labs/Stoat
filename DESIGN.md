@@ -1,15 +1,14 @@
 # Stoat design system
 
-Stoat's **resource overview and Variables pages are the primary design reference** for new application work. Match their neutral surfaces, Outfit typoy, compact controls, framed work areas, restrained status colors, and inset application shell. The resource screenshot illustrates this language: a narrow runtime list beside a large editor, both inside muted frames with recessed content panels. Reuse the Svelte components in `apps/web/src/lib/components/ui`; do not approximate them with unrelated card styles.
+The **canvas resource panel and the cluster detail page are the primary design reference** for new application work; the resource overview and Variables pages that first defined this language were removed with the list view. Match their neutral surfaces, Outfit typoy, compact controls, framed work areas, restrained status colors, and inset application shell. The resource screenshot illustrates this language: a narrow runtime list beside a large editor, both inside muted frames with recessed content panels. Reuse the Svelte components in `apps/web/src/lib/components/ui`; do not approximate them with unrelated card styles.
 
 ## Reference and source of truth
 
 Local source of truth, in priority order:
 
-- [Resource overview](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+page.svelte>): heading, two-column workspace, container list, frame headers, compose editor, and action placement.
-- [Variables page](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/variables/+page.svelte>): compact single-editor workspace, inline status, visibility toggle, and save action.
-- [Resource layout](<apps/web/src/routes/(app)/projects/(resource)/[projectId]/[resourceId]/+layout.svelte>): full-width, full-height resource workspace.
-- [Application shell](apps/web/src/lib/components/sidebar/app-shell.svelte) and [resource sidebar](apps/web/src/lib/components/sidebar/resource-sidebar.svelte): inset, breadcrumbs, and contextual navigation.
+- [Canvas resource panel](apps/web/src/lib/components/canvas/panel/canvas-panel.svelte): heading, tabs, settings sections, editors, and action placement.
+- [Cluster detail](<apps/web/src/routes/(app)/clusters/[clusterId]/+page.svelte>): framed work areas, frame headers, lists, and status.
+- [Application shell](apps/web/src/lib/components/sidebar/app-shell.svelte): inset, breadcrumbs, and contextual navigation.
 - [Frame primitives](apps/web/src/lib/components/ui/frame) and [code editor](apps/web/src/lib/components/code-editor.svelte): exact surface construction and editor treatment.
 
 UptimeKit's application dashboard in `~/coding/uptimekit` is the system's historical foundation, not an override for these local page patterns. Its public status pages are separately themed. Background references:

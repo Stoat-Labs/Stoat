@@ -1,5 +1,6 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import { projectHref } from "$lib/api/hrefs";
     import { orpc } from "$lib/api/orpc";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
     import { Button } from "$lib/components/ui/button";
@@ -27,14 +28,11 @@
     const {
         children,
         sidebar,
-        persistent,
         fullWidth = false,
         fullHeight = false,
     }: {
         children: Snippet;
         sidebar: Snippet;
-        /** Rendered after the page but outside its pathname key, so it survives tab navigation. */
-        persistent?: Snippet;
         fullWidth?: boolean;
         fullHeight?: boolean;
     } = $props();
@@ -91,36 +89,6 @@
     const editProjectOpen = useQueryState(
         "editProject",
         parseAsBoolean.withDefault(false),
-    );
-
-    const resourceId = $derived(page.params.resourceId);
-
-    const isResourceDetail = $derived(
-        page.url.pathname.startsWith("/projects/") &&
-            Boolean(projectId) &&
-            Boolean(resourceId),
-    );
-
-    const resourcesQuery = createQuery(() =>
-        orpc.resources.listResources.queryOptions({
-            input: { projectId: projectId ?? "" },
-            enabled:
-                (isResourceDetail || isProjectScope) &&
-                Boolean(projectId),
-        }),
-    );
-
-    const resources = $derived(resourcesQuery.data ?? []);
-
-    const resource = $derived(
-        resources.find((r) => r.id === resourceId),
-    );
-
-    // /projects/:projectId/:resourceId/<tab>, e.g. "deployments" or "settings".
-    const resourceTab = $derived(
-        isResourceDetail
-            ? page.url.pathname.split("/")[4]
-            : undefined,
     );
 
     const isCreate = $derived(
@@ -204,10 +172,9 @@
     const s3ConnectionName = $derived(s3ConnectionQuery.data?.name);
 
     const trail = $derived.by((): Crumb[] => {
-        const base = `/projects/${projectId}`;
         const shortId = deploymentId?.slice(0, 8) ?? "";
 
-        if (deploymentId && !isResourceDetail)
+        if (deploymentId)
             return [
                 { label: "Deployments", href: "/deployments" },
                 { label: shortId, mono: true },
@@ -225,39 +192,12 @@
                 { label: s3ConnectionName ?? "…" },
             ];
 
-        if (isResourceDetail)
-            return [
-                { label: "Projects", href: "/projects" },
-                { label: projectName ?? "…", href: base },
-                {
-                    label: resource?.name ?? "…",
-                    href: `${base}/${resourceId}`,
-                    resource: {
-                        icon: resource?.icon,
-                        type: resource?.type,
-                    },
-                },
-                ...(resourceTab
-                    ? [
-                          {
-                              label:
-                                  resourceTab[0].toUpperCase() +
-                                  resourceTab.slice(1),
-                              href: `${base}/${resourceId}/${resourceTab}`,
-                          },
-                      ]
-                    : []),
-                ...(deploymentId
-                    ? [{ label: shortId, mono: true }]
-                    : []),
-            ];
-
         if (isProjectDetail)
             return [
                 { label: "Projects", href: "/projects" },
                 {
                     label: projectName ?? "…",
-                    href: base,
+                    href: projectHref(projectId ?? ""),
                     title: project?.description ?? undefined,
                 },
                 ...(projectTab ? [projectTab] : []),
@@ -326,9 +266,15 @@
                 isTheHeaderPinned ? "rounded-t-none" : "rounded-t-xl",
             ]}
         >
-            <div class="flex min-w-0 max-w-full items-center gap-2">
+            <!-- The trail takes the spare room and truncates first; actions only drop to their own row when even a short trail would not fit. -->
+            <div
+                class="flex min-w-20 flex-[999_1_0%] items-center gap-2"
+            >
                 <SidebarTrigger disabled={!ready} />
-                <Separator orientation="vertical" class="mx-2 h-4" />
+                <Separator
+                    orientation="vertical"
+                    class="mx-2 h-4 max-sm:hidden"
+                />
                 <BreadcrumbTrail {trail}>
                     {#snippet trailing()}
                         {#if page.route.id === "/(app)/projects/[projectId]" && project && !project.isInternal}
@@ -350,7 +296,10 @@
                 </BreadcrumbTrail>
             </div>
             {#if headerActions.content}
-                <div class="ml-auto min-w-0 max-w-full shrink-0">
+                <!-- Grows to the full width once it wraps onto its own row. -->
+                <div
+                    class="flex max-w-full shrink-0 grow flex-wrap items-center justify-end gap-2"
+                >
                     {@render headerActions.content()}
                 </div>
             {/if}
@@ -367,7 +316,6 @@
             {#key page.url.pathname}
                 {@render children?.()}
             {/key}
-            {@render persistent?.()}
         </div>
     </SidebarInset>
 </SidebarProvider>
