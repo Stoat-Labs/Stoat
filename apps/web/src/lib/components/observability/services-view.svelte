@@ -21,6 +21,7 @@
         FramePanel,
         FrameTitle,
     } from "$lib/components/ui/frame";
+    import { Input } from "$lib/components/ui/input";
     import { Skeleton } from "$lib/components/ui/skeleton";
 
     let {
@@ -45,8 +46,16 @@
 <div class="grid shrink-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
     {#each charts as chart (chart.title)}
         <Frame class="min-w-0">
-            <FrameHeader>
+            <FrameHeader
+                class="flex-row items-center justify-between gap-3"
+            >
                 <FrameTitle>{chart.title}</FrameTitle>
+                <Input
+                    aria-label="Filter services"
+                    placeholder="Filter…"
+                    bind:value={search}
+                    class="max-w-40"
+                />
             </FrameHeader>
             <FramePanel class="flex min-w-0 flex-1 flex-col p-4">
                 {#if loading}
@@ -62,6 +71,7 @@
                         {end}
                         unit={chart.unit}
                         bind:hoveredMachine={hoveredService}
+                        pickLines={false}
                     />
                 {/if}
             </FramePanel>

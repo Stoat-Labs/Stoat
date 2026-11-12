@@ -316,6 +316,19 @@
         "serviceNetworkOut",
     ] as const;
 
+    // The charts show the top services among those matching the shared filter, matched per field like the table.
+    const chartServices = $derived.by(() => {
+        const query = filters.q.current.toLowerCase();
+
+        return query
+            ? services.filter((row) =>
+                  [row.name, row.clusterName, ...row.machines].some(
+                      (field) => field.toLowerCase().includes(query),
+                  ),
+              )
+            : services;
+    });
+
     // The table's queries only carry the latest sample (and a coarse CPU sparkline), so fetch full history for the charted services only.
     const chartedIds = $derived(
         monitoredSelection.map((cluster) =>
@@ -323,7 +336,7 @@
                 ...new Set(
                     [rankCpu, rankMemory, rankTraffic].flatMap(
                         (rank) =>
-                            topServices(services, rank).flatMap(
+                            topServices(chartServices, rank).flatMap(
                                 (row) =>
                                     row.clusterId === cluster.id
                                         ? [row.id]
@@ -410,7 +423,7 @@
             unit: "percent",
             series: serviceSeries(
                 chartData,
-                services,
+                chartServices,
                 ["serviceCpu"],
                 rankCpu,
             ),
@@ -420,7 +433,7 @@
             unit: "bytes",
             series: serviceSeries(
                 chartData,
-                services,
+                chartServices,
                 ["serviceMemory"],
                 rankMemory,
             ),
@@ -430,7 +443,7 @@
             unit: "rate",
             series: serviceSeries(
                 chartData,
-                services,
+                chartServices,
                 ["serviceNetworkIn", "serviceNetworkOut"],
                 rankTraffic,
             ),
@@ -443,6 +456,7 @@
         JSON.stringify([
             selected,
             filters.machine.current,
+            filters.q.current,
             range.value,
         ]),
     );

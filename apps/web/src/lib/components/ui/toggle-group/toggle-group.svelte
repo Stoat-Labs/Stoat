@@ -34,6 +34,7 @@
     let {
         ref = $bindable(null),
         value = $bindable(),
+        multiple = false,
         class: className,
         size = "default",
         orientation = "horizontal",
@@ -57,7 +58,14 @@
 
 <ToggleGroupPrimitive
     bind:ref
-    bind:value
+    bind:value={
+        () => value,
+        // A single-choice group always keeps one item pressed.
+        (next) => {
+            if (multiple || next?.length) value = next;
+        }
+    }
+    {multiple}
     {orientation}
     data-slot="toggle-group"
     data-variant={variant}
