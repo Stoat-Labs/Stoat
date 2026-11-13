@@ -9,8 +9,8 @@ import { Redis } from "ioredis";
  */
 export function createSessionStorage(url: string): SecondaryStorage {
     const redis = new Redis(url, {
-        // Distinct from @clowder/cache's `clowder:` keys, which that package may clear.
-        keyPrefix: "clowder-auth:",
+        // Legacy prefix keeps sessions across the rename. Distinct from @clowder/cache's `clowder:` keys, which that package may clear.
+        keyPrefix: "stoat-auth:",
         // Fail fast to Postgres: never queue behind a dead Dragonfly.
         connectTimeout: 1000,
         maxRetriesPerRequest: 1,

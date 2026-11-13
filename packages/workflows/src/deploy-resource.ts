@@ -2,7 +2,7 @@ import type { Database } from "@clowder/db";
 import { appendDeploymentLog, getDeploymentByJobId } from "@clowder/db/deployments";
 import { ucClient, unwrap } from "@clowder/uncloud";
 import { parseEnv } from "node:util";
-import { YAMLParseError } from "yaml";
+import YAML, { YAMLParseError } from "yaml";
 import {
     ComposeVariableError,
     composeImages,
@@ -19,6 +19,27 @@ import { deployedServiceNames, staleServices } from "./stale-services";
 
 export const RESOURCE_FAILURE_MESSAGE =
     "Resource deployment failed. Check the Compose configuration and sidecar connectivity, then retry.";
+
+// A built-in variable from before the rename, used unescaped (`$$` is a literal `$`).
+const LEGACY_VARIABLE =
+    /(?<!\$)(?:\$\$)*\$\{?STOAT_(?:DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?![A-Za-z0-9_])/u;
+
+/** Whether Compose uses a built-in variable or the extension key from before the rename. */
+export function usesLegacyNames(compose: string) {
+    let found = false;
+
+    // Parsed, so comments that mention the old names don't count.
+    YAML.visit(YAML.parseDocument(compose), {
+        Pair: (_, pair) => {
+            if (YAML.isScalar(pair.key) && pair.key.value === "x-stoat") found = true;
+        },
+        Scalar: (_, scalar) => {
+            if (LEGACY_VARIABLE.test(String(scalar.value))) found = true;
+        },
+    });
+
+    return found;
+}
 
 export async function deployResource(db: Database, deploymentId: string, signal: AbortSignal) {
     let step = "Loading deployment input.";
@@ -65,12 +86,12 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     // it shared still serializes against them during a rolling update, while newer
                     // workers keep deploying different resources in parallel with each other.
                     await lock.query("SELECT pg_advisory_lock_shared(hashtextextended($1, 0))", [
-                        `clowder:resource-deploy:${deployment.clusterId}`,
+                        `stoat:resource-deploy:${deployment.clusterId}`,
                     ]);
 
                     for (const key of [...new Set(keys)].toSorted())
                         await lock.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
-                            `clowder:resource-deploy:${deployment.clusterId}:${key}`,
+                            `stoat:resource-deploy:${deployment.clusterId}:${key}`,
                         ]);
                 } finally {
                     // Once acquired, keep the lock until the sidecar stream has drained on abort.
@@ -140,7 +161,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
 
             // Stored Compose was migrated, but Compose from Git still says what the repository says,
             // and the legacy domain variable would otherwise resolve to an empty hostname without an error.
-            if (/\bSTOAT_(?:DOMAIN|PREFIX|PROJECT_|RESOURCE_)|\bx-stoat\b/u.test(deployedSpec)) {
+            if (usesLegacyNames(deployedSpec)) {
                 const message =
                     "Rename STOAT_* variables to CLOWDER_* and x-stoat to x-clowder in the Compose file.";
 

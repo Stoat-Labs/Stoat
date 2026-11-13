@@ -10,7 +10,9 @@ type Scope = {
     clientId: string;
 };
 
-function keyMaterial(scope: Scope, salt: Buffer, label = "clowder") {
+const domain = "stoat/git-oauth-client-secret/v1";
+
+function keyMaterial(scope: Scope, salt: Buffer) {
     const secret = appSecret();
 
     const values = [
@@ -24,17 +26,17 @@ function keyMaterial(scope: Scope, salt: Buffer, label = "clowder") {
     if (!v.is(v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(2048))), values))
         throw new Error();
     // Bind the secret to the organization, app, and destination, not just its row ID.
-    const context = Buffer.from(JSON.stringify([`${label}/git-oauth-client-secret/v1`, ...values]));
+    const context = Buffer.from(JSON.stringify([domain, ...values]));
 
     return { context, key: hkdfSync("sha256", secret, salt, context, 32) };
 }
 
-export function encryptGitOAuthClientSecret(secret: string, scope: Scope, label = "clowder") {
+export function encryptGitOAuthClientSecret(secret: string, scope: Scope): string {
     try {
         if (!v.is(v.pipe(v.string(), v.minLength(1), v.maxLength(8192)), secret)) throw new Error();
         const salt = randomBytes(32);
         const nonce = randomBytes(12);
-        const { key, context } = keyMaterial(scope, salt, label);
+        const { key, context } = keyMaterial(scope, salt);
         const cipher = createCipheriv("aes-256-gcm", key, nonce);
         cipher.setAAD(context);
         const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
@@ -47,8 +49,7 @@ export function encryptGitOAuthClientSecret(secret: string, scope: Scope, label 
     }
 }
 
-// `label` is the legacy one only when re-encrypting secrets stored before the rename.
-export function decryptGitOAuthClientSecret(envelope: string, scope: Scope, label = "clowder") {
+export function decryptGitOAuthClientSecret(envelope: string, scope: Scope): string {
     try {
         if (!v.is(v.pipe(v.string(), v.maxLength(64 * 1024)), envelope)) throw new Error();
         const parts = envelope.split(".");
@@ -65,7 +66,7 @@ export function decryptGitOAuthClientSecret(envelope: string, scope: Scope, labe
 
         if (salt?.length !== 32 || nonce?.length !== 12 || tag?.length !== 16 || !ciphertext)
             throw new Error();
-        const { key, context } = keyMaterial(scope, salt, label);
+        const { key, context } = keyMaterial(scope, salt);
         const decipher = createDecipheriv("aes-256-gcm", key, nonce);
         decipher.setAAD(context);
         decipher.setAuthTag(tag);

@@ -23,12 +23,12 @@ No vendor lock-in PaaS dashboard on top of Uncloud. pnpm monorepo, driven by **v
 - Single test: `pnpm exec vp test run tests/api/git.test.ts`. For web tests: `pnpm --dir apps/web exec vp test run ../../tests/web/<file>.test.ts`. For tree tests (needs its Svelte plugin and jsdom): `pnpm --dir packages/trees exec vp test run ../../tests/trees/<file>.test.ts`.
 - Go: `go -C apps/sidecar test ./...`.
 - After changing sidecar routes or schemas: `pnpm uc:refresh` (needs Go) and commit both `openapi.json` and the generated types.
-- DB: `pnpm db:start` runs `compose.dev.yaml` (Postgres on host port **5435**, Dragonfly on **6380**); `pnpm dev` runs it plus `pnpm db:migrate` first. Use `pnpm db:generate` for new migrations and `pnpm db:migrate` to apply them. The image never migrates on start; `compose.yml` runs `drizzle-kit migrate`, then `rebrand.mjs` (`apps/web/scripts/rebrand.ts`, which re-encrypts secrets stored under the legacy key labels), as an `x-pre_deploy` hook.
+- DB: `pnpm db:start` runs `compose.dev.yaml` (Postgres on host port **5435**, Dragonfly on **6380**); `pnpm dev` runs it plus `pnpm db:migrate` first. Use `pnpm db:generate` for new migrations and `pnpm db:migrate` to apply them. The image never migrates on start; `compose.yml` runs `drizzle-kit migrate` as an `x-pre_deploy` hook.
 
 ## Gotchas
 
 - Post-release: breaking changes are a big deal. No backfill, no backwards compatibility, data loss in migrations is NOT fine.
-- Legacy-named key labels (like the Git webhook HKDF label) and identifiers from before the rename to Clowder are deliberate: Git hosts or existing clusters hold them. Don't rename them.
+- Legacy `stoat` names are deliberate wherever state outside this release holds them: HKDF key labels, advisory lock and schedule names, `compose.yml` service, volume and database names, monitoring service names and volumes, the GeoIP host path, and S3 key names. Running installs, Git hosts, clusters and providers depend on them. Don't rename them.
 - Backend tests need Docker. Testcontainers starts one `postgres:18-alpine`, and `tests/setup.ts` overwrites `DATABASE_URL`, so the dev DB is never used.
 - Env is managed by varlock: `.env.schema` in `apps/web` and `packages/db`. `postinstall` / `pnpm env:generate` regenerates `apps/web/src/generated-env.ts` and `packages/db/src/env.ts`. Edit the schema instead of those generated files. Packages read `APP_SECRET`, `APP_URL` and `DATABASE_URL` through `@clowder/config/env`, never `process.env` directly.
 - drizzle-orm and drizzle-kit are v1 RCs pinned in the `pnpm-workspace.yaml` catalog. `db.query` is RQBv2: relations live in `packages/db/src/relations.ts` (`defineRelations`), and `where` takes objects, not callbacks. Migrations are one folder per migration (`<timestamp>_<name>/migration.sql`).

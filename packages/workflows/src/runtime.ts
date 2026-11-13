@@ -225,7 +225,7 @@ const GIT_WATCH_CRON = "* * * * *";
 
 // Upserted on startup. Each tick is claimed atomically, so it runs once across web replicas.
 export const SchedulesLive = JobSchedules.layer({
-    group: "clowder",
+    group: "stoat",
     schedules: [
         JobSchedules.schedule(HealthCheck, "hourly", { cron: HEALTH_CHECK_CRON, payload: {} }),
         JobSchedules.schedule(WatchGitSources, "minutely", { cron: GIT_WATCH_CRON, payload: {} }),

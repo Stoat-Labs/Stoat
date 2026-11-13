@@ -8,7 +8,6 @@ node_modules
 .alchemy
 /.svelte-kit
 /build
-/build-scripts
 
 # OS
 .DS_Store

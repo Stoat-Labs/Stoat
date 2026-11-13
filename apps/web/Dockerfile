@@ -69,7 +69,6 @@ COPY --from=build --chown=node:node /app/apps/web/build ./build
 COPY --from=build --chown=node:node /app/apps/web/server.js ./server.js
 COPY --from=build --chown=node:node /app/apps/web/src/generated-env.ts ./src/generated-env.ts
 COPY --from=build --chown=node:node /app/apps/web/drizzle.config.ts ./drizzle.config.ts
-COPY --from=build --chown=node:node /app/apps/web/build-scripts/rebrand.mjs ./rebrand.mjs
 
 # adapter-node's build is self-contained; static assets are already in build.
 # Keep src because varlock uses its generated environment types at startup.

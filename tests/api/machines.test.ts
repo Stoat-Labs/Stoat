@@ -848,7 +848,7 @@ describe("adding machines (PostgreSQL)", () => {
 
         try {
             await other.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
-                `clowder:add-machine:${clusterId}`,
+                `stoat:add-machine:${clusterId}`,
             ]);
             await addMachine(db, deploymentId, new AbortController().signal).catch(() => {});
             await expect(start(clusterId)).rejects.toThrow("still being added or removed");

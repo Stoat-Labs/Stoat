@@ -51,14 +51,8 @@ export async function r2ConnectionCredentials(accountId: string, apiToken: strin
     return s3Credentials(result.id, apiToken);
 }
 
-// Revokes every token with this name, and the token with this id. Finding none counts as revoked,
-// so retries can finish.
-export async function deleteR2Key(
-    accountId: string,
-    apiToken: string,
-    name: string,
-    id: string | null = null,
-) {
+// Revokes every token with this name. Finding none counts as revoked, so retries can finish.
+export async function deleteR2Key(accountId: string, apiToken: string, name: string) {
     const ids: string[] = [];
 
     for (let page = 1, pages = 1; page <= pages; page++) {
@@ -69,8 +63,7 @@ export async function deleteR2Key(
 
         pages = response.result_info?.total_pages ?? 1;
 
-        for (const token of response.result)
-            if (token.name === name || token.id === id) ids.push(token.id);
+        for (const token of response.result) if (token.name === name) ids.push(token.id);
     }
 
     for (const id of ids)

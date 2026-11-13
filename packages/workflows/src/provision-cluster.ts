@@ -204,7 +204,7 @@ async function waitForSidecar(
 
 /** The advisory lock a setup attempt holds while it runs, so two never work on one server. */
 export function provisioningLock(clusterId: string) {
-    return `clowder:provision:${clusterId}`;
+    return `stoat:provision:${clusterId}`;
 }
 
 // Like Caddy's metrics for monitoring, this never fails setup: stock Caddy still serves the cluster.

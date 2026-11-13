@@ -701,7 +701,7 @@ describe("resource deployment worker", () => {
     }
 
     it("waits for an old worker's exclusive cluster lock during a rolling update", async () => {
-        const key = `clowder:resource-deploy:${clusterId}`;
+        const key = `stoat:resource-deploy:${clusterId}`;
         const legacy = await other.$client.connect();
         let held = false;
 

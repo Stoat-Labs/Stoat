@@ -1,32 +1,53 @@
--- Rename to Clowder. Secrets are re-encrypted by the pre-deploy script (apps/web/scripts/rebrand.ts).
+-- Rename the built-in variables and the Compose extension to Clowder. Only actual uses change:
+-- literal data (image paths, config files, Compose `environment` keys) stays as it was.
 
--- The built-in variables and the Compose extension were renamed.
-CREATE OR REPLACE FUNCTION pg_temp.clowder(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+-- `$STOAT_X` / `${STOAT_X...` uses, not escaped ones (`$$` is a literal `$`).
+CREATE OR REPLACE FUNCTION pg_temp.clowder_uses(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
     SELECT regexp_replace(
-        regexp_replace(
-            value,
-            '\mSTOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)\M',
-            'CLOWDER_\1',
-            'g'
-        ),
-        '\mx-stoat\M',
-        'x-clowder',
+        value,
+        '(^|[^$])((?:\$\$)*)\$(\{?)STOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?![A-Za-z0-9_])',
+        '\1\2$\3CLOWDER_\4',
         'g'
     )
 $$;
 --> statement-breakpoint
+-- Compose YAML: variable uses and `x-stoat` mapping keys.
+CREATE OR REPLACE FUNCTION pg_temp.clowder_compose(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+    SELECT regexp_replace(
+        pg_temp.clowder_uses(value),
+        '(^|[\s{,])(["'']?)x-stoat\2(?=[ \t]*:)',
+        '\1\2x-clowder\2',
+        'g'
+    )
+$$;
+--> statement-breakpoint
+-- Variables (.env text): uses, `{{ <id>.STOAT_X }}` references and `STOAT_X=` assignment keys.
+CREATE OR REPLACE FUNCTION pg_temp.clowder_env(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+    SELECT regexp_replace(
+        regexp_replace(
+            pg_temp.clowder_uses(value),
+            '(\{\{\s*[^\s{}.]+\.)STOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?=\s*\}\})',
+            '\1CLOWDER_\2',
+            'g'
+        ),
+        '^([ \t]*(?:export[ \t]+)?)STOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?=[ \t]*=)',
+        '\1CLOWDER_\2',
+        'gn'
+    )
+$$;
+--> statement-breakpoint
 UPDATE "resources" SET
-    "spec" = pg_temp.clowder("spec"),
-    "draft_spec" = pg_temp.clowder("draft_spec"),
-    "settings" = pg_temp.clowder("settings"::text)::jsonb,
-    "draft_config_files" = pg_temp.clowder("draft_config_files"::text)::jsonb;
+    "spec" = pg_temp.clowder_compose("spec"),
+    "draft_spec" = pg_temp.clowder_compose("draft_spec");
+--> statement-breakpoint
+UPDATE "resources"
+SET "settings" = jsonb_set("settings", '{env}', to_jsonb(pg_temp.clowder_env("settings"->>'env')))
+WHERE jsonb_typeof("settings"->'env') = 'string';
 --> statement-breakpoint
 -- Past deployments too, so a redeploy of one resolves like it did.
-UPDATE "deployments" SET "spec" = pg_temp.clowder("spec") WHERE "spec" IS NOT NULL;
+UPDATE "deployments" SET "spec" = pg_temp.clowder_compose("spec") WHERE "spec" IS NOT NULL;
 --> statement-breakpoint
-UPDATE "resource_deployment_inputs" SET
-    "env" = pg_temp.clowder("env"),
-    "config_files" = pg_temp.clowder("config_files"::text)::jsonb;
+UPDATE "resource_deployment_inputs" SET "env" = pg_temp.clowder_env("env");
 --> statement-breakpoint
 -- Monitoring now deploys as clowder-monitoring-*. Clusters that relied on the default volumes
 -- keep them, so the new services reuse the metrics and logs collected so far.
@@ -41,5 +62,3 @@ WHERE "initialization_configuration" IS NOT NULL
 UPDATE "clusters"
 SET "greptime_url" = replace("greptime_url", 'stoat-monitoring-greptimedb', 'clowder-monitoring-greptimedb')
 WHERE "greptime_url" LIKE '%stoat-monitoring-greptimedb%';
---> statement-breakpoint
-UPDATE "effect_mq_schedules" SET "group_name" = 'clowder' WHERE "group_name" = 'stoat';

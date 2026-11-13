@@ -50,7 +50,7 @@ const ALREADY_MEMBER =
 
 /** The advisory lock an attempt holds while it runs, so machines join a cluster one at a time. */
 export function addMachineLock(clusterId: string) {
-    return `clowder:add-machine:${clusterId}`;
+    return `stoat:add-machine:${clusterId}`;
 }
 
 async function listMachines(uc: UcClient, signal: AbortSignal) {

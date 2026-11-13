@@ -106,6 +106,13 @@ async function waitForService(
 // Installed by the Clowder sidecar; Alloy bind-mounts its directory (see compose.yaml).
 const GEOIP_DATABASE = "/var/lib/clowder/geoip/country.mmdb";
 
+// Sidecars from before the rename keep the database in /var/lib/stoat/geoip. Link the new path
+// to it, so Alloy's bind mount finds it there until the sidecar is updated (which writes through).
+const GEOIP_CHECK = `test -s ${GEOIP_DATABASE} || { test -s /var/lib/stoat/geoip/country.mmdb && test ! -e /var/lib/clowder/geoip && mkdir -p /var/lib/clowder && ln -s /var/lib/stoat/geoip /var/lib/clowder/geoip; }`;
+
+// The monitoring version that renamed the services Caddy pushes its metrics to.
+const RENAMED_MONITORING_VERSION = 4;
+
 export function bounded(signal: AbortSignal, ms: number) {
     return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
@@ -124,7 +131,7 @@ export async function machinesWithoutGeoip(
             const { exitCode } = await unwrap(
                 uc.POST("/api/v1/machines/{id}/exec", {
                     params: { path: { id: machine.id } },
-                    body: { command: ["test", "-s", GEOIP_DATABASE] },
+                    body: { command: ["sh", "-c", GEOIP_CHECK] },
                     signal,
                 }),
             );
@@ -222,7 +229,7 @@ export function createInitializeClusterHandler(
         try {
             const result = await lock.query(
                 "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
-                [`clowder:initialize:${clusterId}`],
+                [`stoat:initialize:${clusterId}`],
             );
 
             acquired = result.rows[0]?.acquired === true;
@@ -237,7 +244,9 @@ export function createInitializeClusterHandler(
 
             if (!reconciling && opts?.rollout) return;
 
-            if (reconciling && (await getMonitoringVersion(db, clusterId)) >= MONITORING_VERSION) {
+            const deployedVersion = reconciling ? await getMonitoringVersion(db, clusterId) : 0;
+
+            if (reconciling && deployedVersion >= MONITORING_VERSION) {
                 await log("Cluster is already initialized; nothing to do.");
 
                 return;
@@ -429,8 +438,9 @@ export function createInitializeClusterHandler(
                         );
                         await setMonitoringVersion(db, clusterId, MONITORING_VERSION);
 
-                        // Caddy already pushes metrics once initialized; don't restart it again.
-                        if (!reconciling)
+                        // Caddy already pushes metrics once initialized; don't restart it again,
+                        // unless it still pushes to the collector from before the rename (version 4).
+                        if (!reconciling || deployedVersion < RENAMED_MONITORING_VERSION)
                             await enableCaddyMetrics(
                                 db,
                                 uc,
@@ -465,7 +475,7 @@ export function createInitializeClusterHandler(
             try {
                 if (acquired)
                     await lock.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [
-                        `clowder:initialize:${clusterId}`,
+                        `stoat:initialize:${clusterId}`,
                     ]);
             } finally {
                 lock.release();

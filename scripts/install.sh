@@ -149,7 +149,7 @@ use_existing_cluster() {
         return 1
     fi
     confirm "Deploy Clowder to this cluster? Answer n to set up a new one on another server." y || return 1
-    if [ -z "$EXISTING_ENV" ] && "$UC" inspect clowder >/dev/null 2>&1; then
+    if [ -z "$EXISTING_ENV" ] && "$UC" inspect stoat >/dev/null 2>&1; then
         die "Clowder is already deployed on '$context'. Deploying it with new secrets would lock it out of its database. Run this script again and enter the directory that holds that deployment's .env."
     fi
     # Clusters a Clowder dashboard created over SSH run its sidecar, which Clowder's compose.yml would replace.

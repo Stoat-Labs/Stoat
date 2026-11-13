@@ -32,7 +32,7 @@ async function provision(db: Database, bucket: S3BucketRow, connection: S3Connec
 
 async function remove(db: Database, bucket: S3BucketRow, connection: S3ConnectionRecord) {
     // Revoked by name even when no key was recorded, so a half-provisioned key never outlives it.
-    await deleteS3BucketKey(connection, bucket.resourceId, bucket.keyId);
+    await deleteS3BucketKey(connection, bucket.resourceId);
 
     // A bucket holding data is kept in the provider; only the Clowder resource goes away.
     await deleteS3BucketIfEmpty(connection, bucket.name);

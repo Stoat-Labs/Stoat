@@ -445,7 +445,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
 
         try {
             await other.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
-                `clowder:provision:${clusterId}`,
+                `stoat:provision:${clusterId}`,
             ]);
             await provisionCluster(db, deploymentId, new AbortController().signal).catch(() => {});
         } finally {
