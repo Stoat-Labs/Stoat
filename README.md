@@ -1,7 +1,6 @@
 <div align="center">
-  <img src="apps/web/static/clowder.svg" alt="Clowder Logo" width="120" height="120">
 
-  <h1 align="center">Clowder</h1>
+  <img alt="clowder logo" src="https://raw.githubusercontent.com/clowder-run/Clowder/refs/heads/master/apps/web/static/clowder-wordmark.svg" />
 
   <p align="center">
     <strong>A self-hosted PaaS (Platform as a Service) built on top of <a href="https://uncloud.run/">Uncloud</a>.</strong>
