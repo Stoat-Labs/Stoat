@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     clusters,
     clusterMonitoring,
     deployments,
     projects,
     resources,
-} from "@stoat/db/schema/index";
-import * as uncloud from "@stoat/uncloud";
-import { getDeploymentWithLogs } from "@stoat/db/deployments";
-import { setInitializationStatus } from "@stoat/db/initialization";
-import { createInitializeClusterHandler } from "@stoat/workflows/initialize-cluster";
-import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
+} from "@clowder/db/schema/index";
+import * as uncloud from "@clowder/uncloud";
+import { getDeploymentWithLogs } from "@clowder/db/deployments";
+import { setInitializationStatus } from "@clowder/db/initialization";
+import { createInitializeClusterHandler } from "@clowder/workflows/initialize-cluster";
+import { encryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -50,7 +50,7 @@ vi.spyOn(uncloud, "ucClient").mockReturnValue(
 );
 
 describe("cluster initialization API (PostgreSQL)", () => {
-    const databaseName = `stoat_initialization_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_initialization_test_${randomUUID().replaceAll("-", "")}`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let context: Context;
@@ -58,8 +58,8 @@ describe("cluster initialization API (PostgreSQL)", () => {
 
     const config = {
         machine: "First",
-        greptimeStorage: { type: "volume" as const, source: "stoat-monitoring-greptime" },
-        alloyStorage: { type: "volume" as const, source: "stoat-monitoring-alloy" },
+        greptimeStorage: { type: "volume" as const, source: "clowder-monitoring-greptime" },
+        alloyStorage: { type: "volume" as const, source: "clowder-monitoring-alloy" },
         retentionDays: 14,
     };
 
@@ -238,7 +238,7 @@ describe("cluster initialization API (PostgreSQL)", () => {
             .set({
                 initializationStatus: "ready",
                 initializedAt: new Date(),
-                greptimeUrl: "http://stoat-monitoring-greptimedb.internal:4006",
+                greptimeUrl: "http://clowder-monitoring-greptimedb.internal:4006",
             })
             .where(eq(clusters.id, clusterId));
 
@@ -465,9 +465,9 @@ describe("cluster initialization API (PostgreSQL)", () => {
             expect(conn).toMatchObject({
                 configured: true,
                 database: "monitoring",
-                username: "stoat",
-                ingestUrl: "http://stoat-monitoring-greptimedb.internal:4006",
-                httpUrl: "http://stoat-monitoring-greptimedb.internal:4000",
+                username: "clowder",
+                ingestUrl: "http://clowder-monitoring-greptimedb.internal:4006",
+                httpUrl: "http://clowder-monitoring-greptimedb.internal:4000",
                 password: "greptime-pw",
             });
         } finally {
@@ -830,7 +830,7 @@ describe("cluster initialization API (PostgreSQL)", () => {
         const [custom] = await db.select().from(clusters).where(eq(clusters.id, created.id!));
         const [fallback] = await db.select().from(clusters).where(eq(clusters.id, plain.id!));
         expect(custom?.greptimeUrl).toBe("http://greptime.custom:4006");
-        expect(fallback?.greptimeUrl).toBe("http://stoat-monitoring-greptimedb.internal:4006");
+        expect(fallback?.greptimeUrl).toBe("http://clowder-monitoring-greptimedb.internal:4006");
     });
 
     it("names the machines whose sidecar lacks the GeoIP database", async () => {
@@ -876,5 +876,86 @@ describe("cluster initialization API (PostgreSQL)", () => {
         await expect(handler(created.id!, new AbortController().signal)).rejects.toThrow();
         const detail = await getDeploymentWithLogs(db, deployment!.id);
         expect(detail?.logs.some((entry) => entry.text.includes("sidecar on First:"))).toBe(true);
+    });
+
+    it("removes this cluster's monitoring from before the rename, and nobody else's", async () => {
+        const created = await call(
+            clusterRouter.createCluster,
+            { name: "Legacy", sidecarUrl: "http://sidecar.test", sidecarToken: "token" },
+            { context },
+        );
+
+        await call(
+            clusterRouter.initializeCluster,
+            { clusterId: created.id!, configuration: config },
+            { context },
+        );
+        const response = new Response(null, { status: 200 });
+        const removed: string[] = [];
+
+        const owners = new Map([
+            ["legacy-greptime", created.id!],
+            ["legacy-alloy", "another-cluster"],
+        ]);
+
+        const legacy = {
+            GET: async (path: string, options?: { params?: { path?: { id?: string } } }) => {
+                const id = options?.params?.path?.id ?? "";
+
+                if (path === "/api/v1/machines")
+                    return {
+                        response,
+                        data: { items: [{ id: "machine-1", name: "First", state: "up" }] },
+                    };
+
+                if (path === "/api/v1/services")
+                    return {
+                        response,
+                        data: {
+                            items: [
+                                { id: "legacy-greptime", name: "stoat-monitoring-greptimedb" },
+                                { id: "legacy-alloy", name: "stoat-monitoring-alloy" },
+                            ],
+                        },
+                    };
+
+                return {
+                    response,
+                    data: {
+                        containers: [
+                            {
+                                container: {
+                                    Config: {
+                                        Env: [`STOAT_MONITORING_CLUSTER_ID=${owners.get(id)}`],
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                };
+            },
+            // The GeoIP check passes; the deploy that follows fails, ending the attempt there.
+            POST: async (path: string) => {
+                if (path === "/api/v1/machines/{id}/exec")
+                    return { response, data: { exitCode: 0 } };
+                throw new Error("deploy is out of scope");
+            },
+            DELETE: async (_path: string, options: { params: { path: { id: string } } }) => {
+                removed.push(options.params.path.id);
+
+                return { response, data: { status: "ok" } };
+            },
+        };
+
+        // SAFETY: the handler only issues the GET, POST and DELETE requests answered above.
+        vi.spyOn(uncloud, "ucClient").mockReturnValueOnce(
+            legacy as typeof legacy & ReturnType<typeof uncloud.ucClient>,
+        );
+        vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const handler = createInitializeClusterHandler(db, "x".repeat(32));
+
+        await expect(handler(created.id!, new AbortController().signal)).rejects.toThrow();
+        expect(removed).toEqual(["legacy-greptime"]);
     });
 });

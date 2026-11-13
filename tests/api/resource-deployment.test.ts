@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     clusters,
     deployments,
     projects,
     resources,
     resourceDeploymentInputs,
-} from "@stoat/db/schema/index";
-import * as runtime from "@stoat/workflows/runtime";
+} from "@clowder/db/schema/index";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -19,7 +19,7 @@ import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { insertUserWithOrganization } from "../users";
 
 describe("resource deployment API", () => {
-    const databaseName = `stoat_deploy_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_deploy_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     const draftSpec = '# Keep raw YAML\nservices:\n  web:\n    image: "nginx"\n';

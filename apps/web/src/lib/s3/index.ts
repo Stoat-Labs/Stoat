@@ -1,5 +1,5 @@
-import type { S3ConnectionInput } from "@stoat/s3";
-import type { S3ProviderId } from "@stoat/s3/providers";
+import type { S3ConnectionInput } from "@clowder/s3";
+import type { S3ProviderId } from "@clowder/s3/providers";
 
 export type S3ConnectionDraft = {
     endpoint: string;

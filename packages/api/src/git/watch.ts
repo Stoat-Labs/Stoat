@@ -1,13 +1,13 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     clusters,
     gitConnections,
     projects,
     resources,
     type ResourceGitSource,
-} from "@stoat/db/schema/index";
-import { queueResourceDeployment } from "@stoat/workflows/runtime";
+} from "@clowder/db/schema/index";
+import { queueResourceDeployment } from "@clowder/workflows/runtime";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { type GitFileSnapshot, readGitHead, readGitSources } from "./index";

@@ -31,7 +31,7 @@
         type S3ConnectionDraft,
     } from "$lib/s3";
     import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
-    import { s3Providers } from "@stoat/s3/providers";
+    import { s3Providers } from "@clowder/s3/providers";
     import {
         createMutation,
         createQuery,
@@ -153,7 +153,7 @@
 </script>
 
 <svelte:head>
-    <title>{connection?.name ?? "S3 connection"} / Stoat</title>
+    <title>{connection?.name ?? "S3 connection"} / Clowder</title>
 </svelte:head>
 
 <div class="flex w-full flex-col gap-6 pt-6">
@@ -439,7 +439,7 @@
         <ConfirmDialog
             bind:open={deleteOpen}
             title={`Delete ${connection.name}?`}
-            description="Stoat forgets this connection and its credentials. Nothing is deleted at the provider."
+            description="Clowder forgets this connection and its credentials. Nothing is deleted at the provider."
             confirmLabel="Delete connection"
             pending={removeState.isPending}
             error={removeState.error?.message ?? ""}

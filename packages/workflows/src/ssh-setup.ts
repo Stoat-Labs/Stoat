@@ -100,7 +100,7 @@ export function runUc(
             reject(
                 error.code === "ENOENT"
                     ? new Error(
-                          "The Uncloud CLI (uc) is not installed. Stoat's Docker image includes it; in development, put uc on your PATH.",
+                          "The Uncloud CLI (uc) is not installed. Clowder's Docker image includes it; in development, put uc on your PATH.",
                       )
                     : error,
             );
@@ -115,7 +115,7 @@ export function runUc(
 /** Turns SSH errors from uc or OpenSSH into something the user can act on. */
 export function sshFailure(message: string, user: string) {
     if (message.includes("unable to authenticate") || message.includes("Permission denied"))
-        return `The server rejected Stoat's key. Add the public key to ~/.ssh/authorized_keys for ${user}, then retry.`;
+        return `The server rejected Clowder's key. Add the public key to ~/.ssh/authorized_keys for ${user}, then retry.`;
 
     // The key's temporary path means nothing to the user.
     return message.replace(/connect using private key "[^"]*": /, "");
@@ -125,11 +125,11 @@ export function sshFailure(message: string, user: string) {
 export async function serverAddress(host: string) {
     const addresses = await lookup(host, { all: true, verbatim: true }).catch(() => []);
 
-    if (!addresses.length) throw new Error(`Stoat couldn't resolve ${host}.`);
+    if (!addresses.length) throw new Error(`Clowder couldn't resolve ${host}.`);
 
     if (addresses.some(({ address }) => !isAllowedServerAddress(address)))
         throw new Error(
-            `Stoat doesn't connect to ${host}: it points to a loopback, link-local or reserved address.`,
+            `Clowder doesn't connect to ${host}: it points to a loopback, link-local or reserved address.`,
         );
 
     // Connecting to the checked address means a DNS change can't redirect the job.
@@ -183,7 +183,9 @@ export function machineState(server: Server, workspace: Workspace, signal: Abort
         child.on("error", (error: NodeJS.ErrnoException) => {
             reject(
                 error.code === "ENOENT"
-                    ? new Error("OpenSSH (ssh) is not installed. Stoat's Docker image includes it.")
+                    ? new Error(
+                          "OpenSSH (ssh) is not installed. Clowder's Docker image includes it.",
+                      )
                     : error,
             );
         });

@@ -1,13 +1,13 @@
-import { appSecret, databaseUrl } from "@stoat/config/env";
-import { createDb, type Database } from "@stoat/db";
+import { appSecret, databaseUrl } from "@clowder/config/env";
+import { createDb, type Database } from "@clowder/db";
 import {
     appendDeploymentLog,
     getDeploymentByJobId,
     setDeploymentStatus,
-} from "@stoat/db/deployments";
-import { markBucketFailed, pendingBucketRequests } from "@stoat/db/buckets";
-import { listOutdatedMonitoring, setInitializationStatus } from "@stoat/db/initialization";
-import { s3FailureMessage } from "@stoat/s3";
+} from "@clowder/db/deployments";
+import { markBucketFailed, pendingBucketRequests } from "@clowder/db/buckets";
+import { listOutdatedMonitoring, setInitializationStatus } from "@clowder/db/initialization";
+import { s3FailureMessage } from "@clowder/s3";
 import { JobSchedules, JobStore, Worker } from "effect-mq";
 import { Cause, Effect, Layer } from "effect";
 import { addMachine } from "./add-machine";
@@ -132,7 +132,7 @@ function attempt(run: (signal: AbortSignal) => Promise<void>, failure: (error: E
 
 type GitWatcher = (db: Database, signal: AbortSignal, connectionId?: string) => Promise<void>;
 
-// The Git watcher lives in @stoat/api (it needs Git and deploy logic), which depends on this
+// The Git watcher lives in @clowder/api (it needs Git and deploy logic), which depends on this
 // package, so the worker bootstrap passes it in.
 function jobHandlersLive(db: Database, watchGitSources: GitWatcher) {
     return Layer.mergeAll(
@@ -225,7 +225,7 @@ const GIT_WATCH_CRON = "* * * * *";
 
 // Upserted on startup. Each tick is claimed atomically, so it runs once across web replicas.
 export const SchedulesLive = JobSchedules.layer({
-    group: "stoat",
+    group: "clowder",
     schedules: [
         JobSchedules.schedule(HealthCheck, "hourly", { cron: HEALTH_CHECK_CRON, payload: {} }),
         JobSchedules.schedule(WatchGitSources, "minutely", { cron: GIT_WATCH_CRON, payload: {} }),

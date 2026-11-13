@@ -1,8 +1,8 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, ORPCError } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { relations } from "@stoat/db/relations";
+import { createDb } from "@clowder/db";
+import { relations } from "@clowder/db/relations";
 import {
     clusters,
     deployments,
@@ -11,7 +11,7 @@ import {
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -27,7 +27,7 @@ import { gitWebhookSecret, receiveGitWebhook } from "../../packages/api/src/git/
 import { connectionsRouter } from "../../packages/api/src/routers/connections";
 import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { resolveComposePath } from "../../packages/api/src/routers/resources/git";
-import * as runtime from "@stoat/workflows/runtime";
+import * as runtime from "@clowder/workflows/runtime";
 import { insertUserWithOrganization } from "../users";
 
 const revision = "a".repeat(40);
@@ -105,7 +105,7 @@ describe("Compose Git directory resolution", () => {
 
 // Each suite gets its own database inside the shared test container.
 describe("Git connections/resources (PostgreSQL)", () => {
-    const databaseName = `stoat_git_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_git_test_${randomUUID().replaceAll("-", "")}`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let databaseCreated = false;
@@ -2575,7 +2575,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
                     content: draftSpec,
                     files: [],
                     expectedRevision: revision,
-                    message: "Deploy Compose from Stoat",
+                    message: "Deploy Compose from Clowder",
                     author: { name: "admin", email: "admin@example.test" },
                     watchPath: "deploy",
                     expectedTree: tree,
@@ -2643,7 +2643,7 @@ describe("Git connections/resources (PostgreSQL)", () => {
             expect(await resourceDeployments()).toEqual([]);
         });
 
-        const configSpec = `${rawSpec}configs:\n  site:\n    file: ./site.css\n  nginx:\n    file: conf/nginx.conf\n  absolute:\n    file: /etc/stoat.conf\n`;
+        const configSpec = `${rawSpec}configs:\n  site:\n    file: ./site.css\n  nginx:\n    file: conf/nginx.conf\n  absolute:\n    file: /etc/clowder.conf\n`;
 
         const deploymentInput = async (deploymentId: string) =>
             (
@@ -3205,12 +3205,12 @@ describe("Git connections/resources (PostgreSQL)", () => {
         });
 
         it("shows admins the URL and secret it verifies with", async () => {
-            vi.stubEnv("APP_URL", "https://stoat.example.com/base");
+            vi.stubEnv("APP_URL", "https://clowder.example.com/base");
 
             expect(
                 await call(connectionsRouter.webhook, { connectionId }, { context: adminContext }),
             ).toEqual({
-                url: `https://stoat.example.com/base/git/webhook/${connectionId}`,
+                url: `https://clowder.example.com/base/git/webhook/${connectionId}`,
                 secret: gitWebhookSecret(connectionId),
             });
             await expect(

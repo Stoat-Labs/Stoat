@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Usage: curl -fsSL https://raw.githubusercontent.com/Stoat-Labs/Stoat/master/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/clowder-run/Clowder/master/scripts/install.sh | bash
 
 set -euo pipefail
 
-STOAT_RAW_URL="https://raw.githubusercontent.com/Stoat-Labs/Stoat/master"
+CLOWDER_RAW_URL="https://raw.githubusercontent.com/clowder-run/Clowder/master"
 UNCLOUD_INSTALL_URL="https://get.uncloud.run/install.sh"
 SIDECAR_URL="http://sidecar.internal"
 
@@ -14,7 +14,7 @@ else
 fi
 
 UC=""
-STOAT_DIR=""
+CLOWDER_DIR=""
 EXISTING_ENV=""
 APP_URL=""
 SSH_TARGET=""
@@ -98,12 +98,12 @@ is_private_ipv4() {
 print_intro() {
     cat <<EOF
 
-${BOLD}Stoat installer${RESET}
+${BOLD}Clowder installer${RESET}
 
   1. Install the Uncloud CLI (uc) if it's missing
   2. Use your Uncloud cluster, or create one on your server over SSH
   3. Download compose.yml and generate .env with random secrets
-  4. Deploy Stoat with uc deploy
+  4. Deploy Clowder with uc deploy
 
 EOF
 }
@@ -114,7 +114,7 @@ ensure_uc() {
         note "Found uc at $UC"
         return
     fi
-    note "Stoat is deployed with the Uncloud CLI (uc), which isn't installed."
+    note "Clowder is deployed with the Uncloud CLI (uc), which isn't installed."
     confirm "Install it now with Uncloud's official installer?" y ||
         stop "Install uc from https://uncloud.run, then run this script again."
     curl -fsSL "$UNCLOUD_INSTALL_URL" | sh || die "Installing uc failed. See the output above."
@@ -125,16 +125,16 @@ ensure_uc() {
 
 choose_directory() {
     step "Install directory"
-    note "Stoat's compose.yml and .env (which holds its secrets) are saved here."
-    prompt "Directory" "$PWD/stoat"
+    note "Clowder's compose.yml and .env (which holds its secrets) are saved here."
+    prompt "Directory" "$PWD/clowder"
     case "$ANSWER" in
         \~) ANSWER=$HOME ;;
         \~/*) ANSWER="$HOME/${ANSWER#\~/}" ;;
         /*) ;;
         *) ANSWER="$PWD/$ANSWER" ;;
     esac
-    STOAT_DIR=${ANSWER%/}
-    if [ -f "$STOAT_DIR/.env" ]; then
+    CLOWDER_DIR=${ANSWER%/}
+    if [ -f "$CLOWDER_DIR/.env" ]; then
         EXISTING_ENV=1
     fi
 }
@@ -148,13 +148,13 @@ use_existing_cluster() {
             die "Make sure the '$context' cluster's machines are reachable, or switch clusters with 'uc ctx use <name>', then run this script again."
         return 1
     fi
-    confirm "Deploy Stoat to this cluster? Answer n to set up a new one on another server." y || return 1
-    if [ -z "$EXISTING_ENV" ] && "$UC" inspect stoat >/dev/null 2>&1; then
-        die "Stoat is already deployed on '$context'. Deploying it with new secrets would lock it out of its database. Run this script again and enter the directory that holds that deployment's .env."
+    confirm "Deploy Clowder to this cluster? Answer n to set up a new one on another server." y || return 1
+    if [ -z "$EXISTING_ENV" ] && "$UC" inspect clowder >/dev/null 2>&1; then
+        die "Clowder is already deployed on '$context'. Deploying it with new secrets would lock it out of its database. Run this script again and enter the directory that holds that deployment's .env."
     fi
-    # Clusters a Stoat dashboard created over SSH run its sidecar, which Stoat's compose.yml would replace.
+    # Clusters a Clowder dashboard created over SSH run its sidecar, which Clowder's compose.yml would replace.
     if [ -z "$EXISTING_ENV" ] && "$UC" inspect sidecar >/dev/null 2>&1; then
-        notice "This cluster already runs a Stoat sidecar, likely set up by another Stoat dashboard. Deploying Stoat replaces it, and that dashboard loses access to the cluster."
+        notice "This cluster already runs a Clowder sidecar, likely set up by another Clowder dashboard. Deploying Clowder replaces it, and that dashboard loses access to the cluster."
         confirm "Replace it anyway? Answer n to set up a new cluster on another server." n || return 1
     fi
     CLUSTER_SUMMARY="existing cluster '$context'"
@@ -187,15 +187,15 @@ choose_cluster() {
 choose_address() {
     step "Address"
     if [ -n "$EXISTING_ENV" ]; then
-        APP_URL=$(read_env_value APP_URL "$STOAT_DIR/.env")
+        APP_URL=$(read_env_value APP_URL "$CLOWDER_DIR/.env")
         [ -n "$APP_URL" ] ||
-            die "$STOAT_DIR/.env has no APP_URL. Set it, or remove the file to start fresh, then run this script again."
-        note "Keeping the existing $STOAT_DIR/.env and its secrets."
+            die "$CLOWDER_DIR/.env has no APP_URL. Set it, or remove the file to start fresh, then run this script again."
+        note "Keeping the existing $CLOWDER_DIR/.env and its secrets."
         note "Address: $APP_URL (edit APP_URL in that file to change it)"
         return
     fi
-    note "Choose how you'll open Stoat in your browser:"
-    note "  1. A domain, e.g. stoat.example.com. Caddy gets a trusted HTTPS certificate for it,"
+    note "Choose how you'll open Clowder in your browser:"
+    note "  1. A domain, e.g. clowder.example.com. Caddy gets a trusted HTTPS certificate for it,"
     note "     so the server must be reachable from the internet on ports 80 and 443."
     note "  2. An IP address, e.g. a server on your LAN or Tailscale. Caddy signs its own"
     note "     certificate, which browsers warn about until you trust it."
@@ -209,7 +209,7 @@ choose_address() {
 
     if [ "$ANSWER" = 1 ]; then
         while true; do
-            prompt "Domain, e.g. stoat.example.com"
+            prompt "Domain, e.g. clowder.example.com"
             APP_URL=$(normalize_domain "$ANSWER")
             if is_ipv4 "$APP_URL"; then
                 note "Using $APP_URL as an IP address."
@@ -218,7 +218,7 @@ choose_address() {
             if is_valid_domain "$APP_URL"; then
                 break
             fi
-            note "'$ANSWER' isn't a valid domain. Enter something like stoat.example.com."
+            note "'$ANSWER' isn't a valid domain. Enter something like clowder.example.com."
         done
         return
     fi
@@ -241,9 +241,9 @@ confirm_plan() {
     step "Ready to install"
     note "Cluster:    $CLUSTER_SUMMARY"
     note "Address:    https://$APP_URL"
-    note "Directory:  $STOAT_DIR"
+    note "Directory:  $CLOWDER_DIR"
     if [ -z "$EXISTING_ENV" ]; then
-        note "Secrets:    generated into $STOAT_DIR/.env"
+        note "Secrets:    generated into $CLOWDER_DIR/.env"
     fi
     printf '\n'
     if ! is_ipv4 "$APP_URL"; then
@@ -260,22 +260,22 @@ confirm_plan() {
 
 write_config() {
     step "Writing config files"
-    mkdir -p "$STOAT_DIR"
-    if [ -f "$STOAT_DIR/compose.yml" ]; then
+    mkdir -p "$CLOWDER_DIR"
+    if [ -f "$CLOWDER_DIR/compose.yml" ]; then
         note "Keeping the existing compose.yml"
     else
-        curl -fsSL "$STOAT_RAW_URL/compose.yml" -o "$STOAT_DIR/compose.yml.tmp" ||
-            die "Couldn't download compose.yml from $STOAT_RAW_URL."
-        mv "$STOAT_DIR/compose.yml.tmp" "$STOAT_DIR/compose.yml"
+        curl -fsSL "$CLOWDER_RAW_URL/compose.yml" -o "$CLOWDER_DIR/compose.yml.tmp" ||
+            die "Couldn't download compose.yml from $CLOWDER_RAW_URL."
+        mv "$CLOWDER_DIR/compose.yml.tmp" "$CLOWDER_DIR/compose.yml"
         note "Downloaded compose.yml"
     fi
 
     if [ -n "$EXISTING_ENV" ]; then
         return
     fi
-    local example="$STOAT_DIR/.env.example.tmp" env_tmp="$STOAT_DIR/.env.tmp" key
-    curl -fsSL "$STOAT_RAW_URL/.env.example" -o "$example" ||
-        die "Couldn't download .env.example from $STOAT_RAW_URL."
+    local example="$CLOWDER_DIR/.env.example.tmp" env_tmp="$CLOWDER_DIR/.env.tmp" key
+    curl -fsSL "$CLOWDER_RAW_URL/.env.example" -o "$example" ||
+        die "Couldn't download .env.example from $CLOWDER_RAW_URL."
     (
         umask 077
         awk -v app_url="$APP_URL" -v app_secret="$(random_hex)" \
@@ -289,9 +289,9 @@ write_config() {
     )
     rm -f "$example"
     for key in APP_URL APP_SECRET POSTGRES_PASSWORD SIDECAR_TOKEN; do
-        grep -q "^$key=." "$env_tmp" || die ".env.example no longer defines $key. Please report this at https://github.com/Stoat-Labs/Stoat/issues."
+        grep -q "^$key=." "$env_tmp" || die ".env.example no longer defines $key. Please report this at https://github.com/clowder-run/Clowder/issues."
     done
-    mv "$env_tmp" "$STOAT_DIR/.env"
+    mv "$env_tmp" "$CLOWDER_DIR/.env"
     note "Generated .env with random secrets"
 }
 
@@ -316,15 +316,15 @@ init_cluster() {
     fi
     printf '\n'
     notice "The cluster was created, but uc reported an error afterwards (see above)."
-    confirm "Deploy Stoat to the new cluster anyway?" y ||
-        stop "The cluster is ready. Run this script again, or 'uc deploy' in $STOAT_DIR, when you want to deploy Stoat."
+    confirm "Deploy Clowder to the new cluster anyway?" y ||
+        stop "The cluster is ready. Run this script again, or 'uc deploy' in $CLOWDER_DIR, when you want to deploy Clowder."
 }
 
 deploy() {
-    step "Deploying Stoat"
+    step "Deploying Clowder"
     note "uc shows the deployment plan next. Type y to confirm it."
-    (cd "$STOAT_DIR" && "$UC" deploy </dev/tty) ||
-        die "Stoat wasn't deployed (see uc's message above). When you're ready, run 'uc deploy' in $STOAT_DIR or run this script again."
+    (cd "$CLOWDER_DIR" && "$UC" deploy </dev/tty) ||
+        die "Clowder wasn't deployed (see uc's message above). When you're ready, run 'uc deploy' in $CLOWDER_DIR or run this script again."
 }
 
 # Browsers send no server name (SNI) for an IP address, so Caddy has to be told which certificate to serve.
@@ -343,7 +343,7 @@ configure_caddy_for_ip() {
         return
     fi
     if [ -z "$SSH_TARGET" ]; then
-        notice "This cluster's global Caddy config is left as is. Add this to it, e.g. under Configure Caddy in Stoat, or HTTPS on $APP_URL won't work:"
+        notice "This cluster's global Caddy config is left as is. Add this to it, e.g. under Configure Caddy in Clowder, or HTTPS on $APP_URL won't work:"
         printf '%s\n' "$global" | sed 's/^/        /'
         return
     fi
@@ -362,13 +362,13 @@ configure_caddy_for_ip() {
 save_root_certificate() {
     is_ipv4 "$APP_URL" || return 0
     step "Caddy's root certificate"
-    local cert="$STOAT_DIR/caddy-root.crt" path=/data/caddy/pki/authorities/local/root.crt
+    local cert="$CLOWDER_DIR/caddy-root.crt" path=/data/caddy/pki/authorities/local/root.crt
     # Caddy creates the authority once it starts serving the address, a few seconds after the deploy.
     for _ in 1 2 3 4 5 6 7 8 9 10; do
         if "$UC" exec -T caddy cat "$path" >"$cert.tmp" 2>/dev/null && grep -q "BEGIN CERTIFICATE" "$cert.tmp"; then
             mv "$cert.tmp" "$cert"
             note "Saved to $cert"
-            note "Import it as a trusted root certificate on each device you open Stoat from to remove the browser warning."
+            note "Import it as a trusted root certificate on each device you open Clowder from to remove the browser warning."
             return
         fi
         sleep 3
@@ -379,10 +379,10 @@ save_root_certificate() {
 
 print_next_steps() {
     local token
-    token=$(read_env_value SIDECAR_TOKEN "$STOAT_DIR/.env")
+    token=$(read_env_value SIDECAR_TOKEN "$CLOWDER_DIR/.env")
     cat <<EOF
 
-${BOLD}${GREEN}Stoat is deployed.${RESET}
+${BOLD}${GREEN}Clowder is deployed.${RESET}
 
 Open ${BOLD}https://$APP_URL${RESET} and follow the setup wizard:
   1. Create your account. The first account becomes the instance admin.
@@ -391,7 +391,7 @@ Open ${BOLD}https://$APP_URL${RESET} and follow the setup wizard:
        Sidecar URL:    $SIDECAR_URL
        Sidecar token:  $token
 
-Your config is in $STOAT_DIR. Keep its .env safe: APP_SECRET encrypts the secrets Stoat stores.
+Your config is in $CLOWDER_DIR. Keep its .env safe: APP_SECRET encrypts the secrets Clowder stores.
 To redeploy later, run ${BOLD}uc deploy${RESET} in that directory.
 EOF
 }

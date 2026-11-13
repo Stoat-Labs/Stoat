@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"git.irazz.lol/stoat/sidecar/internal/cluster"
-	"git.irazz.lol/stoat/sidecar/internal/httpapi"
+	"git.irazz.lol/clowder/sidecar/internal/cluster"
+	"git.irazz.lol/clowder/sidecar/internal/httpapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +68,7 @@ func TestTLSConfigNeedsAWholeKeyPair(t *testing.T) {
 	assert.Equal(t, uint16(tls.VersionTLS12), config.MinVersion)
 }
 
-// selfSignedPair returns a PEM certificate and PKCS#8 key like the ones Stoat generates.
+// selfSignedPair returns a PEM certificate and PKCS#8 key like the ones Clowder generates.
 func selfSignedPair(t *testing.T) (string, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

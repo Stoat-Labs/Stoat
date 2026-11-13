@@ -1,7 +1,7 @@
-import { startMonitoringWorker } from "@stoat/api/worker";
-import { databaseUrl } from "@stoat/config/env";
-import { createDb } from "@stoat/db";
-import { stopWorker } from "@stoat/workflows/lifecycle";
+import { startMonitoringWorker } from "@clowder/api/worker";
+import { databaseUrl } from "@clowder/config/env";
+import { createDb } from "@clowder/db";
+import { stopWorker } from "@clowder/workflows/lifecycle";
 
 // Standalone worker for USE_INTERNAL_WORKER=false. Env comes straight from the container.
 startMonitoringWorker(createDb({ DATABASE_URL: databaseUrl() }));

@@ -1,6 +1,6 @@
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters, deployments, projects, resources } from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { randomUUID } from "node:crypto";
@@ -19,7 +19,7 @@ function published(port: number) {
 }
 
 describe("external connection API", () => {
-    const databaseName = `stoat_connections_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_connections_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     let admin: ReturnType<typeof createDb>;
@@ -188,7 +188,7 @@ describe("external connection API", () => {
             .set({
                 settings: {
                     engine: "postgresql",
-                    env: "POSTGRES_PASSWORD=${STOAT_RESOURCE_ID}\nPOSTGRES_DB=${STOAT_PROJECT_NAME}\n",
+                    env: "POSTGRES_PASSWORD=${CLOWDER_RESOURCE_ID}\nPOSTGRES_DB=${CLOWDER_PROJECT_NAME}\n",
                 },
             })
             .where(eq(resources.id, input.resourceId));

@@ -686,7 +686,7 @@ func TestInternalMetricsProxy(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"text/plain; version=0.0.4"}},
-				Body:       io.NopCloser(strings.NewReader("# HELP stoat_test_metric A test metric.\nstoat_test_metric 1\n")),
+				Body:       io.NopCloser(strings.NewReader("# HELP clowder_test_metric A test metric.\nclowder_test_metric 1\n")),
 				Request:    request,
 			}, nil
 		}),
@@ -700,7 +700,7 @@ func TestInternalMetricsProxy(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "text/plain; version=0.0.4", response.Header.Get("Content-Type"))
 	assert.Equal(t, "no-store", response.Header.Get("Cache-Control"))
-	assert.Equal(t, "# HELP stoat_test_metric A test metric.\nstoat_test_metric 1\n", readBody(t, response))
+	assert.Equal(t, "# HELP clowder_test_metric A test metric.\nclowder_test_metric 1\n", readBody(t, response))
 	assert.Equal(t, "http://10.210.0.1:51090/metrics", targetURL)
 	assert.Equal(t, "machine-1", fake.lastMachineID)
 }
@@ -723,7 +723,7 @@ func TestServiceHTTPProxy(t *testing.T) {
 		},
 	})
 
-	response := doRequest(t, server, http.MethodPost, "/api/v1/services/stoat-monitoring-greptimedb/http", ServiceHTTPRequest{
+	response := doRequest(t, server, http.MethodPost, "/api/v1/services/clowder-monitoring-greptimedb/http", ServiceHTTPRequest{
 		Port:    4000,
 		Path:    "/v1/sql?db=public",
 		Form:    map[string]string{"sql": "SELECT 1"},
@@ -733,7 +733,7 @@ func TestServiceHTTPProxy(t *testing.T) {
 	assert.Equal(t, ServiceHTTPResponse{Status: http.StatusOK, Body: `{"output":[]}`}, decodeResponse[ServiceHTTPResponse](t, response))
 	require.NotNil(t, upstream)
 	assert.Equal(t, http.MethodPost, upstream.Method)
-	assert.Equal(t, "http://stoat-monitoring-greptimedb.internal:4000/v1/sql?db=public", upstream.URL.String())
+	assert.Equal(t, "http://clowder-monitoring-greptimedb.internal:4000/v1/sql?db=public", upstream.URL.String())
 	assert.Equal(t, "Basic c3RvYXQ6c2VjcmV0", upstream.Header.Get("Authorization"))
 	assert.Equal(t, "SELECT 1", form.Get("sql"))
 }
@@ -792,7 +792,7 @@ func TestInternalMetricsContextLivesUntilBodyIsClosed(t *testing.T) {
 		MetricsHTTPClient: &http.Client{
 			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				body = &metricsResponseBody{
-					Reader: strings.NewReader("stoat_test_metric 1\n"),
+					Reader: strings.NewReader("clowder_test_metric 1\n"),
 					ctx:    request.Context(),
 				}
 				return &http.Response{StatusCode: http.StatusOK, Body: body, Request: request}, nil
@@ -802,7 +802,7 @@ func TestInternalMetricsContextLivesUntilBodyIsClosed(t *testing.T) {
 
 	response := doRequest(t, server, http.MethodGet, "/ucinternal/metrics", nil, "")
 	assert.Equal(t, http.StatusOK, response.StatusCode)
-	assert.Equal(t, "stoat_test_metric 1\n", readBody(t, response))
+	assert.Equal(t, "clowder_test_metric 1\n", readBody(t, response))
 	require.NotNil(t, body)
 	assert.True(t, body.closed, "the upstream body must be closed")
 	assert.ErrorIs(t, body.ctx.Err(), context.Canceled, "closing the body must release its context")

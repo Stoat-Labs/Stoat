@@ -17,7 +17,7 @@
     import {
         rangePresets,
         type RangePreset,
-    } from "@stoat/api/observability";
+    } from "@clowder/api/observability";
     import Check from "phosphor-svelte/lib/CheckIcon";
     import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
     import Clock from "phosphor-svelte/lib/ClockIcon";

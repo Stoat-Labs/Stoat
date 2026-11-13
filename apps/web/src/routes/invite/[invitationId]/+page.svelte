@@ -95,7 +95,7 @@
     }
 </script>
 
-<svelte:head><title>Invitation / Stoat</title></svelte:head>
+<svelte:head><title>Invitation / Clowder</title></svelte:head>
 <main class="mx-auto flex min-h-svh w-full max-w-md items-center p-6">
     <Card class="w-full">
         <CardHeader>

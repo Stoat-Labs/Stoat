@@ -1,4 +1,4 @@
-module git.irazz.lol/stoat/backup-agent
+module git.irazz.lol/clowder/backup-agent
 
 go 1.26.7
 

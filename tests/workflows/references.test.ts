@@ -45,7 +45,7 @@ const postgres = target(
         "EMPTY=",
         "LITERAL=$$HOME",
         "MIXED=a\"b'c`d",
-        "APP_URL=https://app.${STOAT_DOMAIN}",
+        "APP_URL=https://app.${CLOWDER_DOMAIN}",
         "UPSTREAM={{ " + REDIS_ID + ".URL }}",
     ].join("\n"),
     "services:\n  db:\n    image: postgres\n",
@@ -122,8 +122,8 @@ describe("referenceVariables", () => {
         expect(variables).toMatchObject({
             DB_INTERNAL_HOST: "aaaaaaaa-11111111-db.internal",
             DB_SERVICE_NAME: "aaaaaaaa-11111111-db",
-            STOAT_PREFIX: "aaaaaaaa-11111111",
-            STOAT_DOMAIN: "example.com",
+            CLOWDER_PREFIX: "aaaaaaaa-11111111",
+            CLOWDER_DOMAIN: "example.com",
             POSTGRES_USER: "shop",
             POSTGRES_PASSWORD: "pa$word",
             DATABASE_URL: "postgres://shop@aaaaaaaa-11111111-db.internal:5432",
@@ -138,7 +138,7 @@ describe("referenceVariables", () => {
 
         expect(referenceVariables(plain)).toMatchObject({
             DB_INTERNAL_HOST: "db.internal",
-            STOAT_PREFIX: "",
+            CLOWDER_PREFIX: "",
         });
     });
 
@@ -429,7 +429,7 @@ describe("system variables", () => {
         "    environment:",
         "      SELF: https://${WEB_PUBLIC_DOMAIN}",
         "    x-ports:",
-        "      - shop.${STOAT_DOMAIN}:80/https",
+        "      - shop.${CLOWDER_DOMAIN}:80/https",
         "  worker:",
         "    image: busybox",
         "",
@@ -437,14 +437,14 @@ describe("system variables", () => {
 
     it("adds Railway's project and resource variables when the identity is known", () => {
         expect(composeVariables(web, "", undefined, undefined, undefined, identity)).toMatchObject({
-            STOAT_PROJECT_ID: PROJECT_ID,
-            STOAT_PROJECT_NAME: "Shop",
-            STOAT_RESOURCE_ID: POSTGRES_ID,
-            STOAT_RESOURCE_NAME: "postgres",
+            CLOWDER_PROJECT_ID: PROJECT_ID,
+            CLOWDER_PROJECT_NAME: "Shop",
+            CLOWDER_RESOURCE_ID: POSTGRES_ID,
+            CLOWDER_RESOURCE_NAME: "postgres",
         });
     });
 
-    it("resolves public domains built from STOAT_DOMAIN, in Compose and in Variables", () => {
+    it("resolves public domains built from CLOWDER_DOMAIN, in Compose and in Variables", () => {
         const env = "LINK=${WEB_PUBLIC_DOMAIN}/login\n";
 
         expect(composeVariables(web, env, undefined, "example.com")).toMatchObject({
@@ -475,13 +475,13 @@ describe("system variables", () => {
         expect(
             composeVariables(
                 web,
-                "STOAT_RESOURCE_NAME=custom\n",
+                "CLOWDER_RESOURCE_NAME=custom\n",
                 undefined,
                 undefined,
                 undefined,
                 identity,
             ),
-        ).toMatchObject({ STOAT_RESOURCE_NAME: "custom" });
+        ).toMatchObject({ CLOWDER_RESOURCE_NAME: "custom" });
     });
 
     it("lists the same keys that references can read, plus Compose environment", () => {
@@ -500,8 +500,8 @@ describe("system variables", () => {
         );
         expect(keys).toEqual(
             expect.arrayContaining([
-                "STOAT_PROJECT_NAME",
-                "STOAT_RESOURCE_ID",
+                "CLOWDER_PROJECT_NAME",
+                "CLOWDER_RESOURCE_ID",
                 "WEB_INTERNAL_HOST",
                 "WEB_PUBLIC_DOMAIN",
             ]),
@@ -578,7 +578,7 @@ describe("Compose environment references", () => {
         expect(source("SHARED")).toBe("variables");
         expect(source("WORKER_API_KEY")).toBe("compose");
         expect(source("DRAFT_ONLY")).toBe("compose");
-        expect(source("API_INTERNAL_HOST")).toBe("stoat");
+        expect(source("API_INTERNAL_HOST")).toBe("clowder");
     });
 
     it("still offers Variables when the Compose cannot be read", () => {

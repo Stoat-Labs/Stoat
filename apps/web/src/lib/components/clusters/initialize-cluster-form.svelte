@@ -299,14 +299,16 @@
             <ShieldCheck aria-hidden="true" />
             <AlertDescription>
                 Deploys as <span class="font-mono">
-                    stoat-monitoring
+                    clowder-monitoring
                 </span>
                 with volumes
                 <span class="font-mono">
-                    stoat-monitoring-greptime
+                    clowder-monitoring-greptime
                 </span>
                 and
-                <span class="font-mono">stoat-monitoring-alloy</span>
+                <span class="font-mono">
+                    clowder-monitoring-alloy
+                </span>
                 , created automatically.
             </AlertDescription>
         </Alert>

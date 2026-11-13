@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { resources } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { resources } from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";

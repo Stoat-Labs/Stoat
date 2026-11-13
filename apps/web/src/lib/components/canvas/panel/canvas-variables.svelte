@@ -40,7 +40,7 @@
         parseAsString,
         useQueryState,
     } from "nuqs-svelte";
-    import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
+    import { VARIABLE_REFERENCE } from "@clowder/workflows/variable-reference";
     import * as v from "valibot";
     import {
         VariableHeader,
@@ -51,7 +51,7 @@
         parseEnvLines,
         removeEnvVariable,
         setEnvVariable,
-    } from "@stoat/workflows/env-lines";
+    } from "@clowder/workflows/env-lines";
     import {
         applyComposeSections,
         composeEnvironment,
@@ -762,12 +762,12 @@
                 {systemVariables.length === 1
                     ? "variable"
                     : "variables"}
-                added by Stoat
+                added by Clowder
             </button>
 
             {#if systemOpen.current}
                 <p class="mt-4 px-4 text-sm text-muted-foreground">
-                    Stoat provides these to every resource. Use them
+                    Clowder provides these to every resource. Use them
                     as
                     <code class="font-mono">${"{NAME}"}</code>
                     in Compose and Variables, or reference them from other

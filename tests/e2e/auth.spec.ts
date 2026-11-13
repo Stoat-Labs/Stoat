@@ -125,7 +125,7 @@ test.describe("signed out", () => {
         for (let attempt = 0; attempt < 4; attempt++) {
             await page.setExtraHTTPHeaders({
                 ...client,
-                "x-stoat-client-ip": `203.0.113.${attempt}`,
+                "x-clowder-client-ip": `203.0.113.${attempt}`,
             });
             await logIn(page, user.email, "not-the-password");
         }

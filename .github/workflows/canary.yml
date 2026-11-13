@@ -101,7 +101,7 @@ jobs:
                     fi
 
                     if [ -n "$NAME" ]; then
-                      # Remove scope if present (e.g. @stoat/stoat -> stoat)
+                      # Remove scope if present (e.g. @clowder/clowder -> clowder)
                       APP=${NAME#@*/}
                       IMAGE=$(echo "${{ env.REGISTRY }}/${{ github.repository_owner }}/$APP" | tr '[:upper:]' '[:lower:]')
 

@@ -10,7 +10,7 @@
         createFileTree,
         useFileTreeSelector,
         type FileTreeDirectoryHandle,
-    } from "@stoat/trees";
+    } from "@clowder/trees";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import { onMount } from "svelte";

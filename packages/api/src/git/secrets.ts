@@ -1,12 +1,10 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import * as v from "valibot";
 
 import type { GitCredentials } from "./index";
 
 type Scope = { organizationId: string; connectionId: string };
-
-const domain = "stoat/git-credentials/v1";
 
 const credentialField = v.optional(
     v.pipe(
@@ -30,19 +28,25 @@ const scopeSchema = v.object({
     connectionId: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
 });
 
-function keyMaterial(scope: Scope, salt: Buffer) {
+function keyMaterial(scope: Scope, salt: Buffer, label = "clowder") {
     const secret = appSecret();
 
     if (!v.is(scopeSchema, scope)) {
         throw new Error("Invalid Git credential scope");
     }
 
-    const context = Buffer.from(JSON.stringify([domain, scope.organizationId, scope.connectionId]));
+    const context = Buffer.from(
+        JSON.stringify([`${label}/git-credentials/v1`, scope.organizationId, scope.connectionId]),
+    );
 
     return { context, key: hkdfSync("sha256", secret, salt, context, 32) };
 }
 
-export function encryptGitCredentials(credentials: GitCredentials, scope: Scope): string {
+export function encryptGitCredentials(
+    credentials: GitCredentials,
+    scope: Scope,
+    label = "clowder",
+): string {
     const parsed = v.safeParse(credentialsSchema, credentials);
 
     if (!parsed.success) throw new Error("Invalid Git credentials");
@@ -51,7 +55,7 @@ export function encryptGitCredentials(credentials: GitCredentials, scope: Scope)
     if (plaintext.length > 512 * 1024) throw new Error("Git credentials exceed storage limits");
     const salt = randomBytes(32);
     const nonce = randomBytes(12);
-    const { key, context } = keyMaterial(scope, salt);
+    const { key, context } = keyMaterial(scope, salt, label);
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
     cipher.setAAD(context);
     const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
@@ -61,7 +65,12 @@ export function encryptGitCredentials(credentials: GitCredentials, scope: Scope)
         .join(".")}`;
 }
 
-export function decryptGitCredentials(envelope: string, scope: Scope): GitCredentials {
+// `label` is the legacy one only when re-encrypting credentials stored before the rename.
+export function decryptGitCredentials(
+    envelope: string,
+    scope: Scope,
+    label = "clowder",
+): GitCredentials {
     try {
         if (!v.is(v.pipe(v.string(), v.maxLength(1024 * 1024)), envelope)) throw new Error();
         const parts = envelope.split(".");
@@ -90,7 +99,7 @@ export function decryptGitCredentials(envelope: string, scope: Scope): GitCreden
             throw new Error();
         }
 
-        const { key, context } = keyMaterial(scope, salt);
+        const { key, context } = keyMaterial(scope, salt, label);
         const decipher = createDecipheriv("aes-256-gcm", key, nonce);
         decipher.setAAD(context);
         decipher.setAuthTag(tag);

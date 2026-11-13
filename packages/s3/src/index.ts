@@ -279,7 +279,7 @@ export type S3BucketKey = { keyId: string; credentials: S3Credentials };
 
 // Keys are named after their resource, so they can be found and revoked without stored state.
 function keyName(resourceId: string) {
-    return `stoat-${resourceId}`;
+    return `clowder-${resourceId}`;
 }
 
 // Returns null when the provider cannot scope keys; such buckets share the connection keys.
@@ -302,14 +302,25 @@ export async function createS3BucketKey(
     return null;
 }
 
-// Revokes by name, so a key a failed attempt never recorded is revoked too.
-export async function deleteS3BucketKey(connection: S3ConnectionRecord, resourceId: string) {
-    if (connection.provider === "rustfs")
-        await deleteRustfsKey(s3ConnectionTarget(connection), keyName(resourceId));
+// Revokes the recorded key and, by name, any key a failed attempt never recorded. The recorded
+// one matters when the name changed since, like keys created under the legacy name prefix.
+export async function deleteS3BucketKey(
+    connection: S3ConnectionRecord,
+    resourceId: string,
+    keyId: string | null,
+) {
+    if (connection.provider === "rustfs") {
+        const target = s3ConnectionTarget(connection);
+
+        await deleteRustfsKey(target, keyName(resourceId));
+
+        // RustFS records the access key, which is the key's name.
+        if (keyId && keyId !== keyName(resourceId)) await deleteRustfsKey(target, keyId);
+    }
 
     if (connection.provider === "r2") {
         const { accountId, token } = apiToken(connection);
-        await deleteR2Key(accountId, token, keyName(resourceId));
+        await deleteR2Key(accountId, token, keyName(resourceId), keyId);
     }
 }
 

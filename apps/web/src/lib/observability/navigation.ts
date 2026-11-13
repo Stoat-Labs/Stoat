@@ -1,4 +1,4 @@
-import { metricNames, type MachineMetricName } from "@stoat/api/observability";
+import { metricNames, type MachineMetricName } from "@clowder/api/observability";
 
 export const observabilityViews = [
     { id: "overview", title: "Overview", href: "/observability" },

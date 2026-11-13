@@ -1,6 +1,6 @@
-# Stoat sidecar
+# Clowder sidecar
 
-HTTP API and Scalar docs for Uncloud. Stoat connects to this process through configured data sources.
+HTTP API and Scalar docs for Uncloud. Clowder connects to this process through configured data sources.
 
 ## Authentication
 
@@ -69,13 +69,13 @@ This feature executes with host-root-equivalent privileges on the selected machi
 
 ## Adding and removing machines
 
-`GET /api/v1/cluster/connect` with `Connection: Upgrade` and `Upgrade: uncloud` switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster with only the sidecar's URL and token. Stoat's worker serves it to `uc` on a private Unix socket to run `uc machine add`. Without the upgrade headers it answers `426`; a sidecar that reaches Uncloud over SSH answers `501`; at most 16 connections stay open at once. It grants nothing the token doesn't already: the token runs commands as root on every machine.
+`GET /api/v1/cluster/connect` with `Connection: Upgrade` and `Upgrade: uncloud` switches to a raw connection to the Uncloud API the sidecar uses, so a gRPC client such as `uc` reaches the cluster with only the sidecar's URL and token. Clowder's worker serves it to `uc` on a private Unix socket to run `uc machine add`. Without the upgrade headers it answers `426`; a sidecar that reaches Uncloud over SSH answers `501`; at most 16 connections stay open at once. It grants nothing the token doesn't already: the token runs commands as root on every machine.
 
 Uncloud doesn't start global services on machines that join later. `POST /api/v1/services/{id}/spread` starts one on each eligible machine that has none and answered, with the spec of its newest container. It never touches existing containers, stopped ones included, so the sidecar can spread itself.
 
 `DELETE /api/v1/machines/{id}` does what `uc machine rm` does. When the machine answers, it stops and removes the machine's service containers and resets it to an uninitialised state, so it can join a cluster again; named volumes stay on it. Then it removes the machine from the cluster, which also drops the containers the cluster still lists for it. A machine that is down or doesn't answer within 15 seconds is only removed from the cluster, and the response says it wasn't reset. It refuses with `422` the machine the sidecar runs on or reaches Uncloud through, and `GET /api/v1/cluster/diagnostics` marks that one `connected`. Once started, a removal finishes even if the client goes away, and until it does, another removal, `/api/v1/cluster/connect` and spreading a service answer `409`, so nothing joins or spreads to the cluster mid-removal. Removing a machine with a public IP also updates the reserved domain's records, as below, so they stop pointing at it.
 
-`PUT /api/v1/cluster/domain/records` does what uc does after deploying Caddy: it points the domain reserved in Uncloud DNS at the machines whose Caddy answers on their public IP. Stoat calls it once Caddy runs on a new public machine, because it deploys Caddy itself (`uc machine add --no-caddy`), which skips uc's own update. It answers `404` without a cluster domain, and `422` for an external domain or when no machine answers, leaving the records as they were.
+`PUT /api/v1/cluster/domain/records` does what uc does after deploying Caddy: it points the domain reserved in Uncloud DNS at the machines whose Caddy answers on their public IP. Clowder calls it once Caddy runs on a new public machine, because it deploys Caddy itself (`uc machine add --no-caddy`), which skips uc's own update. It answers `404` without a cluster domain, and `422` for an external domain or when no machine answers, leaving the records as they were.
 
 ## Docker
 

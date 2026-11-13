@@ -1,12 +1,12 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     finishAddingMachine,
     markPendingMachineJoining,
     setPendingMachineJoined,
-} from "@stoat/db/clusters";
-import { appendDeploymentLog, setDeploymentStatus } from "@stoat/db/deployments";
-import type { PendingMachine } from "@stoat/db/schema/index";
-import { serveUncloudSocket, UcApiError, ucClient, unwrap, type UcClient } from "@stoat/uncloud";
+} from "@clowder/db/clusters";
+import { appendDeploymentLog, setDeploymentStatus } from "@clowder/db/deployments";
+import type { PendingMachine } from "@clowder/db/schema/index";
+import { serveUncloudSocket, UcApiError, ucClient, unwrap, type UcClient } from "@clowder/uncloud";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -37,7 +37,7 @@ type Cluster = {
     sidecarCertificate: string | null;
 };
 
-// The global services Stoat itself runs on every machine.
+// The global services Clowder itself runs on every machine.
 const SIDECAR_SERVICE = "sidecar";
 
 const CADDY_SERVICE = "caddy";
@@ -50,7 +50,7 @@ const ALREADY_MEMBER =
 
 /** The advisory lock an attempt holds while it runs, so machines join a cluster one at a time. */
 export function addMachineLock(clusterId: string) {
-    return `stoat:add-machine:${clusterId}`;
+    return `clowder:add-machine:${clusterId}`;
 }
 
 async function listMachines(uc: UcClient, signal: AbortSignal) {
@@ -68,14 +68,14 @@ export function clusterVersion(machines: { daemonVersion?: string }[]) {
     return versions.sort((a, b) => b.localeCompare(a, "en", { numeric: true }))[0] ?? null;
 }
 
-// Sidecars from before Stoat added machines can't relay uc, so check before touching the server.
+// Sidecars from before Clowder added machines can't relay uc, so check before touching the server.
 async function checkRelay(uc: UcClient, signal: AbortSignal) {
     const { response } = await uc
         .GET("/api/v1/cluster/connect", { signal: bounded(signal, 30_000) })
         .catch((error: Error) => {
             if (signal.aborted) throw error;
 
-            throw new Error(`Stoat couldn't reach the cluster's sidecar at ${uc.baseUrl}.`);
+            throw new Error(`Clowder couldn't reach the cluster's sidecar at ${uc.baseUrl}.`);
         });
 
     if (response.status === 426) return;
@@ -88,16 +88,16 @@ async function checkRelay(uc: UcClient, signal: AbortSignal) {
 
     if (response.status === 404)
         throw new Error(
-            "This cluster's sidecar is too old to add machines. Update the Stoat sidecar, then retry.",
+            "This cluster's sidecar is too old to add machines. Update the Clowder sidecar, then retry.",
         );
 
     if (response.status === 501)
         throw new Error(
-            "This cluster's sidecar reaches Uncloud over SSH, so Stoat can't add machines through it.",
+            "This cluster's sidecar reaches Uncloud over SSH, so Clowder can't add machines through it.",
         );
 
     throw new Error(
-        `The cluster's sidecar answered ${response.status} when Stoat checked its relay to Uncloud.`,
+        `The cluster's sidecar answered ${response.status} when Clowder checked its relay to Uncloud.`,
     );
 }
 
@@ -185,7 +185,7 @@ async function joinCluster(
         `ssh+go://${sshDestination(server)}`,
         "--ssh-key",
         workspace.key,
-        // Stoat spreads Caddy itself: uc's own rollout drops a custom global Caddyfile.
+        // Clowder spreads Caddy itself: uc's own rollout drops a custom global Caddyfile.
         "--no-caddy",
     ];
 
@@ -332,7 +332,7 @@ async function pointDomain(uc: UcClient, machine: Machine, log: Log, signal: Abo
         if (signal.aborted || !(error instanceof Error)) throw error;
 
         // The machine already runs everything, so its missing record doesn't fail the attempt.
-        log(`Stoat couldn't point the cluster's domain at ${machine.name}: ${error.message}`);
+        log(`Clowder couldn't point the cluster's domain at ${machine.name}: ${error.message}`);
     }
 }
 
@@ -344,7 +344,7 @@ async function spreadServices(
     log: Log,
     signal: AbortSignal,
 ) {
-    log(`Starting the Stoat sidecar on ${machine.name}...`);
+    log(`Starting the Clowder sidecar on ${machine.name}...`);
     await spreadService(uc, SIDECAR_SERVICE, machine, log, signal);
 
     if (await inspectService(uc, CADDY_SERVICE, signal)) {
@@ -362,7 +362,7 @@ async function spreadServices(
     if (monitored && (await inspectService(uc, ALLOY_SERVICE, signal))) {
         if ((await machinesWithoutGeoip(uc, [machine], bounded(signal, 60_000))).length)
             throw new Error(
-                `${machine.name} has no GeoIP database, which Alloy needs. Update the Stoat sidecar, then retry.`,
+                `${machine.name} has no GeoIP database, which Alloy needs. Update the Clowder sidecar, then retry.`,
             );
 
         log(`Starting the monitoring collector on ${machine.name}...`);
@@ -411,7 +411,7 @@ export async function addMachine(db: Database, deploymentId: string, signal: Abo
         );
     };
 
-    const workspace = await createWorkspace("stoat-machine-");
+    const workspace = await createWorkspace("clowder-machine-");
     const lock = await db.$client.connect();
     let acquired = false;
 
@@ -478,7 +478,7 @@ export async function addMachine(db: Database, deploymentId: string, signal: Abo
         await pending;
 
         if (!(await finishAddingMachine(db, clusterId, deploymentId)))
-            log("Adding the machine was cancelled before Stoat saved it. Retry to finish.");
+            log("Adding the machine was cancelled before Clowder saved it. Retry to finish.");
     } catch (error) {
         // Interruption is not a failure: the job is released and runs again.
         if (signal.aborted) throw error;

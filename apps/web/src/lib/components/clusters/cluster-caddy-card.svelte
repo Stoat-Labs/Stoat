@@ -133,7 +133,7 @@
                                             ? " and "
                                             : ""}
                                         <code>{name}</code>{/each},
-                                    which Stoat needs to record HTTP
+                                    which Clowder needs to record HTTP
                                     traffic.
                                 </p>
                                 {#if caddy.canManage}

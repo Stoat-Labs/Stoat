@@ -9,11 +9,11 @@ import {
     type CanvasLayout,
     type DeploymentStatus,
     type S3BucketStatus,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
-import { referencedResourceIds } from "@stoat/workflows/references";
+import { referencedResourceIds } from "@clowder/workflows/references";
 import { organizationProcedure } from "../..";
 import { resourceEnv } from "../../compose";
 import { composeServices, templateMatcher } from "../../project-graph";

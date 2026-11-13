@@ -22,7 +22,7 @@
     import { Label } from "$lib/components/ui/label";
     import { bytes } from "$lib/observability";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
+    import type { AppRouterClient } from "@clowder/api/routers/index";
     import { createMutation } from "@tanstack/svelte-query";
     import { untrack } from "svelte";
 

@@ -32,5 +32,5 @@ func TestVolumeSizesExposition(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return len(sizes.exposition(list)) > 0
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Contains(t, string(sizes.exposition(list)), `stoat_volume_size_bytes{volume="app-data"} `)
+	assert.Contains(t, string(sizes.exposition(list)), `clowder_volume_size_bytes{volume="app-data"} `)
 }

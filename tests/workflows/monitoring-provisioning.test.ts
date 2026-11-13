@@ -1,27 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     getMonitoringVersion,
     listOutdatedMonitoring,
     prepareMonitoring,
     setInitializationStatus,
     setMonitoringVersion,
-} from "@stoat/db/initialization";
+} from "@clowder/db/initialization";
 import {
     clusterMonitoring,
     clusters,
     projects,
     resources,
     type ClusterInitializationConfiguration,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import template from "../../internal/monitoring/compose.yaml?raw";
 
 describe("monitoring provisioning (PostgreSQL)", () => {
-    const databaseName = `stoat_monitoring_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_monitoring_test_${randomUUID().replaceAll("-", "")}`;
     const organizationId = randomUUID();
     const clusterId = randomUUID();
 
@@ -222,7 +222,7 @@ describe("monitoring provisioning (PostgreSQL)", () => {
         expect(ready).toMatchObject({
             initializationStatus: "ready",
             initializationError: null,
-            greptimeUrl: "http://stoat-monitoring-greptimedb.internal:4006",
+            greptimeUrl: "http://clowder-monitoring-greptimedb.internal:4006",
             initializationConfiguration: config,
         });
         expect(ready!.initializedAt).toBeInstanceOf(Date);
@@ -239,7 +239,7 @@ describe("monitoring provisioning (PostgreSQL)", () => {
                 .set({
                     initializationStatus: "ready",
                     initializedAt,
-                    greptimeUrl: "http://stoat-monitoring-greptimedb.internal:4006",
+                    greptimeUrl: "http://clowder-monitoring-greptimedb.internal:4006",
                 })
                 .where(eq(clusters.id, clusterId));
             const [before] = await db.select().from(clusters).where(eq(clusters.id, clusterId));

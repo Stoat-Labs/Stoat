@@ -1,5 +1,5 @@
-import type { Context } from "@stoat/api/context";
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { Context } from "@clowder/api/context";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 import type { NodeAdapter } from "crossws/adapters/node";
 import type { RequestLogger } from "evlog";
 

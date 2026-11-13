@@ -1,10 +1,10 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     deleteBucketResource,
     getBucketWork,
     markBucketReady,
     type S3BucketRow,
-} from "@stoat/db/buckets";
+} from "@clowder/db/buckets";
 import {
     createS3Bucket,
     createS3BucketKey,
@@ -12,7 +12,7 @@ import {
     deleteS3BucketKey,
     encryptS3BucketCredentials,
     type S3ConnectionRecord,
-} from "@stoat/s3";
+} from "@clowder/s3";
 
 async function provision(db: Database, bucket: S3BucketRow, connection: S3ConnectionRecord) {
     await createS3Bucket(connection, bucket.name);
@@ -32,9 +32,9 @@ async function provision(db: Database, bucket: S3BucketRow, connection: S3Connec
 
 async function remove(db: Database, bucket: S3BucketRow, connection: S3ConnectionRecord) {
     // Revoked by name even when no key was recorded, so a half-provisioned key never outlives it.
-    await deleteS3BucketKey(connection, bucket.resourceId);
+    await deleteS3BucketKey(connection, bucket.resourceId, bucket.keyId);
 
-    // A bucket holding data is kept in the provider; only the Stoat resource goes away.
+    // A bucket holding data is kept in the provider; only the Clowder resource goes away.
     await deleteS3BucketIfEmpty(connection, bucket.name);
     await deleteBucketResource(db, bucket);
 }

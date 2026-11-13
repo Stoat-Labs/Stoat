@@ -1,4 +1,4 @@
-import type { Context as ApiContext } from "@stoat/api/context";
+import type { Context as ApiContext } from "@clowder/api/context";
 import type { RequestEvent } from "@sveltejs/kit";
 
 import { getAuth, getDb } from "./services";

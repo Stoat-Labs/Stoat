@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     appendDeploymentLog,
     cancelDeployment,
@@ -11,15 +11,15 @@ import {
     setDeploymentStatus,
     watchDeployment,
     watchDeploymentChanges,
-} from "@stoat/db/deployments";
+} from "@clowder/db/deployments";
 import {
     clusters,
     deployments,
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
-import * as runtime from "@stoat/workflows/runtime";
+} from "@clowder/db/schema/index";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -28,7 +28,7 @@ import { deploymentsRouter } from "../../packages/api/src/routers/cluster/deploy
 import { insertUserWithOrganization } from "../users";
 
 describe("deployment streaming (PostgreSQL LISTEN/NOTIFY)", () => {
-    const databaseName = `stoat_stream_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_stream_test_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const resourceId = randomUUID();
     let admin: ReturnType<typeof createDb>;

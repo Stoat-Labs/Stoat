@@ -102,7 +102,7 @@ export function redisLayer(url: string): CacheLayer {
     return createStorage({
         driver: redisDriver({
             url,
-            base: "stoat",
+            base: "clowder",
             ttl: ttlSeconds,
             // Fail fast back to memory: never queue behind a dead Dragonfly.
             connectTimeout: 1000,

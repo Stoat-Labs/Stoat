@@ -1,7 +1,7 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/svelte-query";
 
 export function createQueryClient() {
@@ -57,7 +57,7 @@ const browserClient = createORPCClient<AppRouterClient>(link);
 
 /**
  * The SSR client is a singleton created when orpc.server.ts first loads. Vite
- * dev HMR replaces that instance when @stoat/api changes, but this module is
+ * dev HMR replaces that instance when @clowder/api changes, but this module is
  * NOT re-evaluated (it only type-imports the router), so a captured reference
  * goes stale and new procedures read as `undefined` (e.g.
  * `orpc.resources.getResource` -> "Cannot read properties of undefined

@@ -193,7 +193,7 @@
 
 <svelte:head>
     <title>
-        {project.data?.name ?? "Project"} observability · Stoat
+        {project.data?.name ?? "Project"} observability · Clowder
     </title>
 </svelte:head>
 

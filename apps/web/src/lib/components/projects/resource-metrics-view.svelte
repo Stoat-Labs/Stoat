@@ -56,7 +56,7 @@
         mysqlMetricNames,
         postgresMetricNames,
         type MetricSeries,
-    } from "@stoat/api/observability";
+    } from "@clowder/api/observability";
     import {
         createQueries,
         createQuery,

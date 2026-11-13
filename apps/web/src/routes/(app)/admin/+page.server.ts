@@ -1,8 +1,8 @@
 import { fail } from "@sveltejs/kit";
 import { count } from "drizzle-orm";
-import { organization, user } from "@stoat/db/schema/auth";
-import { clusters, resources } from "@stoat/db/schema/index";
-import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
+import { organization, user } from "@clowder/db/schema/auth";
+import { clusters, resources } from "@clowder/db/schema/index";
+import { getSignupsEnabled, setSignupsEnabled } from "@clowder/db/settings";
 import { requireInstanceAdmin } from "$lib/server/require-admin";
 import { getDb } from "../../../services";
 

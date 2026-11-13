@@ -36,16 +36,16 @@
         {
             login: {
                 title: "Welcome back",
-                description: "Log into your Stoat workspace.",
+                description: "Log into your Clowder workspace.",
                 submit: "Log in",
             },
             signup: {
                 title: "Create your account",
-                description: "Get started with Stoat.",
+                description: "Get started with Clowder.",
                 submit: "Create account",
             },
             setup: {
-                title: "Set up Stoat",
+                title: "Set up Clowder",
                 description:
                     "This account becomes the instance administrator.",
                 submit: "Create admin account",
@@ -115,10 +115,10 @@
 </script>
 
 <svelte:head>
-    <title>{copy.title} / Stoat</title>
+    <title>{copy.title} / Clowder</title>
     <meta
         name="description"
-        content="Your infrastructure, together. Access your Stoat organization."
+        content="Your infrastructure, together. Access your Clowder organization."
     />
 </svelte:head>
 
@@ -231,7 +231,7 @@
             <p class="text-center text-sm text-muted-foreground">
                 {signup
                     ? "Already have an account?"
-                    : "New to Stoat?"}
+                    : "New to Clowder?"}
                 <a
                     class="ml-1 underline underline-offset-4 hover:text-primary"
                     href="{signup ? '/login' : '/signup'}{next === '/'

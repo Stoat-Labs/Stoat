@@ -1,18 +1,18 @@
 import { ORPCError } from "@orpc/server";
-import { projects, resources } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
+import { projects, resources } from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
 import {
     ComposeVariableError,
     interpolateCompose,
     resourceComposePrefix,
     resourceEnv,
-} from "@stoat/workflows/compose";
+} from "@clowder/workflows/compose";
 import {
     referencedResourceIds,
     referenceKeys,
     referenceTargets,
     resolveReferences,
-} from "@stoat/workflows/references";
+} from "@clowder/workflows/references";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
@@ -72,7 +72,7 @@ export const resourceMetricsRouter = {
                         target.draftSpec ?? target.spec,
                         resourceEnv(target),
                         resourceComposePrefix(target),
-                        "stoat-domain.invalid",
+                        "clowder-domain.invalid",
                     ),
                     referenceKeys(target).map(({ key }) => key),
                     resource.id,
@@ -115,7 +115,7 @@ export const resourceMetricsRouter = {
 
                 // Fail here rather than at deploy, e.g. when the password is itself a reference.
                 try {
-                    resolveReferences(exporter.env, [target], "stoat-domain.invalid");
+                    resolveReferences(exporter.env, [target], "clowder-domain.invalid");
                 } catch (error) {
                     if (!(error instanceof ComposeVariableError)) throw error;
 

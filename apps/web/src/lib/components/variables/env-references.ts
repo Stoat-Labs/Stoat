@@ -1,6 +1,6 @@
 import { RangeSetBuilder, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { referenceResourceId, VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
+import { referenceResourceId, VARIABLE_REFERENCE } from "@clowder/workflows/variable-reference";
 
 /** Shows a whole `{{ <id>.KEY }}` as one `Name.KEY` chip. */
 class ReferenceWidget extends WidgetType {

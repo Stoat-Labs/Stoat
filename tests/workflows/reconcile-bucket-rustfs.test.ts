@@ -8,13 +8,13 @@ import {
     S3Client,
 } from "@aws-sdk/client-s3";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters, projects, resources, s3Buckets } from "@stoat/db/schema/index";
-import { decryptS3BucketCredentials, type S3Credentials } from "@stoat/s3";
-import * as s3Client from "@stoat/s3/client";
-import { createRustfsKey, deleteRustfsKey } from "@stoat/s3/providers/rustfs";
-import { reconcileBucket } from "@stoat/workflows/reconcile-bucket";
-import * as runtime from "@stoat/workflows/runtime";
+import { createDb } from "@clowder/db";
+import { clusters, projects, resources, s3Buckets } from "@clowder/db/schema/index";
+import { decryptS3BucketCredentials, type S3Credentials } from "@clowder/s3";
+import * as s3Client from "@clowder/s3/client";
+import { createRustfsKey, deleteRustfsKey } from "@clowder/s3/providers/rustfs";
+import { reconcileBucket } from "@clowder/workflows/reconcile-bucket";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { generate } from "selfsigned";
@@ -25,13 +25,13 @@ import { bucketsRouter } from "../../packages/api/src/routers/buckets";
 import { s3Router } from "../../packages/api/src/routers/s3";
 import { insertUserWithOrganization } from "../users";
 
-const root: S3Credentials = { accessKey: "stoat-root", secretKey: "stoat-root-secret-key" };
+const root: S3Credentials = { accessKey: "clowder-root", secretKey: "clowder-root-secret-key" };
 
 // A revoked or replaced key is refused at authentication, before the bucket is even looked up.
 const refused = { name: expect.stringMatching(/^(InvalidAccessKeyId|SignatureDoesNotMatch)$/u) };
 
 describe("bucket reconciliation against RustFS", () => {
-    const databaseName = `stoat_rustfs_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_rustfs_${randomUUID().replaceAll("-", "")}`;
     const projectId = randomUUID();
     const signal = new AbortController().signal;
     const enqueue = vi.spyOn(runtime, "queueBucketReconcile").mockResolvedValue();
@@ -77,7 +77,7 @@ describe("bucket reconciliation against RustFS", () => {
         const s3 = client(credentials);
 
         try {
-            await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: "stoat" }));
+            await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: "clowder" }));
         } finally {
             s3.destroy();
         }
@@ -204,7 +204,7 @@ describe("bucket reconciliation against RustFS", () => {
         await reconcile(resourceId);
 
         const row = await bucketRow(resourceId);
-        expect(row).toMatchObject({ status: "ready", error: null, keyId: `stoat-${resourceId}` });
+        expect(row).toMatchObject({ status: "ready", error: null, keyId: `clowder-${resourceId}` });
         expect(await bucketExists("scoped")).toBe(true);
 
         const key = decryptS3BucketCredentials(row!.encryptedCredentials!, resourceId);
@@ -224,7 +224,7 @@ describe("bucket reconciliation against RustFS", () => {
         const s3 = client(root);
         await s3.send(new CreateBucketCommand({ Bucket: "retried" }));
         s3.destroy();
-        const abandoned = await createRustfsKey(target, "retried", `stoat-${resourceId}`);
+        const abandoned = await createRustfsKey(target, "retried", `clowder-${resourceId}`);
 
         await reconcile(resourceId);
 
@@ -268,9 +268,26 @@ describe("bucket reconciliation against RustFS", () => {
         await expect(put(key, "kept", "after.txt")).rejects.toMatchObject(refused);
     });
 
+    it("revokes a key created before the rename, by the id it was recorded with", async () => {
+        const resourceId = await createBucket("renamed");
+        await reconcile(resourceId);
+        const target = { endpoint, region: "us-east-1", forcePathStyle: true, credentials: root };
+        // What a bucket provisioned before the rename looks like: its key has the legacy prefix.
+        const old = await createRustfsKey(target, "renamed", `stoat-${resourceId}`);
+
+        await db
+            .update(s3Buckets)
+            .set({ keyId: old.keyId })
+            .where(eq(s3Buckets.resourceId, resourceId));
+        await call(bucketsRouter.remove, { projectId, resourceId }, { context: owner });
+        await reconcile(resourceId);
+
+        await expect(put(old.credentials, "renamed", "after.txt")).rejects.toMatchObject(refused);
+    });
+
     it("treats revoking a key that was never created as done", async () => {
         const target = { endpoint, region: "us-east-1", forcePathStyle: true, credentials: root };
 
-        await expect(deleteRustfsKey(target, `stoat-${randomUUID()}`)).resolves.toBeUndefined();
+        await expect(deleteRustfsKey(target, `clowder-${randomUUID()}`)).resolves.toBeUndefined();
     });
 });

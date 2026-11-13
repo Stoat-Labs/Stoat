@@ -75,7 +75,7 @@
                     {source ? "Change source" : "Connect repo"}
                 </DialogTitle>
                 <DialogDescription>
-                    Stoat reads the Compose file and the files its
+                    Clowder reads the Compose file and the files its
                     configs point to from this branch. Nothing is
                     built.
                 </DialogDescription>

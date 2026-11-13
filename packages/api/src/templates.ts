@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import * as v from "valibot";
 import YAML from "yaml";
-import { VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
+import { VARIABLE_REFERENCE } from "@clowder/workflows/variable-reference";
 import { databaseEngines } from "./databases";
 
 // Bundled at build time: adding a template needs a rebuild, but there is no runtime

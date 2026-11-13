@@ -3,7 +3,7 @@ import type { RequestHandler } from "@sveltejs/kit";
 const html = `<!doctype html>
 <html>
     <head>
-        <title>Stoat API Reference</title>
+        <title>Clowder API Reference</title>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
     </head>

@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { resources } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { resources } from "@clowder/db/schema/index";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
 

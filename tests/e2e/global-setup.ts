@@ -6,8 +6,8 @@ import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
 import { request } from "@playwright/test";
 import * as v from "valibot";
-import { createDb } from "@stoat/db";
-import { clusters, projects, resources } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters, projects, resources } from "@clowder/db/schema/index";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { generate } from "selfsigned";
@@ -63,7 +63,7 @@ const APP_SECRET = "e2e-secret-that-is-at-least-32-characters-long";
 /**
  * RustFS over TLS with a throwaway certificate, written to `rustfsCaFile` for the web server and
  * specs to trust. Reached through the Docker bridge gateway, a private address like a LAN
- * server, since Stoat refuses loopback endpoints.
+ * server, since Clowder refuses loopback endpoints.
  */
 async function startRustfs() {
     const gateway = spawnSync(

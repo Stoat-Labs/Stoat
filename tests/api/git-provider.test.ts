@@ -754,7 +754,7 @@ describe("Repository discovery", () => {
 });
 
 describe("Push webhooks", () => {
-    const hookUrl = "https://stoat.example/git/webhook/connection";
+    const hookUrl = "https://clowder.example/git/webhook/connection";
 
     it("creates a GitHub hook for the repository", async () => {
         network.reply = (url) => ({ data: url.search ? [] : { id: 1 } });

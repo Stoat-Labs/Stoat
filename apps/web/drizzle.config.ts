@@ -2,10 +2,10 @@ import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
     schema: [
-        "./node_modules/@stoat/db/src/schema/index.ts",
-        "./node_modules/@stoat/workflows/src/schema.ts",
+        "./node_modules/@clowder/db/src/schema/index.ts",
+        "./node_modules/@clowder/workflows/src/schema.ts",
     ],
-    out: "./node_modules/@stoat/db/src/migrations",
+    out: "./node_modules/@clowder/db/src/migrations",
     dialect: "postgresql",
     dbCredentials: {
         url: process.env.DATABASE_URL ?? "",

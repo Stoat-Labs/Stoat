@@ -1,4 +1,4 @@
-import { isAllowedS3Address } from "@stoat/s3/client";
+import { isAllowedS3Address } from "@clowder/s3/client";
 import { BlockList, isIP } from "node:net";
 
 const privateNetworks = new BlockList();
@@ -19,7 +19,7 @@ const tailscale = new BlockList();
 
 tailscale.addSubnet("100.64.0.0", 10);
 
-/** Whether Stoat reaches this server over a private network (LAN or Tailscale) rather than the internet. */
+/** Whether Clowder reaches this server over a private network (LAN or Tailscale) rather than the internet. */
 export function isPrivateServerAddress(address: string) {
     const version = isIP(address);
 

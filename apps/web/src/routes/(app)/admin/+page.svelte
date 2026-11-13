@@ -25,7 +25,7 @@
     });
 </script>
 
-<svelte:head><title>Admin / Stoat</title></svelte:head>
+<svelte:head><title>Admin / Clowder</title></svelte:head>
 <div class="w-full space-y-6 pt-6">
     <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {#each data.stats as stat (stat.title)}

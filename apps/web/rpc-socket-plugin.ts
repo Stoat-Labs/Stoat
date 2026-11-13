@@ -3,7 +3,7 @@ import type { Plugin } from "vite";
 /** Hands /rpc WebSocket upgrades on the dev server to oRPC, leaving Vite's HMR socket alone. */
 export function rpcSocket(): Plugin {
     return {
-        name: "stoat-rpc-socket",
+        name: "clowder-rpc-socket",
         configureServer(server) {
             server.httpServer?.on("upgrade", (request, socket, head) => {
                 if (new URL(request.url ?? "/", "http://localhost").pathname !== "/rpc") return;

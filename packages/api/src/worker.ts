@@ -1,11 +1,11 @@
-import { startWorker } from "@stoat/workflows/lifecycle";
+import { startWorker } from "@clowder/workflows/lifecycle";
 import { watchGitSources } from "./git/watch";
-import { appSecret, databaseUrl } from "@stoat/config/env";
-import { encryptLegacySidecarTokens } from "@stoat/db/clusters";
-import { monitoringWorkerLive, pollInitializationOutbox } from "@stoat/workflows/runtime";
-import { JobStoreLive } from "@stoat/workflows/store";
+import { appSecret, databaseUrl } from "@clowder/config/env";
+import { encryptLegacySidecarTokens } from "@clowder/db/clusters";
+import { monitoringWorkerLive, pollInitializationOutbox } from "@clowder/workflows/runtime";
+import { JobStoreLive } from "@clowder/workflows/store";
 import { Effect, Layer } from "effect";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 
 /**
  * Run the background job worker: inside the web server, or as the standalone apps/worker.

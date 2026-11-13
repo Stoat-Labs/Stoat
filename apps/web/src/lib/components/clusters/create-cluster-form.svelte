@@ -136,8 +136,8 @@
             aria-describedby="cluster-sidecar-token-hint"
         />
         <FieldDescription id="cluster-sidecar-token-hint">
-            Authenticates Stoat against the sidecar. Never shown again
-            after creation.
+            Authenticates Clowder against the sidecar. Never shown
+            again after creation.
         </FieldDescription>
     </Field>
 </form>

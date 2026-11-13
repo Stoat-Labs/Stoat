@@ -1,6 +1,6 @@
 import { getRequestEvent } from "$app/server";
 import { createRouterClient } from "@orpc/server";
-import { appRouter, type AppRouterClient } from "@stoat/api/routers/index";
+import { appRouter, type AppRouterClient } from "@clowder/api/routers/index";
 
 import { createContext } from "../../context";
 

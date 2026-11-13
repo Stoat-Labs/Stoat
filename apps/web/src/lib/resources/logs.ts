@@ -1,4 +1,4 @@
-import type { ResourceLog } from "@stoat/api/routers/resources/logs";
+import type { ResourceLog } from "@clowder/api/routers/resources/logs";
 import * as v from "valibot";
 
 import { lenient } from "./lenient";

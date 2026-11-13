@@ -255,7 +255,7 @@ describe("templates", () => {
 
         const services = Object.entries(rendered.services);
 
-        it("only references variables it defines or Stoat provides", () => {
+        it("only references variables it defines or Clowder provides", () => {
             const builtIns = summarizeVersion(files).services.flatMap(({ name }) => {
                 const variable = name.toUpperCase().replaceAll(/[^A-Z0-9_]/gu, "_");
 
@@ -265,8 +265,8 @@ describe("templates", () => {
             const defined = new Set([
                 ...Object.keys(parseEnv(env)),
                 ...builtIns,
-                "STOAT_PREFIX",
-                "STOAT_DOMAIN",
+                "CLOWDER_PREFIX",
+                "CLOWDER_DOMAIN",
             ]);
 
             // `$$` is an escaped literal `$`, not a reference.

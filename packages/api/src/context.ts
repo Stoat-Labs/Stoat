@@ -1,5 +1,5 @@
-import type { createAuth } from "@stoat/auth";
-import type { Database } from "@stoat/db";
+import type { createAuth } from "@clowder/auth";
+import type { Database } from "@clowder/db";
 
 export type Context = {
     session: Awaited<ReturnType<ReturnType<typeof createAuth>["api"]["getSession"]>>;

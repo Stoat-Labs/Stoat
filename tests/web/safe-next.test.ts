@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { safeNextPath } from "../../apps/web/src/lib/params/safe-next";
 
-const origin = "https://stoat.example";
+const origin = "https://clowder.example";
 
 describe("safeNextPath", () => {
     it("keeps same-site paths with their query", () => {

@@ -1,4 +1,4 @@
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 
 export type ReferenceTarget = Awaited<
     ReturnType<AppRouterClient["resources"]["listVariableReferences"]>
@@ -31,7 +31,7 @@ export type ReferenceGroup = { label: string; items: ReferenceOption[] };
 const sources: [ReferenceSource, string][] = [
     ["variables", "Variables"],
     ["compose", "Set in Compose"],
-    ["stoat", "Added by Stoat"],
+    ["clowder", "Added by Clowder"],
 ];
 
 const count = (amount: number, noun: string) => `${amount} ${noun}${amount === 1 ? "" : "s"}`;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { createDb } from "@stoat/db";
-import { clusters, deployments } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters, deployments } from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
@@ -115,7 +115,7 @@ describe("caddy metrics", () => {
 });
 
 describe("caddy deployment rows (PostgreSQL)", () => {
-    const databaseName = `stoat_caddy_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_caddy_test_${randomUUID().replaceAll("-", "")}`;
     const organizationId = randomUUID();
     const clusterId = randomUUID();
 

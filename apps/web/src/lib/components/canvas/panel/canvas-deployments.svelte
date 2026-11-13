@@ -466,7 +466,7 @@
             </button>
 
             {#if isLive && expanded.current}
-                <!-- Railway lists build steps here; Stoat shows the containers this deployment runs. -->
+                <!-- Railway lists build steps here; Clowder shows the containers this deployment runs. -->
                 <ul class="py-1">
                     {#if containersQuery.isPending}
                         <li>
@@ -670,7 +670,7 @@
             }
         }
         title="Remove deployment"
-        description="This deletes the deployment and its logs from Stoat. Running containers are not affected."
+        description="This deletes the deployment and its logs from Clowder. Running containers are not affected."
         confirmLabel="Remove"
         pending={pending === "remove"}
         error={actionError}

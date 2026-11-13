@@ -112,7 +112,7 @@ test("an admin sets up a server over SSH, follows it on its deployment page, ret
 
     const setup = page.getByRole("dialog", { name: new RegExp(name) });
     await expect(setup.getByRole("textbox", { name: "Public key" })).toHaveValue(
-        /^ssh-ed25519 \S+ stoat-/,
+        /^ssh-ed25519 \S+ clowder-/,
     );
     await expect(setup.getByRole("textbox", { name: "Or run this on the server" })).toHaveValue(
         /authorized_keys$/,
@@ -193,7 +193,7 @@ test("an admin adds a machine in a dialog, follows it on its deployment page, re
     await add.getByRole("button", { name: "Continue" }).click();
 
     await expect(add.getByRole("textbox", { name: "Public key" })).toHaveValue(
-        /^ssh-ed25519 \S+ stoat-/,
+        /^ssh-ed25519 \S+ clowder-/,
     );
     await expect(add.getByRole("textbox", { name: "Or run this on the server" })).toHaveValue(
         /authorized_keys$/,
@@ -242,12 +242,12 @@ test("an admin adds a machine in a dialog, follows it on its deployment page, re
     ).toEqual([{ gone: true }]);
 });
 
-test("an admin removes a machine, but not the one Stoat connects through", async ({ page }) => {
+test("an admin removes a machine, but not the one Clowder connects through", async ({ page }) => {
     await addWorker();
     const { id } = await createCluster(page);
     await page.goto(`/clusters/${id}`);
 
-    await expect(row(page, MACHINE.name)).toContainText("Stoat connects through this machine");
+    await expect(row(page, MACHINE.name)).toContainText("Clowder connects through this machine");
     await expect(page.getByRole("button", { name: `Actions for ${MACHINE.name}` })).toHaveCount(0);
 
     await row(page, WORKER.name)

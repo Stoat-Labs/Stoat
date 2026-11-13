@@ -1,4 +1,4 @@
-import { unwrap, type UcClient } from "@stoat/uncloud";
+import { unwrap, type UcClient } from "@clowder/uncloud";
 import { GREPTIME_SERVICE } from "./monitoring-compose";
 import { Schema } from "effect";
 
@@ -63,7 +63,7 @@ export async function monitoringRequest(
                 path,
                 form: Object.fromEntries(parameters),
                 headers: {
-                    Authorization: `Basic ${Buffer.from(`stoat:${password}`).toString("base64")}`,
+                    Authorization: `Basic ${Buffer.from(`clowder:${password}`).toString("base64")}`,
                 },
             },
             signal,

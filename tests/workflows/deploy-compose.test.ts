@@ -1,4 +1,4 @@
-import { ucClient } from "@stoat/uncloud";
+import { ucClient } from "@clowder/uncloud";
 import { expect, it } from "vite-plus/test";
 import { deployCompose, environmentCredentials } from "../../packages/workflows/src/deploy-compose";
 
@@ -128,7 +128,7 @@ it("does not mask service names or values without letters or digits", async () =
 });
 
 it("masks given credentials but not plain environment values", async () => {
-    const error = "stoat-monitoring-alloy failed to reach monitoring with hunter2";
+    const error = "clowder-monitoring-alloy failed to reach monitoring with hunter2";
 
     const uc = ucClient("http://sidecar.test", {
         fetch: async () =>
@@ -142,7 +142,7 @@ it("masks given credentials but not plain environment values", async () => {
     await expect(
         deployCompose(
             uc,
-            "services:\n  alloy:\n    image: x\n    environment: [GREPTIME_USERNAME=stoat, GREPTIME_DB=monitoring, GREPTIME_URL=monitoring-alloy]\n",
+            "services:\n  alloy:\n    image: x\n    environment: [GREPTIME_USERNAME=clowder, GREPTIME_DB=monitoring, GREPTIME_URL=monitoring-alloy]\n",
             new AbortController().signal,
             async (text) => {
                 logs.push(text);
@@ -151,7 +151,7 @@ it("masks given credentials but not plain environment values", async () => {
             ["hunter2"],
         ),
     ).rejects.toThrow();
-    expect(logs).toEqual(["stoat-monitoring-alloy failed to reach monitoring with [REDACTED]"]);
+    expect(logs).toEqual(["clowder-monitoring-alloy failed to reach monitoring with [REDACTED]"]);
 });
 
 it("masks whole values only under credential-like keys", () => {

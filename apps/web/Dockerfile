@@ -17,7 +17,7 @@ COPY packages/uncloud/package.json packages/uncloud/package.json
 COPY packages/workflows/package.json packages/workflows/package.json
 COPY patches ./patches
 
-RUN --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=clowder-pnpm,target=/pnpm/store \
     pnpm fetch --store-dir /pnpm/store
 
 FROM deps AS build
@@ -29,11 +29,11 @@ ARG GIT_COMMIT
 ARG APP_VERSION
 
 RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local,required=false \
-    --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
+    --mount=type=cache,id=clowder-pnpm,target=/pnpm/store \
     export NODE_ENV=production APP_SECRET=build-only-secret-that-is-not-used-at-runtime APP_URL=http://localhost:3001 DATABASE_URL=postgresql://build:build@localhost:5432/build \
     && pnpm install --prod=false --offline --frozen-lockfile --store-dir /pnpm/store \
-    && pnpm --filter @stoat/stoat build \
-    && pnpm deploy --filter @stoat/stoat --prod /app/runtime --legacy
+    && pnpm --filter @clowder/clowder build \
+    && pnpm deploy --filter @clowder/clowder --prod /app/runtime --legacy
 
 # The Uncloud CLI that ProvisionCluster uses to create clusters over SSH. Keep the version in sync
 # with github.com/psviderski/uncloud in apps/sidecar/go.mod, and the hashes with its checksums.txt.
@@ -69,6 +69,7 @@ COPY --from=build --chown=node:node /app/apps/web/build ./build
 COPY --from=build --chown=node:node /app/apps/web/server.js ./server.js
 COPY --from=build --chown=node:node /app/apps/web/src/generated-env.ts ./src/generated-env.ts
 COPY --from=build --chown=node:node /app/apps/web/drizzle.config.ts ./drizzle.config.ts
+COPY --from=build --chown=node:node /app/apps/web/build-scripts/rebrand.mjs ./rebrand.mjs
 
 # adapter-node's build is self-contained; static assets are already in build.
 # Keep src because varlock uses its generated environment types at startup.

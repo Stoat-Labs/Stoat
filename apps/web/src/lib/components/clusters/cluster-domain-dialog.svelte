@@ -22,7 +22,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { orpc, queryClient } from "$lib/api/orpc";
-    import { isClusterDomain } from "@stoat/workflows/ingress";
+    import { isClusterDomain } from "@clowder/workflows/ingress";
     import Info from "phosphor-svelte/lib/InfoIcon";
     import {
         createMutation,
@@ -200,7 +200,7 @@
                         Point the wildcard record <code>
                             {record}
                         </code>
-                        at the machines running Caddy. Stoat doesn't change
+                        at the machines running Caddy. Clowder doesn't change
                         your DNS records.
                     </FieldDescription>
                 </Field>

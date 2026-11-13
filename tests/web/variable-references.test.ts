@@ -30,7 +30,7 @@ const targets = [
         { key: "CH_PASSWORD", source: "variables" },
     ]),
     target(POSTGRES, "postgres", PROJECT, "Shop", [
-        { key: "DB_INTERNAL_HOST", source: "stoat" },
+        { key: "DB_INTERNAL_HOST", source: "clowder" },
         { key: "POSTGRES_USER", source: "variables" },
         { key: "WORKER_KEY", source: "compose" },
     ]),
@@ -102,7 +102,7 @@ describe("referenceGroups", () => {
         expect(labels(groups)).toEqual([
             ["Variables", ["POSTGRES_USER"]],
             ["Set in Compose", ["WORKER_KEY"]],
-            ["Added by Stoat", ["DB_INTERNAL_HOST"]],
+            ["Added by Clowder", ["DB_INTERNAL_HOST"]],
         ]);
         expect(groups[0]?.items[0]).toEqual({
             id: "POSTGRES_USER",

@@ -6,7 +6,7 @@
     import { Input } from "$lib/components/ui/input";
     import { Label } from "$lib/components/ui/label";
     import { Switch } from "$lib/components/ui/switch";
-    import type { S3ProviderId } from "@stoat/s3/providers";
+    import type { S3ProviderId } from "@clowder/s3/providers";
 
     let {
         provider,
@@ -63,7 +63,7 @@
         <FieldDescription id="s3-token-description">
             An account-owned token with Account API Tokens: Edit,
             Workers R2 Storage: Edit, and Account Analytics: Read.
-            Stoat uses it to create buckets, a scoped token for each
+            Clowder uses it to create buckets, a scoped token for each
             one, and to read bucket usage.
         </FieldDescription>
     </Field>
@@ -118,7 +118,7 @@
         />
         <FieldDescription id="s3-secret-description">
             {provider === "rustfs"
-                ? "An admin user's keys. Stoat creates a service account limited to each bucket."
+                ? "An admin user's keys. Clowder creates a service account limited to each bucket."
                 : "Keys that can create and delete buckets. Every bucket shares them."}
         </FieldDescription>
     </Field>

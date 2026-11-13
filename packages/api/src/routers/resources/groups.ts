@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { deleteEmptyGroups } from "@stoat/db/groups";
-import { resourceGroups, resources } from "@stoat/db/schema/index";
+import { deleteEmptyGroups } from "@clowder/db/groups";
+import { resourceGroups, resources } from "@clowder/db/schema/index";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 

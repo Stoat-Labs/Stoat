@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, projects, resources } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
+import { clusters, projects, resources } from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";

@@ -1,15 +1,15 @@
 import { apiKey } from "@better-auth/api-key";
-import type { Database } from "@stoat/db";
-import * as schema from "@stoat/db/schema/auth";
+import type { Database } from "@clowder/db";
+import * as schema from "@clowder/db/schema/auth";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import { getSignupsEnabled } from "@stoat/db/settings";
-import { hasPendingInvitation, isSetupRequired } from "@stoat/db/setup";
+import { getSignupsEnabled } from "@clowder/db/settings";
+import { hasPendingInvitation, isSetupRequired } from "@clowder/db/setup";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins/admin";
 import { organization } from "better-auth/plugins/organization";
-import { listUserOrganizations, organizationHasInfrastructure } from "@stoat/db/organizations";
+import { listUserOrganizations, organizationHasInfrastructure } from "@clowder/db/organizations";
 
 import { createSessionStorage } from "./session-storage";
 // Lets tsc name the zod types in createAuth's inferred return type (TS2883).
@@ -26,7 +26,7 @@ export type AuthConfig = {
  * The client address Better Auth rate-limits by. The web server sets it on every request from
  * the connection (or its configured proxy header), replacing anything the client sent.
  */
-export const CLIENT_IP_HEADER = "x-stoat-client-ip";
+export const CLIENT_IP_HEADER = "x-clowder-client-ip";
 
 // Named so tsc emits a reference instead of inlining the plugin's huge type (TS7056).
 interface ApiKeyPlugin extends ReturnType<typeof apiKey> {}
@@ -130,7 +130,7 @@ export function createAuth(env: AuthConfig, database: Database, cookiePlugin?: B
             // SAFETY: ApiKeyPlugin extends apiKey's return type without adding members.
             apiKey({
                 references: "organization",
-                defaultPrefix: "stoat_",
+                defaultPrefix: "clowder_",
                 rateLimit: { enabled: false },
             }) as ApiKeyPlugin,
             ...(cookiePlugin ? [cookiePlugin] : []),

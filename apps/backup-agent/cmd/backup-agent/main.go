@@ -102,7 +102,7 @@ func connect(ctx context.Context, st blob.Storage, configFile, password string) 
 	}
 
 	opts := &repo.ConnectOptions{
-		ClientOptions: repo.ClientOptions{Hostname: "stoat-agent", Username: "stoat"},
+		ClientOptions: repo.ClientOptions{Hostname: "clowder-agent", Username: "clowder"},
 	}
 
 	err := repo.Connect(ctx, configFile, st, password, opts)

@@ -173,7 +173,7 @@
                 >
                     <ConnectionField
                         label="Public key"
-                        value="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA stoat"
+                        value="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA clowder"
                     />
                 </Skeleton>
             {:else if pendingQuery.isError}
@@ -186,12 +186,12 @@
             {:else if pending}
                 <p class="text-sm text-muted-foreground">
                     {#if active}
-                        Stoat is adding this server to the cluster.
+                        Clowder is adding this server to the cluster.
                     {:else if pending.joined}
                         <span class="text-foreground">
                             {pending.name}
                         </span>
-                        joined the cluster, but Stoat didn't finish starting
+                        joined the cluster, but Clowder didn't finish starting
                         its services there. Retry to finish.
                     {:else}
                         Authorize this key for <span
@@ -199,7 +199,7 @@
                         >
                             {pending.user}
                         </span>
-                        and then add the machine. Stoat installs Docker
+                        and then add the machine. Clowder installs Docker
                         and Uncloud, joins the server through the cluster's
                         sidecar, and starts the sidecar, Caddy and monitoring
                         on it. The private key is deleted once it joins.
@@ -362,8 +362,8 @@
     }
     title="Discard this server?"
     description={pending?.joined
-        ? `${pending.name} stays in the cluster, but Stoat stops finishing its setup and deletes its key.`
-        : "Stoat forgets this server and deletes its key. Remove the key from the server's authorized_keys too."}
+        ? `${pending.name} stays in the cluster, but Clowder stops finishing its setup and deletes its key.`
+        : "Clowder forgets this server and deletes its key. Remove the key from the server's authorized_keys too."}
     confirmLabel="Discard"
     pending={discardMutation.isPending}
     error={discardMutation.error?.message ?? ""}

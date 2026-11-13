@@ -1,11 +1,11 @@
 import { postgresService } from "../../packages/api/src/compose";
-import { composeDatabaseService } from "@stoat/workflows/database-engines";
+import { composeDatabaseService } from "@clowder/workflows/database-engines";
 import { describe, expect, it } from "vite-plus/test";
 
 const compose = (engine: string) =>
-    `services:\n  web:\n    image: nginx\n  db:\n    image: postgres\n    x-stoat:\n      engine: ${engine}\n`;
+    `services:\n  web:\n    image: nginx\n  db:\n    image: postgres\n    x-clowder:\n      engine: ${engine}\n`;
 
-describe("x-stoat.engine", () => {
+describe("x-clowder.engine", () => {
     it("names the service and engine, with postgres as PostgreSQL", () => {
         expect(composeDatabaseService(compose("postgres"))).toEqual({
             name: "db",
@@ -15,8 +15,10 @@ describe("x-stoat.engine", () => {
         expect(composeDatabaseService("services:\n  web:\n    image: nginx\n")).toBeUndefined();
     });
 
-    it("rejects an engine Stoat doesn't know", () => {
-        expect(() => composeDatabaseService(compose("oracle"))).toThrow(`x-stoat.engine "oracle"`);
+    it("rejects an engine Clowder doesn't know", () => {
+        expect(() => composeDatabaseService(compose("oracle"))).toThrow(
+            `x-clowder.engine "oracle"`,
+        );
     });
 
     it("points the Postgres tools at the marked service, not the first", () => {

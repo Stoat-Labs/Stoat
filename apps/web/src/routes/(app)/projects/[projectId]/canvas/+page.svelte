@@ -120,7 +120,7 @@
 
 <svelte:head>
     <title>
-        {projectQuery.data?.name ?? "Project"} canvas / Stoat
+        {projectQuery.data?.name ?? "Project"} canvas / Clowder
     </title>
 </svelte:head>
 

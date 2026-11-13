@@ -1,10 +1,13 @@
-import type { ClusterInitializationConfiguration, MonitoringStorage } from "@stoat/db/schema/index";
+import type {
+    ClusterInitializationConfiguration,
+    MonitoringStorage,
+} from "@clowder/db/schema/index";
 import { parse, stringify } from "yaml";
 import { Predicate } from "effect";
 
-export const GREPTIME_SERVICE = "stoat-monitoring-greptimedb";
+export const GREPTIME_SERVICE = "clowder-monitoring-greptimedb";
 
-export const ALLOY_SERVICE = "stoat-monitoring-alloy";
+export const ALLOY_SERVICE = "clowder-monitoring-alloy";
 
 export const MONITORING_DATABASE = "monitoring";
 
@@ -13,13 +16,13 @@ export const MONITORING_DATABASE = "monitoring";
  * version out to every initialized cluster, and never a lower one. The pinned-hash test in
  * tests/workflows/monitoring.test.ts fails until this is bumped alongside a template edit.
  */
-export const MONITORING_VERSION = 3;
+export const MONITORING_VERSION = 4;
 
-export const GREPTIME_USERNAME = "stoat";
+export const GREPTIME_USERNAME = "clowder";
 
-export const DEFAULT_GREPTIME_VOLUME = "stoat-monitoring-greptime";
+export const DEFAULT_GREPTIME_VOLUME = "clowder-monitoring-greptime";
 
-export const DEFAULT_ALLOY_VOLUME = "stoat-monitoring-alloy";
+export const DEFAULT_ALLOY_VOLUME = "clowder-monitoring-alloy";
 
 type ComposeService = {
     environment?: Record<string, string>;
@@ -85,7 +88,7 @@ export function renderMonitoringCompose(
 
     if (!greptime || !alloy) throw new Error("Monitoring template is missing required services.");
     compose.services = { [GREPTIME_SERVICE]: greptime, [ALLOY_SERVICE]: alloy };
-    compose.name = "stoat-monitoring";
+    compose.name = "clowder-monitoring";
     compose.volumes ??= {};
 
     // Uncloud placement matches a machine by name or ID.
@@ -144,7 +147,7 @@ export function renderMonitoringCompose(
     delete alloy.environment.MACHINE_ID;
 
     for (const service of [greptime, alloy]) {
-        service.environment = { ...service.environment, STOAT_MONITORING_CLUSTER_ID: clusterId };
+        service.environment = { ...service.environment, CLOWDER_MONITORING_CLUSTER_ID: clusterId };
 
         if (service.ports || service["x-ports"] || service["x-caddy"]) {
             throw new Error("Monitoring services must not publish host ports or ingress routes.");

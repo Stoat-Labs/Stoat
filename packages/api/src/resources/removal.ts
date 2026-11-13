@@ -1,17 +1,17 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { deleteEmptyGroups } from "@stoat/db/groups";
+import type { Database } from "@clowder/db";
+import { deleteEmptyGroups } from "@clowder/db/groups";
 import {
     clusters,
     deployments,
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
-import { ucClient } from "@stoat/uncloud";
-import { resourceComposePrefix, resourceEnv } from "@stoat/workflows/compose";
-import { referencedResourceIds } from "@stoat/workflows/references";
-import { snapshotServices } from "@stoat/workflows/stale-services";
+} from "@clowder/db/schema/index";
+import { ucClient } from "@clowder/uncloud";
+import { resourceComposePrefix, resourceEnv } from "@clowder/workflows/compose";
+import { referencedResourceIds } from "@clowder/workflows/references";
+import { snapshotServices } from "@clowder/workflows/stale-services";
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 type Resource = typeof resources.$inferSelect;

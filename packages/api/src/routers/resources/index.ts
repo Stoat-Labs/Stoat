@@ -1,6 +1,6 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     clusterMonitoring,
     clusters,
@@ -10,15 +10,15 @@ import {
     s3Buckets,
     type DeploymentMetadata,
     type DeploymentStatus,
-} from "@stoat/db/schema/index";
-import { ucClient, unwrap } from "@stoat/uncloud";
+} from "@clowder/db/schema/index";
+import { ucClient, unwrap } from "@clowder/uncloud";
 import {
     GREPTIME_SERVICE,
     ALLOY_SERVICE,
     GREPTIME_USERNAME,
     MONITORING_DATABASE,
-} from "@stoat/workflows/monitoring-compose";
-import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
+} from "@clowder/workflows/monitoring-compose";
+import { decryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 

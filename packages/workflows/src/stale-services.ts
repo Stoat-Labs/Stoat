@@ -1,8 +1,8 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import { formatComposeFile } from "./compose";
 import { ALLOY_SERVICE, GREPTIME_SERVICE } from "./monitoring-compose";
 
-/** Cluster services Stoat runs itself; no resource deploy may ever remove them. */
+/** Cluster services Clowder runs itself; no resource deploy may ever remove them. */
 const RESERVED_SERVICES = ["caddy", GREPTIME_SERVICE, ALLOY_SERVICE];
 
 type Snapshot = { spec: string | null; prefix: string | null };
@@ -22,7 +22,7 @@ export function snapshotServices(snapshot: Snapshot | undefined) {
 /**
  * What a deploy should remove: services this resource ran before (its last snapshot, plus any
  * service still carrying its prefix) that the new Compose no longer has. A name another resource
- * runs, which happens with prefixes turned off, and Stoat's own services are never touched.
+ * runs, which happens with prefixes turned off, and Clowder's own services are never touched.
  */
 export function staleServices(
     previous: Iterable<string>,
@@ -35,7 +35,7 @@ export function staleServices(
 }
 
 // Raw SQL: this package's drizzle-orm is the effect-mq v1 build, not the app's, so its operators
-// must not be mixed with @stoat/db tables.
+// must not be mixed with @clowder/db tables.
 
 /** The latest successful deployment's snapshot for each resource on a cluster. */
 async function latestSnapshots(db: Database, clusterId: string) {

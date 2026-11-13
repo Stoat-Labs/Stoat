@@ -215,7 +215,7 @@
     }
 </script>
 
-<svelte:head><title>Clusters / Stoat</title></svelte:head>
+<svelte:head><title>Clusters / Clowder</title></svelte:head>
 
 {#snippet clusterActions()}
     <div

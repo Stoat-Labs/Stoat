@@ -1,11 +1,11 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import { createDeployment } from "@stoat/db/deployments";
-import { clusterMonitoring, clusters, resources } from "@stoat/db/schema/index";
-import { ucClient, unwrap } from "@stoat/uncloud";
-import { GREPTIME_USERNAME, MONITORING_DATABASE } from "@stoat/workflows/monitoring-compose";
-import { sql } from "@stoat/workflows/greptime";
-import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
+import { createDeployment } from "@clowder/db/deployments";
+import { clusterMonitoring, clusters, resources } from "@clowder/db/schema/index";
+import { ucClient, unwrap } from "@clowder/uncloud";
+import { GREPTIME_USERNAME, MONITORING_DATABASE } from "@clowder/workflows/monitoring-compose";
+import { sql } from "@clowder/workflows/greptime";
+import { decryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { and, eq, inArray } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import * as v from "valibot";
@@ -36,9 +36,9 @@ const storageInput = v.pipe(
     ),
 );
 
-export const DEFAULT_GREPTIME_VOLUME = "stoat-monitoring-greptime";
+export const DEFAULT_GREPTIME_VOLUME = "clowder-monitoring-greptime";
 
-export const DEFAULT_ALLOY_VOLUME = "stoat-monitoring-alloy";
+export const DEFAULT_ALLOY_VOLUME = "clowder-monitoring-alloy";
 
 export const initializationConfigurationInput = v.pipe(
     v.object({
@@ -369,7 +369,7 @@ export const initializationRouter = {
         }),
 };
 
-const monitoringFallbackHttpUrl = "http://stoat-monitoring-greptimedb.internal:4000";
+const monitoringFallbackHttpUrl = "http://clowder-monitoring-greptimedb.internal:4000";
 
 /** Dashboard/SQL endpoint derived from the stored ingest URL (same host, port 4000). */
 function dashboardUrlFor(ingestUrl: string | null) {
@@ -431,7 +431,7 @@ export const monitoringRouter = {
                 database: MONITORING_DATABASE,
                 username: GREPTIME_USERNAME,
                 ingestUrl:
-                    cluster.greptimeUrl ?? "http://stoat-monitoring-greptimedb.internal:4006",
+                    cluster.greptimeUrl ?? "http://clowder-monitoring-greptimedb.internal:4006",
                 httpUrl: dashboardUrlFor(cluster.greptimeUrl),
                 password,
             };

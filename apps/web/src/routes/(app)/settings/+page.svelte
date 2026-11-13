@@ -35,7 +35,7 @@
     );
 </script>
 
-<svelte:head><title>Settings / Stoat</title></svelte:head>
+<svelte:head><title>Settings / Clowder</title></svelte:head>
 <div class="mx-auto w-full max-w-2xl pt-6 sm:pt-8">
     {#if active === "profile"}
         <ProfileSettings user={data.user} />

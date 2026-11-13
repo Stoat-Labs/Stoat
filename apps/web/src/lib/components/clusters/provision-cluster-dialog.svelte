@@ -124,7 +124,7 @@
                 >
                     <ConnectionField
                         label="Public key"
-                        value="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA stoat"
+                        value="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA clowder"
                     />
                 </Skeleton>
             {:else if provisionQuery.isError}
@@ -148,7 +148,7 @@
                     >
                         {provision.setup?.user}
                     </span>
-                    and then start the setup. Stoat installs Docker and
+                    and then start the setup. Clowder installs Docker and
                     Uncloud, creates the cluster, and deploys its sidecar.
                     The private key is deleted once the cluster is ready.
                 </p>

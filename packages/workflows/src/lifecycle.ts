@@ -2,14 +2,14 @@ import { Cause, Effect } from "effect";
 
 declare global {
     // Share the stop handle across SvelteKit server-module reloads and Vite's config loader.
-    var __stoatWorker: { stop: () => Promise<void> } | undefined;
+    var __clowderWorker: { stop: () => Promise<void> } | undefined;
 }
 
 export function startWorker(
     worker: Effect.Effect<never, unknown>,
     pollOutbox: Effect.Effect<unknown, unknown>,
 ) {
-    if (globalThis.__stoatWorker) return;
+    if (globalThis.__clowderWorker) return;
 
     const controller = new AbortController();
 
@@ -33,7 +33,7 @@ export function startWorker(
         },
     };
 
-    globalThis.__stoatWorker = running;
+    globalThis.__clowderWorker = running;
     process.on("sveltekit:shutdown", running.stop);
     console.log(
         "[worker] starting deployment worker (queues: initialize, deploy, buckets, monitoring, health, git, provision, machines)",
@@ -59,10 +59,10 @@ export function startWorker(
         .finally(() => {
             process.off("sveltekit:shutdown", running.stop);
 
-            if (globalThis.__stoatWorker === running) globalThis.__stoatWorker = undefined;
+            if (globalThis.__clowderWorker === running) globalThis.__clowderWorker = undefined;
         });
 }
 
 export async function stopWorker() {
-    await globalThis.__stoatWorker?.stop();
+    await globalThis.__clowderWorker?.stop();
 }

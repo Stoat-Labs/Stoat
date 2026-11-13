@@ -23,7 +23,7 @@
         { shallow: true, scroll: false },
     );
 
-    // Stoat can't remove the machine it reaches the cluster through.
+    // Clowder can't remove the machine it reaches the cluster through.
     const machine = $derived(
         removal.dialog.current === "remove-machine"
             ? machines.find(
@@ -55,7 +55,7 @@
                               type: "warning",
                               title: `Removed ${name}`,
                               description:
-                                  "Stoat couldn't reset it, so run uncloud-uninstall on the server before adding it again.",
+                                  "Clowder couldn't reset it, so run uncloud-uninstall on the server before adding it again.",
                           },
                 );
                 await queryClient.invalidateQueries({

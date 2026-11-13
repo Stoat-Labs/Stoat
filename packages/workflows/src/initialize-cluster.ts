@@ -1,12 +1,12 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     getInitialization,
     getMonitoringVersion,
     prepareMonitoring,
     setMonitoringVersion,
     updateMonitoringPassword,
-} from "@stoat/db/initialization";
-import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@stoat/uncloud";
+} from "@clowder/db/initialization";
+import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@clowder/uncloud";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Schema } from "effect";
@@ -23,7 +23,7 @@ import { sql } from "./greptime";
 
 export { readSqlRows } from "./greptime";
 
-import { appendDeploymentLog } from "@stoat/db/deployments";
+import { appendDeploymentLog } from "@clowder/db/deployments";
 import { deployCompose } from "./deploy-compose";
 import { enableCaddyMetrics } from "./deploy-caddy";
 
@@ -103,15 +103,15 @@ async function waitForService(
 // Sidecar calls get their own ceilings so a hung endpoint fails fast with a
 // clear error instead of stalling the attempt forever. Combined with the
 // attempt signal so cancellation still propagates.
-// Installed by the Stoat sidecar; Alloy bind-mounts its directory (see compose.yaml).
-const GEOIP_DATABASE = "/var/lib/stoat/geoip/country.mmdb";
+// Installed by the Clowder sidecar; Alloy bind-mounts its directory (see compose.yaml).
+const GEOIP_DATABASE = "/var/lib/clowder/geoip/country.mmdb";
 
 export function bounded(signal: AbortSignal, ms: number) {
     return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
 /**
- * Alloy refuses to start without the GeoIP database, which the Stoat sidecar installs on every
+ * Alloy refuses to start without the GeoIP database, which the Clowder sidecar installs on every
  * machine. Returns the names of machines that lack it, e.g. because their sidecar is older.
  */
 export async function machinesWithoutGeoip(
@@ -136,29 +136,61 @@ export async function machinesWithoutGeoip(
     return results.flat();
 }
 
+// Whether every container of the service carries `ownership` (NAME=clusterId) in its environment.
+function ownedBy(service: Service, ownership: string) {
+    return (
+        service.containers.length > 0 &&
+        service.containers.every(({ container }) => {
+            const config = Schema.decodeUnknownSync(
+                Schema.UndefinedOr(
+                    Schema.Struct({
+                        Env: Schema.optionalKey(Schema.Array(Schema.String)),
+                    }),
+                ),
+            )(container.Config);
+
+            return config?.Env?.includes(ownership) === true;
+        })
+    );
+}
+
 async function checkOwnership(uc: UcClient, clusterId: string, signal: AbortSignal) {
     const { items } = await unwrap(uc.GET("/api/v1/services", { signal }));
 
     for (const service of items.filter(
         (item) => item.name === GREPTIME_SERVICE || item.name === ALLOY_SERVICE,
     )) {
-        const detail = await inspect(uc, service.id, signal);
-
         if (
-            detail.containers.length === 0 ||
-            detail.containers.some(({ container }) => {
-                const config = Schema.decodeUnknownSync(
-                    Schema.UndefinedOr(
-                        Schema.Struct({
-                            Env: Schema.optionalKey(Schema.Array(Schema.String)),
-                        }),
-                    ),
-                )(container.Config);
-
-                return !config?.Env?.includes(`STOAT_MONITORING_CLUSTER_ID=${clusterId}`);
-            })
+            !ownedBy(
+                await inspect(uc, service.id, signal),
+                `CLOWDER_MONITORING_CLUSTER_ID=${clusterId}`,
+            )
         )
             throw new Error("Monitoring service names are already in use by another deployment.");
+    }
+}
+
+// Monitoring deployed before the rename. The new services reuse its volumes (see the
+// clowder_rebrand migration), so the old ones must stop first: two GreptimeDBs on one data
+// directory corrupt it.
+const LEGACY_SERVICES = ["stoat-monitoring-greptimedb", "stoat-monitoring-alloy"];
+
+async function removeLegacyMonitoring(uc: UcClient, clusterId: string, signal: AbortSignal) {
+    const { items } = await unwrap(uc.GET("/api/v1/services", { signal }));
+
+    for (const service of items.filter((item) => LEGACY_SERVICES.includes(item.name))) {
+        if (
+            ownedBy(
+                await inspect(uc, service.id, signal),
+                `STOAT_MONITORING_CLUSTER_ID=${clusterId}`,
+            )
+        )
+            await unwrap(
+                uc.DELETE("/api/v1/services/{id}", {
+                    params: { path: { id: service.id } },
+                    signal,
+                }),
+            );
     }
 }
 
@@ -190,7 +222,7 @@ export function createInitializeClusterHandler(
         try {
             const result = await lock.query(
                 "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
-                [`stoat:initialize:${clusterId}`],
+                [`clowder:initialize:${clusterId}`],
             );
 
             acquired = result.rows[0]?.acquired === true;
@@ -251,10 +283,12 @@ export function createInitializeClusterHandler(
             );
 
             if (withoutGeoip.length) {
-                const message = `Update the Stoat sidecar on ${withoutGeoip.join(", ")}: it installs the GeoIP database Alloy needs.`;
+                const message = `Update the Clowder sidecar on ${withoutGeoip.join(", ")}: it installs the GeoIP database Alloy needs.`;
                 await log(message, "error");
                 throw new Error(message);
             }
+
+            await removeLegacyMonitoring(uc, clusterId, bounded(signal, 120_000));
 
             const state = await prepareMonitoring(
                 db,
@@ -431,7 +465,7 @@ export function createInitializeClusterHandler(
             try {
                 if (acquired)
                     await lock.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [
-                        `stoat:initialize:${clusterId}`,
+                        `clowder:initialize:${clusterId}`,
                     ]);
             } finally {
                 lock.release();

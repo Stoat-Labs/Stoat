@@ -1,4 +1,4 @@
-import { appSecret, appUrl } from "@stoat/config/env";
+import { appSecret, appUrl } from "@clowder/config/env";
 import {
     createCipheriv,
     createDecipheriv,
@@ -8,9 +8,9 @@ import {
     randomUUID,
     timingSafeEqual,
 } from "node:crypto";
-import type { Database } from "@stoat/db";
-import { getOrganizationMembership } from "@stoat/db/organizations";
-import { gitConnections, gitOAuthProviders, member } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { getOrganizationMembership } from "@clowder/db/organizations";
+import { gitConnections, gitOAuthProviders, member } from "@clowder/db/schema/index";
 import { and, asc, eq } from "drizzle-orm";
 import * as v from "valibot";
 
@@ -335,7 +335,7 @@ export async function saveGitOAuthConnection(
     });
 }
 
-export const gitOAuthCookieName = "__Host-stoat-git-oauth";
+export const gitOAuthCookieName = "__Host-clowder-git-oauth";
 
 export const gitOAuthCookieOptions = {
     path: "/",
@@ -350,12 +350,12 @@ export function getGitOAuthCookieConfig() {
     const secure = new URL(getGitOAuthCallbackUrl()).protocol === "https:";
 
     return {
-        name: secure ? gitOAuthCookieName : "stoat-git-oauth",
+        name: secure ? gitOAuthCookieName : "clowder-git-oauth",
         options: { ...gitOAuthCookieOptions, secure },
     };
 }
 
-const domain = "stoat/git-oauth-state/v1";
+const domain = "clowder/git-oauth-state/v1";
 
 const randomToken = v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{43}$/));
 

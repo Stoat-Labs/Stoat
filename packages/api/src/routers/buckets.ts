@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { clusters, projects, resources, s3Buckets, s3Connections } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
+import type { Database } from "@clowder/db";
+import { clusters, projects, resources, s3Buckets, s3Connections } from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
 import {
     listS3Objects,
     s3BucketName,
@@ -11,8 +11,8 @@ import {
     s3Providers,
     setS3BucketQuota,
     type S3Target,
-} from "@stoat/s3";
-import { queueBucketReconcile } from "@stoat/workflows/runtime";
+} from "@clowder/s3";
+import { queueBucketReconcile } from "@clowder/workflows/runtime";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";

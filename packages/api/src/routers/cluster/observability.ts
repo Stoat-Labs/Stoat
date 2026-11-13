@@ -1,15 +1,15 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import { currentWindow, swr } from "@stoat/cache";
-import { clusterMonitoring, clusters, projects, resources } from "@stoat/db/schema/index";
-import { ucClient, unwrap, type UcClient } from "@stoat/uncloud";
-import { monitoringRequest, sql as greptimeSql } from "@stoat/workflows/greptime";
+import { currentWindow, swr } from "@clowder/cache";
+import { clusterMonitoring, clusters, projects, resources } from "@clowder/db/schema/index";
+import { ucClient, unwrap, type UcClient } from "@clowder/uncloud";
+import { monitoringRequest, sql as greptimeSql } from "@clowder/workflows/greptime";
 import {
     ALLOY_SERVICE,
     GREPTIME_SERVICE,
     MONITORING_DATABASE,
-} from "@stoat/workflows/monitoring-compose";
-import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
+} from "@clowder/workflows/monitoring-compose";
+import { decryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import * as v from "valibot";
 import { organizationProcedure } from "../..";
@@ -283,7 +283,7 @@ async function volumeMetric(
                 // The size table appears once a sidecar that reports volume sizes has been scraped.
                 if (
                     name === "volumeSize" &&
-                    !(await collecting(cluster, uc, "volume", ["stoat_volume_size_bytes"]))
+                    !(await collecting(cluster, uc, "volume", ["clowder_volume_size_bytes"]))
                 )
                     return { start, end, step, series: [], status: "not-collecting" as const };
 

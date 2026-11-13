@@ -1,6 +1,6 @@
-import type { Database } from "@stoat/db";
-import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
-import { ucClient, unwrap } from "@stoat/uncloud";
+import type { Database } from "@clowder/db";
+import { appendDeploymentLog, getDeploymentByJobId } from "@clowder/db/deployments";
+import { ucClient, unwrap } from "@clowder/uncloud";
 import { parseEnv } from "node:util";
 import { YAMLParseError } from "yaml";
 import {
@@ -65,12 +65,12 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     // it shared still serializes against them during a rolling update, while newer
                     // workers keep deploying different resources in parallel with each other.
                     await lock.query("SELECT pg_advisory_lock_shared(hashtextextended($1, 0))", [
-                        `stoat:resource-deploy:${deployment.clusterId}`,
+                        `clowder:resource-deploy:${deployment.clusterId}`,
                     ]);
 
                     for (const key of [...new Set(keys)].toSorted())
                         await lock.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [
-                            `stoat:resource-deploy:${deployment.clusterId}:${key}`,
+                            `clowder:resource-deploy:${deployment.clusterId}:${key}`,
                         ]);
                 } finally {
                     // Once acquired, keep the lock until the sidecar stream has drained on abort.
@@ -130,7 +130,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 ? await referenceTargets(db, deployment.clusterId, referencedIds)
                 : [];
 
-            // Only ask the sidecar when STOAT_DOMAIN is used, including by referenced resources.
+            // Only ask the sidecar when CLOWDER_DOMAIN is used, including by referenced resources.
             const variableSources = [deployedSpec, input.env].concat(
                 // Drafts too: a reference can resolve from a service only the draft has yet.
                 targets.map(
@@ -138,9 +138,19 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 ),
             );
 
+            // Stored Compose was migrated, but Compose from Git still says what the repository says,
+            // and the legacy domain variable would otherwise resolve to an empty hostname without an error.
+            if (/\bSTOAT_(?:DOMAIN|PREFIX|PROJECT_|RESOURCE_)|\bx-stoat\b/u.test(deployedSpec)) {
+                const message =
+                    "Rename STOAT_* variables to CLOWDER_* and x-stoat to x-clowder in the Compose file.";
+
+                await log(message, "error", "attempt-failed");
+                throw new DeploymentError(message);
+            }
+
             let domain: string | undefined;
 
-            if (/STOAT_DOMAIN/u.test(variableSources.join("\n"))) {
+            if (/CLOWDER_DOMAIN/u.test(variableSources.join("\n"))) {
                 step = "Loading the cluster domain.";
                 ({ domain } = await unwrap(uc.GET("/api/v1/cluster/domain")));
             }
@@ -307,7 +317,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     WHERE id = $1 AND status = 'running' RETURNING resource_id
                 ), published AS (
                     UPDATE resources SET spec = $2, updated_at = now(),
-                        -- x-stoat.engine forces the resource to be a database of that engine.
+                        -- x-clowder.engine forces the resource to be a database of that engine.
                         type = CASE WHEN $3::text IS NULL THEN type ELSE 'database' END,
                         settings = CASE WHEN $3::text IS NULL THEN settings
                             ELSE coalesce(settings, '{}'::jsonb) || jsonb_build_object('engine', $3::text) END

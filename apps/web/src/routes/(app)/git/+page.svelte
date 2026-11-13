@@ -193,7 +193,7 @@
     }
 </script>
 
-<svelte:head><title>Git / Stoat</title></svelte:head>
+<svelte:head><title>Git / Clowder</title></svelte:head>
 
 {#snippet gitActions()}
     <Button

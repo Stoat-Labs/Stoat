@@ -1,6 +1,6 @@
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { ValibotToJsonSchemaConverter } from "@orpc/valibot";
-import { appRouter } from "@stoat/api/routers/index";
+import { appRouter } from "@clowder/api/routers/index";
 import { json, type RequestHandler } from "@sveltejs/kit";
 
 const generator = new OpenAPIGenerator({
@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ url }) =>
         await generator.generate(appRouter, {
             version: "3.1.1",
             base: {
-                info: { title: "Stoat API", version: "1.1.0" },
+                info: { title: "Clowder API", version: "1.1.0" },
                 servers: [{ url: `${url.origin}/rpc/api` }],
                 security: [{ apiKey: [] }],
                 components: {

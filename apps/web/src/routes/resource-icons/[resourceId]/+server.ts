@@ -1,4 +1,4 @@
-import { clusters, member, projects, resources } from "@stoat/db/schema/index";
+import { clusters, member, projects, resources } from "@clowder/db/schema/index";
 import { error, type RequestHandler } from "@sveltejs/kit";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";

@@ -1,8 +1,8 @@
 import * as v from "valibot";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusterMonitoring, clusters, projects, resources } from "@stoat/db/schema/index";
-import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
+import { createDb } from "@clowder/db";
+import { clusterMonitoring, clusters, projects, resources } from "@clowder/db/schema/index";
+import { encryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -298,10 +298,10 @@ it("queries real GreptimeDB through the private transport, showing percent CPU a
         expect(url.origin).toBe("http://metrics.test");
         expect(request.headers.get("authorization")).toBe("Bearer private");
 
-        if (url.pathname === "/api/v1/services/stoat-monitoring-greptimedb/http") {
+        if (url.pathname === "/api/v1/services/clowder-monitoring-greptimedb/http") {
             const body = v.parse(serviceHttpRequest, await request.json());
             expect(body.port).toBe(4000);
-            expect(body.headers).toEqual({ Authorization: `Basic ${btoa("stoat:password")}` });
+            expect(body.headers).toEqual({ Authorization: `Basic ${btoa("clowder:password")}` });
 
             if (body.path.includes("prometheus"))
                 expect(body.form.query).toContain(`customer_id="${clusterId}"`);
@@ -592,7 +592,7 @@ it("scopes volume metrics to the resource's deployed names", () => {
     );
     expect(queries.volumeRead).toContain('customer_id="cluster-1"');
     expect(queries.volumeSize).toContain(
-        'stoat_volume_size_bytes{customer_id="cluster-1",volume="app-k3f9-data"}',
+        'clowder_volume_size_bytes{customer_id="cluster-1",volume="app-k3f9-data"}',
     );
     expect(volumeMetricQueries("cluster-1", 60, undefined, "data", ["web"]).volumeSize).toContain(
         'volume="data"',

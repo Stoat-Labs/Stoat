@@ -1,5 +1,5 @@
 import { client, orpc, queryClient } from "$lib/api/orpc";
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 
 type Resource = Awaited<ReturnType<AppRouterClient["resources"]["getResource"]>>;
 

@@ -308,7 +308,7 @@ async function withRepository<T>(
     if (url.protocol === "https:" && credentials.username?.includes(":"))
         invalid("Invalid HTTPS username");
     const address = await pinnedAddress(host);
-    const directory = await mkdtemp(join(tmpdir(), "stoat-git-"));
+    const directory = await mkdtemp(join(tmpdir(), "clowder-git-"));
     const deadline = Date.now() + 120_000;
 
     const env: NodeJS.ProcessEnv = {

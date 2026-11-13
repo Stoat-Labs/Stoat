@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
-import { createDb } from "@stoat/db";
-import { getDeploymentWithLogs } from "@stoat/db/deployments";
+import { createDb } from "@clowder/db";
+import { getDeploymentWithLogs } from "@clowder/db/deployments";
 import {
     clusters,
     deployments,
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Predicate } from "effect";
@@ -25,7 +25,7 @@ import { insertUserWithOrganization } from "../users";
 
 // The worker resolves `{{ <resourceId>.KEY }}` against a fake sidecar that records what it receives.
 describe("deploying resources that reference other resources (PostgreSQL)", () => {
-    const databaseName = `stoat_references_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_references_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const otherClusterId = randomUUID();
     const projectId = randomUUID();
@@ -49,7 +49,7 @@ describe("deploying resources that reference other resources (PostgreSQL)", () =
         "POSTGRES_USER=shop",
         "POSTGRES_PASSWORD=s3cr$$t",
         "DATABASE_URL=postgres://${POSTGRES_USER}@${DB_INTERNAL_HOST}:5432/shop",
-        "PUBLIC_URL=https://shop.${STOAT_DOMAIN}",
+        "PUBLIC_URL=https://shop.${CLOWDER_DOMAIN}",
     ].join("\n");
 
     let admin: ReturnType<typeof createDb>;

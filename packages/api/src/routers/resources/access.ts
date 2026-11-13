@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { clusters, projects } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { clusters, projects } from "@clowder/db/schema/index";
 import { and, eq, sql } from "drizzle-orm";
 
 export async function assertProjectVisible(

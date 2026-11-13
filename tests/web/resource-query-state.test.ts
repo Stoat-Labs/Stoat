@@ -92,7 +92,7 @@ function renderPage(component: typeof CreatePage, source: string, search = "") {
         setContext("__request__", {
             page: {
                 params: { projectId: "project", source },
-                url: new URL(`https://stoat.test/projects/project/create/${source}?${search}`),
+                url: new URL(`https://clowder.test/projects/project/create/${source}?${search}`),
             },
         });
         setContext(Symbol.for("nuqs-svelte-adapter"), {

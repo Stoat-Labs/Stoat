@@ -1,5 +1,5 @@
 {
-    "name": "@stoat/api",
+    "name": "@clowder/api",
     "type": "module",
     "exports": {
         ".": {
@@ -16,14 +16,14 @@
         "check-types": "tsc -b"
     },
     "dependencies": {
+        "@clowder/auth": "workspace:*",
+        "@clowder/cache": "workspace:*",
+        "@clowder/config": "workspace:*",
+        "@clowder/db": "workspace:*",
+        "@clowder/s3": "workspace:*",
+        "@clowder/uncloud": "workspace:*",
+        "@clowder/workflows": "workspace:*",
         "@orpc/server": "catalog:",
-        "@stoat/auth": "workspace:*",
-        "@stoat/cache": "workspace:*",
-        "@stoat/config": "workspace:*",
-        "@stoat/db": "workspace:*",
-        "@stoat/s3": "workspace:*",
-        "@stoat/uncloud": "workspace:*",
-        "@stoat/workflows": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "4.0.0-rc.116",
         "ofetch": "catalog:",

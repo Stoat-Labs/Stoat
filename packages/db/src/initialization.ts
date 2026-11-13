@@ -128,7 +128,7 @@ export async function setInitializationStatus(
     if (status === "ready") {
         changes.initializedAt = new Date();
         // A URL given when the cluster was created wins over the internal default.
-        changes.greptimeUrl = sql`coalesce(${clusters.greptimeUrl}, 'http://stoat-monitoring-greptimedb.internal:4006')`;
+        changes.greptimeUrl = sql`coalesce(${clusters.greptimeUrl}, 'http://clowder-monitoring-greptimedb.internal:4006')`;
     }
 
     await db

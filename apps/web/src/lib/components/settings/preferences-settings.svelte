@@ -8,7 +8,7 @@
 
 <SettingsSection
     title="Preferences"
-    description="How Stoat looks and behaves for you."
+    description="How Clowder looks and behaves for you."
 >
     <Card>
         <CardPanel class="space-y-5 p-5 sm:p-6">

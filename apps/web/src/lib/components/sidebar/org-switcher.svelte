@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ClowderLogo from "$lib/components/clowder-logo.svelte";
     import { page } from "$app/state";
     import { authClient } from "$lib/api/auth-client";
     import CreateOrganizationDialog from "$lib/components/organization/create-organization-dialog.svelte";
@@ -121,10 +122,8 @@
                 <span
                     class="flex size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:size-6"
                 >
-                    <img
-                        src="/stoat.png"
-                        alt=""
-                        class="size-full object-contain"
+                    <ClowderLogo
+                        class="size-full object-contain text-primary"
                     />
                 </span>
                 <span
@@ -161,10 +160,8 @@
                             <span
                                 class="flex size-6 shrink-0 items-center justify-center rounded-sm border"
                             >
-                                <img
-                                    src="/stoat.png"
-                                    alt=""
-                                    class="size-8"
+                                <ClowderLogo
+                                    class="size-8 text-primary"
                                 />
                             </span>
                             <span class="truncate">

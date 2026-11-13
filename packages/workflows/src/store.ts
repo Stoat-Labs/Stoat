@@ -1,4 +1,4 @@
-import { databaseUrl } from "@stoat/config/env";
+import { databaseUrl } from "@clowder/config/env";
 import { DrizzleJobStore } from "effect-mq/drizzle-postgres";
 import type { JobStore } from "effect-mq";
 import { PgClient } from "@effect/sql-pg";

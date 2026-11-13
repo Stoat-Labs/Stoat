@@ -83,7 +83,7 @@
 </script>
 
 <svelte:head>
-    <title>Set up Stoat / Stoat</title>
+    <title>Set up Clowder / Clowder</title>
 </svelte:head>
 
 {#if data.step === "account"}
@@ -181,7 +181,7 @@
 {:else if !clusterId.current}
     <AuthShell
         title="Connect a cluster"
-        description="Point Stoat at the sidecar running on your Uncloud cluster. You can also do this later."
+        description="Point Clowder at the sidecar running on your Uncloud cluster. You can also do this later."
         {eyebrow}
         wide
     >

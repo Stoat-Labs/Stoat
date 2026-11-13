@@ -40,7 +40,7 @@
         S3_PROVIDER_IDS,
         s3Providers,
         type S3ProviderId,
-    } from "@stoat/s3/providers";
+    } from "@clowder/s3/providers";
     import { createMutation } from "@tanstack/svelte-query";
     import { watch } from "runed";
 

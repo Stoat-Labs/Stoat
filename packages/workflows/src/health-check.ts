@@ -1,6 +1,6 @@
-import type { Database } from "@stoat/db";
-import { readyBuckets, setBucketMetadata } from "@stoat/db/buckets";
-import { getS3BucketUsage } from "@stoat/s3";
+import type { Database } from "@clowder/db";
+import { readyBuckets, setBucketMetadata } from "@clowder/db/buckets";
+import { getS3BucketUsage } from "@clowder/s3";
 
 // Runs once per HealthCheck tick (see HEALTH_CHECK_CRON in runtime.ts).
 // Throwing fails this tick only; the next tick runs regardless.

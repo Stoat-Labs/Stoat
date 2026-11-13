@@ -1,6 +1,6 @@
 <script lang="ts">
     import { Badge } from "$lib/components/ui/badge";
-    import type { ProvisioningStatus } from "@stoat/api/routers/cluster/provisioning";
+    import type { ProvisioningStatus } from "@clowder/api/routers/cluster/provisioning";
 
     let { status }: { status: ProvisioningStatus } = $props();
 </script>

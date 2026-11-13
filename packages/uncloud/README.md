@@ -1,4 +1,4 @@
-# @stoat/uncloud
+# @clowder/uncloud
 
 Typed TypeScript client for the [Uncloud](https://uncloud.run) HTTP API exposed by
 the sidecar in [`apps/sidecar`](../../apps/sidecar).
@@ -10,7 +10,7 @@ helpers for the endpoints that stream Server-Sent Events.
 ## Usage
 
 ```ts
-import { ucClient, unwrap } from "@stoat/uncloud";
+import { ucClient, unwrap } from "@clowder/uncloud";
 
 const uc = ucClient("http://sidecar.internal", { token: env.SIDECAR_TOKEN });
 ```
@@ -101,7 +101,7 @@ Compose content must be base64-encoded. Use `encodeComposeFile()` rather than
 encoding by hand, so non-ASCII content survives:
 
 ```ts
-import { encodeComposeFile } from "@stoat/uncloud";
+import { encodeComposeFile } from "@clowder/uncloud";
 
 for await (const event of uc.stream.deployCompose(
     encodeComposeFile(await readFile("compose.yaml", "utf8")),
@@ -120,7 +120,7 @@ Named aliases are re-exported for every schema, so nothing needs to import from
 `src/generated/`:
 
 ```ts
-import type { Machine, Service, LogEvent, ServiceSpec } from "@stoat/uncloud";
+import type { Machine, Service, LogEvent, ServiceSpec } from "@clowder/uncloud";
 ```
 
 ## Security

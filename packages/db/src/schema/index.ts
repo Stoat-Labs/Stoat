@@ -25,7 +25,7 @@ export const userSettings = t.pgTable("user_settings", {
 });
 
 /**
- * A cluster Stoat is setting up on a server over SSH. `initState` tracks how far `uc machine init`
+ * A cluster Clowder is setting up on a server over SSH. `initState` tracks how far `uc machine init`
  * got: "partial" means a cluster exists on the server but its setup failed, and "reset" that the
  * user approved resetting it on the next attempt.
  */
@@ -51,7 +51,7 @@ export type PendingMachine = {
     publicKey: string;
     /** ISO time it was prepared; only `AddMachine` attempts since then are its own. */
     preparedAt: string;
-    /** Set once an attempt runs uc on it, so a retry knows a member it finds was added by Stoat. */
+    /** Set once an attempt runs uc on it, so a retry knows a member it finds was added by Clowder. */
     joining?: boolean;
     /** Set once it is a member, so a retry only finishes spreading the cluster's services to it. */
     joined: { id: string; name: string } | null;
@@ -73,9 +73,9 @@ export const clusters = t.pgTable(
         name: t.text("name").notNull(),
         sidecarUrl: t.text("sidecar_url").notNull(),
         sidecarToken: encryptedText("sidecar_token", "sidecar-token").notNull(),
-        // The self-signed certificate Stoat pinned for a cluster it created; null trusts public CAs.
+        // The self-signed certificate Clowder pinned for a cluster it created; null trusts public CAs.
         sidecarCertificate: t.text("sidecar_certificate"),
-        // Set while Stoat creates the cluster on a server over SSH, and cleared once it's ready.
+        // Set while Clowder creates the cluster on a server over SSH, and cleared once it's ready.
         provisioning: t.jsonb("provisioning").$type<ClusterProvisioning>(),
         // JSON of the single-use SSH private key and the sidecar's TLS key, deleted with `provisioning`.
         provisioningSecrets: encryptedText("provisioning_secrets", "cluster-provisioning"),
@@ -322,7 +322,7 @@ export const clusterMonitoring = t.pgTable("cluster_monitoring", {
 
 export type DeploymentStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
 
-// Where a resource deployment came from. "docker" is a Compose edited in Stoat, without Git.
+// Where a resource deployment came from. "docker" is a Compose edited in Clowder, without Git.
 export type DeploymentMetadata = {
     source: "forgejo" | "github" | "git" | "docker";
     trigger: "manual" | "webhook" | "poll";
@@ -412,7 +412,7 @@ export const resourceDeploymentInputs = t.pgTable("resource_deployment_inputs", 
     configFiles: t.jsonb("config_files").$type<Record<string, string>>().notNull().default({}),
 });
 
-// Mirrors `S3ProviderId` in @stoat/s3; the check constraint below keeps the database honest.
+// Mirrors `S3ProviderId` in @clowder/s3; the check constraint below keeps the database honest.
 export type S3Provider = "generic" | "rustfs" | "r2";
 
 // Account-level provider access; buckets are provisioned as project resources.

@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { resolve } from "node:path";
-import { createDb } from "@stoat/db";
-import { cancelDeployment, getDeploymentWithLogs, watchDeployment } from "@stoat/db/deployments";
+import { createDb } from "@clowder/db";
+import { cancelDeployment, getDeploymentWithLogs, watchDeployment } from "@clowder/db/deployments";
 import {
     clusters,
     deployments,
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Effect, Layer, Predicate } from "effect";
@@ -42,7 +42,7 @@ import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
 describe("resource deployment worker", () => {
-    const databaseName = `stoat_resource_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_resource_test_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     const resourceId = randomUUID();
@@ -701,7 +701,7 @@ describe("resource deployment worker", () => {
     }
 
     it("waits for an old worker's exclusive cluster lock during a rolling update", async () => {
-        const key = `stoat:resource-deploy:${clusterId}`;
+        const key = `clowder:resource-deploy:${clusterId}`;
         const legacy = await other.$client.connect();
         let held = false;
 
@@ -798,10 +798,10 @@ describe("resource deployment worker", () => {
         }
     });
 
-    it("makes the resource a database when a service sets x-stoat.engine", async () => {
+    it("makes the resource a database when a service sets x-clowder.engine", async () => {
         const marked = spec.replace(
             "    image: postgres\n",
-            "    image: postgres\n    x-stoat:\n      engine: postgres\n",
+            "    image: postgres\n    x-clowder:\n      engine: postgres\n",
         );
 
         const id = await snapshot(marked);
@@ -818,11 +818,11 @@ describe("resource deployment worker", () => {
             .where(eq(resources.id, resourceId));
     });
 
-    it("fails before deploying an unknown x-stoat.engine", async () => {
+    it("fails before deploying an unknown x-clowder.engine", async () => {
         const id = await snapshot(
             spec.replace(
                 "    image: postgres\n",
-                "    image: postgres\n    x-stoat: { engine: oracle }\n",
+                "    image: postgres\n    x-clowder: { engine: oracle }\n",
             ),
         );
 
@@ -831,7 +831,7 @@ describe("resource deployment worker", () => {
         const result = await terminal(id);
 
         expect(result.status).toBe("failed");
-        expect(result.error).toContain(`x-stoat.engine "oracle"`);
+        expect(result.error).toContain(`x-clowder.engine "oracle"`);
         expect(requestCount).toBe(count);
     });
 

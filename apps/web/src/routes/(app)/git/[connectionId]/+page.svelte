@@ -108,7 +108,7 @@
 </script>
 
 <svelte:head>
-    <title>{connection?.name ?? "Git connection"} / Stoat</title>
+    <title>{connection?.name ?? "Git connection"} / Clowder</title>
 </svelte:head>
 
 <div class="flex w-full min-w-0 flex-col gap-6 pt-6">

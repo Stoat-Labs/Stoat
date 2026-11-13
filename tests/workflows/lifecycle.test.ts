@@ -45,7 +45,7 @@ it("runs one worker across reloads and awaits cleanup before allowing a restart"
     await stopping;
     await stopWorker();
     expect(released).toHaveBeenCalledTimes(1);
-    expect(globalThis.__stoatWorker).toBeUndefined();
+    expect(globalThis.__clowderWorker).toBeUndefined();
     expect(process.listenerCount("sveltekit:shutdown")).toBe(listeners);
     expect(vi.getTimerCount()).toBe(0);
 
@@ -109,11 +109,11 @@ it("retries failed sweeps and restarts both loops after a worker failure", async
     await vi.advanceTimersByTimeAsync(5_000);
     expect(started).toHaveBeenCalledTimes(2);
     expect(sweep).toHaveBeenCalledTimes(3);
-    expect(globalThis.__stoatWorker).toBeDefined();
+    expect(globalThis.__clowderWorker).toBeDefined();
 
     await stopWorker();
     expect(released).toHaveBeenCalledTimes(2);
-    expect(globalThis.__stoatWorker).toBeUndefined();
+    expect(globalThis.__clowderWorker).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -130,7 +130,7 @@ it("cancels a pending worker restart on shutdown", async () => {
     await stopWorker();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(started).toHaveBeenCalledTimes(1);
-    expect(globalThis.__stoatWorker).toBeUndefined();
+    expect(globalThis.__clowderWorker).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -140,7 +140,7 @@ it("stops on adapter-node shutdown without logging interruption as a failure", a
     startWorker(Effect.never, Effect.never);
     process.emit("sveltekit:shutdown", "SIGTERM");
     await stopWorker();
-    expect(globalThis.__stoatWorker).toBeUndefined();
+    expect(globalThis.__clowderWorker).toBeUndefined();
     expect(errors).not.toHaveBeenCalled();
 });
 
@@ -176,13 +176,13 @@ it("stops the worker before Vite tears down its module runner on restart and clo
         await acquired.promise;
         await server.restart();
         expect(released).toHaveBeenCalledTimes(1);
-        expect(globalThis.__stoatWorker).toBeUndefined();
+        expect(globalThis.__clowderWorker).toBeUndefined();
 
         startWorker(worker, Effect.void);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
         await server.close();
         expect(released).toHaveBeenCalledTimes(2);
-        expect(globalThis.__stoatWorker).toBeUndefined();
+        expect(globalThis.__clowderWorker).toBeUndefined();
     } finally {
         await server.close();
     }

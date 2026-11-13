@@ -1,6 +1,6 @@
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters, projects, resources } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters, projects, resources } from "@clowder/db/schema/index";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -11,7 +11,7 @@ import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
 describe("database metrics API", () => {
-    const databaseName = `stoat_metrics_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_metrics_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     const resourceId = randomUUID();

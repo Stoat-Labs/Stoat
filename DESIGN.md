@@ -1,4 +1,4 @@
-# Stoat design system
+# Clowder design system
 
 The **canvas resource panel and the cluster detail page are the primary design reference** for new application work; the resource overview and Variables pages that first defined this language were removed with the list view. Match their neutral surfaces, Outfit typoy, compact controls, framed work areas, restrained status colors, and inset application shell. The resource screenshot illustrates this language: a narrow runtime list beside a large editor, both inside muted frames with recessed content panels. Reuse the Svelte components in `apps/web/src/lib/components/ui`; do not approximate them with unrelated card styles.
 
@@ -26,11 +26,11 @@ Local implementation:
 - [Authentication form](apps/web/src/lib/components/auth/auth-form.svelte)
 - [Default application layout](<apps/web/src/routes/(app)/+layout.svelte>)
 
-Change shared tokens or primitives when changing the system. Keep equivalent controls consistent. Purposeful density overrides such as a zero-padding editor panel or compact variables toolbar are part of the system, not exceptions to eliminate. The UptimeKit repository is a reference; Stoat does not import its React components at runtime. Dimensions below assume a 16px root font size.
+Change shared tokens or primitives when changing the system. Keep equivalent controls consistent. Purposeful density overrides such as a zero-padding editor panel or compact variables toolbar are part of the system, not exceptions to eliminate. The UptimeKit repository is a reference; Clowder does not import its React components at runtime. Dimensions below assume a 16px root font size.
 
 ## Theme and color
 
-Light tokens live in `:root`; dark overrides live in `.dark`. Stoat currently starts in dark mode through the root HTML class. Removing that class selects the light theme. Keep colors and Tailwind `dark:` variants governed by the same class; never put dark values in a second unconditional `:root` block.
+Light tokens live in `:root`; dark overrides live in `.dark`. Clowder currently starts in dark mode through the root HTML class. Removing that class selects the light theme. Keep colors and Tailwind `dark:` variants governed by the same class; never put dark values in a second unconditional `:root` block.
 
 Use semantic Tailwind classes rather than raw colors in page markup:
 
@@ -63,7 +63,7 @@ Preserve the resource page's surface hierarchy: sidebar/canvas, translucent shel
 
 ## Typography
 
-Use **Outfit Variable**, already self-hosted through `@fontsource-variable/outfit`, for body text, headings, and controls. Keep the system sans-serif fallbacks. UptimeKit loads Outfit remotely; Stoat retains its local font package.
+Use **Outfit Variable**, already self-hosted through `@fontsource-variable/outfit`, for body text, headings, and controls. Keep the system sans-serif fallbacks. UptimeKit loads Outfit remotely; Clowder retains its local font package.
 
 | Context                             | Convention                                    |
 | ----------------------------------- | --------------------------------------------- |
@@ -82,7 +82,7 @@ Use **Outfit Variable**, already self-hosted through `@fontsource-variable/outfi
 
 Use short, direct product copy. A heading and one supporting sentence are usually enough. Avoid marketing taglines, uppercase decorative eyebrows, and ornamental footer copy in account flows.
 
-UptimeKit names Geist Mono but Stoat does not bundle it. Stoat uses an explicit system monospace stack until a dedicated mono font is installed. Do not claim an unloaded font is available.
+UptimeKit names Geist Mono but Clowder does not bundle it. Clowder uses an explicit system monospace stack until a dedicated mono font is installed. Do not claim an unloaded font is available.
 
 ## Spacing, shape, and elevation
 
@@ -164,14 +164,14 @@ The shared scroller defaults to a 22rem minimum and 32rem maximum height with in
 
 ### Icons
 
-Stoat uses Phosphor through `phosphor-svelte`, imported per icon from `phosphor-svelte/lib/<Name>Icon`. The root layout sets bold weight, a 24px default size and `aria-hidden` for every icon, so an icon that carries meaning must set `aria-hidden={false}` and its own name. Active navigation items use the `fill` weight. Icons Phosphor doesn't ship live in `$lib/components/shared/*-icon.svelte`, drawn on its 256 grid with round 24-unit strokes. Use 16–18px icons within controls. Icon-only actions need an accessible name.
+Clowder uses Phosphor through `phosphor-svelte`, imported per icon from `phosphor-svelte/lib/<Name>Icon`. The root layout sets bold weight, a 24px default size and `aria-hidden` for every icon, so an icon that carries meaning must set `aria-hidden={false}` and its own name. Active navigation items use the `fill` weight. Icons Phosphor doesn't ship live in `$lib/components/shared/*-icon.svelte`, drawn on its 256 grid with round 24-unit strokes. Use 16–18px icons within controls. Icon-only actions need an accessible name.
 
 ## Layout recipes
 
 ### Authentication
 
 - One centered column: `max-w-sm`, `min-h-svh`, `p-6 md:p-8`.
-- Put Stoat's mark and name inside the column, above the heading.
+- Put Clowder's mark and name inside the column, above the heading.
 - Stack brand, heading/description, and compact form with 16px gaps.
 - Use icon input groups and a full-width primary submit action.
 - Place the login/signup link below the form in muted centered text, with an underlined link.
