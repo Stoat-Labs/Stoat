@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { deleteEmptyGroups } from "@stoat/db/groups";
-import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
-import { referencedResourceIds } from "@stoat/workflows/references";
+import type { Database } from "@clowder/db";
+import { deleteEmptyGroups } from "@clowder/db/groups";
+import { clusters, deployments, projects, resources } from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
+import { referencedResourceIds } from "@clowder/workflows/references";
 import { and, eq, ne, sql } from "drizzle-orm";
 import * as v from "valibot";
 

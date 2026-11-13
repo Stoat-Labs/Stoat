@@ -1,12 +1,12 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     getInitialization,
     getMonitoringVersion,
     prepareMonitoring,
     setMonitoringVersion,
     updateMonitoringPassword,
-} from "@stoat/db/initialization";
-import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@stoat/uncloud";
+} from "@clowder/db/initialization";
+import { ucClient, UcApiError, unwrap, type UcClient, type Service } from "@clowder/uncloud";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Schema } from "effect";
@@ -23,7 +23,7 @@ import { sql } from "./greptime";
 
 export { readSqlRows } from "./greptime";
 
-import { appendDeploymentLog } from "@stoat/db/deployments";
+import { appendDeploymentLog } from "@clowder/db/deployments";
 import { deployCompose } from "./deploy-compose";
 import { enableCaddyMetrics } from "./deploy-caddy";
 
@@ -103,15 +103,22 @@ async function waitForService(
 // Sidecar calls get their own ceilings so a hung endpoint fails fast with a
 // clear error instead of stalling the attempt forever. Combined with the
 // attempt signal so cancellation still propagates.
-// Installed by the Stoat sidecar; Alloy bind-mounts its directory (see compose.yaml).
-const GEOIP_DATABASE = "/var/lib/stoat/geoip/country.mmdb";
+// Installed by the Clowder sidecar; Alloy bind-mounts its directory (see compose.yaml).
+const GEOIP_DATABASE = "/var/lib/clowder/geoip/country.mmdb";
+
+// Sidecars from before the rename keep the database in /var/lib/stoat/geoip. Link the new path
+// to it, so Alloy's bind mount finds it there until the sidecar is updated (which writes through).
+const GEOIP_CHECK = `test -s ${GEOIP_DATABASE} || { test -s /var/lib/stoat/geoip/country.mmdb && test ! -e /var/lib/clowder/geoip && mkdir -p /var/lib/clowder && ln -s /var/lib/stoat/geoip /var/lib/clowder/geoip; }`;
+
+// The monitoring version that renamed the services Caddy pushes its metrics to.
+const RENAMED_MONITORING_VERSION = 4;
 
 export function bounded(signal: AbortSignal, ms: number) {
     return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 }
 
 /**
- * Alloy refuses to start without the GeoIP database, which the Stoat sidecar installs on every
+ * Alloy refuses to start without the GeoIP database, which the Clowder sidecar installs on every
  * machine. Returns the names of machines that lack it, e.g. because their sidecar is older.
  */
 export async function machinesWithoutGeoip(
@@ -124,7 +131,7 @@ export async function machinesWithoutGeoip(
             const { exitCode } = await unwrap(
                 uc.POST("/api/v1/machines/{id}/exec", {
                     params: { path: { id: machine.id } },
-                    body: { command: ["test", "-s", GEOIP_DATABASE] },
+                    body: { command: ["sh", "-c", GEOIP_CHECK] },
                     signal,
                 }),
             );
@@ -136,29 +143,61 @@ export async function machinesWithoutGeoip(
     return results.flat();
 }
 
+// Whether every container of the service carries `ownership` (NAME=clusterId) in its environment.
+function ownedBy(service: Service, ownership: string) {
+    return (
+        service.containers.length > 0 &&
+        service.containers.every(({ container }) => {
+            const config = Schema.decodeUnknownSync(
+                Schema.UndefinedOr(
+                    Schema.Struct({
+                        Env: Schema.optionalKey(Schema.Array(Schema.String)),
+                    }),
+                ),
+            )(container.Config);
+
+            return config?.Env?.includes(ownership) === true;
+        })
+    );
+}
+
 async function checkOwnership(uc: UcClient, clusterId: string, signal: AbortSignal) {
     const { items } = await unwrap(uc.GET("/api/v1/services", { signal }));
 
     for (const service of items.filter(
         (item) => item.name === GREPTIME_SERVICE || item.name === ALLOY_SERVICE,
     )) {
-        const detail = await inspect(uc, service.id, signal);
-
         if (
-            detail.containers.length === 0 ||
-            detail.containers.some(({ container }) => {
-                const config = Schema.decodeUnknownSync(
-                    Schema.UndefinedOr(
-                        Schema.Struct({
-                            Env: Schema.optionalKey(Schema.Array(Schema.String)),
-                        }),
-                    ),
-                )(container.Config);
-
-                return !config?.Env?.includes(`STOAT_MONITORING_CLUSTER_ID=${clusterId}`);
-            })
+            !ownedBy(
+                await inspect(uc, service.id, signal),
+                `CLOWDER_MONITORING_CLUSTER_ID=${clusterId}`,
+            )
         )
             throw new Error("Monitoring service names are already in use by another deployment.");
+    }
+}
+
+// Monitoring deployed before the rename. The new services reuse its volumes (see the
+// clowder_rebrand migration), so the old ones must stop first: two GreptimeDBs on one data
+// directory corrupt it.
+const LEGACY_SERVICES = ["stoat-monitoring-greptimedb", "stoat-monitoring-alloy"];
+
+async function removeLegacyMonitoring(uc: UcClient, clusterId: string, signal: AbortSignal) {
+    const { items } = await unwrap(uc.GET("/api/v1/services", { signal }));
+
+    for (const service of items.filter((item) => LEGACY_SERVICES.includes(item.name))) {
+        if (
+            ownedBy(
+                await inspect(uc, service.id, signal),
+                `STOAT_MONITORING_CLUSTER_ID=${clusterId}`,
+            )
+        )
+            await unwrap(
+                uc.DELETE("/api/v1/services/{id}", {
+                    params: { path: { id: service.id } },
+                    signal,
+                }),
+            );
     }
 }
 
@@ -205,7 +244,9 @@ export function createInitializeClusterHandler(
 
             if (!reconciling && opts?.rollout) return;
 
-            if (reconciling && (await getMonitoringVersion(db, clusterId)) >= MONITORING_VERSION) {
+            const deployedVersion = reconciling ? await getMonitoringVersion(db, clusterId) : 0;
+
+            if (reconciling && deployedVersion >= MONITORING_VERSION) {
                 await log("Cluster is already initialized; nothing to do.");
 
                 return;
@@ -251,10 +292,12 @@ export function createInitializeClusterHandler(
             );
 
             if (withoutGeoip.length) {
-                const message = `Update the Stoat sidecar on ${withoutGeoip.join(", ")}: it installs the GeoIP database Alloy needs.`;
+                const message = `Update the Clowder sidecar on ${withoutGeoip.join(", ")}: it installs the GeoIP database Alloy needs.`;
                 await log(message, "error");
                 throw new Error(message);
             }
+
+            await removeLegacyMonitoring(uc, clusterId, bounded(signal, 120_000));
 
             const state = await prepareMonitoring(
                 db,
@@ -395,8 +438,9 @@ export function createInitializeClusterHandler(
                         );
                         await setMonitoringVersion(db, clusterId, MONITORING_VERSION);
 
-                        // Caddy already pushes metrics once initialized; don't restart it again.
-                        if (!reconciling)
+                        // Caddy already pushes metrics once initialized; don't restart it again,
+                        // unless it still pushes to the collector from before the rename (version 4).
+                        if (!reconciling || deployedVersion < RENAMED_MONITORING_VERSION)
                             await enableCaddyMetrics(
                                 db,
                                 uc,

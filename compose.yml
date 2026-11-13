@@ -1,8 +1,10 @@
+# Service, volume and database names keep the name from before the rename to Clowder:
+# existing installs hold their data under them.
 name: stoat
 
 services:
     stoat:
-        image: ghcr.io/stoat-labs/stoat:latest
+        image: ghcr.io/clowder-run/clowder:latest
         pull_policy: always
         # Caddy marks an upstream down for 30s after any failed request, and a browser aborting a
         # request mid-flight counts as one. With one replica that is a 503 for every page, so
@@ -10,7 +12,7 @@ services:
         # Uncloud reloads Caddy on every service change, and a reload closes proxied WebSockets
         # (code 1001) unless stream_close_delay keeps them open across it.
         x-caddy: |
-            ${APP_URL:-stoat.example.com} {
+            ${APP_URL:-clowder.example.com} {
                 reverse_proxy {{upstreams 3001}} {
                     fail_duration 0
                     stream_close_delay 1h
@@ -18,7 +20,7 @@ services:
             }
         env_file: .env
         environment:
-            APP_URL: https://${APP_URL:-stoat.example.com}
+            APP_URL: https://${APP_URL:-clowder.example.com}
             DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
             REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
             APP_USE_INTERNAL_CACHE: ${APP_USE_INTERNAL_CACHE:-false}
@@ -52,11 +54,11 @@ services:
     # Optional: run background jobs in their own container. Uncomment and set
     # USE_INTERNAL_WORKER=false, or no deployments or monitoring jobs ever run.
     # stoat-worker:
-    #     image: ghcr.io/stoat-labs/worker:latest
+    #     image: ghcr.io/clowder-run/worker:latest
     #     pull_policy: always
     #     env_file: .env
     #     environment:
-    #         APP_URL: https://${APP_URL:-stoat.example.com}
+    #         APP_URL: https://${APP_URL:-clowder.example.com}
     #         DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
     #         REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
     #     # Waits for stoat, whose pre-deploy hook runs the migrations this worker's jobs need.
@@ -79,7 +81,7 @@ services:
             retries: 5
         restart: unless-stopped
 
-    # Optional but recommended. Without a Redis-compatible cache, Stoat caches in memory.
+    # Optional but recommended. Without a Redis-compatible cache, Clowder caches in memory.
     stoat-cache:
         image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
         volumes:
@@ -87,7 +89,7 @@ services:
         restart: unless-stopped
 
     sidecar:
-        image: ghcr.io/stoat-labs/sidecar:latest
+        image: ghcr.io/clowder-run/sidecar:latest
         env_file: .env
         environment:
             # Required by every endpoint except /healthz; the sidecar won't start without it.
@@ -95,7 +97,7 @@ services:
         volumes:
             - /run/uncloud:/run/uncloud:ro
             # The sidecar installs the GeoIP database Alloy reads from here (--geoip-dir).
-            - /var/lib/stoat/geoip:/host/var/lib/stoat/geoip
+            - /var/lib/clowder/geoip:/host/var/lib/clowder/geoip
         # Root + privileged + host PID: the sidecar talks to the Uncloud socket and
         # runs host commands via nsenter into PID 1. Uncloud ignores group_add.
         user: root

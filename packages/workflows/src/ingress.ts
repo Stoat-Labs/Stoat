@@ -157,7 +157,7 @@ function resolveBraced(expression: string, lookup: VarLookup): string {
  * Lenient docker-compose style `$VAR`/`${VAR}` expansion for display parsing.
  * Supports `${VAR:-default}`, `${VAR-default}`, `${VAR:+alt}`, `${VAR+alt}`,
  * nested defaults, and the `$$` escape. Unset variables become `""`; never
- * throws. Ported from stoat-old's compose-interpolate.
+ * throws. Ported from clowder-old's compose-interpolate.
  */
 export function interpolateComposeVariables(text: string, lookup: VarLookup): string {
     let result = "";
@@ -600,7 +600,7 @@ type SiteBlock = {
 /**
  * Splits a Caddyfile snippet into site blocks. A line at brace depth zero
  * that ends with `{` starts a block; its remainder is the address list.
- * Ported from stoat-old's compose-caddy site splitter.
+ * Ported from clowder-old's compose-caddy site splitter.
  */
 function splitSiteBlocks(caddyfile: string): SiteBlock[] {
     const blocks: SiteBlock[] = [];

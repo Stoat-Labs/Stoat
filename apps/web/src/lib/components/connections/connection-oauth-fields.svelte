@@ -210,7 +210,7 @@
                         .
                     </li>
                     <li>
-                        Name it <strong>Stoat</strong>
+                        Name it <strong>Clowder</strong>
                         , paste the callback URL as its
                         <strong>Redirect URI</strong>
                         , and enable

@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { listUserOrganizations } from "@stoat/db/organizations";
-import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
-import { isSetupRequired } from "@stoat/db/setup";
+import { listUserOrganizations } from "@clowder/db/organizations";
+import { getSignupsEnabled, setSignupsEnabled } from "@clowder/db/settings";
+import { isSetupRequired } from "@clowder/db/setup";
 import { requireInstanceAdmin } from "$lib/server/require-admin";
 import { getDb } from "../../services";
 

@@ -1,5 +1,5 @@
 import { redirect } from "@sveltejs/kit";
-import { listUserOrganizations } from "@stoat/db/organizations";
+import { listUserOrganizations } from "@clowder/db/organizations";
 import { SIDEBAR_COOKIE_NAME } from "$lib/components/ui/sidebar/constants";
 import { getAuth, getDb } from "../../services";
 

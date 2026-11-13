@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { projects, resources, s3Buckets, s3Connections } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { projects, resources, s3Buckets, s3Connections } from "@clowder/db/schema/index";
 import {
     hasS3ConnectionSecrets,
     resolveS3Connection,
@@ -8,7 +8,7 @@ import {
     s3FailureMessage,
     testS3Connection,
     type S3ConnectionInput,
-} from "@stoat/s3";
+} from "@clowder/s3";
 import { and, asc, count, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";

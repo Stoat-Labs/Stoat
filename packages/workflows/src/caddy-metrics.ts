@@ -112,7 +112,7 @@ export function withCaddyMetrics(caddyfile: string): string {
 
 /**
  * Subdirectives a user-written global `metrics` option lacks for HTTP traffic. Empty when the
- * option is complete or absent, since Stoat adds a complete one itself when it is absent.
+ * option is complete or absent, since Clowder adds a complete one itself when it is absent.
  */
 export function missingMetricsSubdirectives(caddyfile: string): string[] {
     const option = findMetricsOption(caddyfile.split("\n"));

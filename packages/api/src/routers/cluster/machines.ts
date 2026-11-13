@@ -1,10 +1,10 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { forgetJoinedMachine, latestMachineAttempt } from "@stoat/db/clusters";
-import { clusters, deployments } from "@stoat/db/schema/index";
-import { UcApiError, unwrap } from "@stoat/uncloud";
-import { addMachineLock } from "@stoat/workflows/add-machine";
-import { sshKeyPair } from "@stoat/workflows/ssh-setup";
+import type { Database } from "@clowder/db";
+import { forgetJoinedMachine, latestMachineAttempt } from "@clowder/db/clusters";
+import { clusters, deployments } from "@clowder/db/schema/index";
+import { UcApiError, unwrap } from "@clowder/uncloud";
+import { addMachineLock } from "@clowder/workflows/add-machine";
+import { sshKeyPair } from "@clowder/workflows/ssh-setup";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
@@ -89,13 +89,13 @@ function removalError(error: Error) {
     if (error.status === 405)
         return new ORPCError("PRECONDITION_FAILED", {
             message:
-                "This cluster's sidecar is too old to remove machines. Update the Stoat sidecar, then try again.",
+                "This cluster's sidecar is too old to remove machines. Update the Clowder sidecar, then try again.",
         });
 
     if (error.status === 404)
         return new ORPCError("NOT_FOUND", { message: "This machine is no longer in the cluster." });
 
-    // The sidecar is still removing a machine, which can outlast Stoat's wait for it.
+    // The sidecar is still removing a machine, which can outlast Clowder's wait for it.
     if (error.status === 409)
         return new ORPCError("CONFLICT", {
             message: "Another machine is still being removed. Try again once it's gone.",
@@ -122,7 +122,7 @@ export const machinesRouter = {
                     });
 
                 // The comment tells the user which authorized key to remove later.
-                const key = sshKeyPair(`stoat-${cluster.id.slice(0, 8)}`);
+                const key = sshKeyPair(`clowder-${cluster.id.slice(0, 8)}`);
 
                 await tx
                     .update(clusters)

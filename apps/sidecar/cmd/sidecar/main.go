@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"git.irazz.lol/stoat/sidecar/internal/cluster"
-	"git.irazz.lol/stoat/sidecar/internal/geoip"
-	"git.irazz.lol/stoat/sidecar/internal/httpapi"
+	"git.irazz.lol/clowder/sidecar/internal/cluster"
+	"git.irazz.lol/clowder/sidecar/internal/geoip"
+	"git.irazz.lol/clowder/sidecar/internal/httpapi"
 	"github.com/gofiber/fiber/v3"
 	"github.com/spf13/cobra"
 )
@@ -83,7 +83,7 @@ func newCommand() *cobra.Command {
 		"Maximum duration of a request that is neither a command execution nor an event stream.")
 	cmd.Flags().DurationVar(&opts.execTimeout, "exec-timeout", httpapi.DefaultExecTimeout,
 		"Maximum duration of a container or host command execution.")
-	cmd.Flags().StringVar(&opts.geoipDatabase, "geoip-database", "/usr/share/stoat/geoip/"+geoip.FileName,
+	cmd.Flags().StringVar(&opts.geoipDatabase, "geoip-database", "/usr/share/clowder/geoip/"+geoip.FileName,
 		"GeoIP database shipped with the sidecar.")
 	cmd.Flags().StringVar(&opts.geoipDir, "geoip-dir", "",
 		"Host directory Alloy reads the GeoIP database from, through the host root mount. Empty skips installing it.")

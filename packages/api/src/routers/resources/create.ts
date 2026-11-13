@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, projects, resourceGroups, resources } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
-import { ucClient, unwrap } from "@stoat/uncloud";
+import { clusters, projects, resourceGroups, resources } from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
+import { ucClient, unwrap } from "@clowder/uncloud";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";

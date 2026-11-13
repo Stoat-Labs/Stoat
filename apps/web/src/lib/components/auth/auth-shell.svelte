@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ClowderLogo from "$lib/components/clowder-logo.svelte";
     import type { Snippet } from "svelte";
 
     // The centered single-column layout shared by login, sign-up and first-run setup.
@@ -33,9 +34,9 @@
             <a
                 href="/"
                 class="flex w-fit shrink-0 items-center gap-2"
-                aria-label="Stoat home"
+                aria-label="Clowder home"
             >
-                <img src="/stoat.png" alt="" height="80" width="80" />
+                <ClowderLogo class="size-20 text-primary" />
             </a>
             <div class="flex flex-col gap-1">
                 {#if eyebrow}

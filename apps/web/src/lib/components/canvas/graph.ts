@@ -1,6 +1,6 @@
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 import type { Edge, Node, XYPosition } from "@xyflow/svelte";
-import { databaseExporterEngine, databaseServerEngine } from "@stoat/api/observability";
+import { databaseExporterEngine, databaseServerEngine } from "@clowder/api/observability";
 import { engineIcon, imageIcon } from "$lib/resources/image-icons";
 
 export type CanvasResource = Awaited<
@@ -1009,7 +1009,7 @@ export function buildEdges(nodes: CanvasNode[], graph: CanvasGraph) {
 
 function storageKey(projectId: string) {
     // v3: entries carry a TTL.
-    return `stoat:canvas:v3:${projectId}`;
+    return `clowder:canvas:v3:${projectId}`;
 }
 
 // Teammates share the layout, so the local copy only wins for a short while.
@@ -1053,7 +1053,7 @@ export function savePositions(projectId: string, positions: Positions) {
 }
 
 function collapsedKey(projectId: string) {
-    return `stoat:canvas:v2:collapsed:${projectId}`;
+    return `clowder:canvas:v2:collapsed:${projectId}`;
 }
 
 // Which frames show only their icons; per browser, like the layout.

@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { formatEnvValue, parseAllAssignments, parseEnvLines } from "@stoat/workflows/env-lines";
+import { formatEnvValue, parseAllAssignments, parseEnvLines } from "@clowder/workflows/env-lines";
 import { isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
 
 const scalar = v.pipe(v.union([v.string(), v.number(), v.boolean()]), v.transform(String));

@@ -1,22 +1,27 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { deployments, projects, resourceDeploymentInputs, resources } from "@stoat/db/schema/index";
-import { resourceSlug } from "@stoat/db/slug";
-import { unwrap, type UcClient } from "@stoat/uncloud";
+import type { Database } from "@clowder/db";
+import {
+    deployments,
+    projects,
+    resourceDeploymentInputs,
+    resources,
+} from "@clowder/db/schema/index";
+import { resourceSlug } from "@clowder/db/slug";
+import { unwrap, type UcClient } from "@clowder/uncloud";
 import {
     composeVariables,
     prefixName,
     resourceComposePrefix,
     resourceEnv,
     serviceVariable,
-} from "@stoat/workflows/compose";
-import { parseEnvLines, setEnvVariable } from "@stoat/workflows/env-lines";
+} from "@clowder/workflows/compose";
+import { parseEnvLines, setEnvVariable } from "@clowder/workflows/env-lines";
 import {
     referencedResourceIds,
     referenceKeys,
     referenceTargets,
     resolveReferences,
-} from "@stoat/workflows/references";
+} from "@clowder/workflows/references";
 import { eq, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
@@ -125,7 +130,7 @@ export async function postgresEnv(
             .from(projects)
             .where(eq(projects.id, resource.projectId));
 
-        // `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` resolve like the deploy does.
+        // `CLOWDER_PROJECT_*` / `CLOWDER_RESOURCE_*` resolve like the deploy does.
         return composeVariables(
             compose,
             envText,
@@ -168,11 +173,11 @@ const renameRole = `${pickUser}
 q() { psql -X -q -v ON_ERROR_STOP=1 -At "$@"; }
 scram=$(printf '%s' "SELECT rolpassword LIKE 'SCRAM-SHA-256\\$%' FROM pg_authid WHERE rolname = current_user" | q -U "$user" -d "$db")
 [ "$scram" = t ] || { echo "The role's password isn't stored as SCRAM-SHA-256, so renaming it would clear it." >&2; exit 1; }
-printf '%s' 'CREATE ROLE stoat_rename SUPERUSER LOGIN' | q -U "$user" -d "$db" || exit 1
-printf '%s' 'ALTER ROLE :"old" RENAME TO :"new"' | q -U stoat_rename -d "$db" -v old="$user" -v new="$1"
+printf '%s' 'CREATE ROLE clowder_rename SUPERUSER LOGIN' | q -U "$user" -d "$db" || exit 1
+printf '%s' 'ALTER ROLE :"old" RENAME TO :"new"' | q -U clowder_rename -d "$db" -v old="$user" -v new="$1"
 status=$?
 owner="$1"; [ $status -eq 0 ] || owner="$user"
-printf '%s' 'DROP ROLE stoat_rename' | q -U "$owner" -d "$db"
+printf '%s' 'DROP ROLE clowder_rename' | q -U "$owner" -d "$db"
 exit $status`;
 
 /**

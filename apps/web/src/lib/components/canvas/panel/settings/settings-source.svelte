@@ -302,7 +302,7 @@
     <div>
         <SettingsTitle
             text={"Source Repo"}
-            description={"Compose is edited in Stoat. Connect a repository to deploy its Compose file and configs from Git instead."}
+            description={"Compose is edited in Clowder. Connect a repository to deploy its Compose file and configs from Git instead."}
         />
         <div class="mt-3 flex flex-wrap gap-2">
             <Button

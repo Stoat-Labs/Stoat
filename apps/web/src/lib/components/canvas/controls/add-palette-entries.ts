@@ -8,9 +8,9 @@ import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
 import Layers from "phosphor-svelte/lib/StackIcon";
 import Settings from "phosphor-svelte/lib/GearSixIcon";
 import SquareTerminal from "phosphor-svelte/lib/TerminalWindowIcon";
-import { dockerHubLogoUrl, dockerHubRepository } from "@stoat/api/docker-hub";
-import type { AppRouterClient } from "@stoat/api/routers/index";
-import { s3Providers } from "@stoat/s3/providers";
+import { dockerHubLogoUrl, dockerHubRepository } from "@clowder/api/docker-hub";
+import type { AppRouterClient } from "@clowder/api/routers/index";
+import { s3Providers } from "@clowder/s3/providers";
 import type { Component } from "svelte";
 
 import type { VolumeTarget } from "../graph";

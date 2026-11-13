@@ -117,9 +117,9 @@
             aria-describedby="provision-host-hint"
         />
         <FieldDescription id="provision-host-hint">
-            A fresh Linux server. Stoat connects on port 51443, which
-            you can limit to Stoat's IP. Public servers also need 80
-            and 443 for your apps.
+            A fresh Linux server. Clowder connects on port 51443,
+            which you can limit to Clowder's IP. Public servers also
+            need 80 and 443 for your apps.
         </FieldDescription>
     </Field>
     <div class="grid grid-cols-[1fr_7rem] gap-4">

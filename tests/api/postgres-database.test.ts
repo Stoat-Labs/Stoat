@@ -1,8 +1,8 @@
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { interpolateCompose } from "@stoat/workflows/compose";
-import { referenceTargets, resolveReferences } from "@stoat/workflows/references";
-import { clusters, projects, resources } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { interpolateCompose } from "@clowder/workflows/compose";
+import { referenceTargets, resolveReferences } from "@clowder/workflows/references";
+import { clusters, projects, resources } from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { randomUUID } from "node:crypto";
@@ -88,7 +88,7 @@ describe("preloadStatements", () => {
 });
 
 describe("addConnectionPooler", () => {
-    const databaseName = `stoat_pooler_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_pooler_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     const resourceId = randomUUID();

@@ -10,10 +10,10 @@ import { identifyUser } from "evlog/better-auth";
 import { createFsDrain } from "evlog/fs";
 import { createEvlogHooks } from "evlog/sveltekit";
 
-import { CLIENT_IP_HEADER } from "@stoat/auth";
+import { CLIENT_IP_HEADER } from "@clowder/auth";
 import { env } from "./env.server";
 import { getAuth, getDb, setAuthCookiePlugin } from "./services";
-import { startMonitoringWorker } from "@stoat/api/worker";
+import { startMonitoringWorker } from "@clowder/api/worker";
 
 /** WebSocket calls (rpc-socket.ts) read sessions outside any request, with no response to set cookies on. */
 function currentRequestEvent(): RequestEvent | undefined {

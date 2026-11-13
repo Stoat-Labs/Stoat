@@ -261,7 +261,7 @@
 </script>
 
 <svelte:head>
-    <title>{title} / Stoat</title>
+    <title>{title} / Clowder</title>
 </svelte:head>
 
 {#snippet cancelAction()}

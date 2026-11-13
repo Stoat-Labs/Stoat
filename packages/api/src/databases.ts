@@ -1,5 +1,5 @@
-import type { resources } from "@stoat/db/schema/index";
-import { databaseEngines, type DatabaseEngine } from "@stoat/workflows/database-engines";
+import type { resources } from "@clowder/db/schema/index";
+import { databaseEngines, type DatabaseEngine } from "@clowder/workflows/database-engines";
 import * as v from "valibot";
 
 export { databaseEngines, type DatabaseEngine };
@@ -9,7 +9,7 @@ export const composeResourceTypes = ["compose", "database"] as const;
 
 const engineSettingsSchema = v.object({ engine: v.picklist(databaseEngines) });
 
-/** The engine a `database` resource was created as, or a deployed `x-stoat.engine` set, in `settings.engine`. */
+/** The engine a `database` resource was created as, or a deployed `x-clowder.engine` set, in `settings.engine`. */
 export function databaseEngine(
     resource: Pick<typeof resources.$inferSelect, "type" | "settings">,
 ): DatabaseEngine | null {

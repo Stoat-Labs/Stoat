@@ -106,7 +106,7 @@
 
     let zoom = $state(1);
 
-    // Stores the crop inline as a small WebP data URL, since Stoat has no file storage.
+    // Stores the crop inline as a small WebP data URL, since Clowder has no file storage.
     async function resizeImage(file: File, area: Area) {
         const bitmap = await createImageBitmap(file);
         const canvas = document.createElement("canvas");

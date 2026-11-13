@@ -1,6 +1,6 @@
 import * as v from "valibot";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     clusterMonitoring,
     clusters,
@@ -8,10 +8,10 @@ import {
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
-import type { LogEvent } from "@stoat/uncloud";
-import { ALLOY_SERVICE, GREPTIME_SERVICE } from "@stoat/workflows/monitoring-compose";
-import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
+} from "@clowder/db/schema/index";
+import type { LogEvent } from "@clowder/uncloud";
+import { ALLOY_SERVICE, GREPTIME_SERVICE } from "@clowder/workflows/monitoring-compose";
+import { encryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { execFile } from "node:child_process";
@@ -75,7 +75,7 @@ function log(message = "hello", serviceId = "web-id"): LogEvent {
 }
 
 describe("resource logs backend", () => {
-    const databaseName = `stoat_logs_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_logs_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     const resourceId = randomUUID();
@@ -324,7 +324,7 @@ describe("resource logs backend", () => {
                     expect(id).toBe(GREPTIME_SERVICE);
                     const body = v.parse(serviceHttpRequest, await request.json());
                     expect(body.headers).toEqual({
-                        Authorization: `Basic ${btoa(`stoat:${password}`)}`,
+                        Authorization: `Basic ${btoa(`clowder:${password}`)}`,
                     });
                     expect(body).toMatchObject({ port: 4000, path: "/v1/sql?db=public" });
 
@@ -407,7 +407,7 @@ describe("resource logs backend", () => {
         return stream;
     }
 
-    it("lists services deployed outside Stoat, then uses deployed snapshot prefixes and actual current IDs", async () => {
+    it("lists services deployed outside Clowder, then uses deployed snapshot prefixes and actual current IDs", async () => {
         expect(await call(resourcesRouter.listLogServices, input, { context })).toEqual({
             services: [],
             historyAvailable: false,
@@ -617,11 +617,11 @@ describe("resource logs backend", () => {
   missing: { image: nginx }
   ${GREPTIME_SERVICE}: { image: private }
   ${ALLOY_SERVICE}: { image: private }
-  stoat-monitoring-private: { image: private }
+  clowder-monitoring-private: { image: private }
 `,
             );
 
-            for (const name of [GREPTIME_SERVICE, ALLOY_SERVICE, "stoat-monitoring-private"])
+            for (const name of [GREPTIME_SERVICE, ALLOY_SERVICE, "clowder-monitoring-private"])
                 current.set(name, `${name}-id`);
             replicas.set("web-id", ["container"]);
             replicas.set("worker-id", ["worker-container"]);
@@ -968,12 +968,12 @@ describe("resource logs backend", () => {
         expect(openedStreams).toEqual([]);
     });
 
-    it.each(["worker", GREPTIME_SERVICE, ALLOY_SERVICE, "stoat-monitoring-private"])(
+    it.each(["worker", GREPTIME_SERVICE, ALLOY_SERVICE, "clowder-monitoring-private"])(
         "opens no logs when selected name %s is outside the resource log scope",
         async (name) => {
             await deployment(
                 "ready",
-                `services:\n  web: { image: nginx }\n  ${GREPTIME_SERVICE}: { image: private }\n  ${ALLOY_SERVICE}: { image: private }\n  stoat-monitoring-private: { image: private }\n`,
+                `services:\n  web: { image: nginx }\n  ${GREPTIME_SERVICE}: { image: private }\n  ${ALLOY_SERVICE}: { image: private }\n  clowder-monitoring-private: { image: private }\n`,
             );
             current.set(name, "excluded-id");
             vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -2277,7 +2277,7 @@ describe("resource logs backend", () => {
         const payload = first.nextCursor!.split(".")[0]!;
 
         const ascendingSignature = createHmac("sha256", password)
-            .update(`stoat/log-cursor/v1:${payload}`)
+            .update(`clowder/log-cursor/v1:${payload}`)
             .digest("base64url");
 
         for (const changed of [

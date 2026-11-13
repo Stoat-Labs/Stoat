@@ -41,7 +41,7 @@
     import { orpc, queryClient } from "$lib/api/orpc";
     import ArrowLeft from "phosphor-svelte/lib/ArrowLeftIcon";
     import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
-    import { s3Providers } from "@stoat/s3/providers";
+    import { s3Providers } from "@clowder/s3/providers";
     import {
         createMutation,
         createQuery,
@@ -129,7 +129,7 @@
 
 <svelte:head>
     <title>
-        New bucket / {projectQuery.data?.name ?? "Project"} / Stoat
+        New bucket / {projectQuery.data?.name ?? "Project"} / Clowder
     </title>
 </svelte:head>
 
@@ -151,7 +151,7 @@
             <div class="min-w-0">
                 <h1 class="text-2xl font-semibold">New S3 bucket</h1>
                 <p class="mt-1 text-sm text-muted-foreground">
-                    Stoat creates the bucket and, where the provider
+                    Clowder creates the bucket and, where the provider
                     allows, access keys limited to it.
                 </p>
             </div>
@@ -162,7 +162,7 @@
     {#if projectQuery.data?.isInternal}
         <Alert variant="info">
             <AlertDescription>
-                Stoat manages this project's internal services. New
+                Clowder manages this project's internal services. New
                 resources can't be added here.
             </AlertDescription>
         </Alert>

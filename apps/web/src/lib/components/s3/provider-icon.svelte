@@ -1,5 +1,5 @@
 <script lang="ts" module>
-    import type { S3ProviderId } from "@stoat/s3/providers";
+    import type { S3ProviderId } from "@clowder/s3/providers";
 
     // Cloudflare is from svgl.app, Amazon S3 from Wikimedia Commons.
     // RustFS publishes no square SVG mark, so its site favicon is used.

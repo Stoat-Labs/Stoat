@@ -445,10 +445,10 @@ describe("formatComposeFile environment", () => {
   web:
     image: nginx
     environment:
-      - DATABASE_URL=postgres://stoat:secret@db:5432/app
+      - DATABASE_URL=postgres://clowder:secret@db:5432/app
       - REDIS_URL=redis://:pass@cache:6379/0
       - DB_HOST=db
-      - APP_URL=https://stoat.example.com
+      - APP_URL=https://clowder.example.com
       - GREETING=hello-db
       - BARE_KEY
     depends_on:
@@ -456,7 +456,7 @@ describe("formatComposeFile environment", () => {
   worker:
     image: nginx
     environment:
-      DATABASE_URL: postgres://stoat:secret@db:5432/app
+      DATABASE_URL: postgres://clowder:secret@db:5432/app
       PORT: 3000
       DEBUG: true
   db:
@@ -467,13 +467,13 @@ describe("formatComposeFile environment", () => {
             "a1b2c3d4-e5f6a7b8",
         );
 
-        expect(formatted.yaml).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
+        expect(formatted.yaml).toContain("DATABASE_URL=postgres://clowder:secret@db:5432/app");
         expect(formatted.yaml).toContain("REDIS_URL=redis://:pass@cache:6379/0");
         expect(formatted.yaml).toContain("DB_HOST=db");
-        expect(formatted.yaml).toContain("APP_URL=https://stoat.example.com");
+        expect(formatted.yaml).toContain("APP_URL=https://clowder.example.com");
         expect(formatted.yaml).toContain("GREETING=hello-db");
         expect(formatted.yaml).toContain("BARE_KEY");
-        expect(formatted.yaml).toContain("DATABASE_URL: postgres://stoat:secret@db:5432/app");
+        expect(formatted.yaml).toContain("DATABASE_URL: postgres://clowder:secret@db:5432/app");
         expect(formatted.yaml).toContain("PORT: 3000");
     });
 
@@ -482,12 +482,12 @@ describe("formatComposeFile environment", () => {
   web:
     image: nginx
     environment:
-      - DATABASE_URL=postgres://stoat:secret@db:5432/app
+      - DATABASE_URL=postgres://clowder:secret@db:5432/app
 `;
 
         const formatted = formatComposeFile(spec, "a1b2c3d4-e5f6a7b8");
         const raw = unformatComposeFile(formatted.yaml, "a1b2c3d4-e5f6a7b8");
-        expect(raw).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
+        expect(raw).toContain("DATABASE_URL=postgres://clowder:secret@db:5432/app");
     });
 
     it("leaves environment untouched when no prefix is given", () => {
@@ -496,13 +496,13 @@ describe("formatComposeFile environment", () => {
   web:
     image: nginx
     environment:
-      - DATABASE_URL=postgres://stoat:secret@db:5432/app
+      - DATABASE_URL=postgres://clowder:secret@db:5432/app
   db:
     image: postgres
 `,
         );
 
-        expect(formatted.yaml).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
+        expect(formatted.yaml).toContain("DATABASE_URL=postgres://clowder:secret@db:5432/app");
     });
 });
 
@@ -1981,7 +1981,7 @@ describe("unformatComposeFile", () => {
 `,
                 "p",
             ),
-        ).toThrow("Compose names collide after removing the Stoat prefix");
+        ).toThrow("Compose names collide after removing the Clowder prefix");
     });
 
     it("rejects invalid YAML", () => {
@@ -2007,7 +2007,7 @@ describe("compose format/unformat round-trip", () => {
     volumes:
       - web_data:/data
     environment:
-      - DATABASE_URL=postgres://stoat:secret@db:5432/app
+      - DATABASE_URL=postgres://clowder:secret@db:5432/app
   db:
     image: postgres
     depends_on:
@@ -2036,7 +2036,7 @@ volumes:
         expect(raw).toContain("- db_data:/var/lib/postgresql");
         expect(raw).toContain("      - db\n");
         expect(raw).toContain("web:\n        condition: service_started");
-        expect(raw).toContain("DATABASE_URL=postgres://stoat:secret@db:5432/app");
+        expect(raw).toContain("DATABASE_URL=postgres://clowder:secret@db:5432/app");
         expect(raw).not.toContain("a1b2c3d4-e5f6a7b8-");
     });
 });
@@ -2114,7 +2114,7 @@ describe("interpolateCompose", () => {
         expect(short).not.toContain("env_file");
         expect(short).toContain("HOST: kept");
         expect(short).toContain("SECRET: p$$w");
-        expect(short).not.toContain("STOAT_PREFIX");
+        expect(short).not.toContain("CLOWDER_PREFIX");
 
         const long = interpolateCompose(
             "services:\n  web:\n    image: x\n    env_file:\n      - path: ./.env\n      - path: other.env\n        required: false\n    environment:\n      - HOST=kept\n",
@@ -2252,9 +2252,9 @@ describe("interpolateCompose", () => {
         );
     });
 
-    it("exposes STOAT_DOMAIN, STOAT_PREFIX, and <SERVICE>_INTERNAL_HOST", () => {
+    it("exposes CLOWDER_DOMAIN, CLOWDER_PREFIX, and <SERVICE>_INTERNAL_HOST", () => {
         const compose =
-            "services:\n  web:\n    image: x\n    x-ports:\n      - ${HOST:-web.${STOAT_DOMAIN}}:80/https\n    environment:\n      DB: ${MY_DB_INTERNAL_HOST}:5432\n      PREFIX: p-${STOAT_PREFIX}\n  my-db:\n    image: y\n";
+            "services:\n  web:\n    image: x\n    x-ports:\n      - ${HOST:-web.${CLOWDER_DOMAIN}}:80/https\n    environment:\n      DB: ${MY_DB_INTERNAL_HOST}:5432\n      PREFIX: p-${CLOWDER_PREFIX}\n  my-db:\n    image: y\n";
 
         const out = interpolateCompose(compose, "", "a1b2c3d4-e5f6a7b8", "abc.uncld.dev");
 
@@ -2291,7 +2291,7 @@ configs:
   nginx:
     file: conf/nginx.conf
   absolute:
-    file: /etc/stoat.conf
+    file: /etc/clowder.conf
   inline:
     content: kept
 `;
@@ -2313,7 +2313,7 @@ configs:
         expect(formatted).toContain(
             "p-nginx:\n    content: |\n      proxy_set_header Host $$host;",
         );
-        expect(formatted).toContain("file: /etc/stoat.conf");
+        expect(formatted).toContain("file: /etc/clowder.conf");
         expect(formatted).not.toContain("site.css");
     });
 

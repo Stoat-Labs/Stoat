@@ -17,7 +17,7 @@ it("preserves connection drafts on close/reopen and clears them on save or switc
         const dialog = edit ? "edit-connection" : "add-connection";
 
         const original = new URL(
-            "https://stoat.test/git?connectionId=selected&name=My+server&provider=forgejo&authMode=oauth&credentialType=https&oauthProviderId=app&setupExpanded=true#accounts",
+            "https://clowder.test/git?connectionId=selected&name=My+server&provider=forgejo&authMode=oauth&credentialType=https&oauthProviderId=app&setupExpanded=true#accounts",
         );
 
         original.searchParams.set("dialog", dialog);

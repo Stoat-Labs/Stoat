@@ -24,7 +24,7 @@
     import KeyRound from "phosphor-svelte/lib/KeyIcon";
     import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
     import { ORPCError } from "@orpc/client";
-    import { s3Providers } from "@stoat/s3/providers";
+    import { s3Providers } from "@clowder/s3/providers";
     import {
         createQueries,
         createQuery,
@@ -623,7 +623,7 @@
             query = "";
             void configuringBucket.set(target.bucket.connectionId);
         } else if (target.template.versions[0]?.required.length) {
-            // Railway asks for nothing; Stoat templates may need values first.
+            // Railway asks for nothing; Clowder templates may need values first.
             query = "";
             void configuring.set(target.template.appId);
         } else

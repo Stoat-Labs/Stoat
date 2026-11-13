@@ -1,5 +1,5 @@
 {
-    "name": "@stoat/s3",
+    "name": "@clowder/s3",
     "private": true,
     "type": "module",
     "exports": {
@@ -23,10 +23,10 @@
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1146.0",
         "@aws-sdk/s3-request-presigner": "^3.1146.0",
+        "@clowder/config": "workspace:*",
         "@smithy/node-http-handler": "^4.12.1",
         "@smithy/signature-v4": "^5.7.4",
         "@smithy/types": "^4.19.0",
-        "@stoat/config": "workspace:*",
         "valibot": "catalog:"
     },
     "devDependencies": {

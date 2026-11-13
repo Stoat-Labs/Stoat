@@ -1,5 +1,5 @@
 {
-    "name": "@stoat/cache",
+    "name": "@clowder/cache",
     "type": "module",
     "exports": {
         ".": {
@@ -20,7 +20,7 @@
         "unstorage": "^1.17.5"
     },
     "devDependencies": {
-        "@stoat/config": "workspace:*",
+        "@clowder/config": "workspace:*",
         "typescript": "catalog:"
     }
 }

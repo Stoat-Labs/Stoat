@@ -4,14 +4,14 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { cancelDeployment } from "@stoat/db/deployments";
-import { organizationHasInfrastructure } from "@stoat/db/organizations";
-import { clusters, deploymentLogs, deployments } from "@stoat/db/schema/index";
-import * as uncloud from "@stoat/uncloud";
-import { parseCaddyComposeSpec } from "@stoat/workflows/deploy-caddy";
-import { provisionCluster, provisioningCredentials } from "@stoat/workflows/provision-cluster";
-import { isAllowedServerAddress, isPrivateServerAddress } from "@stoat/workflows/server-address";
+import { createDb } from "@clowder/db";
+import { cancelDeployment } from "@clowder/db/deployments";
+import { organizationHasInfrastructure } from "@clowder/db/organizations";
+import { clusters, deploymentLogs, deployments } from "@clowder/db/schema/index";
+import * as uncloud from "@clowder/uncloud";
+import { parseCaddyComposeSpec } from "@clowder/workflows/deploy-caddy";
+import { provisionCluster, provisioningCredentials } from "@clowder/workflows/provision-cluster";
+import { isAllowedServerAddress, isPrivateServerAddress } from "@clowder/workflows/server-address";
 import { and, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -64,7 +64,7 @@ case "$1" in
             shift
         done
         echo "4da371d9872f on edge Downloading [==>    ]  1.049MB/4.156MB" >&2
-        echo "Image ghcr.io/stoat-labs/sidecar:latest on edge  Pulled" >&2
+        echo "Image ghcr.io/clowder-run/sidecar:latest on edge  Pulled" >&2
         echo "$SIDECAR_TOKEN" > "$dir/deploy"
         printf '%s' "$SIDECAR_TLS_CERT" > "$dir/tls-cert"
         printf '%s' "$SIDECAR_TLS_KEY" > "$dir/tls-key" ;;
@@ -94,7 +94,7 @@ vi.spyOn(uncloud, "ucClient").mockReturnValue(
 
 describe("provisioning credentials", () => {
     it("pairs an OpenSSH public key with its private key and pins a certificate for the host", async () => {
-        const credentials = await provisioningCredentials("192.168.1.10", "stoat-test");
+        const credentials = await provisioningCredentials("192.168.1.10", "clowder-test");
         const [type, blob, comment] = credentials.publicKey.split(" ");
         // SAFETY: provisioningCredentials serializes exactly this shape.
         const secrets = JSON.parse(credentials.secrets) as { sshKey: string; tlsKey: string };
@@ -104,21 +104,21 @@ describe("provisioning credentials", () => {
             .subarray(-32);
 
         expect(type).toBe("ssh-ed25519");
-        expect(comment).toBe("stoat-test");
+        expect(comment).toBe("clowder-test");
         expect(Buffer.from(blob!, "base64").subarray(-32).equals(raw)).toBe(true);
         expect(new X509Certificate(credentials.certificate).checkIP("192.168.1.10")).toBe(
             "192.168.1.10",
         );
         expect(createPrivateKey(secrets.tlsKey).asymmetricKeyType).toBe("ec");
 
-        const named = await provisioningCredentials("nas.lan", "stoat-test");
+        const named = await provisioningCredentials("nas.lan", "clowder-test");
 
         expect(new X509Certificate(named.certificate).checkHost("nas.lan")).toBe("nas.lan");
     });
 });
 
 describe("cluster provisioning (PostgreSQL)", () => {
-    const databaseName = `stoat_provision_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_provision_test_${randomUUID().replaceAll("-", "")}`;
     const originalPath = process.env.PATH;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
@@ -155,7 +155,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
             await insertUserWithOrganization(db, "outsider", "Outsider", "outsider@example.test"),
         );
 
-        bin = await mkdtemp(join(tmpdir(), "stoat-fake-uc-"));
+        bin = await mkdtemp(join(tmpdir(), "clowder-fake-uc-"));
         await writeFile(join(bin, "uc"), fakeUc);
         await writeFile(join(bin, "ssh"), fakeSsh);
         await chmod(join(bin, "uc"), 0o755);
@@ -306,7 +306,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
             status: "ready",
             deploymentId: deployment.id,
         });
-        expect(text).toContain("Image ghcr.io/stoat-labs/sidecar:latest on edge  Pulled");
+        expect(text).toContain("Image ghcr.io/clowder-run/sidecar:latest on edge  Pulled");
         expect(text.some((line) => line.includes("Downloading ["))).toBe(false);
         // Caddy keeps the image uc machine init deployed.
         expect(await caddyDeployments(clusterId)).toEqual([]);
@@ -350,7 +350,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         const logs = await setupLogs(deployment.id);
 
         expect(deployment.error).toBe(
-            "The server rejected Stoat's key. Add the public key to ~/.ssh/authorized_keys for root, then retry.",
+            "The server rejected Clowder's key. Add the public key to ~/.ssh/authorized_keys for root, then retry.",
         );
         expect(
             logs.filter((line) => line.metadata.level === "error").map((line) => line.text),
@@ -368,7 +368,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         await expect(start(clusterId)).rejects.toThrow("Confirm resetting the server");
 
         await writeFile(join(bin, "mode"), "ok");
-        // The reset targets Stoat's own cluster, which the membership check would refuse.
+        // The reset targets Clowder's own cluster, which the membership check would refuse.
         await writeFile(join(bin, "ssh-mode"), "member");
         const done = await attempt(clusterId, true);
 
@@ -481,7 +481,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
 
         expect(cluster!.provisioning?.initState).toBe("partial");
 
-        // The released job runs again and asks for a reset instead of refusing Stoat's own cluster.
+        // The released job runs again and asks for a reset instead of refusing Clowder's own cluster.
         await writeFile(join(bin, "ssh-mode"), "member");
         await provisionCluster(db, deploymentId, new AbortController().signal).catch(() => {});
 
@@ -564,7 +564,7 @@ describe("cluster provisioning (PostgreSQL)", () => {
         for (const host of ["127.0.0.1", "::1", "localhost", "api.LOCALHOST", "169.254.169.254"]) {
             await expect(
                 call(clusterRouter.provisionCluster, { name: "Bad", host }, { context }),
-            ).rejects.toThrow("Stoat doesn't connect to loopback");
+            ).rejects.toThrow("Clowder doesn't connect to loopback");
         }
 
         // A hostname is only resolved by the worker, so it refuses one that points at loopback.

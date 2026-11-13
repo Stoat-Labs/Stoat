@@ -1,6 +1,6 @@
 FROM golang:1.26.1-alpine AS build
 
-WORKDIR /src/stoat/sidecar
+WORKDIR /src/clowder/sidecar
 
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
@@ -33,7 +33,7 @@ RUN apk --no-cache add ca-certificates util-linux \
     && adduser -S -G sidecar sidecar
 
 COPY --from=build --chown=sidecar:sidecar /out/sidecar /usr/local/bin/sidecar
-COPY --from=geoip /country.mmdb /usr/share/stoat/geoip/country.mmdb
+COPY --from=geoip /country.mmdb /usr/share/clowder/geoip/country.mmdb
 
 EXPOSE 80
 
@@ -41,5 +41,5 @@ USER sidecar
 
 # Auto-detect /run/uncloud/api/uncloud.sock (current) or /run/uncloud/uncloud.sock (legacy).
 ENTRYPOINT ["/usr/local/bin/sidecar"]
-# /host is the host root mount from docker-compose.yml; Alloy bind-mounts /var/lib/stoat/geoip.
-CMD ["--listen", "0.0.0.0:80", "--geoip-dir", "/host/var/lib/stoat/geoip"]
+# /host is the host root mount from docker-compose.yml; Alloy bind-mounts /var/lib/clowder/geoip.
+CMD ["--listen", "0.0.0.0:80", "--geoip-dir", "/host/var/lib/clowder/geoip"]

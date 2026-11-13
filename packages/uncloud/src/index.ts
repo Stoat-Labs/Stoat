@@ -33,7 +33,7 @@ export type UcClientOptions = {
      */
     token?: string;
     /**
-     * The only certificate the sidecar may present, in PEM. Set for sidecars Stoat set up on a
+     * The only certificate the sidecar may present, in PEM. Set for sidecars Clowder set up on a
      * private network, which serve a self-signed certificate. Null trusts the usual CAs.
      */
     certificate?: string | null;

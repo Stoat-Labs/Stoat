@@ -4,7 +4,7 @@ import { GET } from "../../apps/web/src/routes/(app)/projects/[projectId]/[resou
 
 /** Where an old resource page link now lands. */
 function target(path: string) {
-    const url = new URL(path, "http://stoat.test");
+    const url = new URL(path, "http://clowder.test");
     const [, , projectId = "", resourceId = "", ...rest] = url.pathname.split("/");
 
     try {

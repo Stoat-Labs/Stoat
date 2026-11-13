@@ -1,4 +1,4 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 
 // Every secret is bound to where it is stored, so a ciphertext copied to another row fails to open.

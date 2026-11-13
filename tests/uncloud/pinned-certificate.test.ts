@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { sidecarFetch, ucClient, unwrap } from "../../packages/uncloud/src/index";
 
-/** A certificate for 127.0.0.1 like the ones Stoat generates for sidecars on a private network. */
+/** A certificate for 127.0.0.1 like the ones Clowder generates for sidecars on a private network. */
 async function certificateFor(address: string) {
     return generate([{ name: "commonName", value: address }], {
         keyType: "ec",

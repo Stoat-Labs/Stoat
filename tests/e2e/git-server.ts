@@ -20,7 +20,7 @@ const serverSchema = v.object({
 
 /**
  * An SSH Git server: OpenSSH with `git-shell`, a client key it trusts, and one bare repository
- * holding `compose.yaml` on `main`. Stoat reaches it at its Docker network address, a private
+ * holding `compose.yaml` on `main`. Clowder reaches it at its Docker network address, a private
  * address like any self-hosted server on the LAN.
  * The image already ships sshd, git, and a `git` user, so nothing is downloaded at startup.
  */

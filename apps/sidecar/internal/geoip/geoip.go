@@ -1,4 +1,4 @@
-// Package geoip installs the IP-to-country database that Stoat's Alloy
+// Package geoip installs the IP-to-country database that Clowder's Alloy
 // collectors read from the host to count visitors by country.
 //
 // The database is DB-IP's IP to Country Lite, licensed CC BY 4.0

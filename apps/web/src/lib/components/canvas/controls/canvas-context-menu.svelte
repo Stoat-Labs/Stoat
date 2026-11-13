@@ -343,7 +343,7 @@
         {:else if !canAdd}
             <ContextMenuGroup>
                 <ContextMenuGroupLabel>
-                    Stoat manages this project's services
+                    Clowder manages this project's services
                 </ContextMenuGroupLabel>
             </ContextMenuGroup>
         {:else}

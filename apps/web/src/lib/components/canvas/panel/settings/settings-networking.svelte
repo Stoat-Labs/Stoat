@@ -22,7 +22,7 @@
         type HostIngress,
         type HttpIngress,
         type IngressEntry,
-    } from "@stoat/workflows/ingress";
+    } from "@clowder/workflows/ingress";
     import { createQuery } from "@tanstack/svelte-query";
     import type { Component, Snippet } from "svelte";
     import type { CanvasResource, CanvasService } from "../../graph";
@@ -102,7 +102,7 @@
         }
     }
 
-    // STOAT_DOMAIN and STOAT_PREFIX, to name the hostname Uncloud gives a hostless entry.
+    // CLOWDER_DOMAIN and CLOWDER_PREFIX, to name the hostname Uncloud gives a hostless entry.
     const systemQuery = createQuery(() =>
         orpc.resources.listSystemVariables.queryOptions({
             input: {
@@ -120,8 +120,8 @@
     function httpHostname(entry: HttpIngress) {
         if (entry.hostname) return entry.hostname;
 
-        const domain = systemValue("STOAT_DOMAIN");
-        const prefix = systemValue("STOAT_PREFIX");
+        const domain = systemValue("CLOWDER_DOMAIN");
+        const prefix = systemValue("CLOWDER_PREFIX");
 
         return domain
             ? `${prefix ? `${prefix}-` : ""}${entry.service}.${domain}`
@@ -394,7 +394,7 @@
         entries={ingressEntries}
         services={ingress?.services ?? []}
         compose={draftCompose}
-        clusterDomain={systemValue("STOAT_DOMAIN")}
+        clusterDomain={systemValue("CLOWDER_DOMAIN")}
         busy={savingDraft}
         onsubmit={(compose) => {
             ingressError = "";

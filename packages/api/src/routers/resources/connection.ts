@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { clusters, deployments, projects, resources } from "@stoat/db/schema/index";
-import { unwrap } from "@stoat/uncloud";
+import { clusters, deployments, projects, resources } from "@clowder/db/schema/index";
+import { unwrap } from "@clowder/uncloud";
 import { and, eq, inArray } from "drizzle-orm";
 import * as v from "valibot";
 

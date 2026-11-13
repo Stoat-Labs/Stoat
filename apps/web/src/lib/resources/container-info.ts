@@ -1,4 +1,4 @@
-import type { AppRouterClient } from "@stoat/api/routers/index";
+import type { AppRouterClient } from "@clowder/api/routers/index";
 import { Match } from "effect";
 import * as v from "valibot";
 

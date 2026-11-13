@@ -266,7 +266,7 @@
 <svelte:head>
     <title>
         {template?.name ?? heading.title} / {project?.name ??
-            "Project"} / Stoat
+            "Project"} / Clowder
     </title>
 </svelte:head>
 
@@ -324,7 +324,7 @@
     {:else if project?.isInternal}
         <Alert variant="info">
             <AlertDescription>
-                Stoat manages this project's internal services. New
+                Clowder manages this project's internal services. New
                 resources can't be added here.
             </AlertDescription>
         </Alert>

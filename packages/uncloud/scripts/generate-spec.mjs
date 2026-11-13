@@ -74,4 +74,4 @@ console.log(`  ${spec.info?.title ?? "unknown"} ${spec.info?.version ?? ""}`.tri
 
 console.log(`  ${pathCount} paths, ${schemaCount} schemas`);
 
-console.log(`\nNext: pnpm --filter @stoat/uncloud generate`);
+console.log(`\nNext: pnpm --filter @clowder/uncloud generate`);

@@ -17,7 +17,7 @@
         unpackMetric,
         type ChartSeries,
     } from "$lib/observability";
-    import { volumeMetricNames } from "@stoat/api/observability";
+    import { volumeMetricNames } from "@clowder/api/observability";
     import {
         createQueries,
         createQuery,

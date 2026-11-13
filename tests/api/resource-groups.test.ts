@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters, projects, resourceGroups, resources } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters, projects, resourceGroups, resources } from "@clowder/db/schema/index";
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
@@ -12,7 +12,7 @@ import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
 describe("resource groups API (PostgreSQL)", () => {
-    const databaseName = `stoat_groups_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_groups_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const foreignClusterId = randomUUID();
     const projectId = randomUUID();

@@ -1,13 +1,14 @@
-import { appSecret, appUrl } from "@stoat/config/env";
+import { appSecret, appUrl } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { gitConnections } from "@stoat/db/schema/index";
-import { queueGitWatch } from "@stoat/workflows/runtime";
+import type { Database } from "@clowder/db";
+import { gitConnections } from "@clowder/db/schema/index";
+import { queueGitWatch } from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import * as v from "valibot";
 
 // Derived from APP_SECRET, so there is nothing to store. Rotating APP_SECRET rotates every one.
+// The label keeps the legacy name on purpose: Git hosts hold the derived secret, so renaming it breaks every webhook.
 export function gitWebhookSecret(connectionId: string): string {
     const key = hkdfSync("sha256", appSecret(), "", `stoat/git-webhook/v1/${connectionId}`, 32);
 
@@ -20,7 +21,7 @@ export function gitWebhookUrl(connectionId: string): string {
 
     if (!base)
         throw new ORPCError("PRECONDITION_FAILED", {
-            message: "Set APP_URL to Stoat's public URL to receive Git webhooks.",
+            message: "Set APP_URL to Clowder's public URL to receive Git webhooks.",
         });
 
     return new URL(`git/webhook/${connectionId}`, base.endsWith("/") ? base : `${base}/`).href;

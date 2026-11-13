@@ -473,7 +473,7 @@ describe("Git plumbing and transport isolation", () => {
     };
 
     beforeEach(async () => {
-        directory = await mkdtemp("/tmp/stoat-git-test-");
+        directory = await mkdtemp("/tmp/clowder-git-test-");
         network.fixture = join(directory, "remote.git");
         fixtureGit(["init", "--bare", "--template=", network.fixture]);
         addFixture("compose.yaml", "services:\n  web:\n    image: nginx\n");

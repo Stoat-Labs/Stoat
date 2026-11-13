@@ -54,6 +54,6 @@ export default defineConfig({
         varlockVitePlugin({ ssrInjectMode: "auto-load" }),
         tailwindcss(),
         sveltekit(),
-        evlog({ service: "stoat-web" }),
+        evlog({ service: "clowder-web" }),
     ],
 });

@@ -202,7 +202,7 @@ export async function createRustfsKey(target: S3Target, bucket: string, accessKe
         JSON.stringify({
             accessKey,
             secretKey,
-            description: `Stoat bucket ${bucket}`,
+            description: `Clowder bucket ${bucket}`,
             policy: bucketPolicy(bucket),
         }),
     );

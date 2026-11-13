@@ -122,7 +122,7 @@ test.describe("picking a reference", () => {
         const variables = page.getByLabel("Search variables in postgres");
         await expect(variables).toBeFocused();
         await expect(variables).toHaveValue("");
-        await expect(groupLabels(page)).toHaveText(["Variables", "Added by Stoat"]);
+        await expect(groupLabels(page)).toHaveText(["Variables", "Added by Clowder"]);
 
         await choose(page, "DATABASE");
         await expect(popup(page)).toHaveCount(0);
@@ -429,7 +429,7 @@ test.describe("deploying with references", () => {
     }) => {
         await sql(
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
-            [ids.postgres, "POSTGRES_PASSWORD=s3cr$$t\nPUBLIC=https://db.${STOAT_DOMAIN}\n"],
+            [ids.postgres, "POSTGRES_PASSWORD=s3cr$$t\nPUBLIC=https://db.${CLOWDER_DOMAIN}\n"],
         );
         await sql(
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,

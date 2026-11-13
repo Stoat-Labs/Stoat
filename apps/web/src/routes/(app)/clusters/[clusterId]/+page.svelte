@@ -206,7 +206,7 @@
 </script>
 
 <svelte:head>
-    <title>{cluster?.name ?? "Cluster"} / Stoat</title>
+    <title>{cluster?.name ?? "Cluster"} / Clowder</title>
 </svelte:head>
 
 {#snippet clusterActions()}

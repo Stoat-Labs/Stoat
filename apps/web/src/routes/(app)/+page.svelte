@@ -254,7 +254,7 @@
     }
 </script>
 
-<svelte:head><title>Home / Stoat</title></svelte:head>
+<svelte:head><title>Home / Clowder</title></svelte:head>
 
 {#snippet homeActions()}
     <div

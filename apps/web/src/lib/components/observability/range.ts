@@ -1,4 +1,4 @@
-import { rangePresets } from "@stoat/api/observability";
+import { rangePresets } from "@clowder/api/observability";
 import { parseAsInteger, parseAsStringLiteral, useQueryStates } from "nuqs-svelte";
 
 /** URL-backed time range shared by every observability view; call during component init. */

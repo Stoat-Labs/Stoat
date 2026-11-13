@@ -24,7 +24,7 @@
     import {
         completeMetricsOption,
         missingMetricsSubdirectives,
-    } from "@stoat/workflows/caddy-metrics";
+    } from "@clowder/workflows/caddy-metrics";
     import Info from "phosphor-svelte/lib/InfoIcon";
     import {
         createMutation,
@@ -194,7 +194,7 @@
                         {"{env.NAME}"} instead of pasting them. An invalid
                         config keeps Caddy on its previous one, and the
                         error shows on the cluster page. With monitoring,
-                        Stoat adds a
+                        Clowder adds a
                         <code>metrics</code>
                         global option for HTTP metrics unless you set one
                         yourself; yours needs

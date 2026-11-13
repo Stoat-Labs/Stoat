@@ -1,5 +1,5 @@
 ####################################################################################################
-# Stoat's internal-only cluster monitoring stack.
+# Clowder's internal-only cluster monitoring stack.
 #
 # InitializeCluster renders the credential, storage, and x-machines placeholders before sending
 # this Compose document to Uncloud. The services intentionally publish no ports: Uncloud's
@@ -10,7 +10,7 @@
 # with a Compose project name.
 ####################################################################################################
 services:
-    stoat-monitoring-greptimedb:
+    clowder-monitoring-greptimedb:
         image: greptime/greptimedb:v1.2.1
         restart: unless-stopped
 
@@ -55,7 +55,7 @@ services:
             retries: 12
             start_period: 20s
 
-    stoat-monitoring-alloy:
+    clowder-monitoring-alloy:
         image: grafana/alloy:v1.19.2
         restart: unless-stopped
         deploy:
@@ -69,7 +69,7 @@ services:
             # Uncloud injects UNCLOUD_MACHINE_ID into every service container. Alloy reads that
             # value in config.alloy, so do not interpolate it through Compose here.
             CUSTOMER_ID: cluster
-            GREPTIME_URL: "${GREPTIME_URL:-http://stoat-monitoring-greptimedb:4006}"
+            GREPTIME_URL: "${GREPTIME_URL:-http://clowder-monitoring-greptimedb:4006}"
             GREPTIME_DB: "${GREPTIME_DB:-monitoring}"
             GREPTIME_USERNAME: "${GREPTIME_USERNAME:?rendered by InitializeCluster}"
             GREPTIME_PASSWORD: "${GREPTIME_PASSWORD:?rendered by InitializeCluster}"
@@ -110,9 +110,9 @@ services:
               target: /dev/disk
               read_only: true
 
-            # The Stoat sidecar writes the GeoIP database here before monitoring is set up.
+            # The Clowder sidecar writes the GeoIP database here before monitoring is set up.
             - type: bind
-              source: /var/lib/stoat/geoip
+              source: /var/lib/clowder/geoip
               target: /etc/alloy/geoip
               read_only: true
 
@@ -329,7 +329,7 @@ configs:
             // From each machine: does Uncloud's DNS answer through Docker's resolver, and is
             // GreptimeDB reachable over the mesh. Both failed while a machine hung.
             prometheus.exporter.blackbox "probes" {
-              config = "{ modules: { internal_dns: { prober: dns, timeout: 5s, dns: { query_name: stoat-monitoring-greptimedb.internal, query_type: A, valid_rcodes: [NOERROR] } }, http_2xx: { prober: http, timeout: 5s } } }"
+              config = "{ modules: { internal_dns: { prober: dns, timeout: 5s, dns: { query_name: clowder-monitoring-greptimedb.internal, query_type: A, valid_rcodes: [NOERROR] } }, http_2xx: { prober: http, timeout: 5s } } }"
 
               target {
                 name    = "uncloud_dns"
@@ -339,7 +339,7 @@ configs:
 
               target {
                 name    = "greptimedb"
-                address = "http://stoat-monitoring-greptimedb.internal:4000/health"
+                address = "http://clowder-monitoring-greptimedb.internal:4000/health"
                 module  = "http_2xx"
               }
             }
@@ -363,8 +363,8 @@ configs:
             // Caddy HTTP metrics (pushed over OTLP)
             // ----------------------------------------------------
 
-            // Stoat deploys Caddy with `metrics { per_host otlp }` and points it at
-            // nearest.stoat-monitoring-alloy.internal. That usually is this machine's Alloy, but
+            // Clowder deploys Caddy with `metrics { per_host otlp }` and points it at
+            // nearest.clowder-monitoring-alloy.internal. That usually is this machine's Alloy, but
             // a Caddy that started before it fell back to another machine's and kept that
             // connection. Caddy's resource attributes don't say which machine sent the series.
             otelcol.receiver.otlp "caddy" {
@@ -567,7 +567,7 @@ configs:
                   template = "{{ ToLower .Value }}"
                 }
 
-                // DB-IP Country Lite, which the Stoat sidecar keeps on every machine.
+                // DB-IP Country Lite, which the Clowder sidecar keeps on every machine.
                 stage.geoip {
                   db      = "/etc/alloy/geoip/country.mmdb"
                   source  = "client_ip"

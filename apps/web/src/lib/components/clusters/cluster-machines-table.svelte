@@ -34,7 +34,7 @@
     import Plus from "phosphor-svelte/lib/PlusIcon";
     import Server from "phosphor-svelte/lib/HardDrivesIcon";
     import Trash2 from "phosphor-svelte/lib/TrashIcon";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
+    import type { AppRouterClient } from "@clowder/api/routers/index";
 
     type Machine = NonNullable<
         NonNullable<
@@ -153,7 +153,7 @@
                                         <span
                                             class="mt-1 block text-xs text-muted-foreground"
                                         >
-                                            Stoat connects through
+                                            Clowder connects through
                                             this machine
                                         </span>
                                     {/if}
@@ -200,7 +200,7 @@
                         </TableCell>
                         {#if onremove}
                             <TableCell class="text-end">
-                                <!-- Stoat can't remove the machine it reaches the cluster through. -->
+                                <!-- Clowder can't remove the machine it reaches the cluster through. -->
                                 {#if !machine.connected}
                                     <Menu>
                                         <MenuTrigger

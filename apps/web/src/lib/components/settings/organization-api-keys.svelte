@@ -156,7 +156,7 @@
 
 <SettingsSection
     title="API keys"
-    description="Keys let scripts and CI call the Stoat API for {organization.name}."
+    description="Keys let scripts and CI call the Clowder API for {organization.name}."
     count={keysQuery.data
         ? `${keysQuery.data.length} ${keysQuery.data.length === 1 ? "key" : "keys"}`
         : undefined}
@@ -188,7 +188,7 @@
                 </EmptyMedia>
                 <EmptyTitle>No API keys yet</EmptyTitle>
                 <EmptyDescription>
-                    Create a key to call the Stoat API from scripts
+                    Create a key to call the Clowder API from scripts
                     and CI.
                 </EmptyDescription>
             </EmptyHeader>
@@ -223,7 +223,7 @@
                                 <p
                                     class="mt-1 truncate text-xs leading-5 text-muted-foreground"
                                 >
-                                    stoat_abc… &middot; Created
+                                    clowder_abc… &middot; Created
                                     1/1/2026
                                 </p>
                             </div>

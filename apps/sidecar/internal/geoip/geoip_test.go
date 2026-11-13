@@ -11,7 +11,7 @@ import (
 
 func TestInstallCopiesOnlyChangedDatabases(t *testing.T) {
 	source := filepath.Join(t.TempDir(), FileName)
-	dir := filepath.Join(t.TempDir(), "var", "lib", "stoat", "geoip")
+	dir := filepath.Join(t.TempDir(), "var", "lib", "clowder", "geoip")
 	require.NoError(t, os.WriteFile(source, append([]byte("tree"), metadataMarker...), 0o600))
 
 	changed, err := Install(source, dir)

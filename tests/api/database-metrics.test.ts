@@ -1,9 +1,9 @@
-import { composeVariables, interpolateCompose } from "@stoat/workflows/compose";
+import { composeVariables, interpolateCompose } from "@clowder/workflows/compose";
 import {
     referenceKeys,
     resolveReferences,
     type ReferenceTarget,
-} from "@stoat/workflows/references";
+} from "@clowder/workflows/references";
 import { expect, it } from "vite-plus/test";
 import { databaseExporter } from "../../packages/api/src/database-metrics";
 

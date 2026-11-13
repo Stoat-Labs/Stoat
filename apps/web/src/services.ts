@@ -1,5 +1,5 @@
-import { createAuth as createConfiguredAuth } from "@stoat/auth";
-import { type Database, createDb } from "@stoat/db";
+import { createAuth as createConfiguredAuth } from "@clowder/auth";
+import { type Database, createDb } from "@clowder/db";
 import type { BetterAuthPlugin } from "better-auth";
 
 import { env } from "./env.server";

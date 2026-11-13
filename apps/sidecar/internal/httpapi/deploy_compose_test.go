@@ -226,7 +226,7 @@ func TestDeployComposeRedactedWriterUnblocksOnCancellation(t *testing.T) {
 	}
 }
 
-// Stoat escapes `$` in inlined config files; Uncloud's interpolation must restore it.
+// Clowder escapes `$` in inlined config files; Uncloud's interpolation must restore it.
 func TestComposeConfigContentUnescapesDollars(t *testing.T) {
 	project, err := compose.LoadProjectFromContent(context.Background(), `
 services:

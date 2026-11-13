@@ -217,7 +217,7 @@ overrides:
   drizzle-kit: 1.0.0-rc.5-5935859
 
 patchedDependencies:
-  effect-mq@0.7.0: 08f400a44993c842978ac4bfaa4f3e89a32505b160280c9edde3c12778767761
+  effect-mq@0.7.0: 30fc057f40fb5532f7e8c22247cbcccbb8db53d1896a6aa8a8a65d508857896d
   nuqs-svelte@1.2.2: 8821d8dee4c7ee2a25e7751318053e2b8bd4a06c82f7da7b7bac6247f63b749f
 
 importers:
@@ -227,6 +227,21 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1146.0
         version: 3.1146.0
+      '@clowder/config':
+        specifier: workspace:*
+        version: link:packages/config
+      '@clowder/db':
+        specifier: workspace:*
+        version: link:packages/db
+      '@clowder/s3':
+        specifier: workspace:*
+        version: link:packages/s3
+      '@clowder/uncloud':
+        specifier: workspace:*
+        version: link:packages/uncloud
+      '@clowder/workflows':
+        specifier: workspace:*
+        version: link:packages/workflows
       '@orpc/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.35
@@ -239,21 +254,6 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
-      '@stoat/config':
-        specifier: workspace:*
-        version: link:packages/config
-      '@stoat/db':
-        specifier: workspace:*
-        version: link:packages/db
-      '@stoat/s3':
-        specifier: workspace:*
-        version: link:packages/s3
-      '@stoat/uncloud':
-        specifier: workspace:*
-        version: link:packages/uncloud
-      '@stoat/workflows':
-        specifier: workspace:*
-        version: link:packages/workflows
       '@testcontainers/postgresql':
         specifier: ^12.1.0
         version: 12.1.0(supports-color@10.2.2)
@@ -302,6 +302,24 @@ importers:
       '@better-auth/api-key':
         specifier: 'catalog:'
         version: 1.7.15(@better-auth/core@1.7.15(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.4(zod@4.6.2))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.5.1)(better-auth@1.7.15(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(drizzle-kit@1.0.0-rc.5-5935859)(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(pg@8.23.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.57.0)(vitest@4.1.11))(better-call@1.4.4(zod@4.6.2))
+      '@clowder/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@clowder/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@clowder/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@clowder/s3':
+        specifier: workspace:*
+        version: link:../../packages/s3
+      '@clowder/trees':
+        specifier: workspace:*
+        version: link:../../packages/trees
+      '@clowder/workflows':
+        specifier: workspace:*
+        version: link:../../packages/workflows
       '@codemirror/lang-yaml':
         specifier: ^6.1.3
         version: 6.1.3
@@ -350,24 +368,6 @@ importers:
       '@shardsui/svelte':
         specifier: 0.1.0-beta.0
         version: 0.1.0-beta.0(svelte@5.57.0)
-      '@stoat/api':
-        specifier: workspace:*
-        version: link:../../packages/api
-      '@stoat/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
-      '@stoat/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@stoat/s3':
-        specifier: workspace:*
-        version: link:../../packages/s3
-      '@stoat/trees':
-        specifier: workspace:*
-        version: link:../../packages/trees
-      '@stoat/workflows':
-        specifier: workspace:*
-        version: link:../../packages/workflows
       '@tanstack/charts':
         specifier: ^1.0.0
         version: 1.0.0(lit@3.3.3)(preact@11.0.0-beta.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.57.0)
@@ -438,12 +438,12 @@ importers:
         specifier: 'catalog:'
         version: 2.9.1
     devDependencies:
+      '@clowder/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@fontsource-variable/outfit':
         specifier: ^5.3.0
         version: 5.3.0
-      '@stoat/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@sveltejs/adapter-node':
         specifier: ^5.5.7
         version: 5.5.7(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))
@@ -498,16 +498,16 @@ importers:
 
   apps/worker:
     dependencies:
-      '@stoat/api':
+      '@clowder/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@stoat/db':
+      '@clowder/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@stoat/workflows':
+      '@clowder/workflows':
         specifier: workspace:*
         version: link:../../packages/workflows
     devDependencies:
@@ -526,30 +526,30 @@ importers:
 
   packages/api:
     dependencies:
+      '@clowder/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@clowder/cache':
+        specifier: workspace:*
+        version: link:../cache
+      '@clowder/config':
+        specifier: workspace:*
+        version: link:../config
+      '@clowder/db':
+        specifier: workspace:*
+        version: link:../db
+      '@clowder/s3':
+        specifier: workspace:*
+        version: link:../s3
+      '@clowder/uncloud':
+        specifier: workspace:*
+        version: link:../uncloud
+      '@clowder/workflows':
+        specifier: workspace:*
+        version: link:../workflows
       '@orpc/server':
         specifier: 'catalog:'
         version: 2.0.0-beta.35(crossws@0.3.5)
-      '@stoat/auth':
-        specifier: workspace:*
-        version: link:../auth
-      '@stoat/cache':
-        specifier: workspace:*
-        version: link:../cache
-      '@stoat/config':
-        specifier: workspace:*
-        version: link:../config
-      '@stoat/db':
-        specifier: workspace:*
-        version: link:../db
-      '@stoat/s3':
-        specifier: workspace:*
-        version: link:../s3
-      '@stoat/uncloud':
-        specifier: workspace:*
-        version: link:../uncloud
-      '@stoat/workflows':
-        specifier: workspace:*
-        version: link:../workflows
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2)
@@ -578,7 +578,7 @@ importers:
       '@better-auth/api-key':
         specifier: 'catalog:'
         version: 1.7.15(@better-auth/core@1.7.15(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.4(zod@4.6.2))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.5.1)(better-auth@1.7.15(@sveltejs/kit@2.70.3(@sveltejs/vite-plugin-svelte@7.3.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0))(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(typescript@6.0.3)(yaml@2.9.1))(svelte@5.57.0)(typescript@6.0.3))(drizzle-kit@1.0.0-rc.5-5935859)(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(pg@8.23.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.57.0)(vitest@4.1.11))(better-call@1.4.4(zod@4.6.2))
-      '@stoat/db':
+      '@clowder/db':
         specifier: workspace:*
         version: link:../db
       better-auth:
@@ -591,7 +591,7 @@ importers:
         specifier: 4.6.2
         version: 4.6.2
     devDependencies:
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../config
       typescript:
@@ -607,7 +607,7 @@ importers:
         specifier: ^1.17.5
         version: 1.17.5(aws4fetch@1.0.20)(ioredis@6.0.0(supports-color@10.2.2))
     devDependencies:
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../config
       typescript:
@@ -622,7 +622,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../config
       drizzle-orm:
@@ -653,6 +653,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1146.0
         version: 3.1146.0
+      '@clowder/config':
+        specifier: workspace:*
+        version: link:../config
       '@smithy/node-http-handler':
         specifier: ^4.12.1
         version: 4.12.1
@@ -662,9 +665,6 @@ importers:
       '@smithy/types':
         specifier: ^4.19.0
         version: 4.19.0
-      '@stoat/config':
-        specifier: workspace:*
-        version: link:../config
       valibot:
         specifier: 'catalog:'
         version: 1.5.0(typescript@6.0.3)
@@ -679,7 +679,7 @@ importers:
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     devDependencies:
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../config
       '@sveltejs/vite-plugin-svelte':
@@ -716,7 +716,7 @@ importers:
         specifier: 'catalog:'
         version: 1.5.0(typescript@6.0.3)
     devDependencies:
-      '@stoat/config':
+      '@clowder/config':
         specifier: workspace:*
         version: link:../config
       '@types/node':
@@ -731,21 +731,21 @@ importers:
 
   packages/workflows:
     dependencies:
+      '@clowder/config':
+        specifier: workspace:*
+        version: link:../config
+      '@clowder/db':
+        specifier: workspace:*
+        version: link:../db
+      '@clowder/s3':
+        specifier: workspace:*
+        version: link:../s3
+      '@clowder/uncloud':
+        specifier: workspace:*
+        version: link:../uncloud
       '@effect/sql-pg':
         specifier: 4.0.0-rc.116
         version: 4.0.0-rc.116(effect@4.0.0-rc.116)
-      '@stoat/config':
-        specifier: workspace:*
-        version: link:../config
-      '@stoat/db':
-        specifier: workspace:*
-        version: link:../db
-      '@stoat/s3':
-        specifier: workspace:*
-        version: link:../s3
-      '@stoat/uncloud':
-        specifier: workspace:*
-        version: link:../uncloud
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2)
@@ -754,7 +754,7 @@ importers:
         version: 4.0.0-rc.116
       effect-mq:
         specifier: 0.7.0
-        version: 0.7.0(patch_hash=08f400a44993c842978ac4bfaa4f3e89a32505b160280c9edde3c12778767761)(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(effect@4.0.0-rc.116)
+        version: 0.7.0(patch_hash=30fc057f40fb5532f7e8c22247cbcccbb8db53d1896a6aa8a8a65d508857896d)(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(effect@4.0.0-rc.116)
       selfsigned:
         specifier: ^5.5.0
         version: 5.5.0
@@ -8123,7 +8123,7 @@ snapshots:
   ee-first@1.1.1:
     optional: true
 
-  effect-mq@0.7.0(patch_hash=08f400a44993c842978ac4bfaa4f3e89a32505b160280c9edde3c12778767761)(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(effect@4.0.0-rc.116):
+  effect-mq@0.7.0(patch_hash=30fc057f40fb5532f7e8c22247cbcccbb8db53d1896a6aa8a8a65d508857896d)(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(drizzle-orm@1.0.0-rc.5-5935859(@effect/sql-pg@4.0.0-rc.116(effect@4.0.0-rc.116))(@types/pg@8.23.1)(effect@4.0.0-rc.116)(pg@8.23.0)(valibot@1.5.0(typescript@6.0.3))(zod@4.6.2))(effect@4.0.0-rc.116):
     dependencies:
       effect: 4.0.0-rc.116
     optionalDependencies:

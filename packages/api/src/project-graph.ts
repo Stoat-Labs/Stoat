@@ -1,6 +1,6 @@
-import { interpolateCompose } from "@stoat/workflows/compose";
-import { parseIngressCompose } from "@stoat/workflows/ingress";
-import { referencedResourceIds } from "@stoat/workflows/references";
+import { interpolateCompose } from "@clowder/workflows/compose";
+import { parseIngressCompose } from "@clowder/workflows/ingress";
+import { referencedResourceIds } from "@clowder/workflows/references";
 import * as v from "valibot";
 import YAML from "yaml";
 
@@ -241,7 +241,7 @@ function resolveCompose(compose: string, row: GraphResourceInput) {
             compose,
             resourceEnv(row),
             resourceComposePrefix(row),
-            "stoat-domain.invalid",
+            "clowder-domain.invalid",
         );
     } catch {
         // An unresolvable `.env` keeps the raw entries; `${VAR}` mounts just stay hidden.

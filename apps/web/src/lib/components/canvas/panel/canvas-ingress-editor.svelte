@@ -28,7 +28,7 @@
         type HostIngress,
         type HttpIngress,
         type IngressEntry,
-    } from "@stoat/workflows/ingress";
+    } from "@clowder/workflows/ingress";
     import ArrowRight from "phosphor-svelte/lib/ArrowRightIcon";
     import Cable from "phosphor-svelte/lib/PlugsConnectedIcon";
     import Check from "phosphor-svelte/lib/CheckIcon";

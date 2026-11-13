@@ -136,7 +136,7 @@ func TestListCaddyCertificates(t *testing.T) {
 	assert.Equal(t, "a.example.com", first.SAN)
 	assert.Equal(t, []string{"a.example.com"}, first.DNSNames)
 	assert.Equal(t, "Test CA", first.Issuer)
-	assert.Equal(t, "Stoat", first.IssuerOrganization)
+	assert.Equal(t, "Clowder", first.IssuerOrganization)
 	assert.Equal(t, notAfter, first.NotAfter)
 	assert.Len(t, first.SHA256, 64)
 	require.NotNil(t, first.ACME)
@@ -156,7 +156,7 @@ func testCertificatePEM(t *testing.T, san string, notAfter time.Time) []byte {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(42),
 		Subject:      pkix.Name{CommonName: san},
-		Issuer:       pkix.Name{CommonName: "Test CA", Organization: []string{"Stoat"}},
+		Issuer:       pkix.Name{CommonName: "Test CA", Organization: []string{"Clowder"}},
 		DNSNames:     []string{san},
 		NotBefore:    notAfter.Add(-90 * 24 * time.Hour),
 		NotAfter:     notAfter,

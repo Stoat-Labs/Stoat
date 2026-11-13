@@ -1,6 +1,6 @@
 import { redirect } from "@sveltejs/kit";
-import { getSignupsEnabled } from "@stoat/db/settings";
-import { isInvitationPending, isSetupRequired } from "@stoat/db/setup";
+import { getSignupsEnabled } from "@clowder/db/settings";
+import { isInvitationPending, isSetupRequired } from "@clowder/db/setup";
 import { getDb } from "../../services";
 
 export const load = async ({ locals, url }) => {

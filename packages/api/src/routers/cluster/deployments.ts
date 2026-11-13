@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { cache, currentWindow, swr } from "@stoat/cache";
-import type { Database } from "@stoat/db";
+import { cache, currentWindow, swr } from "@clowder/cache";
+import type { Database } from "@clowder/db";
 import {
     cancelDeployment as cancelDeploymentRow,
     deleteSettledDeployment,
@@ -8,16 +8,16 @@ import {
     listDeployments,
     watchDeployment,
     watchDeploymentChanges,
-} from "@stoat/db/deployments";
+} from "@clowder/db/deployments";
 import {
     clusters,
     deployments,
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
-import { interpolateComposeVariables } from "@stoat/workflows/ingress";
-import { cancelDeploymentJob } from "@stoat/workflows/runtime";
+} from "@clowder/db/schema/index";
+import { interpolateComposeVariables } from "@clowder/workflows/ingress";
+import { cancelDeploymentJob } from "@clowder/workflows/runtime";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { parseEnv } from "node:util";
 import * as v from "valibot";

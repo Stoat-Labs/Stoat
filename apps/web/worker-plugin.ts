@@ -1,9 +1,9 @@
-import { stopWorker } from "@stoat/workflows/lifecycle";
+import { stopWorker } from "@clowder/workflows/lifecycle";
 import type { Plugin } from "vite";
 
 export function monitoringWorker(): Plugin {
     return {
-        name: "stoat-monitoring-worker",
+        name: "clowder-monitoring-worker",
         async configureServer(server) {
             // A restart configures its new server before tearing down the old one, without calling close().
             await stopWorker();

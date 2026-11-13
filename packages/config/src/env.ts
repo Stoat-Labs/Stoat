@@ -11,7 +11,7 @@ export function appSecret() {
     return secret;
 }
 
-/** Stoat's public URL, if it is set and parses. */
+/** Clowder's public URL, if it is set and parses. */
 export function appUrl() {
     const url = process.env.APP_URL;
 

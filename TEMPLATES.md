@@ -13,7 +13,7 @@ templates/
         .env
 ```
 
-Stoat lists every valid app under this directory on the **New resource** page (`/projects/<projectId>/create`) and in the canvas add palette. Apps with `"type": "database"` appear under **Databases**; everything else appears under **Templates**. Templates are bundled into the app at build time, so rebuild after adding or changing one.
+Clowder lists every valid app under this directory on the **New resource** page (`/projects/<projectId>/create`) and in the canvas add palette. Apps with `"type": "database"` appear under **Databases**; everything else appears under **Templates**. Templates are bundled into the app at build time, so rebuild after adding or changing one.
 
 ## Layout
 
@@ -81,37 +81,37 @@ Resources deploy independently, so `depends_on` cannot cross them: the app may s
 
 Use the project's real SVG logo as `templates/<appid>/logo.svg`. Look on [selfh.st icons](https://selfh.st/icons) first (`https://cdn.jsdelivr.net/gh/selfhst/icons/svg/<name>.svg`), then the project's official brand assets. Never use a favicon. `logo.png` also works; `logo.svg` wins when both exist. Local logos are inlined into the build.
 
-If there is no local file, set `"icon"` in the manifest to an [SVGL](https://svgl.app) library name. Stoat loads it from `https://api.svgl.app/svg/<icon>.svg`.
+If there is no local file, set `"icon"` in the manifest to an [SVGL](https://svgl.app) library name. Clowder loads it from `https://api.svgl.app/svg/<icon>.svg`.
 
 ## Compose and environment
 
-`compose.yaml` is copied onto the new resource as-is (after secret expansion). Do not use `env_file: .env` or a fixed `container_name`: Stoat stores `.env` values as the resource's Variables and substitutes them into the compose file at deploy time, so pass them to containers explicitly (`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}`).
+`compose.yaml` is copied onto the new resource as-is (after secret expansion). Do not use `env_file: .env` or a fixed `container_name`: Clowder stores `.env` values as the resource's Variables and substitutes them into the compose file at deploy time, so pass them to containers explicitly (`POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}`).
 
-`.env` uses standard `NAME=value` syntax (quotes, `export`, and comments are supported). Those variables are created on the resource so they can be edited under **Environment**. Values are interpolated like Compose at deploy time, so they can build on other variables and built-ins (`FORGEJO_HOST=${FORGEJO_SERVICE_NAME}.${STOAT_DOMAIN}`); write `$$` for a literal `$`.
+`.env` uses standard `NAME=value` syntax (quotes, `export`, and comments are supported). Those variables are created on the resource so they can be edited under **Environment**. Values are interpolated like Compose at deploy time, so they can build on other variables and built-ins (`FORGEJO_HOST=${FORGEJO_SERVICE_NAME}.${CLOWDER_DOMAIN}`); write `$$` for a literal `$`.
 
 Leave a value empty (`ADMIN_EMAIL=`) to make it required: the deploy screen asks for it and the resource can't be created until it is set. Only a bare `KEY=` counts (`KEY=""` and `export KEY=` do not), and the value entered there must be a single line.
 
-Stoat also provides these variables at deploy time. A variable you define with the same name overrides any of them.
+Clowder also provides these variables at deploy time. A variable you define with the same name overrides any of them.
 
 | Variable                  | Value                                                                                        |
 | ------------------------- | -------------------------------------------------------------------------------------------- |
 | `<SERVICE>_SERVICE_NAME`  | The service's deployed name, e.g. `my-db-k3f9x2-postgres`                                    |
 | `<SERVICE>_INTERNAL_HOST` | Its cluster-internal hostname, e.g. `my-db-k3f9x2-postgres.internal`                         |
 | `<SERVICE>_PUBLIC_DOMAIN` | The hostname from its `x-ports`, only when one is set                                        |
-| `STOAT_PREFIX`            | The resource prefix, e.g. `my-db-k3f9x2`, or empty when prefixing is off                     |
-| `STOAT_DOMAIN`            | The cluster's reserved domain, read on every deploy, e.g. `abc.uncld.dev`. Unset without one |
-| `STOAT_PROJECT_NAME`      | The project's name                                                                           |
-| `STOAT_PROJECT_ID`        | The project's id                                                                             |
-| `STOAT_RESOURCE_NAME`     | The resource's name                                                                          |
-| `STOAT_RESOURCE_ID`       | The resource's id                                                                            |
+| `CLOWDER_PREFIX`          | The resource prefix, e.g. `my-db-k3f9x2`, or empty when prefixing is off                     |
+| `CLOWDER_DOMAIN`          | The cluster's reserved domain, read on every deploy, e.g. `abc.uncld.dev`. Unset without one |
+| `CLOWDER_PROJECT_NAME`    | The project's name                                                                           |
+| `CLOWDER_PROJECT_ID`      | The project's id                                                                             |
+| `CLOWDER_RESOURCE_NAME`   | The resource's name                                                                          |
+| `CLOWDER_RESOURCE_ID`     | The resource's id                                                                            |
 
 `<SERVICE>` is the Compose service key uppercased with non-alphanumerics turned into `_` (`postgres-metrics` → `POSTGRES_METRICS`). The prefix is the resource's slug plus six random characters, fixed at creation; template resources are always prefixed. Bare service names in `environment` values (`http://server`) and `x-caddy` upstreams are rewritten to the prefixed names.
 
-Build public hostnames from `<SERVICE>_SERVICE_NAME`, not a fixed name, so two copies of a template don't claim the same host. Prefer `STOAT_DOMAIN` over `{{ DNS }}` when the value should follow domain changes: `${APP_HOST:-app.${STOAT_DOMAIN}}:8080/https`.
+Build public hostnames from `<SERVICE>_SERVICE_NAME`, not a fixed name, so two copies of a template don't claim the same host. Prefer `CLOWDER_DOMAIN` over `{{ DNS }}` when the value should follow domain changes: `${APP_HOST:-app.${CLOWDER_DOMAIN}}:8080/https`.
 
 `x-ports` follows Uncloud: `[hostname:]container_port/https` for HTTP(S) ingress, and `published:container/tcp@host` (or `/udp@host`) for raw TCP or UDP. Uncloud does not route TCP or UDP through ingress, so those ports need `@host`.
 
-For a `postgresql` database, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, and put the Postgres service first in `compose.yaml` (or mark it with `x-stoat: { engine: postgres }`, which wins over order). The service page builds:
+For a `postgresql` database, include `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, and put the Postgres service first in `compose.yaml` (or mark it with `x-clowder: { engine: postgres }`, which wins over order). The service page builds:
 
 - an **internal** URL at `<prefix>-<compose-service>.internal:5432`
 - an **external** URL only when that service publishes container port 5432 over TCP (`ports` or Uncloud `x-ports`)

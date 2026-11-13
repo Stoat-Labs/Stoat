@@ -1,4 +1,4 @@
-import { serviceVariable } from "@stoat/workflows/compose";
+import { serviceVariable } from "@clowder/workflows/compose";
 
 import { databaseServerEngine, type MetricsEngine } from "./observability";
 import { composeServices } from "./project-graph";

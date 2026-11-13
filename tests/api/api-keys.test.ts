@@ -4,14 +4,14 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { listUserOrganizations } from "@stoat/db/organizations";
+import { createDb } from "@clowder/db";
+import { listUserOrganizations } from "@clowder/db/organizations";
 import { createAuth } from "../../packages/auth/src";
 import { appRouter } from "../../packages/api/src/routers";
 import { dropTestDatabase } from "../database";
 
 describe("organization API keys (PostgreSQL)", () => {
-    const databaseName = `stoat_apikey_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_apikey_test_${randomUUID().replaceAll("-", "")}`;
     const baseURL = "http://localhost:5173";
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
@@ -86,7 +86,7 @@ describe("organization API keys (PostgreSQL)", () => {
             headers,
         });
 
-        expect(created.key.startsWith("stoat_")).toBe(true);
+        expect(created.key.startsWith("clowder_")).toBe(true);
         expect(created.referenceId).toBe(organization!.id);
 
         const context = await keyContext(created.key);
@@ -96,7 +96,7 @@ describe("organization API keys (PostgreSQL)", () => {
         ).resolves.toBeDefined();
 
         const wrong = await keyContext(
-            "stoat_not-a-real-key-at-all-000000000000000000000000000000",
+            "clowder_not-a-real-key-at-all-000000000000000000000000000000",
         );
 
         await expect(

@@ -1,6 +1,6 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     clusterMonitoring,
     clusters,
@@ -8,7 +8,7 @@ import {
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import {
     sidecarFetch,
     ucClient,
@@ -16,14 +16,14 @@ import {
     unwrap,
     type LogEvent,
     type Service,
-} from "@stoat/uncloud";
-import { sql as greptimeSql, GreptimeResponseTooLargeError } from "@stoat/workflows/greptime";
+} from "@clowder/uncloud";
+import { sql as greptimeSql, GreptimeResponseTooLargeError } from "@clowder/workflows/greptime";
 import {
     ALLOY_SERVICE,
     GREPTIME_SERVICE,
     MONITORING_DATABASE,
-} from "@stoat/workflows/monitoring-compose";
-import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
+} from "@clowder/workflows/monitoring-compose";
+import { decryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { and, desc, DrizzleQueryError, eq, sql } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import * as v from "valibot";
@@ -236,7 +236,7 @@ async function deployedServices(
 
     const names = new Set<string>(monitoring ? [GREPTIME_SERVICE, ALLOY_SERVICE] : []);
 
-    // Services can exist before Stoat deploys them (deployed outside Stoat, or a deployment
+    // Services can exist before Clowder deploys them (deployed outside Clowder, or a deployment
     // that is queued or failed early). Resolve the saved Compose names just like Overview,
     // then accept only services that exist.
     if (resource.spec?.trim())
@@ -288,7 +288,7 @@ async function deployedServices(
             monitoring ||
             (name !== GREPTIME_SERVICE &&
                 name !== ALLOY_SERVICE &&
-                !name.startsWith("stoat-monitoring-")),
+                !name.startsWith("clowder-monitoring-")),
     );
 
     for (let offset = 0; offset < serviceNames.length; offset += 8) {
@@ -1121,7 +1121,7 @@ export const resourceLogsRouter = {
 
                 const sign = (payload: string) =>
                     createHmac("sha256", password)
-                        .update(`stoat/log-cursor/v2-desc:${payload}`)
+                        .update(`clowder/log-cursor/v2-desc:${payload}`)
                         .digest();
 
                 let cursor: v.InferOutput<typeof cursorSchema> | undefined;

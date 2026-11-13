@@ -19,7 +19,7 @@ it("resolves each observability page without marking overview active for every c
 
 it("preserves monitoring scope and time range between pages, excluding unrelated UI state", () => {
     const url = new URL(
-        "https://stoat.test/observability?clusters=a,b&machine=a:node&range=6h&from=100&to=200&paused=true&q=api&dialog=open",
+        "https://clowder.test/observability?clusters=a,b&machine=a:node&range=6h&from=100&to=200&paused=true&q=api&dialog=open",
     );
 
     const target = new URL(observabilityHref("/observability/dns", url), url);
@@ -31,10 +31,10 @@ it("preserves monitoring scope and time range between pages, excluding unrelated
 
     expect(target.searchParams.has("dialog")).toBe(false);
     expect(
-        observabilityHref("/observability", new URL("https://stoat.test/projects?q=other")),
+        observabilityHref("/observability", new URL("https://clowder.test/projects?q=other")),
     ).toBe("/observability");
     expect(
-        observabilityHref("/observability/dns", new URL("https://stoat.test/observability")),
+        observabilityHref("/observability/dns", new URL("https://clowder.test/observability")),
     ).toBe("/observability/dns");
 });
 

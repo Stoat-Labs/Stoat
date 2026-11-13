@@ -7,15 +7,15 @@ WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY patches ./patches
 
-RUN --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=clowder-pnpm,target=/pnpm/store \
     pnpm fetch --store-dir /pnpm/store
 
 COPY . .
 
 # Install scripts only generate web env types and SvelteKit files, which the worker never uses.
-RUN --mount=type=cache,id=stoat-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=clowder-pnpm,target=/pnpm/store \
     pnpm install --prod=false --offline --frozen-lockfile --ignore-scripts --store-dir /pnpm/store \
-    && pnpm --filter @stoat/worker build
+    && pnpm --filter @clowder/worker build
 
 # The Uncloud CLI that ProvisionCluster uses to create clusters over SSH. Keep the version and
 # hashes the same as in apps/web/Dockerfile.

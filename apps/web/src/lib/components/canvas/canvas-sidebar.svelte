@@ -1,5 +1,6 @@
 <!-- Railway's project rail: only the project's own views, with the account at the edges. -->
 <script lang="ts">
+    import ClowderLogo from "$lib/components/clowder-logo.svelte";
     import { page } from "$app/state";
     import { orpc } from "$lib/api/orpc";
     import EditProjectDialog from "$lib/components/projects/edit-project-dialog.svelte";
@@ -95,7 +96,7 @@
                 rail ? "justify-center" : "px-2 py-1",
             ]}
         >
-            <img src="/stoat.png" class="size-8" alt="logo" />
+            <ClowderLogo class="size-8 text-primary" />
             {#if !rail && project}
                 <span class="truncate font-semibold">
                     {project.name}

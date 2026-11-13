@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorkspace, machineState } from "@stoat/workflows/ssh-setup";
+import { createWorkspace, machineState } from "@clowder/workflows/ssh-setup";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 // Runs the remote command here instead, against the machine.json next to this script.
@@ -22,7 +22,7 @@ describe("reading which cluster member a server is", () => {
     let bin: string;
 
     beforeAll(async () => {
-        bin = await mkdtemp(join(tmpdir(), "stoat-local-ssh-"));
+        bin = await mkdtemp(join(tmpdir(), "clowder-local-ssh-"));
         await writeFile(join(bin, "ssh"), localSsh);
         await chmod(join(bin, "ssh"), 0o755);
         process.env.PATH = `${bin}:${originalPath}`;
@@ -37,7 +37,7 @@ describe("reading which cluster member a server is", () => {
         if (state === null) await rm(join(bin, "machine.json"), { force: true });
         else await writeFile(join(bin, "machine.json"), state);
 
-        const workspace = await createWorkspace("stoat-ssh-test-");
+        const workspace = await createWorkspace("clowder-ssh-test-");
 
         try {
             return await machineState(server, workspace, new AbortController().signal);

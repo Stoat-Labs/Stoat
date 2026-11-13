@@ -37,7 +37,7 @@
     import GitBranch from "phosphor-svelte/lib/GitBranchIcon";
     import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import Search from "phosphor-svelte/lib/MagnifyingGlassIcon";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
+    import type { AppRouterClient } from "@clowder/api/routers/index";
     import { createQuery } from "@tanstack/svelte-query";
     import type { Component } from "svelte";
     import { parseAsString, useQueryStates } from "nuqs-svelte";
@@ -182,7 +182,9 @@
 </script>
 
 <svelte:head>
-    <title>New resource / {project?.name ?? "Project"} / Stoat</title>
+    <title>
+        New resource / {project?.name ?? "Project"} / Clowder
+    </title>
 </svelte:head>
 
 {#snippet tile(entry: Entry)}
@@ -300,7 +302,7 @@
     {#if project?.isInternal}
         <Alert variant="info">
             <AlertDescription>
-                Stoat manages this project's internal services. New
+                Clowder manages this project's internal services. New
                 resources can't be added here.
             </AlertDescription>
         </Alert>

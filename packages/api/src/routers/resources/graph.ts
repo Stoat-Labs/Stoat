@@ -5,10 +5,10 @@ import {
     projects,
     resources,
     resourceDeploymentInputs,
-} from "@stoat/db/schema/index";
-import { ucClient } from "@stoat/uncloud";
-import { composeSystemVariables } from "@stoat/workflows/compose";
-import { referenceTargets, referenceKeys } from "@stoat/workflows/references";
+} from "@clowder/db/schema/index";
+import { ucClient } from "@clowder/uncloud";
+import { composeSystemVariables } from "@clowder/workflows/compose";
+import { referenceTargets, referenceKeys } from "@clowder/workflows/references";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import * as v from "valibot";
 
@@ -259,7 +259,7 @@ export const resourceGraphRouter = {
 
             if (!project) throw new ORPCError("NOT_FOUND", { message: "Project not found." });
 
-            // STOAT_DOMAIN is simply left out while the sidecar is unreachable.
+            // CLOWDER_DOMAIN is simply left out while the sidecar is unreachable.
             const { data } = await ucClient(project.sidecarUrl, {
                 token: project.sidecarToken,
                 certificate: project.sidecarCertificate,

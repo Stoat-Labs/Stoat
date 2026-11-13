@@ -102,7 +102,7 @@
     }: {
         projectId: string;
         clusterId: string;
-        /** Internal projects are managed by Stoat and take no new resources. */
+        /** Internal projects are managed by Clowder and take no new resources. */
         isInternal: boolean;
         resources: CanvasResource[];
         graph: CanvasGraph;
@@ -1396,7 +1396,7 @@
 {/if}
 
 <style>
-    /* Map Svelte Flow's theme variables onto Stoat tokens so both themes follow the app. */
+    /* Map Svelte Flow's theme variables onto Clowder tokens so both themes follow the app. */
     /* One colour for connection lines and their arrowheads, like Railway's #6C6B7B. */
     .project-canvas {
         --canvas-edge: color-mix(

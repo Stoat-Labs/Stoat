@@ -278,6 +278,7 @@ export async function deleteS3BucketIfEmpty(connection: S3ConnectionRecord, buck
 export type S3BucketKey = { keyId: string; credentials: S3Credentials };
 
 // Keys are named after their resource, so they can be found and revoked without stored state.
+// The legacy prefix stays: providers hold keys under it, and renaming would orphan them.
 function keyName(resourceId: string) {
     return `stoat-${resourceId}`;
 }

@@ -4,7 +4,7 @@ import {
     encodeComposeFile,
     UcApiError,
     type UcClient,
-} from "@stoat/uncloud";
+} from "@clowder/uncloud";
 import { Predicate } from "effect";
 import { parse } from "yaml";
 

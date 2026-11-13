@@ -17,7 +17,7 @@
     import ArrowSquareOut from "phosphor-svelte/lib/ArrowSquareOutIcon";
     import CircleAlert from "phosphor-svelte/lib/WarningCircleIcon";
     import PencilSimple from "phosphor-svelte/lib/PencilSimpleIcon";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
+    import type { AppRouterClient } from "@clowder/api/routers/index";
 
     type Cluster = NonNullable<
         Awaited<ReturnType<AppRouterClient["cluster"]["getCluster"]>>
@@ -181,8 +181,8 @@
                             Initialization in progress
                         </AlertTitle>
                         <AlertDescription>
-                            Stoat is deploying the internal services.
-                            This page checks for updates
+                            Clowder is deploying the internal
+                            services. This page checks for updates
                             automatically.
                         </AlertDescription>
                     </Alert>

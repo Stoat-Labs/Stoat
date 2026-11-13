@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { createDb } from "@stoat/db";
-import { listUserOrganizations } from "@stoat/db/organizations";
-import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
-import { isSetupRequired } from "@stoat/db/setup";
+import { createDb } from "@clowder/db";
+import { listUserOrganizations } from "@clowder/db/organizations";
+import { getSignupsEnabled, setSignupsEnabled } from "@clowder/db/settings";
+import { isSetupRequired } from "@clowder/db/setup";
 import { createAuth } from "../../packages/auth/src";
 import { dropTestDatabase } from "../database";
 
@@ -23,7 +23,7 @@ async function createTestDatabase(admin: ReturnType<typeof createDb>, name: stri
 }
 
 describe("first-run setup (PostgreSQL)", () => {
-    const databaseName = `stoat_setup_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_setup_test_${randomUUID().replaceAll("-", "")}`;
     const baseURL = "http://localhost:5173";
     const password = "test-password-long-enough";
     let admin: ReturnType<typeof createDb>;

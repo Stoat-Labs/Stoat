@@ -1,7 +1,7 @@
 import { onError } from "@orpc/server";
 import { experimental_RPCHandler as RPCHandler } from "@orpc/server/crossws";
-import type { Context } from "@stoat/api/context";
-import { appRouter } from "@stoat/api/routers/index";
+import type { Context } from "@clowder/api/context";
+import { appRouter } from "@clowder/api/routers/index";
 import type { Peer } from "crossws";
 import crossws from "crossws/adapters/node";
 import { createRequestLogger } from "evlog";

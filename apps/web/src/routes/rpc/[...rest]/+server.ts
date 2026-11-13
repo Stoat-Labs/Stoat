@@ -1,7 +1,7 @@
 import { getRequestEvent } from "$app/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { onError } from "@orpc/server";
-import { appRouter } from "@stoat/api/routers/index";
+import { appRouter } from "@clowder/api/routers/index";
 import type { RequestHandler } from "@sveltejs/kit";
 
 import { logRpcError } from "$lib/server/rpc-errors";

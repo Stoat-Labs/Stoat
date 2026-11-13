@@ -5,7 +5,7 @@ import {
     projects,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 

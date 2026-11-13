@@ -1,6 +1,6 @@
 <script lang="ts">
     import { client, orpc, queryClient } from "$lib/api/orpc";
-    import type { AppRouterClient } from "@stoat/api/routers/index";
+    import type { AppRouterClient } from "@clowder/api/routers/index";
     import {
         Alert,
         AlertDescription,
@@ -13,7 +13,7 @@
         serviceUpdateOrder,
         setServiceUpdateOrder,
         type UpdateOrder,
-    } from "@stoat/workflows/update-order";
+    } from "@clowder/workflows/update-order";
     import * as v from "valibot";
     import type { CanvasResource, CanvasService } from "../../graph";
     import SettingsTitle from "./settings-title.svelte";

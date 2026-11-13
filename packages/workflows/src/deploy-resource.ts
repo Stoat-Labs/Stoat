@@ -1,8 +1,8 @@
-import type { Database } from "@stoat/db";
-import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
-import { ucClient, unwrap } from "@stoat/uncloud";
+import type { Database } from "@clowder/db";
+import { appendDeploymentLog, getDeploymentByJobId } from "@clowder/db/deployments";
+import { ucClient, unwrap } from "@clowder/uncloud";
 import { parseEnv } from "node:util";
-import { YAMLParseError } from "yaml";
+import YAML, { YAMLParseError } from "yaml";
 import {
     ComposeVariableError,
     composeImages,
@@ -19,6 +19,27 @@ import { deployedServiceNames, staleServices } from "./stale-services";
 
 export const RESOURCE_FAILURE_MESSAGE =
     "Resource deployment failed. Check the Compose configuration and sidecar connectivity, then retry.";
+
+// A built-in variable from before the rename, used unescaped (`$$` is a literal `$`).
+const LEGACY_VARIABLE =
+    /(?<!\$)(?:\$\$)*\$\{?STOAT_(?:DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?![A-Za-z0-9_])/u;
+
+/** Whether Compose uses a built-in variable or the extension key from before the rename. */
+export function usesLegacyNames(compose: string) {
+    let found = false;
+
+    // Parsed, so comments that mention the old names don't count.
+    YAML.visit(YAML.parseDocument(compose), {
+        Pair: (_, pair) => {
+            if (YAML.isScalar(pair.key) && pair.key.value === "x-stoat") found = true;
+        },
+        Scalar: (_, scalar) => {
+            if (LEGACY_VARIABLE.test(String(scalar.value))) found = true;
+        },
+    });
+
+    return found;
+}
 
 export async function deployResource(db: Database, deploymentId: string, signal: AbortSignal) {
     let step = "Loading deployment input.";
@@ -130,7 +151,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 ? await referenceTargets(db, deployment.clusterId, referencedIds)
                 : [];
 
-            // Only ask the sidecar when STOAT_DOMAIN is used, including by referenced resources.
+            // Only ask the sidecar when CLOWDER_DOMAIN is used, including by referenced resources.
             const variableSources = [deployedSpec, input.env].concat(
                 // Drafts too: a reference can resolve from a service only the draft has yet.
                 targets.map(
@@ -138,9 +159,19 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                 ),
             );
 
+            // Stored Compose was migrated, but Compose from Git still says what the repository says,
+            // and the legacy domain variable would otherwise resolve to an empty hostname without an error.
+            if (usesLegacyNames(deployedSpec)) {
+                const message =
+                    "Rename STOAT_* variables to CLOWDER_* and x-stoat to x-clowder in the Compose file.";
+
+                await log(message, "error", "attempt-failed");
+                throw new DeploymentError(message);
+            }
+
             let domain: string | undefined;
 
-            if (/STOAT_DOMAIN/u.test(variableSources.join("\n"))) {
+            if (/CLOWDER_DOMAIN/u.test(variableSources.join("\n"))) {
                 step = "Loading the cluster domain.";
                 ({ domain } = await unwrap(uc.GET("/api/v1/cluster/domain")));
             }
@@ -307,7 +338,7 @@ export async function deployResource(db: Database, deploymentId: string, signal:
                     WHERE id = $1 AND status = 'running' RETURNING resource_id
                 ), published AS (
                     UPDATE resources SET spec = $2, updated_at = now(),
-                        -- x-stoat.engine forces the resource to be a database of that engine.
+                        -- x-clowder.engine forces the resource to be a database of that engine.
                         type = CASE WHEN $3::text IS NULL THEN type ELSE 'database' END,
                         settings = CASE WHEN $3::text IS NULL THEN settings
                             ELSE coalesce(settings, '{}'::jsonb) || jsonb_build_object('engine', $3::text) END

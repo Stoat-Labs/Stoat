@@ -1,8 +1,8 @@
-import type { Database } from "@stoat/db";
-import { finishProvisioning, setProvisioningInitState } from "@stoat/db/clusters";
-import { appendDeploymentLog, setDeploymentStatus } from "@stoat/db/deployments";
-import type { ClusterProvisioning } from "@stoat/db/schema/index";
-import { ucClient } from "@stoat/uncloud";
+import type { Database } from "@clowder/db";
+import { finishProvisioning, setProvisioningInitState } from "@clowder/db/clusters";
+import { appendDeploymentLog, setDeploymentStatus } from "@clowder/db/deployments";
+import type { ClusterProvisioning } from "@clowder/db/schema/index";
+import { ucClient } from "@clowder/uncloud";
 import { access, rm, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { join } from "node:path";
@@ -29,7 +29,7 @@ import {
 // What `clusters.provisioning_secrets` holds until the cluster is ready.
 type ProvisioningSecrets = { sshKey: string; tlsKey: string };
 
-// The port the sidecar serves HTTPS on for Stoat, next to Uncloud's own 51xxx ports.
+// The port the sidecar serves HTTPS on for Clowder, next to Uncloud's own 51xxx ports.
 const SIDECAR_PORT = 51443;
 
 const SIDECAR_READY_TIMEOUT = 2 * 60_000;
@@ -37,13 +37,13 @@ const SIDECAR_READY_TIMEOUT = 2 * 60_000;
 const ALREADY_MEMBER =
     "This server already belongs to an Uncloud cluster. Connect that cluster with its sidecar URL and token instead.";
 
-/** The URL Stoat reaches the sidecar of a cluster it sets up on `host` at. */
+/** The URL Clowder reaches the sidecar of a cluster it sets up on `host` at. */
 export function provisionedSidecarUrl(host: string) {
     return `https://${isIP(host) === 6 ? `[${host}]` : host}:${SIDECAR_PORT}`;
 }
 
 /**
- * The single-use SSH key and the pinned sidecar certificate for a cluster Stoat sets up on
+ * The single-use SSH key and the pinned sidecar certificate for a cluster Clowder sets up on
  * `host`. Everything private ends up in `secrets`, which is deleted once the cluster is ready.
  */
 export async function provisioningCredentials(host: string, comment: string) {
@@ -100,7 +100,7 @@ async function initMachine(
             "An earlier attempt created a cluster on this server but didn't finish setting it up. Retry and confirm the reset to start over.",
         );
 
-    // A confirmed reset targets the cluster Stoat's own earlier attempt created.
+    // A confirmed reset targets the cluster Clowder's own earlier attempt created.
     if (initState === "none") {
         log(`Checking ${server.host} for an existing Uncloud cluster...`);
 
@@ -142,7 +142,7 @@ async function initMachine(
             () => false,
         );
 
-        // Pointing the apps' uncld.dev domain at the server is init's last step, and Stoat doesn't need it.
+        // Pointing the apps' uncld.dev domain at the server is init's last step, and Clowder doesn't need it.
         if (
             created &&
             !signal.aborted &&
@@ -150,14 +150,14 @@ async function initMachine(
             error.message.includes("no internet-reachable machines")
         ) {
             log(
-                "Uncloud couldn't reach this server from the internet on port 80, so the cluster's uncld.dev domain doesn't point to it. Stoat doesn't need it; open ports 80 and 443 if your apps should use it.",
+                "Uncloud couldn't reach this server from the internet on port 80, so the cluster's uncld.dev domain doesn't point to it. Clowder doesn't need it; open ports 80 and 443 if your apps should use it.",
             );
             await setProvisioningInitState(db, clusterId, "done");
 
             return;
         }
 
-        // Recorded before an abort is rethrown too, so the rerun doesn't refuse Stoat's own cluster.
+        // Recorded before an abort is rethrown too, so the rerun doesn't refuse Clowder's own cluster.
         if (created) await setProvisioningInitState(db, clusterId, "partial");
 
         // An abort must stay an abort so the job is released, not failed.
@@ -198,7 +198,7 @@ async function waitForSidecar(
     }
 
     throw new Error(
-        `The sidecar at ${url} didn't respond in time. Check that port ${SIDECAR_PORT} is open to Stoat on the server.`,
+        `The sidecar at ${url} didn't respond in time. Check that port ${SIDECAR_PORT} is open to Clowder on the server.`,
     );
 }
 
@@ -242,7 +242,7 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
         );
     };
 
-    const workspace = await createWorkspace("stoat-provision-");
+    const workspace = await createWorkspace("clowder-provision-");
     const lock = await db.$client.connect();
     let acquired = false;
 
@@ -289,7 +289,7 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
         const compose = join(workspace.dir, "compose.yaml");
 
         await writeFile(compose, sidecarCompose);
-        log(`Deploying the Stoat sidecar to ${cluster.sidecarUrl}...`);
+        log(`Deploying the Clowder sidecar to ${cluster.sidecarUrl}...`);
         await runUc(workspace, ["deploy", "--file", compose, "--yes"], log, signal, {
             SIDECAR_TOKEN: cluster.sidecarToken,
             SIDECAR_TLS_CERT: cluster.sidecarCertificate ?? "",
@@ -310,7 +310,7 @@ export async function provisionCluster(db: Database, deploymentId: string, signa
 
         if (!(await finishProvisioning(db, clusterId, deploymentId)))
             log(
-                "Setup was cancelled before Stoat saved the cluster. Retry to finish setting it up.",
+                "Setup was cancelled before Clowder saved the cluster. Retry to finish setting it up.",
             );
     } catch (error) {
         // Interruption is not a failure: the job is released and runs again.

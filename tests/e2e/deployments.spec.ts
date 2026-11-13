@@ -263,7 +263,7 @@ test.describe("deleting", () => {
 
         await sql(
             `UPDATE resources SET settings = jsonb_build_object('env', $2::text) WHERE id = $1`,
-            [user, `URL={{ ${target.id}.STOAT_PREFIX }}\n`],
+            [user, `URL={{ ${target.id}.CLOWDER_PREFIX }}\n`],
         );
 
         await deleteResource(page, target);

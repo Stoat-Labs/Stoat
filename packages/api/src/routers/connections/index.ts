@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { gitConnections, resources } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { gitConnections, resources } from "@clowder/db/schema/index";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import * as v from "valibot";
@@ -309,7 +309,7 @@ export async function getBoundGitRepository(
     return { url: validateGitUrl(repositoryUrl), branch: validateGitBranch(branch), credentials };
 }
 
-// Best effort, so pushes deploy right away: without APP_URL, a public Stoat, or a token allowed to
+// Best effort, so pushes deploy right away: without APP_URL, a public Clowder, or a token allowed to
 // manage hooks, the minutely poll still picks pushes up.
 export async function registerGitWebhook(
     db: Database,

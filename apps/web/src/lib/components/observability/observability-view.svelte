@@ -68,7 +68,7 @@
         setUsageDisplay,
         usageDisplay,
     } from "$lib/observability/usage-display.svelte";
-    import type { MachineMetricName } from "@stoat/api/observability";
+    import type { MachineMetricName } from "@clowder/api/observability";
     import ChevronDown from "phosphor-svelte/lib/CaretDownIcon";
     import Hash from "phosphor-svelte/lib/HashIcon";
     import Percent from "phosphor-svelte/lib/PercentIcon";
@@ -497,7 +497,7 @@
 </script>
 
 <svelte:head>
-    <title>{title} / Stoat</title>
+    <title>{title} / Clowder</title>
 </svelte:head>
 
 {#snippet toolbar()}

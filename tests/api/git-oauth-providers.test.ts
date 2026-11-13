@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { inspect } from "node:util";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { gitConnections, gitOAuthProviders, member, organization } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { gitConnections, gitOAuthProviders, member, organization } from "@clowder/db/schema/index";
 import { eq } from "drizzle-orm";
 import {
     afterAll,
@@ -131,7 +131,7 @@ describe("Git OAuth app secret boundaries", () => {
 
 // Only the uniquely named disposable database is migrated. DATABASE_URL is an admin connection.
 describe("Organization OAuth apps (PostgreSQL)", () => {
-    const databaseName = `stoat_oauth_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_oauth_test_${randomUUID().replaceAll("-", "")}`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let databaseCreated = false;
@@ -206,7 +206,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
 
     beforeEach(async () => {
         vi.stubEnv("APP_SECRET", "oauth-app-test-secret-at-least-32-bytes");
-        vi.stubEnv("APP_URL", "https://stoat.example.com");
+        vi.stubEnv("APP_URL", "https://clowder.example.com");
         await db.delete(gitConnections);
         await db.delete(gitOAuthProviders);
         services.session = ownerContext.session;
@@ -247,7 +247,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
     ) {
         services.session = context.session;
         const cookies = { set: vi.fn(), get: vi.fn(), delete: vi.fn() };
-        const url = "https://stoat.example.com/git/oauth/start";
+        const url = "https://clowder.example.com/git/oauth/start";
         const form = new URLSearchParams({ organizationId, providerId, name: "Work" });
 
         if (connectionId) form.set("connectionId", connectionId);
@@ -256,7 +256,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             url: new URL(url),
             request: new Request(url, {
                 method: "POST",
-                headers: { origin: "https://stoat.example.com" },
+                headers: { origin: "https://clowder.example.com" },
                 body: form,
             }),
             cookies,
@@ -272,7 +272,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         const authorization = new URL(started.response.headers.get("location")!);
 
         const url = new URL(
-            `https://stoat.example.com/git/oauth/callback?code=code&state=${authorization.searchParams.get("state")}`,
+            `https://clowder.example.com/git/oauth/callback?code=code&state=${authorization.searchParams.get("state")}`,
         );
 
         const event = {
@@ -343,7 +343,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         for (const context of [ownerContext, adminContext, memberContext]) {
             await expect(
                 call(connectionsRouter.oauthSetup, undefined, { context }),
-            ).resolves.toEqual({ callbackUrl: "https://stoat.example.com/git/oauth/callback" });
+            ).resolves.toEqual({ callbackUrl: "https://clowder.example.com/git/oauth/callback" });
             expect((await register(context)).id).toMatch(/^db_[a-f0-9-]{36}$/);
         }
 
@@ -518,7 +518,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
             const authorization = new URL(started.response.headers.get("location")!);
             expect(authorization.searchParams.get("client_id")).toBe(input.clientId);
             expect(authorization.searchParams.get("redirect_uri")).toBe(
-                "https://stoat.example.com/git/oauth/callback",
+                "https://clowder.example.com/git/oauth/callback",
             );
             expect((await callback(started)).headers.get("location")).toBe("/git?oauth=success");
             const [connection] = await db.select().from(gitConnections);
@@ -606,7 +606,7 @@ describe("Organization OAuth apps (PostgreSQL)", () => {
         ).toThrow("invalid_state");
 
         const url = new URL(
-            `https://stoat.example.com/git/oauth/callback?state=${state}&code=secret`,
+            `https://clowder.example.com/git/oauth/callback?state=${state}&code=secret`,
         );
 
         const event = {

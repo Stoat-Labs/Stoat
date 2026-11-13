@@ -29,7 +29,7 @@
         type MachineData,
     } from "$lib/observability";
     import { usageDisplay } from "$lib/observability/usage-display.svelte";
-    import type { MachineMetricName } from "@stoat/api/observability";
+    import type { MachineMetricName } from "@clowder/api/observability";
 
     let {
         machines,

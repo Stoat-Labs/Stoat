@@ -16,7 +16,7 @@
 </script>
 
 <svelte:head>
-    <title>{notFound ? "Not found" : "Error"} / Stoat</title>
+    <title>{notFound ? "Not found" : "Error"} / Clowder</title>
 </svelte:head>
 
 <div

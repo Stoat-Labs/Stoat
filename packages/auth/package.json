@@ -1,5 +1,5 @@
 {
-    "name": "@stoat/auth",
+    "name": "@clowder/auth",
     "type": "module",
     "exports": {
         ".": {
@@ -17,13 +17,13 @@
     },
     "dependencies": {
         "@better-auth/api-key": "catalog:",
-        "@stoat/db": "workspace:*",
+        "@clowder/db": "workspace:*",
         "better-auth": "catalog:",
         "ioredis": "^6.0.0",
         "zod": "4.6.2"
     },
     "devDependencies": {
-        "@stoat/config": "workspace:*",
+        "@clowder/config": "workspace:*",
         "typescript": "catalog:"
     }
 }

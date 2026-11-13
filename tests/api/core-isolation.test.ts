@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, createRouterClient } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { resourceEnv } from "@stoat/workflows/compose";
-import { checkVariableReferences, referenceTargets } from "@stoat/workflows/references";
-import { encryptMonitoringPassword } from "@stoat/workflows/secrets";
+import { createDb } from "@clowder/db";
+import { resourceEnv } from "@clowder/workflows/compose";
+import { checkVariableReferences, referenceTargets } from "@clowder/workflows/references";
+import { encryptMonitoringPassword } from "@clowder/workflows/secrets";
 import {
     clusterMonitoring,
     clusters,
@@ -13,7 +13,7 @@ import {
     projects,
     resources,
     resourceDeploymentInputs,
-} from "@stoat/db/schema/index";
+} from "@clowder/db/schema/index";
 import { asc, eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import {
@@ -32,7 +32,7 @@ import { resourcesRouter } from "../../packages/api/src/routers/resources";
 import { insertUserWithOrganization } from "../users";
 
 describe("core project and resource isolation (PostgreSQL)", () => {
-    const databaseName = `stoat_core_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_core_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const otherClusterId = randomUUID();
     const foreignClusterId = randomUUID();
@@ -967,7 +967,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 projectId,
                 name: "Folded exporter",
                 spec: `services:\n  metrics:\n${exporter}`,
-                settings: { env: `DSN={{ ${database}.STOAT_PREFIX }}\n` },
+                settings: { env: `DSN={{ ${database}.CLOWDER_PREFIX }}\n` },
             },
             {
                 id: unreferenced,
@@ -980,7 +980,7 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                 projectId,
                 name: "Exporter first",
                 spec: `services:\n  metrics:\n${exporter}  app:\n    image: nginx:alpine\n`,
-                settings: { env: `DSN={{ ${database}.STOAT_PREFIX }}\n` },
+                settings: { env: `DSN={{ ${database}.CLOWDER_PREFIX }}\n` },
             },
         ]);
 
@@ -1184,8 +1184,8 @@ describe("core project and resource isolation (PostgreSQL)", () => {
                     }),
                 ).toHaveLength(2);
                 expect(fetch.mock.calls.map(([request]) => request.url)).toEqual([
-                    expect.stringContaining("/api/v1/services/stoat-monitoring-greptimedb"),
-                    expect.stringContaining("/api/v1/services/stoat-monitoring-alloy"),
+                    expect.stringContaining("/api/v1/services/clowder-monitoring-greptimedb"),
+                    expect.stringContaining("/api/v1/services/clowder-monitoring-alloy"),
                 ]);
             } finally {
                 await db

@@ -1,4 +1,4 @@
-module git.irazz.lol/stoat/sidecar
+module git.irazz.lol/clowder/sidecar
 
 go 1.26.0
 

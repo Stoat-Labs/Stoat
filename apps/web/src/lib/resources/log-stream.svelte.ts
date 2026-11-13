@@ -10,7 +10,7 @@ import {
     type DisplayLog,
     type LogServiceState,
 } from "$lib/resources/logs";
-import type { ResourceLog } from "@stoat/api/routers/resources/logs";
+import type { ResourceLog } from "@clowder/api/routers/resources/logs";
 import { untrack } from "svelte";
 
 export type ViewLog = DisplayLog & { key: string };

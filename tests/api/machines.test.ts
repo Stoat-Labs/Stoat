@@ -4,13 +4,13 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { markPendingMachineJoining, setPendingMachineJoined } from "@stoat/db/clusters";
-import { cancelDeployment } from "@stoat/db/deployments";
-import { clusters, deploymentLogs, deployments } from "@stoat/db/schema/index";
-import * as uncloud from "@stoat/uncloud";
-import { addMachine, clusterVersion } from "@stoat/workflows/add-machine";
-import { ALLOY_SERVICE } from "@stoat/workflows/monitoring-compose";
+import { createDb } from "@clowder/db";
+import { markPendingMachineJoining, setPendingMachineJoined } from "@clowder/db/clusters";
+import { cancelDeployment } from "@clowder/db/deployments";
+import { clusters, deploymentLogs, deployments } from "@clowder/db/schema/index";
+import * as uncloud from "@clowder/uncloud";
+import { addMachine, clusterVersion } from "@clowder/workflows/add-machine";
+import { ALLOY_SERVICE } from "@clowder/workflows/monitoring-compose";
 import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -268,7 +268,7 @@ describe("the cluster's daemon version", () => {
 });
 
 describe("adding machines (PostgreSQL)", () => {
-    const databaseName = `stoat_machines_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_machines_test_${randomUUID().replaceAll("-", "")}`;
     const originalPath = process.env.PATH;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
@@ -304,7 +304,7 @@ describe("adding machines (PostgreSQL)", () => {
             await insertUserWithOrganization(db, "stranger", "Stranger", "stranger@example.test"),
         );
 
-        bin = await mkdtemp(join(tmpdir(), "stoat-fake-uc-"));
+        bin = await mkdtemp(join(tmpdir(), "clowder-fake-uc-"));
         await writeFile(join(bin, "uc"), fakeUc);
         await writeFile(join(bin, "ssh"), fakeSsh);
         await chmod(join(bin, "uc"), 0o755);
@@ -423,7 +423,7 @@ describe("adding machines (PostgreSQL)", () => {
         return rows;
     }
 
-    it("adds a server through the sidecar, spreads Stoat's services to it, and forgets its key", async () => {
+    it("adds a server through the sidecar, spreads Clowder's services to it, and forgets its key", async () => {
         const clusterId = await createCluster();
         const { publicKey } = await prepare(clusterId);
 
@@ -432,7 +432,7 @@ describe("adding machines (PostgreSQL)", () => {
             [clusterId],
         );
 
-        expect(publicKey).toMatch(/^ssh-ed25519 \S+ stoat-/);
+        expect(publicKey).toMatch(/^ssh-ed25519 \S+ clowder-/);
         expect(rows[0]!.key.startsWith("enc:v1:")).toBe(true);
         expect(await call(clusterRouter.getPendingMachine, { clusterId }, { context })).toEqual({
             host: PUBLIC_HOST,
@@ -560,7 +560,7 @@ describe("adding machines (PostgreSQL)", () => {
         const clusterId = await createCluster();
 
         await prepare(clusterId);
-        // Removed after it joined, like a removal that outlived Stoat's wait for it.
+        // Removed after it joined, like a removal that outlived Clowder's wait for it.
         await setPendingMachineJoined(db, clusterId, { id: STALE, name: "stale" });
 
         const { deployment } = await attempt(clusterId);
@@ -581,7 +581,7 @@ describe("adding machines (PostgreSQL)", () => {
         const failed = await attempt(clusterId);
 
         expect(failed.deployment.error).toBe(
-            "worker has no GeoIP database, which Alloy needs. Update the Stoat sidecar, then retry.",
+            "worker has no GeoIP database, which Alloy needs. Update the Clowder sidecar, then retry.",
         );
         expect(failed.cluster.pendingMachine?.joined).toEqual({
             id: "machine-new",
@@ -717,7 +717,7 @@ describe("adding machines (PostgreSQL)", () => {
 
         expect(deployment.status).toBe("ready");
         expect((await logs(deployment.id)).map(({ text }) => text)).toContain(
-            "Stoat couldn't point the cluster's domain at worker: no machine running Caddy answered on its public IP",
+            "Clowder couldn't point the cluster's domain at worker: no machine running Caddy answered on its public IP",
         );
     });
 
@@ -752,7 +752,7 @@ describe("adding machines (PostgreSQL)", () => {
         expect((await attempt(clusterId)).deployment.error).toContain("too old to add machines");
         expect(await lines("ssh-calls")).toEqual([]);
 
-        // The sidecar is still removing a machine, maybe after Stoat stopped waiting for it.
+        // The sidecar is still removing a machine, maybe after Clowder stopped waiting for it.
         sidecar.relay = 409;
         expect((await attempt(clusterId)).deployment.error).toBe(
             "A machine is still being removed from this cluster. Retry once it's gone.",
@@ -762,7 +762,7 @@ describe("adding machines (PostgreSQL)", () => {
         sidecar.relay = 426;
         await writeFile(join(bin, "ssh-mode"), "rejected");
         expect((await attempt(clusterId)).deployment.error).toBe(
-            "The server rejected Stoat's key. Add the public key to ~/.ssh/authorized_keys for root, then retry.",
+            "The server rejected Clowder's key. Add the public key to ~/.ssh/authorized_keys for root, then retry.",
         );
         expect(await lines("calls")).toEqual([]);
     });
@@ -772,7 +772,7 @@ describe("adding machines (PostgreSQL)", () => {
 
         for (const host of ["127.0.0.1", "localhost", "169.254.169.254", "::1"])
             await expect(prepare(clusterId, host)).rejects.toThrow(
-                "Stoat doesn't connect to loopback",
+                "Clowder doesn't connect to loopback",
             );
 
         // A hostname is only resolved by the worker, so it refuses one that points at loopback.

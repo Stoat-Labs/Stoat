@@ -241,7 +241,7 @@ test.describe("API keys", () => {
         await dialog(page).getByRole("button", { name: "Create key" }).click();
         await expect(dialog(page)).toContainText("API key created");
         const key = (await dialog(page).locator("code").textContent())!.trim();
-        expect(key).toMatch(/^stoat_/u);
+        expect(key).toMatch(/^clowder_/u);
         await dialog(page).getByRole("button", { name: "Done" }).click();
         await expect(page.getByText("CI deploys")).toBeVisible();
 

@@ -7,7 +7,7 @@ import {
     getOrganizationGitOAuthProviders,
     GitOAuthError,
     requireGitOAuthMember,
-} from "@stoat/api/git/oauth";
+} from "@clowder/api/git/oauth";
 import { getAuth, getDb } from "../../../../services";
 
 export const POST: RequestHandler = async ({ request, cookies }) => {

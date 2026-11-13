@@ -8,6 +8,7 @@
     import { smart } from "skullet";
     import { SkulletProvider } from "skullet/svelte";
     import { ToastProvider } from "$lib/components/ui/toast";
+    import ClowderFavicon from "$lib/components/clowder-favicon.svelte";
     import "../app.css";
 
     const { children } = $props();
@@ -54,6 +55,8 @@
         clicked.blur();
     }}
 />
+
+<ClowderFavicon />
 
 <!-- App-wide icon defaults: bold matches the text weight, and icons are decorative unless they say otherwise. -->
 <IconContext

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 
 /**
  * Inserts a user who owns a new organization, as after /setup. Sign-up alone no longer

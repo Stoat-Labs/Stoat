@@ -1,15 +1,15 @@
 ####################################################################################################
-# The sidecar ProvisionCluster deploys to clusters Stoat creates over SSH.
+# The sidecar ProvisionCluster deploys to clusters Clowder creates over SSH.
 #
-# Every machine serves the API over HTTPS on port 51443 with a self-signed certificate that Stoat
-# generates and pins, so no domain or certificate authority sits between Stoat and the cluster.
+# Every machine serves the API over HTTPS on port 51443 with a self-signed certificate that Clowder
+# generates and pins, so no domain or certificate authority sits between Clowder and the cluster.
 # Port 80 stays plain HTTP on the cluster network for the monitoring stack.
 ####################################################################################################
-name: stoat
+name: clowder
 
 services:
     sidecar:
-        image: ghcr.io/stoat-labs/sidecar:latest
+        image: ghcr.io/clowder-run/sidecar:latest
         # The image's CMD plus the HTTPS listener.
         command:
             [
@@ -18,7 +18,7 @@ services:
                 "--tls-listen",
                 "0.0.0.0:51443",
                 "--geoip-dir",
-                "/host/var/lib/stoat/geoip",
+                "/host/var/lib/clowder/geoip",
             ]
         environment:
             SIDECAR_TOKEN: ${SIDECAR_TOKEN:?set by ProvisionCluster}
@@ -27,7 +27,7 @@ services:
         volumes:
             - /run/uncloud:/run/uncloud:ro
             # The sidecar installs the GeoIP database Alloy reads from here (--geoip-dir).
-            - /var/lib/stoat/geoip:/host/var/lib/stoat/geoip
+            - /var/lib/clowder/geoip:/host/var/lib/clowder/geoip
         # Root + privileged + host PID: the sidecar talks to the Uncloud socket and
         # runs host commands via nsenter into PID 1. Uncloud ignores group_add.
         user: root

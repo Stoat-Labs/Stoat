@@ -1,5 +1,5 @@
 {
-    "name": "@stoat/db",
+    "name": "@clowder/db",
     "type": "module",
     "exports": {
         ".": {
@@ -20,7 +20,7 @@
         "db:migrate": "drizzle-kit migrate"
     },
     "dependencies": {
-        "@stoat/config": "workspace:*",
+        "@clowder/config": "workspace:*",
         "drizzle-orm": "catalog:",
         "pg": "^8.23.0"
     },

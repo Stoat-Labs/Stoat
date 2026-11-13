@@ -1,4 +1,4 @@
-# Stoat backup agent
+# Clowder backup agent
 
 Minimal example of using Kopia (`github.com/kopia/kopia`, v0.23.1) as a Go library: initialize/connect a repository, snapshot a directory, list snapshots, restore.
 

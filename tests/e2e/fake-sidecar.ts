@@ -14,7 +14,7 @@ import type {
     RemoveMachineResponse,
     Service,
     StatusResponse,
-} from "@stoat/uncloud";
+} from "@clowder/uncloud";
 import * as v from "valibot";
 import { parse } from "yaml";
 

@@ -1,5 +1,5 @@
-import { composeDatabaseService } from "@stoat/workflows/database-engines";
-import { setEnvVariable } from "@stoat/workflows/env-lines";
+import { composeDatabaseService } from "@clowder/workflows/database-engines";
+import { setEnvVariable } from "@clowder/workflows/env-lines";
 import * as v from "valibot";
 import YAML, { isMap, isScalar, isSeq } from "yaml";
 
@@ -12,7 +12,7 @@ export {
     rewriteComposeHostname,
     unformatComposeFile,
     type FormattedCompose,
-} from "@stoat/workflows/compose";
+} from "@clowder/workflows/compose";
 
 // Long-syntax ports are normalized to the short `[host_ip:]published:target/protocol` form.
 const portSchema = v.union([
@@ -59,7 +59,7 @@ function publishedTcpPort(spec: string, uncloud: boolean) {
     return [{ target: Number(parts.at(-1)), port, host: host === "0.0.0.0" ? undefined : host }];
 }
 
-/** The `x-stoat.engine` service, else the first one, and the TCP port it publishes for PostgreSQL. */
+/** The `x-clowder.engine` service, else the first one, and the TCP port it publishes for PostgreSQL. */
 export function postgresService(compose: string) {
     const services = v.parse(composeSchema, YAML.parse(compose)).services;
     const name = composeDatabaseService(compose)?.name ?? Object.keys(services)[0];

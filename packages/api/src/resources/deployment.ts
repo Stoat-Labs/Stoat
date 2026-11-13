@@ -1,14 +1,14 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import {
     deploymentLogs,
     deployments,
     type DeploymentMetadata,
     resourceDeploymentInputs,
     resources,
-} from "@stoat/db/schema/index";
-import { ComposeVariableError } from "@stoat/workflows/compose";
-import { checkVariableReferences } from "@stoat/workflows/references";
+} from "@clowder/db/schema/index";
+import { ComposeVariableError } from "@clowder/workflows/compose";
+import { checkVariableReferences } from "@clowder/workflows/references";
 import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { posix } from "node:path";

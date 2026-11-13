@@ -1,6 +1,6 @@
-import type { Database } from "@stoat/db";
-import { appendDeploymentLog, getDeploymentByJobId } from "@stoat/db/deployments";
-import { ucClient, unwrap, type UcClient } from "@stoat/uncloud";
+import type { Database } from "@clowder/db";
+import { appendDeploymentLog, getDeploymentByJobId } from "@clowder/db/deployments";
+import { ucClient, unwrap, type UcClient } from "@clowder/uncloud";
 import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { Effect, Predicate } from "effect";
@@ -163,7 +163,9 @@ export async function enableCaddyMetrics(
         const caddy = await unwrap(uc.GET("/api/v1/caddy", { signal }));
 
         if (!caddy.deployed) {
-            await log("Caddy is not deployed; it collects HTTP metrics once deployed from Stoat.");
+            await log(
+                "Caddy is not deployed; it collects HTTP metrics once deployed from Clowder.",
+            );
 
             return;
         }

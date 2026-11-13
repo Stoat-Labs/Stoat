@@ -1,6 +1,6 @@
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters } from "@stoat/db/schema/index";
+import { createDb } from "@clowder/db";
+import { clusters } from "@clowder/db/schema/index";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
@@ -12,7 +12,7 @@ import { clusterRouter } from "../../packages/api/src/routers/cluster";
 import { insertUserWithOrganization } from "../users";
 
 describe("cluster domain API", () => {
-    const databaseName = `stoat_domain_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_domain_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;

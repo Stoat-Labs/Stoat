@@ -10,7 +10,7 @@ import {
     type ObservabilityContainer,
     type ObservabilityService,
     type PackedMetricSeries,
-} from "@stoat/api/observability";
+} from "@clowder/api/observability";
 import { ago } from "../format";
 
 export type ClusterData = ClusterObservability & {
@@ -377,7 +377,7 @@ function hueColor(hue: number) {
 
 /** A color derived only from `name`, so a machine or service looks the same in every chart. */
 export function seriesColor(name: string) {
-    // FNV-1a spreads similar names (stoat-monitoring-*) across the hue wheel.
+    // FNV-1a spreads similar names (clowder-monitoring-*) across the hue wheel.
     let hash = 2166136261;
 
     for (const character of name) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);

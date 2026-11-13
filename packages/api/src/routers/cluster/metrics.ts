@@ -1,10 +1,10 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { ORPCError } from "@orpc/server";
-import { clusterMonitoring, clusters } from "@stoat/db/schema/index";
-import { ucClient } from "@stoat/uncloud";
-import { sql as greptimeSql } from "@stoat/workflows/greptime";
-import { MONITORING_DATABASE } from "@stoat/workflows/monitoring-compose";
-import { decryptMonitoringPassword } from "@stoat/workflows/secrets";
+import { clusterMonitoring, clusters } from "@clowder/db/schema/index";
+import { ucClient } from "@clowder/uncloud";
+import { sql as greptimeSql } from "@clowder/workflows/greptime";
+import { MONITORING_DATABASE } from "@clowder/workflows/monitoring-compose";
+import { decryptMonitoringPassword } from "@clowder/workflows/secrets";
 import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
 import { organizationProcedure } from "../..";

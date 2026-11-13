@@ -1,6 +1,6 @@
 import template from "../../internal/monitoring/compose.yaml?raw";
 import { createHash } from "node:crypto";
-import type { ClusterInitializationConfiguration } from "@stoat/db/schema/index";
+import type { ClusterInitializationConfiguration } from "@clowder/db/schema/index";
 import { describe, expect, it } from "vite-plus/test";
 import { parse, stringify } from "yaml";
 import { readSqlRows } from "../../packages/workflows/src/initialize-cluster";
@@ -25,6 +25,7 @@ it("pins the monitoring template to its MONITORING_VERSION", () => {
         1: "17e27cf7c8be042d2b70b2ee270ca80b25ef25d3f07a3b427d8e49b48ae8d4f2",
         2: "d68af3e5a5ba727e2d9db16145950964cc3997af57f3193c4c28a1796aaf0454",
         3: "bb591647fc2fd3dbecf076c064bdeb27d0ec096a77fc50e7327352c02c1bd3f2",
+        4: "b67c177f6786a12145e3934731efd53550f7bb534104323577c8a58e4e94f377",
     };
 
     expect(createHash("sha256").update(template).digest("hex")).toBe(versions[MONITORING_VERSION]);
@@ -99,7 +100,7 @@ it("renders the bundled monitoring template with isolated storage and private se
     );
 
     expect(Object.keys(compose.services)).toEqual([GREPTIME_SERVICE, ALLOY_SERVICE]);
-    expect(compose.name).toBe("stoat-monitoring");
+    expect(compose.name).toBe("clowder-monitoring");
     expect(compose.volumes).toEqual({ greptime_data: { name: "greptime-data" } });
     expect(compose.services[ALLOY_SERVICE].volumes[0]).toMatchObject({
         type: "bind",
@@ -329,9 +330,9 @@ it("keeps managed volume definitions still referenced by other mounts in bind mo
 it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identity to Uncloud", () => {
     const input = parse(template);
     input.services[GREPTIME_SERVICE]["x-machines"] = ["old-machine", "other-machine"];
-    input.services[GREPTIME_SERVICE].environment.STOAT_MONITORING_CLUSTER_ID = "old-cluster";
+    input.services[GREPTIME_SERVICE].environment.CLOWDER_MONITORING_CLUSTER_ID = "old-cluster";
     Object.assign(input.services[ALLOY_SERVICE].environment, {
-        STOAT_MONITORING_CLUSTER_ID: "old-cluster",
+        CLOWDER_MONITORING_CLUSTER_ID: "old-cluster",
         CUSTOMER_ID: "old-customer",
         UNCLOUD_MACHINE_ID: "wrong-machine",
         MACHINE_ID: "wrong-machine",
@@ -353,17 +354,17 @@ it("sets cluster ownership, pins only Greptime, and leaves Alloy machine identit
 
     expect(greptime["x-machines"]).toEqual(["machine-1"]);
     expect(greptime.environment).toMatchObject({
-        STOAT_MONITORING_CLUSTER_ID: "cluster-1",
-        GREPTIMEDB_STANDALONE__USER_PROVIDER: "static_user_provider:cmd:stoat=password",
+        CLOWDER_MONITORING_CLUSTER_ID: "cluster-1",
+        GREPTIMEDB_STANDALONE__USER_PROVIDER: "static_user_provider:cmd:clowder=password",
     });
     expect(alloy).not.toHaveProperty("x-machines");
     expect(alloy.deploy.mode).toBe("global");
     expect(alloy.environment).toMatchObject({
-        STOAT_MONITORING_CLUSTER_ID: "cluster-1",
+        CLOWDER_MONITORING_CLUSTER_ID: "cluster-1",
         CUSTOMER_ID: "cluster-1",
-        GREPTIME_URL: "http://stoat-monitoring-greptimedb.internal:4006",
+        GREPTIME_URL: "http://clowder-monitoring-greptimedb.internal:4006",
         GREPTIME_DB: "monitoring",
-        GREPTIME_USERNAME: "stoat",
+        GREPTIME_USERNAME: "clowder",
         GREPTIME_PASSWORD: "password",
         SIDECAR_TOKEN: "sidecar-token",
         EXTRA_SETTING: "preserved",

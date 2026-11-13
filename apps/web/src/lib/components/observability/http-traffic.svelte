@@ -58,7 +58,7 @@
         type HttpBreakdown as Breakdown,
         type HttpMetricName,
         type HttpSummaryPart,
-    } from "@stoat/api/observability";
+    } from "@clowder/api/observability";
     import {
         createQueries,
         createQuery,
@@ -508,7 +508,7 @@
 </script>
 
 <svelte:head>
-    <title>HTTP traffic · Observability · Stoat</title>
+    <title>HTTP traffic · Observability · Clowder</title>
 </svelte:head>
 
 {#snippet toolbar()}

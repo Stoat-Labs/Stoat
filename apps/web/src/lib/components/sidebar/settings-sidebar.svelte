@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ClowderLogo from "$lib/components/clowder-logo.svelte";
     import {
         activeSection,
         sectionParser,
@@ -72,10 +73,8 @@
                             href="/"
                             onclick={closeNavigation}
                         >
-                            <img
-                                src="/stoat.png"
-                                alt="Stoat"
-                                class="size-8 shrink-0 rounded-lg group-data-[collapsible=icon]:size-6"
+                            <ClowderLogo
+                                class="size-8 shrink-0 rounded-lg group-data-[collapsible=icon]:size-6 text-primary"
                             />
                             <span
                                 class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"

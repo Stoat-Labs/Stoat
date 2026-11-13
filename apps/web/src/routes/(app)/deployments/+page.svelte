@@ -2,6 +2,6 @@
     import DeploymentsTable from "$lib/components/deployments/deployments-table.svelte";
 </script>
 
-<svelte:head><title>Deployments / Stoat</title></svelte:head>
+<svelte:head><title>Deployments / Clowder</title></svelte:head>
 
 <DeploymentsTable />

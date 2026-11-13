@@ -1,7 +1,13 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { clusters, deployments, gitConnections, projects, resources } from "@stoat/db/schema/index";
-import { queueResourceDeployment } from "@stoat/workflows/runtime";
+import type { Database } from "@clowder/db";
+import {
+    clusters,
+    deployments,
+    gitConnections,
+    projects,
+    resources,
+} from "@clowder/db/schema/index";
+import { queueResourceDeployment } from "@clowder/workflows/runtime";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import * as v from "valibot";
 
@@ -166,7 +172,7 @@ export const resourceDeployRouter = {
                         content,
                     })),
                     expectedRevision: forcedRevision ?? source.revision,
-                    message: input.message ?? `Deploy ${resource.name} from Stoat`,
+                    message: input.message ?? `Deploy ${resource.name} from Clowder`,
                     author: { name: session.user.name, email: session.user.email },
                     watchPath: source.watchPath,
                     expectedTree: source.tree,

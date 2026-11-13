@@ -28,7 +28,7 @@
     import ChevronRight from "phosphor-svelte/lib/CaretRightIcon";
     import HardDrive from "$lib/components/shared/hard-drive-icon.svelte";
     import Plus from "phosphor-svelte/lib/PlusIcon";
-    import { s3Providers } from "@stoat/s3/providers";
+    import { s3Providers } from "@clowder/s3/providers";
     import { createQuery } from "@tanstack/svelte-query";
     import { parseAsString, useQueryState } from "nuqs-svelte";
     import { onMount } from "svelte";
@@ -57,7 +57,7 @@
     }
 </script>
 
-<svelte:head><title>S3 connections / Stoat</title></svelte:head>
+<svelte:head><title>S3 connections / Clowder</title></svelte:head>
 
 {#snippet connectionActions()}
     <Button

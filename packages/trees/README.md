@@ -1,11 +1,11 @@
-# @stoat/trees
+# @clowder/trees
 
 Svelte 5 bindings for [`@pierre/trees`](https://github.com/pierrecomputer/pierre/tree/main/packages/trees): a virtualized file tree that renders in a shadow root.
 
 ```jsonc
 // package.json of the consuming app
 "dependencies": {
-    "@stoat/trees": "workspace:*"
+    "@clowder/trees": "workspace:*"
 }
 ```
 
@@ -13,7 +13,7 @@ Svelte 5 bindings for [`@pierre/trees`](https://github.com/pierrecomputer/pierre
 
 ```svelte
 <script lang="ts">
-    import { FileTree, createFileTree } from "@stoat/trees";
+    import { FileTree, createFileTree } from "@clowder/trees";
 
     // Created once, cleaned up with this component.
     const model = createFileTree({
@@ -78,7 +78,7 @@ createFileTree({ paths, composition: { contextMenu: { triggerMode: "both" } } })
         useFileTreeSearch,
         useFileTreeSelection,
         useFileTreeSelector,
-    } from "@stoat/trees";
+    } from "@clowder/trees";
 
     const model = createFileTree({ paths, search: true });
 
@@ -139,7 +139,7 @@ export const load = () => {
 ```svelte
 <!-- +page.svelte -->
 <script lang="ts">
-    import { FileTree, createFileTree } from "@stoat/trees";
+    import { FileTree, createFileTree } from "@clowder/trees";
 
     let { data } = $props();
 

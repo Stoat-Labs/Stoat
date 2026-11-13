@@ -1,4 +1,4 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 import { parseEnv } from "node:util";
 import {
     ComposeVariableError,
@@ -92,7 +92,7 @@ export function referencedResourceIds(envText: string) {
 }
 
 /** Where a referenceable key comes from, so pickers can group them like the Variables tab. */
-export type ReferenceSource = "variables" | "compose" | "stoat";
+export type ReferenceSource = "variables" | "compose" | "clowder";
 
 function readVariables(target: ReferenceTarget, domain?: string, references?: VariableReferences) {
     const env = resourceEnv(target);
@@ -149,14 +149,14 @@ export function referenceKeys(target: ReferenceTarget) {
         let read: ReturnType<typeof readVariables>;
 
         try {
-            // Keys only, so any domain satisfies `${STOAT_DOMAIN:?}`.
-            read = readVariables({ ...target, spec }, "stoat-domain.invalid");
+            // Keys only, so any domain satisfies `${CLOWDER_DOMAIN:?}`.
+            read = readVariables({ ...target, spec }, "clowder-domain.invalid");
         } catch {
             continue;
         }
 
         for (const key of Object.keys({ ...read.compose, ...read.variables }))
-            keys.set(key, key in own ? "variables" : key in read.variables ? "stoat" : "compose");
+            keys.set(key, key in own ? "variables" : key in read.variables ? "clowder" : "compose");
     }
 
     // Unreadable Compose still leaves the target's own Variables to offer.
@@ -289,6 +289,6 @@ export async function checkVariableReferences(
 
     const targets = ids.length > 0 ? await referenceTargets(db, clusterId, ids) : [];
 
-    // The worker fetches the real domain; any value satisfies `${STOAT_DOMAIN:?}` here.
-    resolveReferences(envText, targets, "stoat-domain.invalid", resourceId);
+    // The worker fetches the real domain; any value satisfies `${CLOWDER_DOMAIN:?}` here.
+    resolveReferences(envText, targets, "clowder-domain.invalid", resourceId);
 }

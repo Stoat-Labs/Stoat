@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Browser, Page, WebSocket } from "@playwright/test";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import * as v from "valibot";
 
 export const storageState = resolve(
@@ -36,7 +36,7 @@ export const memberStorageState = resolve(
 export const rustfsCaFile = resolve(import.meta.dirname, "../../test-results/e2e/rustfs-ca.pem");
 
 /** Root keys of the RustFS container behind the seeded `assets` bucket. */
-export const rustfsRoot = { accessKey: "stoat-root", secretKey: "stoat-root-secret-key" };
+export const rustfsRoot = { accessKey: "clowder-root", secretKey: "clowder-root-secret-key" };
 
 /** Owner of the seeded organization, and instance admin. */
 export const user = { email: "e2e@example.test", password: "e2e-password-123", name: "E2E" };

@@ -1,4 +1,4 @@
-// Ported from stoat-old's src/lib/server/deployments/deployment-compose.ts:
+// Ported from clowder-old's src/lib/server/deployments/deployment-compose.ts:
 // only the formatting/prefixing core, shared by previews and deployment workers.
 
 import YAML, { isAlias, isMap, isNode, isScalar, isSeq, YAMLMap } from "yaml";
@@ -903,7 +903,7 @@ export function composeVariables(
     ).env;
 }
 
-/** The project and resource a Compose file belongs to, for the `STOAT_PROJECT_*` / `STOAT_RESOURCE_*` built-ins. */
+/** The project and resource a Compose file belongs to, for the `CLOWDER_PROJECT_*` / `CLOWDER_RESOURCE_*` built-ins. */
 export type ResourceIdentity = {
     projectId: string;
     projectName: string;
@@ -937,7 +937,7 @@ export function composeSystemVariables(
 }
 
 /**
- * Stoat's counterpart of Railway's provided variables. Service-scoped ones are per
+ * Clowder's counterpart of Railway's provided variables. Service-scoped ones are per
  * Compose service (`<SERVICE>_...`), since a resource can run several.
  */
 function systemVariables(
@@ -949,7 +949,7 @@ function systemVariables(
 ): SystemVariable[] {
     const variables: SystemVariable[] = [
         {
-            key: "STOAT_PREFIX",
+            key: "CLOWDER_PREFIX",
             value: prefix ?? "",
             description:
                 "Prefix of this resource's service, network and volume names; empty when prefixing is off.",
@@ -958,7 +958,7 @@ function systemVariables(
 
     if (domain)
         variables.push({
-            key: "STOAT_DOMAIN",
+            key: "CLOWDER_DOMAIN",
             value: domain,
             description: "The cluster's domain, for building public hostnames.",
         });
@@ -966,22 +966,22 @@ function systemVariables(
     if (identity)
         variables.push(
             {
-                key: "STOAT_PROJECT_NAME",
+                key: "CLOWDER_PROJECT_NAME",
                 value: identity.projectName,
                 description: "The project name the resource belongs to.",
             },
             {
-                key: "STOAT_PROJECT_ID",
+                key: "CLOWDER_PROJECT_ID",
                 value: identity.projectId,
                 description: "The project ID the resource belongs to.",
             },
             {
-                key: "STOAT_RESOURCE_NAME",
+                key: "CLOWDER_RESOURCE_NAME",
                 value: identity.resourceName,
                 description: "The resource name.",
             },
             {
-                key: "STOAT_RESOURCE_ID",
+                key: "CLOWDER_RESOURCE_ID",
                 value: identity.resourceId,
                 description: "The resource ID.",
             },
@@ -1188,7 +1188,7 @@ export function unformatComposeFile(compose: string, prefix?: string): string {
 
     // A redeploy may introduce two names that collapse to the same unprefixed key.
     if (YAML.parseDocument(result.yaml).errors.length > 0) {
-        throw new Error("Compose names collide after removing the Stoat prefix");
+        throw new Error("Compose names collide after removing the Clowder prefix");
     }
 
     return result.yaml;

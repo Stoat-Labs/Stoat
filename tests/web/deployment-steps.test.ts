@@ -232,14 +232,14 @@ it("condenses the uc CLI output of a cluster setup", () => {
             [2, "Machine debian-4gb-hel1-1 (2.29.143.81)  Reachable"],
             [3, "Deployment plan"],
             [3, "+ create service sidecar (global)"],
-            [3, "│   image: ghcr.io/stoat-labs/sidecar:latest"],
+            [3, "│   image: ghcr.io/clowder-run/sidecar:latest"],
             [3, "│"],
             [3, "╰── +   run container sidecar on debian-4gb-hel1-1"],
             [3, "───────────────────────────"],
             [3, "1 create · across 1 machine"],
             [4, "Container sidecar-kiuf on debian-4gb-hel1-1  Creating"],
-            [4, "Image ghcr.io/stoat-labs/sidecar:latest on debian-4gb-hel1-1  Pulling"],
-            [5, "Image ghcr.io/stoat-labs/sidecar:latest on debian-4gb-hel1-1  Pulled"],
+            [4, "Image ghcr.io/clowder-run/sidecar:latest on debian-4gb-hel1-1  Pulling"],
+            [5, "Image ghcr.io/clowder-run/sidecar:latest on debian-4gb-hel1-1  Pulled"],
             [5, "Container sidecar-kiuf on debian-4gb-hel1-1  Started"],
             [5, "Container sidecar-kiuf on debian-4gb-hel1-1  Monitoring (5s)"],
             [
@@ -265,7 +265,7 @@ it("condenses the uc CLI output of a cluster setup", () => {
         ["note", "Machine debian-4gb-hel1-1 (2.29.143.81)  Reachable", "done"],
         ["plan", "Plan", "done"],
         ["resource", "sidecar-kiuf", "error"],
-        ["pull", "ghcr.io/stoat-labs/sidecar:latest", "done"],
+        ["pull", "ghcr.io/clowder-run/sidecar:latest", "done"],
         [
             "note",
             "Oct 29 13:41:34.124 debian-4gb-hel1-1 sidecar/8af18 Error: unknown flag: --tls-listen",
@@ -275,7 +275,7 @@ it("condenses the uc CLI output of a cluster setup", () => {
     expect(steps[4]!.ops).toEqual([
         {
             title: "create service sidecar (global)",
-            detail: "image: ghcr.io/stoat-labs/sidecar:latest · run container sidecar on debian-4gb-hel1-1",
+            detail: "image: ghcr.io/clowder-run/sidecar:latest · run container sidecar on debian-4gb-hel1-1",
         },
     ]);
     expect(steps[5]!.detail).toBe("Restarting (1) 1 second ago");

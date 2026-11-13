@@ -1,4 +1,4 @@
-import { appSecret } from "@stoat/config/env";
+import { appSecret } from "@clowder/config/env";
 import { customType } from "drizzle-orm/pg-core";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 

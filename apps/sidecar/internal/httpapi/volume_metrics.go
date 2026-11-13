@@ -55,10 +55,10 @@ func (v *volumeSizes) exposition(list func(context.Context) ([]api.MachineVolume
 	sort.Strings(names)
 
 	var out strings.Builder
-	out.WriteString("# HELP stoat_volume_size_bytes Disk space used by a Docker volume's files.\n")
-	out.WriteString("# TYPE stoat_volume_size_bytes gauge\n")
+	out.WriteString("# HELP clowder_volume_size_bytes Disk space used by a Docker volume's files.\n")
+	out.WriteString("# TYPE clowder_volume_size_bytes gauge\n")
 	for _, name := range names {
-		fmt.Fprintf(&out, "stoat_volume_size_bytes{volume=%q} %d\n", name, v.sizes[name])
+		fmt.Fprintf(&out, "clowder_volume_size_bytes{volume=%q} %d\n", name, v.sizes[name])
 	}
 	return []byte(out.String())
 }

@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { createDb } from "@stoat/db";
-import { setSignupsEnabled } from "@stoat/db/settings";
+import { createDb } from "@clowder/db";
+import { setSignupsEnabled } from "@clowder/db/settings";
 import { createAuth } from "../../packages/auth/src";
 import { dropTestDatabase } from "../database";
 
 describe("first account (PostgreSQL)", () => {
-    const databaseName = `stoat_first_user_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_first_user_${randomUUID().replaceAll("-", "")}`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let auth: ReturnType<typeof createAuth>;

@@ -38,8 +38,8 @@ body:
     - type: input
       id: version
       attributes:
-          label: Stoat Version
-          description: What version of Stoat are you running? (e.g. v1.0.0, commit hash)
+          label: Clowder Version
+          description: What version of Clowder are you running? (e.g. v1.0.0, commit hash)
           placeholder: v0.0.0
     - type: dropdown
       id: browsers

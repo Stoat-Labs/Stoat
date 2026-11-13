@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"git.irazz.lol/stoat/sidecar/internal/httpapi"
+	"git.irazz.lol/clowder/sidecar/internal/httpapi"
 )
 
 func main() {

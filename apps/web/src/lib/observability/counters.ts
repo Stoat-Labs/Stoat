@@ -1,4 +1,4 @@
-import type { MachineMetricName } from "@stoat/api/observability";
+import type { MachineMetricName } from "@clowder/api/observability";
 import { metricTotals, type MachineData } from "$lib/observability";
 
 /** Require every visible machine to report; never present a partial total as complete. */

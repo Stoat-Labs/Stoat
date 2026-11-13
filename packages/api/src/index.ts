@@ -1,8 +1,8 @@
 import { ORPCError, os } from "@orpc/server";
 
-import { getOrganizationMembership } from "@stoat/db/organizations";
-import { clusters, projects, resources } from "@stoat/db/schema/index";
-import { ucClient } from "@stoat/uncloud";
+import { getOrganizationMembership } from "@clowder/db/organizations";
+import { clusters, projects, resources } from "@clowder/db/schema/index";
+import { ucClient } from "@clowder/uncloud";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Context } from "./context";

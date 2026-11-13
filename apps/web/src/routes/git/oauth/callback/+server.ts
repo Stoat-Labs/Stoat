@@ -10,7 +10,7 @@ import {
     readGitOAuthFlow,
     requireGitOAuthMember,
     saveGitOAuthConnection,
-} from "@stoat/api/git/oauth";
+} from "@clowder/api/git/oauth";
 import { getAuth, getDb } from "../../../../services";
 
 export const GET: RequestHandler = async ({ request, url, cookies }) => {

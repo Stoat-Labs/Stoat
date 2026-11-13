@@ -22,7 +22,7 @@ export async function encryptLegacySidecarTokens(db: Database) {
     return legacy.length;
 }
 
-/** Saves how far `uc machine init` got on a cluster Stoat is setting up. */
+/** Saves how far `uc machine init` got on a cluster Clowder is setting up. */
 export async function setProvisioningInitState(
     db: Database,
     clusterId: string,
@@ -142,7 +142,7 @@ export async function latestMachineAttempt(db: Database, clusterId: string, prep
     return row ?? null;
 }
 
-/** The latest setup job of each cluster, for clusters Stoat creates over SSH. */
+/** The latest setup job of each cluster, for clusters Clowder creates over SSH. */
 export async function latestProvisioningDeployments(db: Database, clusterIds: string[]) {
     if (!clusterIds.length) return new Map<string, typeof deployments.$inferSelect>();
 

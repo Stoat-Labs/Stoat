@@ -158,7 +158,7 @@ export async function gitProviderRequest(
 
     const headers: Record<string, string> = {};
     headers.accept = "application/json";
-    headers["user-agent"] = "Stoat";
+    headers["user-agent"] = "Clowder";
 
     try {
         let size = 0;

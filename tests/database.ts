@@ -1,4 +1,4 @@
-import type { Database } from "@stoat/db";
+import type { Database } from "@clowder/db";
 
 /**
  * Drops a per-test database once its pools have really disconnected. `pool.end()` can

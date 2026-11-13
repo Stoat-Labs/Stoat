@@ -37,10 +37,10 @@ describe("staleServices", () => {
         expect(staleServices(["redis", "web"], ["web"], ["redis"])).toEqual([]);
     });
 
-    it("never removes Stoat's own services", () => {
+    it("never removes Clowder's own services", () => {
         expect(
             staleServices(
-                ["caddy", "stoat-monitoring-greptimedb", "stoat-monitoring-alloy", "old"],
+                ["caddy", "clowder-monitoring-greptimedb", "clowder-monitoring-alloy", "old"],
                 [],
                 [],
             ),

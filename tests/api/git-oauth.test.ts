@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { JsonValue } from "../../packages/api/src/git/provider";
-import { createDb, type Database } from "@stoat/db";
-import * as organizations from "@stoat/db/organizations";
+import { createDb, type Database } from "@clowder/db";
+import * as organizations from "@clowder/db/organizations";
 import type { Context } from "../../packages/api/src/context";
 import type { GitCredentials } from "../../packages/api/src/git";
 import {
@@ -22,8 +22,8 @@ import {
 import * as gitOAuth from "../../packages/api/src/git/oauth";
 import * as gitProvider from "../../packages/api/src/git/provider";
 import { decryptGitCredentials } from "../../packages/api/src/git/secrets";
-import { member } from "@stoat/db/schema/auth";
-import type { gitConnections } from "@stoat/db/schema/index";
+import { member } from "@clowder/db/schema/auth";
+import type { gitConnections } from "@clowder/db/schema/index";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { POST } from "../../apps/web/src/routes/git/oauth/start/+server";
 import { GET } from "../../apps/web/src/routes/git/oauth/callback/+server";
@@ -107,7 +107,7 @@ beforeEach(() => {
         auth as typeof auth & ReturnType<typeof webServices.getAuth>,
     );
     vi.stubEnv("APP_SECRET", "oauth-test-secret-that-is-at-least-32-bytes");
-    vi.stubEnv("APP_URL", "https://stoat.example.com");
+    vi.stubEnv("APP_URL", "https://clowder.example.com");
     configure();
     mocks.membership.mockResolvedValue({ role: "admin" });
     mocks.session.mockResolvedValue(session);
@@ -166,7 +166,7 @@ describe("Git OAuth configuration", () => {
     });
 
     it.each([
-        "http://stoat.example.com",
+        "http://clowder.example.com",
         "http://localhost.attacker.example",
         "ftp://localhost",
         "",
@@ -178,13 +178,15 @@ describe("Git OAuth configuration", () => {
     });
 
     it("derives the exact callback from the trusted app base, never request headers", () => {
-        vi.stubEnv("APP_URL", "https://stoat.example.com/base/");
-        expect(getGitOAuthCallbackUrl()).toBe("https://stoat.example.com/base/git/oauth/callback");
+        vi.stubEnv("APP_URL", "https://clowder.example.com/base/");
+        expect(getGitOAuthCallbackUrl()).toBe(
+            "https://clowder.example.com/base/git/oauth/callback",
+        );
 
-        const request = new Request("https://stoat.example.com/base/git/oauth/start", {
+        const request = new Request("https://clowder.example.com/base/git/oauth/start", {
             method: "POST",
             headers: {
-                origin: "https://stoat.example.com",
+                origin: "https://clowder.example.com",
                 "x-forwarded-host": "attacker.example",
             },
         });
@@ -199,10 +201,10 @@ describe("Git OAuth configuration", () => {
         null,
         "null",
         "https://attacker.example",
-        "https://stoat.example.com.attacker.example",
-        "https://stoat.example.com/",
+        "https://clowder.example.com.attacker.example",
+        "https://clowder.example.com/",
     ])("rejects an untrusted Origin %s", (origin) => {
-        const request = new Request("https://stoat.example.com/git/oauth/start", {
+        const request = new Request("https://clowder.example.com/git/oauth/start", {
             method: "POST",
             headers: origin ? { origin } : {},
         });
@@ -527,11 +529,11 @@ describe("Git OAuth exchange and refresh", () => {
 
 describe("Git OAuth endpoints", () => {
     it.each([
-        ["http://localhost:5173", "stoat-git-oauth", false],
-        ["http://127.0.0.1:5173", "stoat-git-oauth", false],
-        ["http://[::1]:5173", "stoat-git-oauth", false],
-        ["https://localhost:5173", "__Host-stoat-git-oauth", true],
-        ["https://stoat.example.com", "__Host-stoat-git-oauth", true],
+        ["http://localhost:5173", "clowder-git-oauth", false],
+        ["http://127.0.0.1:5173", "clowder-git-oauth", false],
+        ["http://[::1]:5173", "clowder-git-oauth", false],
+        ["https://localhost:5173", "__Host-clowder-git-oauth", true],
+        ["https://clowder.example.com", "__Host-clowder-git-oauth", true],
     ] as const)(
         "uses consistent cookies for start, callback and denial at %s",
         async (baseUrl, name, secure) => {
@@ -590,7 +592,7 @@ describe("Git OAuth endpoints", () => {
         const flow = start();
         const input = event(`${getGitOAuthCallbackUrl()}?state=${flow.state}&code=code`);
         input.cookies.get.mockImplementation((name: string) =>
-            name === "stoat-git-oauth" ? flow.cookie : undefined,
+            name === "clowder-git-oauth" ? flow.cookie : undefined,
         );
         const response = await GET(input);
         expect(response.headers.get("location")).toBe("/git?oauth=invalid_state");
@@ -603,8 +605,8 @@ describe("Git OAuth endpoints", () => {
     });
 
     it("clears the secure cookie and returns a safe error when app configuration is invalid", async () => {
-        vi.stubEnv("APP_URL", "http://stoat.example.com");
-        const input = event("https://stoat.example.com/git/oauth/callback?code=secret-code");
+        vi.stubEnv("APP_URL", "http://clowder.example.com");
+        const input = event("https://clowder.example.com/git/oauth/callback?code=secret-code");
         const response = await GET(input);
         expect(response.headers.get("location")).toBe("/git?oauth=configuration");
         expect(input.cookies.get).not.toHaveBeenCalled();
@@ -616,13 +618,13 @@ describe("Git OAuth endpoints", () => {
     });
 
     it("accepts a same-origin ordinary form and sets only an encrypted secure cookie", async () => {
-        const url = "https://stoat.example.com/git/oauth/start";
+        const url = "https://clowder.example.com/git/oauth/start";
 
         const input = event(
             url,
             new Request(url, {
                 method: "POST",
-                headers: { origin: "https://stoat.example.com" },
+                headers: { origin: "https://clowder.example.com" },
                 body: new URLSearchParams({
                     organizationId: identity.organizationId,
                     providerId: "github",
@@ -651,13 +653,13 @@ describe("Git OAuth endpoints", () => {
         { providerId: "github", name: "Work", redirect_uri: "https://attacker.example" },
         { providerId: "github", name: "Work", connectionId: "not-a-uuid" },
     ])("rejects invalid start input without setting a cookie", async (form) => {
-        const url = "https://stoat.example.com/git/oauth/start";
+        const url = "https://clowder.example.com/git/oauth/start";
 
         const input = event(
             url,
             new Request(url, {
                 method: "POST",
-                headers: { origin: "https://stoat.example.com" },
+                headers: { origin: "https://clowder.example.com" },
                 body: new URLSearchParams({ organizationId: identity.organizationId, ...form }),
             }),
         );
@@ -674,7 +676,7 @@ describe("Git OAuth endpoints", () => {
                 ...session,
                 session: { ...session!.session, activeOrganizationId: "org-2" },
             });
-            const url = "https://stoat.example.com/git/oauth/start";
+            const url = "https://clowder.example.com/git/oauth/start";
 
             const form = new URLSearchParams({ providerId: "github", name: "Work" });
 
@@ -684,7 +686,7 @@ describe("Git OAuth endpoints", () => {
                 url,
                 new Request(url, {
                     method: "POST",
-                    headers: { origin: "https://stoat.example.com" },
+                    headers: { origin: "https://clowder.example.com" },
                     body: form,
                 }),
             );
@@ -700,7 +702,7 @@ describe("Git OAuth endpoints", () => {
     );
 
     it("rejects cross-origin starts before consulting auth", async () => {
-        const url = "https://stoat.example.com/git/oauth/start";
+        const url = "https://clowder.example.com/git/oauth/start";
 
         const input = event(
             url,
@@ -716,14 +718,14 @@ describe("Git OAuth endpoints", () => {
         `organizationId=${identity.organizationId}&organizationId=${identity.organizationId}&providerId=github&name=Work`,
         `organizationId=${identity.organizationId}&providerId=github&name=${"x".repeat(8192)}`,
     ])("rejects duplicate or oversized form fields", async (body) => {
-        const url = "https://stoat.example.com/git/oauth/start";
+        const url = "https://clowder.example.com/git/oauth/start";
 
         const input = event(
             url,
             new Request(url, {
                 method: "POST",
                 headers: {
-                    origin: "https://stoat.example.com",
+                    origin: "https://clowder.example.com",
                     "content-type": "application/x-www-form-urlencoded",
                 },
                 body,

@@ -1,25 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { call, ORPCError } from "@orpc/server";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     markBucketFailed,
     markBucketReady,
     readyBuckets,
     setBucketMetadata,
-} from "@stoat/db/buckets";
-import { clusters, projects, resources, s3Buckets, s3Connections } from "@stoat/db/schema/index";
+} from "@clowder/db/buckets";
+import { clusters, projects, resources, s3Buckets, s3Connections } from "@clowder/db/schema/index";
 import {
     resolveS3Connection,
     s3ConnectionInput,
     s3ConnectionTarget,
     type S3ConnectionInput,
-} from "@stoat/s3";
-import { getR2BucketUsage } from "@stoat/s3/providers/r2";
-import { parseRustfsBucketUsage } from "@stoat/s3/providers/rustfs";
-import { decryptS3Secret, encryptS3Secret } from "@stoat/s3/secrets";
-import { reconcileBucket } from "@stoat/workflows/reconcile-bucket";
-import * as runtime from "@stoat/workflows/runtime";
+} from "@clowder/s3";
+import { getR2BucketUsage } from "@clowder/s3/providers/r2";
+import { parseRustfsBucketUsage } from "@clowder/s3/providers/rustfs";
+import { decryptS3Secret, encryptS3Secret } from "@clowder/s3/secrets";
+import { reconcileBucket } from "@clowder/workflows/reconcile-bucket";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import * as v from "valibot";
@@ -35,8 +35,8 @@ const generic: S3ConnectionInput = {
     endpoint: "https://s3.example.com",
     region: "us-east-1",
     forcePathStyle: true,
-    accessKey: "stoat-test-access",
-    secretKey: "stoat-test-secret-never-return",
+    accessKey: "clowder-test-access",
+    secretKey: "clowder-test-secret-never-return",
 };
 
 describe("S3 secrets and input", () => {
@@ -92,14 +92,14 @@ describe("S3 secrets and input", () => {
     it("stores generic keys encrypted and restores the same target", async () => {
         const columns = await resolveS3Connection(generic, "org", "connection");
 
-        expect(columns.encryptedCredentials).not.toContain("stoat-test-secret");
+        expect(columns.encryptedCredentials).not.toContain("clowder-test-secret");
         expect(columns).toMatchObject({ providerAccountId: null, encryptedApiToken: null });
         expect(s3ConnectionTarget({ ...columns, id: "connection", organizationId: "org" })).toEqual(
             {
                 endpoint: "https://s3.example.com",
                 region: "us-east-1",
                 forcePathStyle: true,
-                credentials: { accessKey: "stoat-test-access", secretKey: generic.secretKey },
+                credentials: { accessKey: "clowder-test-access", secretKey: generic.secretKey },
             },
         );
     });
@@ -204,7 +204,7 @@ describe("provider bucket usage", () => {
 });
 
 describe("S3 connections and buckets API", () => {
-    const databaseName = `stoat_s3_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_s3_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const projectId = randomUUID();
     let admin: ReturnType<typeof createDb>;

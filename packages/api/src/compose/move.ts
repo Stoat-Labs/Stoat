@@ -5,8 +5,8 @@ import {
     loadsResourceEnv,
     rewriteComposeHostname,
     serviceVariable,
-} from "@stoat/workflows/compose";
-import { referenceResourceId, VARIABLE_REFERENCE } from "@stoat/workflows/variable-reference";
+} from "@clowder/workflows/compose";
+import { referenceResourceId, VARIABLE_REFERENCE } from "@clowder/workflows/variable-reference";
 import YAML, { isAlias, isMap, isScalar, isSeq } from "yaml";
 import type { Document, YAMLMap } from "yaml";
 
@@ -288,18 +288,18 @@ function variablesRead(service: YAMLMap, values: Record<string, string | undefin
 // `${KEY}`, and Variables hold `KEY={{ <resourceId>.<SERVICE>_SERVICE_NAME }}`. Those references
 // are what the canvas draws, and moving services back together turns them into names again.
 
-// Built-ins a service exposes to references, per `systemVariables` in @stoat/workflows.
+// Built-ins a service exposes to references, per `systemVariables` in @clowder/workflows.
 const SERVICE_BUILTINS = ["SERVICE_NAME", "INTERNAL_HOST", "PUBLIC_DOMAIN"] as const;
 
 type Builtin = (typeof SERVICE_BUILTINS)[number];
 
 const RESOURCE_BUILTINS = [
-    "STOAT_PREFIX",
-    "STOAT_DOMAIN",
-    "STOAT_PROJECT_NAME",
-    "STOAT_PROJECT_ID",
-    "STOAT_RESOURCE_NAME",
-    "STOAT_RESOURCE_ID",
+    "CLOWDER_PREFIX",
+    "CLOWDER_DOMAIN",
+    "CLOWDER_PROJECT_NAME",
+    "CLOWDER_PROJECT_ID",
+    "CLOWDER_RESOURCE_NAME",
+    "CLOWDER_RESOURCE_ID",
 ];
 
 const serviceNameKey = (service: string) => `${serviceVariable(service)}_SERVICE_NAME`;

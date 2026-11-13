@@ -152,7 +152,7 @@
     }
 </script>
 
-<svelte:head><title>Projects / Stoat</title></svelte:head>
+<svelte:head><title>Projects / Clowder</title></svelte:head>
 
 <svelte:window
     onkeydown={(event) => {

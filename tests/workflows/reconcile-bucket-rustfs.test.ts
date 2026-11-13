@@ -8,13 +8,13 @@ import {
     S3Client,
 } from "@aws-sdk/client-s3";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
-import { clusters, projects, resources, s3Buckets } from "@stoat/db/schema/index";
-import { decryptS3BucketCredentials, type S3Credentials } from "@stoat/s3";
-import * as s3Client from "@stoat/s3/client";
-import { createRustfsKey, deleteRustfsKey } from "@stoat/s3/providers/rustfs";
-import { reconcileBucket } from "@stoat/workflows/reconcile-bucket";
-import * as runtime from "@stoat/workflows/runtime";
+import { createDb } from "@clowder/db";
+import { clusters, projects, resources, s3Buckets } from "@clowder/db/schema/index";
+import { decryptS3BucketCredentials, type S3Credentials } from "@clowder/s3";
+import * as s3Client from "@clowder/s3/client";
+import { createRustfsKey, deleteRustfsKey } from "@clowder/s3/providers/rustfs";
+import { reconcileBucket } from "@clowder/workflows/reconcile-bucket";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { generate } from "selfsigned";
@@ -31,7 +31,7 @@ const root: S3Credentials = { accessKey: "stoat-root", secretKey: "stoat-root-se
 const refused = { name: expect.stringMatching(/^(InvalidAccessKeyId|SignatureDoesNotMatch)$/u) };
 
 describe("bucket reconciliation against RustFS", () => {
-    const databaseName = `stoat_rustfs_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_rustfs_${randomUUID().replaceAll("-", "")}`;
     const projectId = randomUUID();
     const signal = new AbortController().signal;
     const enqueue = vi.spyOn(runtime, "queueBucketReconcile").mockResolvedValue();

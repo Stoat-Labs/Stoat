@@ -1,13 +1,13 @@
 import { ORPCError } from "@orpc/server";
-import type { Database } from "@stoat/db";
-import { latestProvisioningDeployments } from "@stoat/db/clusters";
-import { clusters, deployments, type ClusterProvisioning } from "@stoat/db/schema/index";
+import type { Database } from "@clowder/db";
+import { latestProvisioningDeployments } from "@clowder/db/clusters";
+import { clusters, deployments, type ClusterProvisioning } from "@clowder/db/schema/index";
 import {
     provisionedSidecarUrl,
     provisioningCredentials,
     provisioningLock,
-} from "@stoat/workflows/provision-cluster";
-import { isAllowedServerAddress } from "@stoat/workflows/server-address";
+} from "@clowder/workflows/provision-cluster";
+import { isAllowedServerAddress } from "@clowder/workflows/server-address";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
@@ -58,7 +58,7 @@ export async function assertNoAttempt(
 
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i;
 
-/** A server Stoat reaches over SSH: its address, SSH port and user. */
+/** A server Clowder reaches over SSH: its address, SSH port and user. */
 export const serverInput = {
     host: v.pipe(
         v.string(),
@@ -85,11 +85,11 @@ export const serverInput = {
 export function assertReachableHost(host: string) {
     if (/^(.+\.)?localhost$/i.test(host) || (isIP(host) && !isAllowedServerAddress(host)))
         throw new ORPCError("BAD_REQUEST", {
-            message: "Stoat doesn't connect to loopback, link-local or reserved addresses.",
+            message: "Clowder doesn't connect to loopback, link-local or reserved addresses.",
         });
 }
 
-/** Where a cluster Stoat creates over SSH is: waiting for its key, or its latest setup attempt. */
+/** Where a cluster Clowder creates over SSH is: waiting for its key, or its latest setup attempt. */
 export function provisioningStatus(
     provisioning: ClusterProvisioning | null,
     attempt: string | undefined,
@@ -126,7 +126,7 @@ export const provisioningRouter = {
 
             const credentials = await provisioningCredentials(
                 input.host,
-                `stoat-${id.slice(0, 8)}`,
+                `clowder-${id.slice(0, 8)}`,
             );
 
             await db.insert(clusters).values({
@@ -173,7 +173,7 @@ export const provisioningRouter = {
                 ? (await latestProvisioningDeployments(db, [cluster.id])).get(cluster.id)
                 : undefined;
 
-            // A cluster connected by URL and token was never set up by Stoat.
+            // A cluster connected by URL and token was never set up by Clowder.
             if (!cluster || (!cluster.provisioning && !attempt))
                 throw new ORPCError("NOT_FOUND", { message: "Cluster not found." });
 

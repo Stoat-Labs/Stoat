@@ -69,7 +69,7 @@ beforeAll(async () => {
     await once(server, "listening");
     // SAFETY: listen(0, "127.0.0.1") creates a TCP server, never a Unix socket.
     baseUrl = `https://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    dir = await mkdtemp(join(tmpdir(), "stoat-uncloud-socket-"));
+    dir = await mkdtemp(join(tmpdir(), "clowder-uncloud-socket-"));
 });
 
 afterAll(async () => {

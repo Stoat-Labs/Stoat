@@ -3,15 +3,15 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import { createAuth } from "../../packages/auth/src";
 import { call } from "@orpc/server";
 import { clusterRouter } from "../../packages/api/src/routers/cluster";
-import { listUserOrganizations } from "@stoat/db/organizations";
-import { getSignupsEnabled, setSignupsEnabled } from "@stoat/db/settings";
+import { listUserOrganizations } from "@clowder/db/organizations";
+import { getSignupsEnabled, setSignupsEnabled } from "@clowder/db/settings";
 
 describe("organization authentication (PostgreSQL)", () => {
-    const databaseName = `stoat_auth_test_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_auth_test_${randomUUID().replaceAll("-", "")}`;
     let admin: ReturnType<typeof createDb>;
     let db: ReturnType<typeof createDb>;
     let auth: ReturnType<typeof createAuth>;

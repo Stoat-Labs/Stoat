@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { parseEnv } from "node:util";
 import { resolve } from "node:path";
 import { call } from "@orpc/server";
-import { createDb } from "@stoat/db";
+import { createDb } from "@clowder/db";
 import {
     clusters,
     deployments,
@@ -10,8 +10,8 @@ import {
     resourceDeploymentInputs,
     resourceGroups,
     resources,
-} from "@stoat/db/schema/index";
-import * as runtime from "@stoat/workflows/runtime";
+} from "@clowder/db/schema/index";
+import * as runtime from "@clowder/workflows/runtime";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -23,7 +23,7 @@ import { dropTestDatabase } from "../database";
 import { insertUserWithOrganization } from "../users";
 
 describe("variable references API (PostgreSQL)", () => {
-    const databaseName = `stoat_reference_api_${randomUUID().replaceAll("-", "")}`;
+    const databaseName = `clowder_reference_api_${randomUUID().replaceAll("-", "")}`;
     const clusterId = randomUUID();
     const otherClusterId = randomUUID();
     const foreignClusterId = randomUUID();
@@ -193,16 +193,16 @@ describe("variable references API (PostgreSQL)", () => {
                 projectId,
                 projectName: "Shop",
                 keys: [
-                    { key: "DB_INTERNAL_HOST", source: "stoat" },
-                    { key: "DB_SERVICE_NAME", source: "stoat" },
+                    { key: "CLOWDER_DOMAIN", source: "clowder" },
+                    { key: "CLOWDER_PREFIX", source: "clowder" },
+                    { key: "CLOWDER_PROJECT_ID", source: "clowder" },
+                    { key: "CLOWDER_PROJECT_NAME", source: "clowder" },
+                    { key: "CLOWDER_RESOURCE_ID", source: "clowder" },
+                    { key: "CLOWDER_RESOURCE_NAME", source: "clowder" },
+                    { key: "DB_INTERNAL_HOST", source: "clowder" },
+                    { key: "DB_SERVICE_NAME", source: "clowder" },
                     { key: "POSTGRES_PASSWORD", source: "variables" },
                     { key: "POSTGRES_USER", source: "variables" },
-                    { key: "STOAT_DOMAIN", source: "stoat" },
-                    { key: "STOAT_PREFIX", source: "stoat" },
-                    { key: "STOAT_PROJECT_ID", source: "stoat" },
-                    { key: "STOAT_PROJECT_NAME", source: "stoat" },
-                    { key: "STOAT_RESOURCE_ID", source: "stoat" },
-                    { key: "STOAT_RESOURCE_NAME", source: "stoat" },
                 ],
             });
             expect(listed.find((target) => target.id === workerId)).toMatchObject({
@@ -365,7 +365,7 @@ describe("variable references API (PostgreSQL)", () => {
         it("does not let the referenced resource's domain requirement block the check", async () => {
             await db
                 .update(resources)
-                .set({ settings: { env: "URL=https://${STOAT_DOMAIN:?needs a domain}\n" } })
+                .set({ settings: { env: "URL=https://${CLOWDER_DOMAIN:?needs a domain}\n" } })
                 .where(eq(resources.id, workerId));
             await setApi(`URL=${ref(workerId, "URL")}\n`);
 
