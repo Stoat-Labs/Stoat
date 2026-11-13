@@ -71,9 +71,9 @@ If you already have an [Uncloud](https://uncloud.run/) cluster and the Uncloud C
     APP_SECRET=changeme                   # openssl rand -hex 32 # this is used to encrypt secrets, dont lose it
     POSTGRES_PASSWORD=changeme            # openssl rand -hex 32
     SIDECAR_TOKEN=changeme                # openssl rand -hex 32 # please remember this one you'll need to use it when adding your cluster
-    REDIS_URL=redis://clowder-cache.internal:6379
+    REDIS_URL=redis://stoat-cache.internal:6379
     APP_USE_INTERNAL_CACHE=false          # true adds a per-replica memory cache in front of Redis (single replica only)
-    USE_INTERNAL_WORKER=true              # false only with the clowder-worker service in compose.yml enabled
+    USE_INTERNAL_WORKER=true              # false only with the stoat-worker service in compose.yml enabled
     ```
 
 2. **Start Clowder**

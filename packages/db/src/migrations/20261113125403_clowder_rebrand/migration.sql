@@ -5,8 +5,8 @@
 CREATE OR REPLACE FUNCTION pg_temp.clowder_uses(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
     SELECT regexp_replace(
         value,
-        '(^|[^$])((?:\$\$)*)\$(\{?)STOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?![A-Za-z0-9_])',
-        '\1\2$\3CLOWDER_\4',
+        '(?<!\$)((?:\$\$)*)\$(\{?)STOAT_(DOMAIN|PREFIX|PROJECT_ID|PROJECT_NAME|RESOURCE_ID|RESOURCE_NAME)(?![A-Za-z0-9_])',
+        '\1$\2CLOWDER_\3',
         'g'
     )
 $$;
