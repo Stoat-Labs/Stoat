@@ -80,6 +80,17 @@ async function lockedResource(db: Executor, projectId: string, resourceId: strin
 }
 
 async function lockedGroup(db: Executor, projectId: string, groupId: string) {
+    const lockMembers = () =>
+        db
+            .select()
+            .from(resources)
+            .where(and(eq(resources.groupId, groupId), eq(resources.projectId, projectId)))
+            .orderBy(asc(resources.createdAt))
+            .for("update");
+
+    // Resources before their group, the order every membership change locks in, so none deadlock.
+    await lockMembers();
+
     const [group] = await db
         .select()
         .from(resourceGroups)
@@ -88,12 +99,8 @@ async function lockedGroup(db: Executor, projectId: string, groupId: string) {
 
     if (!group) throw new ORPCError("NOT_FOUND", { message: "Group not found." });
 
-    const members = await db
-        .select()
-        .from(resources)
-        .where(eq(resources.groupId, group.id))
-        .orderBy(asc(resources.createdAt))
-        .for("update");
+    // Again under the group lock: a resource that joined while we waited for it comes along.
+    const members = await lockMembers();
 
     members.forEach(assertTransferable);
 
