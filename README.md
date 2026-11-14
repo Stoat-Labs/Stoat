@@ -115,6 +115,7 @@ Kudos to the contributors of [Coolify](https://coolify.io/) and [Dokploy](https:
 [![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
 ## Screenshots
+
 from my instance
 
 <img width="2417" height="1359" alt="image" src="https://github.com/user-attachments/assets/9e810ca1-af84-4f38-91f9-3a3a05f8a8cd" />
@@ -124,7 +125,6 @@ from my instance
 <img width="2421" height="1354" alt="image" src="https://github.com/user-attachments/assets/dcf0ff9c-c50e-44bc-9c8d-301924bfb1d3" />
 <img width="2415" height="1355" alt="image" src="https://github.com/user-attachments/assets/ce2ba6a4-1384-4797-b1bd-6443c3b35a1d" />
 <img width="2418" height="1357" alt="image" src="https://github.com/user-attachments/assets/8ff236e6-f63b-4c09-82d4-a850af93915d" />
-
 
 [and there's more...](https://github.com/clowder-run/Clowder#quick-install)
 
