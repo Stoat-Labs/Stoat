@@ -7,19 +7,20 @@ export type S3SecretScope =
     | { kind: "connection-api-token"; organizationId: string; connectionId: string }
     | { kind: "bucket-credentials"; resourceId: string };
 
-function context(scope: S3SecretScope) {
+// A pre-release build of the Clowder rename re-encrypted secrets under "clowder"; reads accept both.
+function context(scope: S3SecretScope, label: string) {
     const owner =
         scope.kind === "bucket-credentials"
             ? scope.resourceId
             : `${scope.organizationId}/${scope.connectionId}`;
 
-    return Buffer.from(`stoat/s3/${scope.kind}/v1/${owner}`);
+    return Buffer.from(`${label}/s3/${scope.kind}/v1/${owner}`);
 }
 
-function key(scope: S3SecretScope, salt: Buffer) {
+function key(scope: S3SecretScope, salt: Buffer, label = "stoat") {
     return {
-        key: hkdfSync("sha256", appSecret(), salt, context(scope), 32),
-        context: context(scope),
+        key: hkdfSync("sha256", appSecret(), salt, context(scope, label), 32),
+        context: context(scope, label),
     };
 }
 
@@ -49,12 +50,20 @@ export function decryptS3Secret(envelope: string, scope: S3SecretScope) {
         )
             throw new Error();
 
-        const material = key(scope, salt);
-        const decipher = createDecipheriv("aes-256-gcm", material.key, nonce);
-        decipher.setAAD(material.context);
-        decipher.setAuthTag(tag);
+        const open = (label: string) => {
+            const material = key(scope, salt, label);
+            const decipher = createDecipheriv("aes-256-gcm", material.key, nonce);
+            decipher.setAAD(material.context);
+            decipher.setAuthTag(tag);
 
-        return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+            return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+        };
+
+        try {
+            return open("stoat");
+        } catch {
+            return open("clowder");
+        }
     } catch {
         throw new Error("Unable to decrypt S3 secret");
     }

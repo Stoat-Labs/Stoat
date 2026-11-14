@@ -347,6 +347,41 @@
     ></button>
 {/snippet}
 
+<!-- One deployment's row, shared by the current cards and the history list. -->
+{#snippet summary(deployment: Deployment, main: boolean)}
+    {@const variant = tone(deployment)}
+    {@render logsButton(deployment)}
+    <Badge
+        {variant}
+        class={[
+            "justify-self-start",
+            variant === "secondary" && "text-muted-foreground",
+        ]}
+    >
+        {badge(deployment)}
+    </Badge>
+    {@render logoImage(deployment)}
+    <div class="min-w-0">
+        <p
+            class="truncate text-sm font-medium"
+            title={title(deployment)}
+        >
+            {title(deployment)}
+        </p>
+        <p class="truncate text-xs text-muted-foreground">
+            {ago(deployment.createdAt, clock.now)} via {via(
+                deployment,
+            )}
+            {#if deployment.metadata?.commit}
+                · <span class="font-mono">
+                    {deployment.metadata.commit.sha.slice(0, 7)}
+                </span>
+            {/if}
+        </p>
+    </div>
+    {@render actions(deployment, main)}
+{/snippet}
+
 {#snippet currentCard(deployment: Deployment)}
     {@const variant = tone(deployment)}
     {@const isLive = deployment === live}
@@ -355,33 +390,7 @@
         <FramePanel
             class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
         >
-            {@render logsButton(deployment)}
-            <Badge {variant} class="justify-self-start">
-                {badge(deployment)}
-            </Badge>
-            {@render logoImage(deployment)}
-            <div class="min-w-0">
-                <p
-                    class="truncate text-sm font-medium"
-                    title={title(deployment)}
-                >
-                    {title(deployment)}
-                </p>
-                <p class="truncate text-xs text-muted-foreground">
-                    {ago(deployment.createdAt, clock.now)} via {via(
-                        deployment,
-                    )}
-                    {#if deployment.metadata?.commit}
-                        · <span class="font-mono">
-                            {deployment.metadata.commit.sha.slice(
-                                0,
-                                7,
-                            )}
-                        </span>
-                    {/if}
-                </p>
-            </div>
-            {@render actions(deployment, true)}
+            {@render summary(deployment, true)}
         </FramePanel>
 
         <!-- On the live deployment the status row opens what is running. -->
@@ -517,31 +526,6 @@
     </Frame>
 {/snippet}
 
-{#snippet historyRow(deployment: Deployment)}
-    <li
-        class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto_auto] items-center gap-x-3 rounded-lg px-4 py-2"
-    >
-        {@render logsButton(deployment)}
-        <Badge variant={tone(deployment)} class="justify-self-start">
-            {badge(deployment)}
-        </Badge>
-        {@render logoImage(deployment)}
-        <p class="truncate text-sm" title={title(deployment)}>
-            {title(deployment)}
-        </p>
-        <span class="text-xs whitespace-nowrap text-muted-foreground">
-            {#if deployment.metadata?.commit}
-                <span class="font-mono">
-                    {deployment.metadata.commit.sha.slice(0, 7)}
-                </span>
-                ·
-            {/if}
-            {ago(deployment.createdAt, clock.now)}
-        </span>
-        {@render actions(deployment, false)}
-    </li>
-{/snippet}
-
 <div class="space-y-4">
     <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
     <div class="flex items-center gap-4 text-sm">
@@ -621,25 +605,16 @@
         {/each}
 
         {#if history.length}
-            <section
-                class="flex flex-col gap-1"
-                aria-label="Deployment history"
-            >
+            <Frame aria-label="Deployment history">
                 <button
                     type="button"
-                    class="flex items-center gap-2 self-start py-1 text-sm font-medium"
+                    class="flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium"
                     aria-expanded={!historyHidden.current}
                     onclick={() =>
                         void historyHidden.set(
                             !historyHidden.current || null,
                         )}
                 >
-                    History
-                    <span
-                        class="text-xs text-muted-foreground tabular-nums"
-                    >
-                        {history.length}
-                    </span>
                     <ChevronDown
                         class={[
                             "size-4 transition-transform",
@@ -647,15 +622,30 @@
                         ]}
                         aria-hidden="true"
                     />
+                    History
+                    <span
+                        class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
+                    >
+                        {history.length}
+                    </span>
                 </button>
                 {#if !historyHidden.current}
-                    <ul class="flex flex-col">
-                        {#each history as deployment (deployment.id)}
-                            {@render historyRow(deployment)}
-                        {/each}
-                    </ul>
+                    <FramePanel class="p-0">
+                        <ul class="divide-y">
+                            {#each history as deployment (deployment.id)}
+                                <li
+                                    class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+                                >
+                                    {@render summary(
+                                        deployment,
+                                        false,
+                                    )}
+                                </li>
+                            {/each}
+                        </ul>
+                    </FramePanel>
                 {/if}
-            </section>
+            </Frame>
         {/if}
     {/if}
 </div>

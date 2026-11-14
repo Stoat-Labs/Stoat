@@ -8,6 +8,9 @@ type Scope = { organizationId: string; connectionId: string };
 
 const domain = "stoat/git-credentials/v1";
 
+// A pre-release build of the Clowder rename re-encrypted credentials under this; reads accept both.
+const renamedDomain = "clowder/git-credentials/v1";
+
 const credentialField = v.optional(
     v.pipe(
         v.string(),
@@ -30,14 +33,14 @@ const scopeSchema = v.object({
     connectionId: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
 });
 
-function keyMaterial(scope: Scope, salt: Buffer) {
+function keyMaterial(scope: Scope, salt: Buffer, label = domain) {
     const secret = appSecret();
 
     if (!v.is(scopeSchema, scope)) {
         throw new Error("Invalid Git credential scope");
     }
 
-    const context = Buffer.from(JSON.stringify([domain, scope.organizationId, scope.connectionId]));
+    const context = Buffer.from(JSON.stringify([label, scope.organizationId, scope.connectionId]));
 
     return { context, key: hkdfSync("sha256", secret, salt, context, 32) };
 }
@@ -90,11 +93,22 @@ export function decryptGitCredentials(envelope: string, scope: Scope): GitCreden
             throw new Error();
         }
 
-        const { key, context } = keyMaterial(scope, salt);
-        const decipher = createDecipheriv("aes-256-gcm", key, nonce);
-        decipher.setAAD(context);
-        decipher.setAuthTag(tag);
-        const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        const open = (label: string) => {
+            const { key, context } = keyMaterial(scope, salt, label);
+            const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+            decipher.setAAD(context);
+            decipher.setAuthTag(tag);
+
+            return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        };
+
+        let plaintext: Buffer;
+
+        try {
+            plaintext = open(domain);
+        } catch {
+            plaintext = open(renamedDomain);
+        }
 
         return v.parse(credentialsSchema, JSON.parse(plaintext.toString("utf8")));
     } catch {
