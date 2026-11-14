@@ -250,7 +250,7 @@
         <!-- Settings, logs, files and tables run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
         <FramePanel
             class={[
-                "min-h-0 flex-1 p-0",
+                "min-h-0 flex-1 bg-card p-0",
                 active === "logs" ||
                 active === "files" ||
                 active === "tables" ||
