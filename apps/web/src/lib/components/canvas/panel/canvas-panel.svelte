@@ -129,7 +129,11 @@
             : visibleTabs[0],
     );
 
-    const split = $derived(active === "files" || active === "tables");
+    const split = $derived(
+        active === "files" ||
+            active === "tables" ||
+            active === "deployments",
+    );
 
     const fullBleed = $derived(
         active === "logs" ||

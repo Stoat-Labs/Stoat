@@ -11,6 +11,7 @@
         MenuTrigger,
     } from "$lib/components/ui/menu";
     import { Badge } from "$lib/components/ui/badge";
+    import { FramePanel } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
@@ -276,20 +277,25 @@
 
 {#snippet logoImage(deployment: Deployment)}
     {@const logo = avatar(deployment)}
-    {#if logo}
-        <img
-            src={logo}
-            alt=""
-            aria-hidden="true"
-            class="size-6 object-contain"
-        />
-    {:else}
-        <Box
-            class="size-6 text-muted-foreground"
-            weight="regular"
-            aria-hidden="true"
-        />
-    {/if}
+    <!-- The list recipe's 40px muted well. -->
+    <span
+        class="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted"
+    >
+        {#if logo}
+            <img
+                src={logo}
+                alt=""
+                aria-hidden="true"
+                class="size-5 object-contain"
+            />
+        {:else}
+            <Box
+                class="size-5 text-muted-foreground"
+                weight="regular"
+                aria-hidden="true"
+            />
+        {/if}
+    </span>
 {/snippet}
 
 {#snippet actions(deployment: Deployment, main: boolean)}
@@ -350,17 +356,8 @@
 {#snippet summary(deployment: Deployment, main: boolean)}
     {@const variant = tone(deployment)}
     {@render logsButton(deployment)}
-    <Badge
-        {variant}
-        class={[
-            "justify-self-start",
-            variant === "secondary" && "text-muted-foreground",
-        ]}
-    >
-        {badge(deployment)}
-    </Badge>
     {@render logoImage(deployment)}
-    <div class="min-w-0">
+    <div class="min-w-0 flex-1">
         <p
             class="truncate text-sm font-medium"
             title={title(deployment)}
@@ -378,6 +375,12 @@
             {/if}
         </p>
     </div>
+    <Badge
+        {variant}
+        class={[variant === "secondary" && "text-muted-foreground"]}
+    >
+        {badge(deployment)}
+    </Badge>
     {@render actions(deployment, main)}
 {/snippet}
 
@@ -386,9 +389,7 @@
     {@const isLive = deployment === live}
     {@const rolling = isActiveDeploymentStatus(deployment.status)}
     <section aria-label="{badge(deployment)} deployment">
-        <div
-            class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-3"
-        >
+        <div class="relative flex items-center gap-3 px-4 py-3">
             {@render summary(deployment, true)}
         </div>
 
@@ -396,7 +397,7 @@
         <button
             type="button"
             class={[
-                "flex w-full items-center gap-3 pt-0.5 pb-3 pr-5 pl-[104px] text-left text-sm",
+                "flex w-full items-center gap-3 pt-0.5 pb-3 pr-4 pl-[68px] text-left text-sm",
                 toneText[variant],
             ]}
             aria-expanded={isLive ? expanded.current : undefined}
@@ -457,7 +458,7 @@
                             label="Loading containers"
                         >
                             <div
-                                class="grid grid-cols-[16px_1fr_auto] gap-3 pr-5 pb-2 pl-[104px] text-sm"
+                                class="grid grid-cols-[16px_1fr_auto] gap-3 pr-4 pb-2 pl-[68px] text-sm"
                             >
                                 <span>.</span>
                                 <span>container-name</span>
@@ -467,7 +468,7 @@
                     </li>
                 {:else if containersQuery.isError}
                     <li
-                        class="pr-5 pb-2 pl-[104px] text-sm text-destructive-foreground"
+                        class="pr-4 pb-2 pl-[68px] text-sm text-destructive-foreground"
                     >
                         Unable to load containers: {containersQuery
                             .error.message}
@@ -476,7 +477,7 @@
                     {#each containers as item, index (`${item.machineId}-${item.container.Id ?? index}`)}
                         {@const info = containerInfo(item.container)}
                         <li
-                            class="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 pr-5 pb-2 pl-[104px] text-sm"
+                            class="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 pr-4 pb-2 pl-[68px] text-sm"
                         >
                             {#if info.health === "unhealthy" || info.status === "exited"}
                                 <CircleX
@@ -514,7 +515,7 @@
                         </li>
                     {:else}
                         <li
-                            class="pr-5 pb-2 pl-[104px] text-sm text-muted-foreground"
+                            class="pr-4 pb-2 pl-[68px] text-sm text-muted-foreground"
                         >
                             No containers are running.
                         </li>
@@ -525,129 +526,135 @@
     </section>
 {/snippet}
 
-<!-- Runs edge to edge in the panel's frame: sections are divided, not boxed again. -->
-<div class="divide-y">
-    <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
-    <div class="flex items-center gap-4 px-5 py-3 text-sm">
-        {#if domains.length}
-            <a
-                href="https://{domains[0]}"
-                target="_blank"
-                rel="noreferrer"
-                class="flex min-w-0 items-center gap-2 hover:underline"
-            >
-                <Globe
-                    class="size-4 shrink-0 text-success-foreground"
-                    aria-hidden="true"
-                />
-                <span class="truncate">{domains[0]}</span>
-                {#if domains.length > 1}
-                    <span class="text-muted-foreground">
-                        + {domains.length - 1} more
-                    </span>
-                {/if}
-            </a>
-        {:else}
-            <span
-                class="flex items-center gap-2 text-muted-foreground"
-            >
-                <EyeOff class="size-4" aria-hidden="true" />
-                Unexposed service
-            </span>
-        {/if}
-        <span
-            class="ml-auto flex shrink-0 items-center gap-6 text-muted-foreground"
-        >
-            {#if items[0]}
-                <span class="flex items-center gap-2">
-                    <Server class="size-4" aria-hidden="true" />
-                    {items[0].clusterName}
-                </span>
-            {/if}
-            {#if containersQuery.data}
-                <span class="flex items-center gap-2">
-                    <Layers class="size-4" aria-hidden="true" />
-                    {containers.length}
-                    {containers.length === 1
-                        ? "Container"
-                        : "Containers"}
-                </span>
-            {/if}
-        </span>
-    </div>
-
-    {#if actionError}
-        <div class="px-5 py-3">
-            <Alert variant="error">
-                <AlertDescription>{actionError}</AlertDescription>
-            </Alert>
-        </div>
-    {/if}
-
-    {#if deploymentsQuery.isError}
-        <div class="px-5 py-3">
-            <Alert variant="error">
-                <AlertDescription>
-                    Unable to load deployments: {deploymentsQuery
-                        .error.message}
-                </AlertDescription>
-            </Alert>
-        </div>
-    {:else if deploymentsQuery.isPending}
-        <div class="px-5 py-3">
-            <Skeleton loading label="Loading deployments">
-                <div class="h-[88px] rounded-lg"></div>
-            </Skeleton>
-        </div>
-    {:else if !items.length}
-        <p
-            class="px-5 py-12 text-center text-sm text-muted-foreground"
-        >
-            No deployments yet. Deploy this resource to see it here.
-        </p>
-    {:else}
-        {#each current as deployment (deployment.id)}
-            {@render currentCard(deployment)}
-        {/each}
-
-        {#if history.length}
-            <section aria-label="Deployment history">
-                <button
-                    type="button"
-                    class="flex w-full items-center gap-2 bg-muted/72 px-5 py-2.5 text-left text-sm font-medium"
-                    aria-expanded={!historyHidden.current}
-                    onclick={() =>
-                        void historyHidden.set(
-                            !historyHidden.current || null,
-                        )}
+<!-- Two panels on the side panel's surround, like Files and Tables: what is running, then history. -->
+<div class="flex flex-col gap-1">
+    <FramePanel class="divide-y bg-card p-0">
+        <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
+        <div class="flex items-center gap-4 px-4 py-3 text-sm">
+            {#if domains.length}
+                <a
+                    href="https://{domains[0]}"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="flex min-w-0 items-center gap-2 hover:underline"
                 >
-                    <ChevronDown
-                        class={[
-                            "size-4 transition-transform",
-                            historyHidden.current && "-rotate-90",
-                        ]}
+                    <Globe
+                        class="size-4 shrink-0 text-success-foreground"
                         aria-hidden="true"
                     />
-                    History
-                    <span
-                        class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
-                    >
-                        {history.length}
+                    <span class="truncate">{domains[0]}</span>
+                    {#if domains.length > 1}
+                        <span class="text-muted-foreground">
+                            + {domains.length - 1} more
+                        </span>
+                    {/if}
+                </a>
+            {:else}
+                <span
+                    class="flex items-center gap-2 text-muted-foreground"
+                >
+                    <EyeOff class="size-4" aria-hidden="true" />
+                    Unexposed service
+                </span>
+            {/if}
+            <span
+                class="ml-auto flex shrink-0 items-center gap-6 text-muted-foreground"
+            >
+                {#if items[0]}
+                    <span class="flex items-center gap-2">
+                        <Server class="size-4" aria-hidden="true" />
+                        {items[0].clusterName}
                     </span>
-                </button>
-                {#if !historyHidden.current}
-                    <ul class="divide-y border-t">
-                        {#each history as deployment (deployment.id)}
-                            <li
-                                class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-3"
-                            >
-                                {@render summary(deployment, false)}
-                            </li>
-                        {/each}
-                    </ul>
                 {/if}
-            </section>
+                {#if containersQuery.data}
+                    <span class="flex items-center gap-2">
+                        <Layers class="size-4" aria-hidden="true" />
+                        {containers.length}
+                        {containers.length === 1
+                            ? "Container"
+                            : "Containers"}
+                    </span>
+                {/if}
+            </span>
+        </div>
+
+        {#if actionError}
+            <div class="px-4 py-3">
+                <Alert variant="error">
+                    <AlertDescription>{actionError}</AlertDescription>
+                </Alert>
+            </div>
         {/if}
+
+        {#if deploymentsQuery.isError}
+            <div class="px-4 py-3">
+                <Alert variant="error">
+                    <AlertDescription>
+                        Unable to load deployments: {deploymentsQuery
+                            .error.message}
+                    </AlertDescription>
+                </Alert>
+            </div>
+        {:else if deploymentsQuery.isPending}
+            <div class="px-4 py-3">
+                <Skeleton loading label="Loading deployments">
+                    <div class="h-[88px] rounded-lg"></div>
+                </Skeleton>
+            </div>
+        {:else if !items.length}
+            <p
+                class="px-4 py-12 text-center text-sm text-muted-foreground"
+            >
+                No deployments yet. Deploy this resource to see it
+                here.
+            </p>
+        {:else}
+            {#each current as deployment (deployment.id)}
+                {@render currentCard(deployment)}
+            {/each}
+        {/if}
+    </FramePanel>
+
+    {#if deploymentsQuery.isSuccess && history.length}
+        <FramePanel
+            class="overflow-hidden bg-card p-0"
+            aria-label="Deployment history"
+        >
+            <button
+                type="button"
+                class="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium"
+                aria-expanded={!historyHidden.current}
+                onclick={() =>
+                    void historyHidden.set(
+                        !historyHidden.current || null,
+                    )}
+            >
+                <ChevronDown
+                    class={[
+                        "size-4 transition-transform",
+                        historyHidden.current && "-rotate-90",
+                    ]}
+                    aria-hidden="true"
+                />
+                History
+                <span
+                    class="ml-auto text-xs font-normal text-muted-foreground tabular-nums"
+                >
+                    {history.length}
+                </span>
+            </button>
+            {#if !historyHidden.current}
+                <ul class="divide-y border-t">
+                    {#each history as deployment (deployment.id)}
+                        <li
+                            class="relative flex items-center gap-3 px-4 py-3"
+                        >
+                            {@render summary(deployment, false)}
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+        </FramePanel>
     {/if}
 </div>
 
