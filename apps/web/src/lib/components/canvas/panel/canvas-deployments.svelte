@@ -377,7 +377,11 @@
     </div>
     <Badge
         {variant}
-        class={[variant === "secondary" && "text-muted-foreground"]}
+        class={[
+            // The shared Badge is positioned, so it would otherwise swallow the row's logs click.
+            "pointer-events-none",
+            variant === "secondary" && "text-muted-foreground",
+        ]}
     >
         {badge(deployment)}
     </Badge>
@@ -529,7 +533,8 @@
 <!-- Two panels on the side panel's surround, like Files and Tables: what is running, then history. -->
 <!-- History fills the rest of the tab and scrolls on its own. -->
 <div class="flex h-full min-h-0 flex-col gap-1">
-    <FramePanel class="shrink-0 divide-y bg-card p-0">
+    <!-- Scrolls on its own when rolling deployments or open containers outgrow the tab. -->
+    <FramePanel class="min-h-0 divide-y overflow-y-auto bg-card p-0">
         <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
         <div class="flex items-center gap-4 px-4 py-3 text-sm">
             {#if domains.length}
@@ -619,8 +624,9 @@
     {#if deploymentsQuery.isSuccess && history.length}
         <FramePanel
             class={[
-                "flex min-h-0 flex-col overflow-hidden bg-card p-0",
-                !historyHidden.current && "flex-1",
+                "flex shrink-0 flex-col overflow-hidden bg-card p-0",
+                // Keeps a few rows visible when the panel above scrolls.
+                !historyHidden.current && "min-h-40 flex-1",
             ]}
             aria-label="Deployment history"
         >
