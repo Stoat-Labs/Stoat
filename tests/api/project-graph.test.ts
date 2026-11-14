@@ -236,6 +236,27 @@ describe("buildProjectGraph domains", () => {
         expect(resources[0]?.services[0]?.domains).toEqual(["graph-k3f9x2-web.abc123.uncld.dev"]);
     });
 
+    it("lists hostnames from Variables built on built-in variables", () => {
+        const { resources } = buildProjectGraph(
+            [
+                {
+                    id: api,
+                    slug: "graph-k3f9x2",
+                    projectId: project,
+                    deployed: null,
+                    attempted: null,
+                    spec: "services:\n  web:\n    image: nginx\n    x-ports:\n      - ${HOST}:3000/https\n",
+                    draftSpec: null,
+                    settings: { env: "HOST=${WEB_SERVICE_NAME}.${CLOWDER_DOMAIN}\n" },
+                },
+            ],
+            [],
+            "abc123.uncld.dev",
+        );
+
+        expect(resources[0]?.services[0]?.domains).toEqual(["graph-k3f9x2-web.abc123.uncld.dev"]);
+    });
+
     it("lists x-caddy site addresses resolved through the .env", () => {
         const { resources } = buildProjectGraph(
             [
