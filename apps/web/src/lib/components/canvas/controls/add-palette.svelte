@@ -494,6 +494,10 @@
             queryClient.invalidateQueries({
                 queryKey: orpc.resources.listResources.key(),
             }),
+            // A template comes with its own group, which the canvas has to know to frame it.
+            queryClient.invalidateQueries({
+                queryKey: orpc.resources.listGroups.key(),
+            }),
             queryClient.invalidateQueries({
                 queryKey: orpc.projects.key(),
             }),

@@ -242,4 +242,67 @@ describe("resource groups API (PostgreSQL)", () => {
             { context },
         );
     });
+
+    it("moves a whole group to another project, members included", async () => {
+        const group = await create([apiId, workerId]);
+        const input = { projectId, groupId: group.id, toProjectId: otherProjectId };
+
+        await call(resourcesRouter.moveGroup, input, { context });
+
+        const [moved] = await db
+            .select()
+            .from(resourceGroups)
+            .where(eq(resourceGroups.id, group.id));
+
+        const members = await db
+            .select({ projectId: resources.projectId, groupId: resources.groupId })
+            .from(resources)
+            .where(inArray(resources.id, [apiId, workerId]));
+
+        expect(moved?.projectId).toBe(otherProjectId);
+        expect(members).toEqual([
+            { projectId: otherProjectId, groupId: group.id },
+            { projectId: otherProjectId, groupId: group.id },
+        ]);
+
+        await call(
+            resourcesRouter.moveGroup,
+            { projectId: otherProjectId, groupId: group.id, toProjectId: projectId },
+            { context },
+        );
+    });
+
+    it("copies a group into a new one whose members reference each other's copies", async () => {
+        const env = `API={{ ${apiId}.URL }}\nOTHER={{ ${elsewhereId}.URL }}\n`;
+
+        await db.update(resources).set({ settings: { env } }).where(eq(resources.id, workerId));
+
+        const group = await create([apiId, workerId]);
+
+        const copy = await call(
+            resourcesRouter.copyGroup,
+            { projectId, groupId: group.id, toProjectId: otherProjectId, name: "Backend copy" },
+            { context },
+        );
+
+        const copies = await db
+            .select()
+            .from(resources)
+            .where(eq(resources.groupId, copy.id))
+            .orderBy(resources.name);
+
+        const [apiCopy, workerCopy] = copies;
+
+        expect(copy).toMatchObject({ projectId: otherProjectId, name: "Backend copy" });
+        expect(copies.map((row) => [row.name, row.projectId])).toEqual([
+            ["api", otherProjectId],
+            ["worker", otherProjectId],
+        ]);
+        expect(workerCopy?.settings).toEqual({
+            env: `API={{ ${apiCopy?.id}.URL }}\nOTHER={{ ${elsewhereId}.URL }}\n`,
+        });
+        expect(await groupOf(apiId)).toBe(group.id);
+
+        await db.update(resources).set({ settings: null }).where(eq(resources.id, workerId));
+    });
 });

@@ -215,6 +215,21 @@
                     : "Hide contents"}
             </ContextMenuItem>
             <ContextMenuSeparator />
+            <ContextMenuItem
+                onclick={() => actions.edit("duplicate", id)}
+            >
+                <CopyPlus aria-hidden="true" />
+                Duplicate…
+            </ContextMenuItem>
+            <ContextMenuItem onclick={() => actions.edit("move", id)}>
+                <FolderInput aria-hidden="true" />
+                Move to Project…
+            </ContextMenuItem>
+            <ContextMenuItem onclick={() => actions.edit("copy", id)}>
+                <Copy aria-hidden="true" />
+                Copy to Project…
+            </ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem onclick={() => actions.ungroup(id)}>
                 <Ungroup aria-hidden="true" />
                 Remove Group

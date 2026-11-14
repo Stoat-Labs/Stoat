@@ -1084,6 +1084,7 @@
                 connectionMode={ConnectionMode.Loose}
                 nodesConnectable={false}
                 elementsSelectable
+                elevateNodesOnSelect={false}
                 deleteKey={null}
                 fitView={fitOnLoad}
                 fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
@@ -1369,6 +1370,9 @@
     {projectId}
     group={editing.group}
     resource={editing.resource}
+    members={resources.filter(
+        (resource) => resource.groupId === editing.group?.id,
+    )}
     action={editing.action}
     onclose={() => void edit.set(null)}
 />
