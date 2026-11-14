@@ -157,7 +157,7 @@
     const stacked = $derived(Boolean(deployment.current));
 
     const edge = $derived(
-        inset ? "right-0" : "right-0 rounded-tl-xl border-t border-l",
+        inset ? "right-0" : "right-0 rounded-tl-xl",
     );
 </script>
 
@@ -321,6 +321,8 @@
             "absolute bottom-0 z-20 flex flex-col overflow-hidden border-border bg-card shadow-xl/15 transition-[top] duration-300",
             full ? "top-0" : "top-6",
             edge,
+            // The resource panel is a frame whose surround marks its edge; this card needs a border.
+            !inset && "border-t border-l",
         ]}
         style:width="{width - 24}px"
         aria-label="Deployment logs"
