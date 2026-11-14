@@ -1,9 +1,9 @@
 # Service, volume and database names keep the name from before the rename to Clowder:
 # existing installs hold their data under them.
-name: stoat
+name: clowder
 
 services:
-    stoat:
+    clowder:
         image: ghcr.io/clowder-run/clowder:latest
         pull_policy: always
         # Caddy marks an upstream down for 30s after any failed request, and a browser aborting a
@@ -21,8 +21,8 @@ services:
         env_file: .env
         environment:
             APP_URL: https://${APP_URL:-clowder.example.com}
-            DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
-            REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
+            DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@clowder-db.internal:5432/clowder}
+            REDIS_URL: ${REDIS_URL:-redis://clowder-cache.internal:6379}
             APP_USE_INTERNAL_CACHE: ${APP_USE_INTERNAL_CACHE:-false}
             USE_INTERNAL_WORKER: ${USE_INTERNAL_WORKER:-true}
         x-pre_deploy:
@@ -35,7 +35,7 @@ services:
                     "drizzle.config.ts",
                 ]
         depends_on:
-            stoat-db:
+            clowder-db:
                 condition: service_healthy
         healthcheck:
             test:
@@ -53,27 +53,27 @@ services:
 
     # Optional: run background jobs in their own container. Uncomment and set
     # USE_INTERNAL_WORKER=false, or no deployments or monitoring jobs ever run.
-    # stoat-worker:
+    # clowder-worker:
     #     image: ghcr.io/clowder-run/worker:latest
     #     pull_policy: always
     #     env_file: .env
     #     environment:
     #         APP_URL: https://${APP_URL:-clowder.example.com}
-    #         DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@stoat-db.internal:5432/stoat}
-    #         REDIS_URL: ${REDIS_URL:-redis://stoat-cache.internal:6379}
-    #     # Waits for stoat, whose pre-deploy hook runs the migrations this worker's jobs need.
+    #         DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-password}@clowder-db.internal:5432/clowder}
+    #         REDIS_URL: ${REDIS_URL:-redis://clowder-cache.internal:6379}
+    #     # Waits for clowder, whose pre-deploy hook runs the migrations this worker's jobs need.
     #     depends_on:
-    #         stoat:
+    #         clowder:
     #             condition: service_healthy
     #     restart: unless-stopped
 
-    stoat-db:
+    clowder-db:
         image: postgres:18
         environment:
-            POSTGRES_DB: stoat
+            POSTGRES_DB: clowder
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
         volumes:
-            - stoat_db_data:/var/lib/postgresql
+            - clowder_db_data:/var/lib/postgresql
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U postgres"]
             interval: 10s
@@ -82,10 +82,10 @@ services:
         restart: unless-stopped
 
     # Optional but recommended. Without a Redis-compatible cache, Clowder caches in memory.
-    stoat-cache:
+    clowder-cache:
         image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
         volumes:
-            - stoat_cache_data:/data
+            - clowdercache_data:/data
         restart: unless-stopped
 
     sidecar:
@@ -108,5 +108,5 @@ services:
         restart: unless-stopped
 
 volumes:
-    stoat_db_data:
-    stoat_cache_data:
+    clowder_db_data:
+    clowder_cache_data:
