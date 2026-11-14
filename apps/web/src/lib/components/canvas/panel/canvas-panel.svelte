@@ -258,6 +258,7 @@
             class={[
                 "min-h-0 flex-1 bg-card p-0",
                 active === "logs" ||
+                active === "deployments" ||
                 active === "files" ||
                 active === "tables" ||
                 active === "compose"

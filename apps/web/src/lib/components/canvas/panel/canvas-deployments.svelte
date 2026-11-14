@@ -527,8 +527,9 @@
 {/snippet}
 
 <!-- Two panels on the side panel's surround, like Files and Tables: what is running, then history. -->
-<div class="flex flex-col gap-1">
-    <FramePanel class="divide-y bg-card p-0">
+<!-- History fills the rest of the tab and scrolls on its own. -->
+<div class="flex h-full min-h-0 flex-col gap-1">
+    <FramePanel class="shrink-0 divide-y bg-card p-0">
         <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
         <div class="flex items-center gap-4 px-4 py-3 text-sm">
             {#if domains.length}
@@ -617,7 +618,10 @@
 
     {#if deploymentsQuery.isSuccess && history.length}
         <FramePanel
-            class="overflow-hidden bg-card p-0"
+            class={[
+                "flex min-h-0 flex-col overflow-hidden bg-card p-0",
+                !historyHidden.current && "flex-1",
+            ]}
             aria-label="Deployment history"
         >
             <button
@@ -644,7 +648,9 @@
                 </span>
             </button>
             {#if !historyHidden.current}
-                <ul class="divide-y border-t">
+                <ul
+                    class="min-h-0 flex-1 divide-y overflow-y-auto border-t"
+                >
                     {#each history as deployment (deployment.id)}
                         <li
                             class="relative flex items-center gap-3 px-4 py-3"
