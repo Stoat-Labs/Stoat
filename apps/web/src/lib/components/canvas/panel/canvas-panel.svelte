@@ -131,6 +131,7 @@
 
     const fullBleed = $derived(
         active === "logs" ||
+            active === "deployments" ||
             active === "files" ||
             active === "settings" ||
             active === "config" ||

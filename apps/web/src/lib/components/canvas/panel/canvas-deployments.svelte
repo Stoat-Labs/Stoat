@@ -11,7 +11,6 @@
         MenuTrigger,
     } from "$lib/components/ui/menu";
     import { Badge } from "$lib/components/ui/badge";
-    import { Frame, FramePanel } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { page } from "$app/state";
     import { client, orpc, queryClient } from "$lib/api/orpc";
@@ -386,18 +385,18 @@
     {@const variant = tone(deployment)}
     {@const isLive = deployment === live}
     {@const rolling = isActiveDeploymentStatus(deployment.status)}
-    <Frame aria-label="{badge(deployment)} deployment">
-        <FramePanel
-            class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
+    <section aria-label="{badge(deployment)} deployment">
+        <div
+            class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-3"
         >
             {@render summary(deployment, true)}
-        </FramePanel>
+        </div>
 
         <!-- On the live deployment the status row opens what is running. -->
         <button
             type="button"
             class={[
-                "flex items-center gap-3 rounded-xl py-2.5 pr-5 pl-[99px] text-left text-sm",
+                "flex w-full items-center gap-3 pt-0.5 pb-3 pr-5 pl-[104px] text-left text-sm",
                 toneText[variant],
             ]}
             aria-expanded={isLive ? expanded.current : undefined}
@@ -458,7 +457,7 @@
                             label="Loading containers"
                         >
                             <div
-                                class="grid grid-cols-[16px_1fr_auto] gap-3 pr-5 pb-2 pl-[99px] text-sm"
+                                class="grid grid-cols-[16px_1fr_auto] gap-3 pr-5 pb-2 pl-[104px] text-sm"
                             >
                                 <span>.</span>
                                 <span>container-name</span>
@@ -468,7 +467,7 @@
                     </li>
                 {:else if containersQuery.isError}
                     <li
-                        class="pr-5 pb-2 pl-[99px] text-sm text-destructive-foreground"
+                        class="pr-5 pb-2 pl-[104px] text-sm text-destructive-foreground"
                     >
                         Unable to load containers: {containersQuery
                             .error.message}
@@ -477,7 +476,7 @@
                     {#each containers as item, index (`${item.machineId}-${item.container.Id ?? index}`)}
                         {@const info = containerInfo(item.container)}
                         <li
-                            class="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 pr-5 pb-2 pl-[99px] text-sm"
+                            class="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-3 pr-5 pb-2 pl-[104px] text-sm"
                         >
                             {#if info.health === "unhealthy" || info.status === "exited"}
                                 <CircleX
@@ -515,7 +514,7 @@
                         </li>
                     {:else}
                         <li
-                            class="pr-5 pb-2 pl-[99px] text-sm text-muted-foreground"
+                            class="pr-5 pb-2 pl-[104px] text-sm text-muted-foreground"
                         >
                             No containers are running.
                         </li>
@@ -523,12 +522,13 @@
                 {/if}
             </ul>
         {/if}
-    </Frame>
+    </section>
 {/snippet}
 
-<div class="space-y-4">
+<!-- Runs edge to edge in the panel's frame: sections are divided, not boxed again. -->
+<div class="divide-y">
     <!-- Railway's meta line: the public domain on the left, region and replicas on the right. -->
-    <div class="flex items-center gap-4 text-sm">
+    <div class="flex items-center gap-4 px-5 py-3 text-sm">
         {#if domains.length}
             <a
                 href="https://{domains[0]}"
@@ -577,25 +577,31 @@
     </div>
 
     {#if actionError}
-        <Alert variant="error">
-            <AlertDescription>{actionError}</AlertDescription>
-        </Alert>
+        <div class="px-5 py-3">
+            <Alert variant="error">
+                <AlertDescription>{actionError}</AlertDescription>
+            </Alert>
+        </div>
     {/if}
 
     {#if deploymentsQuery.isError}
-        <Alert variant="error">
-            <AlertDescription>
-                Unable to load deployments: {deploymentsQuery.error
-                    .message}
-            </AlertDescription>
-        </Alert>
+        <div class="px-5 py-3">
+            <Alert variant="error">
+                <AlertDescription>
+                    Unable to load deployments: {deploymentsQuery
+                        .error.message}
+                </AlertDescription>
+            </Alert>
+        </div>
     {:else if deploymentsQuery.isPending}
-        <Skeleton loading label="Loading deployments">
-            <div class="h-[110px] rounded-2xl"></div>
-        </Skeleton>
+        <div class="px-5 py-3">
+            <Skeleton loading label="Loading deployments">
+                <div class="h-[88px] rounded-lg"></div>
+            </Skeleton>
+        </div>
     {:else if !items.length}
         <p
-            class="rounded-2xl bg-muted/72 px-4 py-8 text-center text-sm text-muted-foreground"
+            class="px-5 py-12 text-center text-sm text-muted-foreground"
         >
             No deployments yet. Deploy this resource to see it here.
         </p>
@@ -605,10 +611,10 @@
         {/each}
 
         {#if history.length}
-            <Frame aria-label="Deployment history">
+            <section aria-label="Deployment history">
                 <button
                     type="button"
-                    class="flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium"
+                    class="flex w-full items-center gap-2 bg-muted/72 px-5 py-2.5 text-left text-sm font-medium"
                     aria-expanded={!historyHidden.current}
                     onclick={() =>
                         void historyHidden.set(
@@ -630,22 +636,17 @@
                     </span>
                 </button>
                 {#if !historyHidden.current}
-                    <FramePanel class="p-0">
-                        <ul class="divide-y">
-                            {#each history as deployment (deployment.id)}
-                                <li
-                                    class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 p-3"
-                                >
-                                    {@render summary(
-                                        deployment,
-                                        false,
-                                    )}
-                                </li>
-                            {/each}
-                        </ul>
-                    </FramePanel>
+                    <ul class="divide-y border-t">
+                        {#each history as deployment (deployment.id)}
+                            <li
+                                class="relative grid grid-cols-[72px_24px_minmax(0,1fr)_auto] items-center gap-x-3 px-5 py-3"
+                            >
+                                {@render summary(deployment, false)}
+                            </li>
+                        {/each}
+                    </ul>
                 {/if}
-            </Frame>
+            </section>
         {/if}
     {/if}
 </div>
