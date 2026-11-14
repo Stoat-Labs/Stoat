@@ -1,5 +1,6 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
+    import { FramePanel } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import { formatDate } from "$lib/format";
     import { client, orpc } from "$lib/api/orpc";
@@ -240,11 +241,13 @@
 </script>
 
 <div
-    class="flex h-full min-h-0 bg-card"
+    class="flex h-full min-h-0 gap-1"
     role="region"
     aria-label="Files"
 >
-    <div class="flex w-80 shrink-0 flex-col border-r">
+    <FramePanel
+        class="flex w-80 shrink-0 flex-col overflow-hidden bg-card p-0"
+    >
         {#if status === "loading"}
             <Skeleton loading label="Loading files">
                 {#each { length: 8 }, index (index)}
@@ -269,8 +272,10 @@
                 : 'hidden'}"
             style="--trees-bg-override:var(--card);--trees-fg-override:var(--foreground);--trees-fg-muted-override:var(--muted-foreground);--trees-bg-muted-override:var(--accent);--trees-selected-bg-override:var(--accent);--trees-border-color-override:var(--border);--trees-accent-override:var(--primary);--trees-focus-ring-color-override:var(--primary);--trees-font-family-override:inherit;"
         />
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col">
+    </FramePanel>
+    <FramePanel
+        class="flex min-w-0 flex-1 flex-col overflow-hidden bg-card p-0"
+    >
         {#if error && status !== "error"}
             <p
                 class="border-b p-3 text-sm text-destructive-foreground"
@@ -344,5 +349,5 @@
                 </p>
             </div>
         {/if}
-    </div>
+    </FramePanel>
 </div>

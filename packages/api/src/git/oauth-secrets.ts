@@ -12,7 +12,10 @@ type Scope = {
 
 const domain = "stoat/git-oauth-client-secret/v1";
 
-function keyMaterial(scope: Scope, salt: Buffer) {
+// A pre-release build of the Clowder rename re-encrypted secrets under this; reads accept both.
+const renamedDomain = "clowder/git-oauth-client-secret/v1";
+
+function keyMaterial(scope: Scope, salt: Buffer, label = domain) {
     const secret = appSecret();
 
     const values = [
@@ -26,7 +29,7 @@ function keyMaterial(scope: Scope, salt: Buffer) {
     if (!v.is(v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(2048))), values))
         throw new Error();
     // Bind the secret to the organization, app, and destination, not just its row ID.
-    const context = Buffer.from(JSON.stringify([domain, ...values]));
+    const context = Buffer.from(JSON.stringify([label, ...values]));
 
     return { context, key: hkdfSync("sha256", secret, salt, context, 32) };
 }
@@ -66,14 +69,23 @@ export function decryptGitOAuthClientSecret(envelope: string, scope: Scope): str
 
         if (salt?.length !== 32 || nonce?.length !== 12 || tag?.length !== 16 || !ciphertext)
             throw new Error();
-        const { key, context } = keyMaterial(scope, salt);
-        const decipher = createDecipheriv("aes-256-gcm", key, nonce);
-        decipher.setAAD(context);
-        decipher.setAuthTag(tag);
 
-        const secret = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
-            "utf8",
-        );
+        const open = (label: string) => {
+            const { key, context } = keyMaterial(scope, salt, label);
+            const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+            decipher.setAAD(context);
+            decipher.setAuthTag(tag);
+
+            return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+        };
+
+        let secret: string;
+
+        try {
+            secret = open(domain);
+        } catch {
+            secret = open(renamedDomain);
+        }
 
         if (!secret || secret.length > 8192) throw new Error();
 

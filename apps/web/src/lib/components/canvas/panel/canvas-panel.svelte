@@ -6,6 +6,7 @@
     import BucketFiles from "$lib/components/s3/bucket-files.svelte";
     import BucketIcon from "$lib/components/shared/bucket-icon.svelte";
     import { Button } from "$lib/components/ui/button";
+    import { Frame, FramePanel } from "$lib/components/ui/frame";
     import Box from "phosphor-svelte/lib/CubeIcon";
     import X from "phosphor-svelte/lib/XIcon";
     import {
@@ -128,8 +129,15 @@
             : visibleTabs[0],
     );
 
+    const split = $derived(
+        active === "files" ||
+            active === "tables" ||
+            active === "deployments",
+    );
+
     const fullBleed = $derived(
         active === "logs" ||
+            active === "deployments" ||
             active === "files" ||
             active === "settings" ||
             active === "config" ||
@@ -153,7 +161,7 @@
     const stacked = $derived(Boolean(deployment.current));
 
     const edge = $derived(
-        inset ? "right-0" : "right-0 rounded-tl-xl border-t border-l",
+        inset ? "right-0" : "right-0 rounded-tl-xl",
     );
 </script>
 
@@ -179,7 +187,7 @@
 <!-- Railway's panel: flush right and bottom, 24px below the canvas top, only the top-left corner rounded. -->
 <aside
     class={[
-        "absolute bottom-0 z-10 flex flex-col overflow-hidden border-border bg-card shadow-md/10 transition-[top] duration-300",
+        "absolute bottom-0 z-10 flex flex-col overflow-hidden border-border bg-background shadow-md/10 transition-[top] duration-300",
         full
             ? stacked
                 ? "top-6"
@@ -194,112 +202,121 @@
     in:fly|global={enter}
     out:fly|global={leave}
 >
-    <header
-        class="flex items-center gap-4 px-5 sm:px-12 pt-6 sm:pt-12 pb-6"
-    >
-        {@render resourceIcon()}
-        <h2 class="min-w-0 flex-1 truncate text-2xl font-semibold">
-            {resource.name}
-            {#if selectedService}
-                <span class="font-normal text-muted-foreground">
-                    / {selectedService}
-                </span>
-            {/if}
-        </h2>
-        <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Close details"
-            onclick={onclose}
+    <!-- A Frame: title and tabs on the muted surround, the active tab inside the inset panel. -->
+    <Frame class="min-h-0 flex-1 rounded-[inherit]">
+        <header
+            class="flex items-center gap-4 px-4 sm:px-8 pt-5 sm:pt-8 pb-4"
         >
-            <X class="size-4" aria-hidden="true" />
-        </Button>
-    </header>
-
-    <!-- Railway's tabs: 16px labels 32px apart, a 1px underline on the active one. -->
-    <div
-        class="no-scrollbar flex shrink-0 gap-8 overflow-x-auto border-b border-border px-5 sm:px-12"
-        role="tablist"
-        aria-label="{resource.name} sections"
-    >
-        {#each visibleTabs as name (name)}
-            <button
-                type="button"
-                role="tab"
-                aria-selected={active === name}
-                class={[
-                    "relative shrink-0 pb-3 text-base transition-colors",
-                    active === name
-                        ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                ]}
-                onclick={() => void tab.set(name)}
+            {@render resourceIcon()}
+            <h2
+                class="min-w-0 flex-1 truncate text-2xl font-semibold"
             >
-                {labels[name]}
-            </button>
-        {/each}
-    </div>
+                {resource.name}
+                {#if selectedService}
+                    <span class="font-normal text-muted-foreground">
+                        / {selectedService}
+                    </span>
+                {/if}
+            </h2>
+            <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close details"
+                onclick={onclose}
+            >
+                <X class="size-4" aria-hidden="true" />
+            </Button>
+        </header>
 
-    <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
-    <!-- Settings, logs, files and tables run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
-    <div
-        class={[
-            "min-h-0 flex-1",
-            active === "logs" ||
-            active === "files" ||
-            active === "tables" ||
-            active === "compose"
-                ? "overflow-hidden"
-                : "overflow-y-auto",
-            !fullBleed && "px-5 sm:px-12 pt-8 pb-6 sm:pb-12",
-        ]}
-        role="tabpanel"
-    >
-        {#if active === "files"}
-            <BucketFiles
-                projectId={resource.projectId}
-                resourceId={resource.id}
-            />
-        {:else if active === "deployments"}
-            <CanvasDeployments
-                {clusterId}
-                {resource}
-                {services}
-                {selectedService}
-                {icon}
-                {changed}
-            />
-        {:else if active === "tables"}
-            <DatabaseData input={databaseInput} />
-        {:else if active === "config"}
-            <DatabaseConfig input={databaseInput} />
-        {:else if active === "variables" && isBucket}
-            <CanvasBucketVariables {resource} />
-        {:else if active === "variables"}
-            <CanvasVariables {resource} />
-        {:else if active === "compose"}
-            <CanvasCompose {resource} />
-        {:else if active === "metrics"}
-            {#if isPostgres}
-                <div class="@container mb-10">
-                    <DatabaseStats input={databaseInput} />
-                </div>
+        <!-- Railway's tabs: 16px labels 32px apart, a 1px underline on the active one. -->
+        <div
+            class="no-scrollbar flex shrink-0 gap-8 overflow-x-auto px-4 sm:px-8"
+            role="tablist"
+            aria-label="{resource.name} sections"
+        >
+            {#each visibleTabs as name (name)}
+                <button
+                    type="button"
+                    role="tab"
+                    aria-selected={active === name}
+                    class={[
+                        "relative shrink-0 pb-3 text-base transition-colors",
+                        active === name
+                            ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-foreground"
+                            : "text-muted-foreground hover:text-foreground",
+                    ]}
+                    onclick={() => void tab.set(name)}
+                >
+                    {labels[name]}
+                </button>
+            {/each}
+        </div>
+
+        <!-- Each tab mounts only while visible; logs and metrics hold live sessions. -->
+        <!-- Settings, logs, files and tables run edge to edge, like Railway's; the other tabs sit inside the panel's gutter. -->
+        <FramePanel
+            class={[
+                "min-h-0 flex-1 bg-card p-0",
+                active === "logs" ||
+                active === "deployments" ||
+                active === "files" ||
+                active === "tables" ||
+                active === "compose"
+                    ? "overflow-hidden"
+                    : "overflow-y-auto",
+                !fullBleed && "px-5 py-6 sm:px-8 sm:py-8",
+                // Files and tables bring their own side-by-side panels, so this one steps aside.
+                split &&
+                    "rounded-none border-0 bg-transparent shadow-none before:hidden",
+            ]}
+            role="tabpanel"
+        >
+            {#if active === "files"}
+                <BucketFiles
+                    projectId={resource.projectId}
+                    resourceId={resource.id}
+                />
+            {:else if active === "deployments"}
+                <CanvasDeployments
+                    {clusterId}
+                    {resource}
+                    {services}
+                    {selectedService}
+                    {icon}
+                    {changed}
+                />
+            {:else if active === "tables"}
+                <DatabaseData input={databaseInput} />
+            {:else if active === "config"}
+                <DatabaseConfig input={databaseInput} />
+            {:else if active === "variables" && isBucket}
+                <CanvasBucketVariables {resource} />
+            {:else if active === "variables"}
+                <CanvasVariables {resource} />
+            {:else if active === "compose"}
+                <CanvasCompose {resource} />
+            {:else if active === "metrics"}
+                {#if isPostgres}
+                    <div class="@container mb-10">
+                        <DatabaseStats input={databaseInput} />
+                    </div>
+                {/if}
+                <ResourceMetricsView
+                    projectId={resource.projectId}
+                    resourceId={resource.id}
+                />
+            {:else if active === "logs"}
+                <CanvasResourceLogs
+                    projectId={resource.projectId}
+                    resourceId={resource.id}
+                    serviceName={selectedService}
+                    focused={!stacked}
+                />
+            {:else}
+                <CanvasSettings {resource} {services} />
             {/if}
-            <ResourceMetricsView
-                projectId={resource.projectId}
-                resourceId={resource.id}
-            />
-        {:else if active === "logs"}
-            <CanvasResourceLogs
-                projectId={resource.projectId}
-                resourceId={resource.id}
-                serviceName={selectedService}
-                focused={!stacked}
-            />
-        {:else}
-            <CanvasSettings {resource} {services} />
-        {/if}
-    </div>
+        </FramePanel>
+    </Frame>
 </aside>
 
 {#if deployment.current}
@@ -309,6 +326,8 @@
             "absolute bottom-0 z-20 flex flex-col overflow-hidden border-border bg-card shadow-xl/15 transition-[top] duration-300",
             full ? "top-0" : "top-6",
             edge,
+            // The resource panel is a frame whose surround marks its edge; this card needs a border.
+            !inset && "border-t border-l",
         ]}
         style:width="{width - 24}px"
         aria-label="Deployment logs"

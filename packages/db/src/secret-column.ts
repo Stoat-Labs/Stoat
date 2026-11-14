@@ -4,8 +4,23 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:cr
 
 const PREFIX = "enc:v1:";
 
-function key(purpose: string, salt: Buffer) {
-    return Buffer.from(hkdfSync("sha256", appSecret(), salt, `stoat/column/${purpose}/v1`, 32));
+// A pre-release build of the Clowder rename re-encrypted values under "clowder"; reads accept both.
+function key(purpose: string, salt: Buffer, label = "stoat") {
+    return Buffer.from(hkdfSync("sha256", appSecret(), salt, `${label}/column/${purpose}/v1`, 32));
+}
+
+function open(
+    purpose: string,
+    salt: Buffer,
+    nonce: Buffer,
+    tag: Buffer,
+    ciphertext: Buffer,
+    label: string,
+) {
+    const decipher = createDecipheriv("aes-256-gcm", key(purpose, salt, label), nonce);
+    decipher.setAuthTag(tag);
+
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }
 
 export function encryptColumnValue(purpose: string, plaintext: string) {
@@ -31,10 +46,11 @@ export function decryptColumnValue(purpose: string, stored: string) {
     if (!salt || !nonce || !tag || !ciphertext)
         throw new Error(`Stored ${purpose} is not a valid encrypted value.`);
 
-    const decipher = createDecipheriv("aes-256-gcm", key(purpose, salt), nonce);
-    decipher.setAuthTag(tag);
-
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    try {
+        return open(purpose, salt, nonce, tag, ciphertext, "stoat");
+    } catch {
+        return open(purpose, salt, nonce, tag, ciphertext, "clowder");
+    }
 }
 
 export function isEncryptedColumnValue(stored: string) {

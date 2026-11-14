@@ -1321,13 +1321,14 @@
 
     {#if selectedResource && !panel.narrow}
         <!-- Like the sidebar rail: drag the panel's left edge to resize it, to the far left to fill the canvas, past the minimum to close it. -->
+        <!-- Centred on the edge so the pill sits on the border instead of inside the panel's frame. -->
         <div
             class={[
                 "group absolute bottom-0 z-30 w-3 cursor-col-resize touch-none transition-[top] duration-300",
                 panel.full ? "top-0" : "top-6",
             ]}
             style:right="{Math.min(panel.width, panel.canvasWidth) -
-                12}px"
+                6}px"
             aria-hidden="true"
             onpointerdown={panel.startResize}
             onpointermove={panel.resize}
