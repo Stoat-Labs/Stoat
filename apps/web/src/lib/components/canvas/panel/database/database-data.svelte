@@ -27,6 +27,7 @@
         SelectTrigger,
         SelectValue,
     } from "$lib/components/ui/select";
+    import { FramePanel } from "$lib/components/ui/frame";
     import { Skeleton } from "$lib/components/ui/skeleton";
     import {
         ToggleGroup,
@@ -334,9 +335,10 @@
     );
 </script>
 
-<div class="flex h-full min-h-0">
-    <nav
-        class="flex w-60 shrink-0 flex-col border-r"
+<div class="flex h-full min-h-0 gap-1">
+    <FramePanel
+        class="flex w-60 shrink-0 flex-col overflow-hidden bg-card p-0"
+        role="navigation"
         aria-label="Tables"
     >
         <div class="flex items-center gap-2 px-4 py-3 text-sm">
@@ -432,9 +434,11 @@
                 </ul>
             {/if}
         </div>
-    </nav>
+    </FramePanel>
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <FramePanel
+        class="flex min-w-0 flex-1 flex-col overflow-hidden bg-card p-0"
+    >
         <div
             class="flex flex-wrap items-center gap-2 border-b px-3 py-2"
         >
@@ -917,7 +921,7 @@
                 </div>
             {/if}
         </div>
-    </div>
+    </FramePanel>
 </div>
 
 {#snippet gridSkeleton()}

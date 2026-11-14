@@ -129,6 +129,8 @@
             : visibleTabs[0],
     );
 
+    const split = $derived(active === "files" || active === "tables");
+
     const fullBleed = $derived(
         active === "logs" ||
             active === "deployments" ||
@@ -258,6 +260,9 @@
                     ? "overflow-hidden"
                     : "overflow-y-auto",
                 !fullBleed && "px-5 py-6 sm:px-8 sm:py-8",
+                // Files and tables bring their own side-by-side panels, so this one steps aside.
+                split &&
+                    "rounded-none border-0 bg-transparent shadow-none before:hidden",
             ]}
             role="tabpanel"
         >
