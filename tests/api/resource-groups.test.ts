@@ -305,4 +305,42 @@ describe("resource groups API (PostgreSQL)", () => {
 
         await db.update(resources).set({ settings: null }).where(eq(resources.id, workerId));
     });
+
+    it("copies a Git member with its staged config file edits", async () => {
+        const gitSource = {
+            repositoryUrl: "https://git.example.test/shop.git",
+            branch: "main",
+            path: "compose.yaml",
+            revision: "a".repeat(40),
+            message: "Add nginx",
+            blob: "b".repeat(40),
+            tree: "c".repeat(40),
+            autoDeploy: false,
+            watchPath: ".",
+        };
+
+        const draftConfigFiles = { "nginx.conf": "worker_processes 2;\n" };
+
+        await db
+            .update(resources)
+            .set({ gitSource, draftConfigFiles })
+            .where(eq(resources.id, apiId));
+
+        const group = await create([apiId]);
+
+        const copy = await call(
+            resourcesRouter.copyGroup,
+            { projectId, groupId: group.id, toProjectId: otherProjectId, name: "Backend copy" },
+            { context },
+        );
+
+        const [apiCopy] = await db.select().from(resources).where(eq(resources.groupId, copy.id));
+
+        expect(apiCopy).toMatchObject({ gitSource, draftConfigFiles });
+
+        await db
+            .update(resources)
+            .set({ gitSource: null, draftConfigFiles: null })
+            .where(eq(resources.id, apiId));
+    });
 });

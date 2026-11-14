@@ -193,6 +193,8 @@ async function copyRow(
             settings,
             gitConnectionId: keepsGit ? resource.gitConnectionId : null,
             gitSource: keepsGit ? resource.gitSource : null,
+            // Staged edits to its Git config files, which its deploy ships and commits.
+            draftConfigFiles: keepsGit ? resource.draftConfigFiles : null,
             projectId,
             groupId,
         })
