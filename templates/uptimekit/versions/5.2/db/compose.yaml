@@ -1,6 +1,7 @@
 services:
     postgres:
-        image: postgres:18-alpine
+        # UptimeKit stores its time series in TimescaleDB.
+        image: timescale/timescaledb:2.27.1-pg18
         restart: unless-stopped
         environment:
             POSTGRES_USER: ${POSTGRES_USER}

@@ -180,8 +180,8 @@ export const resourceCreateRouter = {
                 },
             );
 
-            // A template and its companions start out in one group, drawn together on the canvas.
-            const groupId = companions.length > 0 ? randomUUID() : null;
+            // Every template starts out in its own group, drawn with its companions on the canvas.
+            const groupId = template ? randomUUID() : null;
 
             const created = await db.transaction(async (tx) => {
                 if (groupId)
