@@ -16,8 +16,6 @@
 <!-- <img width="2258" height="1355" alt="image" src="https://github.com/user-attachments/assets/8c89768c-b6ec-4808-9339-f970b037556c" /> -->
 <img width="2261" height="1356" alt="image" src="https://github.com/user-attachments/assets/468b0703-8466-4fe0-ae20-13471b0c9045" />
 
-
-
 ## Features
 
 Clowder allows you to manage multiple [Uncloud](https://uncloud.run) clusters from a single dashboard.
