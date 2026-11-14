@@ -101,55 +101,84 @@ export const resourceGroupsRouter = {
     // Railway's "Remove Group": the frame goes, its resources stay where they are.
     deleteGroup: organizationProcedure
         .input(v.object({ projectId: uuid, groupId: uuid }))
-        .handler(async ({ context: { db, organizationId }, input }) => {
-            const [group] = await db
-                .delete(resourceGroups)
-                .where(
-                    and(
-                        eq(resourceGroups.id, input.groupId),
-                        eq(resourceGroups.projectId, input.projectId),
-                        sql`${resourceGroups.projectId} in (${editableProject(db, organizationId, input.projectId)})`,
-                    ),
-                )
-                .returning({ id: resourceGroups.id });
+        .handler(async ({ context: { db, organizationId }, input }) =>
+            db.transaction(async (tx) => {
+                // Its resources before the group, which the delete unsets them from.
+                await tx
+                    .select({ id: resources.id })
+                    .from(resources)
+                    .where(
+                        and(
+                            eq(resources.groupId, input.groupId),
+                            eq(resources.projectId, input.projectId),
+                        ),
+                    )
+                    .for("update");
 
-            if (!group) throw new ORPCError("NOT_FOUND", { message: "Group not found." });
-        }),
+                const [group] = await tx
+                    .delete(resourceGroups)
+                    .where(
+                        and(
+                            eq(resourceGroups.id, input.groupId),
+                            eq(resourceGroups.projectId, input.projectId),
+                            sql`${resourceGroups.projectId} in (${editableProject(tx, organizationId, input.projectId)})`,
+                        ),
+                    )
+                    .returning({ id: resourceGroups.id });
+
+                if (!group) throw new ORPCError("NOT_FOUND", { message: "Group not found." });
+            }),
+        ),
 
     // Into another group of the same project, or out of any (null).
     setGroup: organizationProcedure
         .input(v.object({ projectId: uuid, resourceId: uuid, groupId: v.nullable(uuid) }))
         .handler(async ({ context: { db, organizationId }, input }) =>
             db.transaction(async (tx) => {
+                const notFound = new ORPCError("NOT_FOUND", {
+                    message: "Resource or group not found.",
+                });
+
+                // The resource before its group, the order group transfers lock in too.
                 const [resource] = await tx
-                    .update(resources)
-                    .set({ groupId: input.groupId })
+                    .select({ id: resources.id })
+                    .from(resources)
                     .where(
                         and(
                             eq(resources.id, input.resourceId),
                             eq(resources.projectId, input.projectId),
                             sql`${resources.projectId} in (${editableProject(tx, organizationId, input.projectId)})`,
-                            input.groupId === null
-                                ? undefined
-                                : sql`exists (${tx
-                                      .select({ id: resourceGroups.id })
-                                      .from(resourceGroups)
-                                      .where(
-                                          and(
-                                              eq(resourceGroups.id, input.groupId),
-                                              eq(resourceGroups.projectId, input.projectId),
-                                          ),
-                                      )})`,
                         ),
                     )
-                    .returning({ id: resources.id, groupId: resources.groupId });
+                    .for("update");
 
-                if (!resource)
-                    throw new ORPCError("NOT_FOUND", { message: "Resource or group not found." });
+                if (!resource) throw notFound;
+
+                if (input.groupId !== null) {
+                    // Checked under the lock, so a group moving to another project is never joined.
+                    const [group] = await tx
+                        .select({ id: resourceGroups.id })
+                        .from(resourceGroups)
+                        .where(
+                            and(
+                                eq(resourceGroups.id, input.groupId),
+                                eq(resourceGroups.projectId, input.projectId),
+                            ),
+                        )
+                        .for("key share");
+
+                    if (!group) throw notFound;
+                }
+
+                const [updated] = await tx
+                    .update(resources)
+                    .set({ groupId: input.groupId })
+                    .where(eq(resources.id, resource.id))
+                    .returning({ id: resources.id, groupId: resources.groupId });
 
                 await deleteEmptyGroups(tx, [input.projectId]);
 
-                return resource;
+                return updated!;
             }),
         ),
 };

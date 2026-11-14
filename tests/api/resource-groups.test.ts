@@ -242,4 +242,105 @@ describe("resource groups API (PostgreSQL)", () => {
             { context },
         );
     });
+
+    it("moves a whole group to another project, members included", async () => {
+        const group = await create([apiId, workerId]);
+        const input = { projectId, groupId: group.id, toProjectId: otherProjectId };
+
+        await call(resourcesRouter.moveGroup, input, { context });
+
+        const [moved] = await db
+            .select()
+            .from(resourceGroups)
+            .where(eq(resourceGroups.id, group.id));
+
+        const members = await db
+            .select({ projectId: resources.projectId, groupId: resources.groupId })
+            .from(resources)
+            .where(inArray(resources.id, [apiId, workerId]));
+
+        expect(moved?.projectId).toBe(otherProjectId);
+        expect(members).toEqual([
+            { projectId: otherProjectId, groupId: group.id },
+            { projectId: otherProjectId, groupId: group.id },
+        ]);
+
+        await call(
+            resourcesRouter.moveGroup,
+            { projectId: otherProjectId, groupId: group.id, toProjectId: projectId },
+            { context },
+        );
+    });
+
+    it("copies a group into a new one whose members reference each other's copies", async () => {
+        const env = `API={{ ${apiId}.URL }}\nOTHER={{ ${elsewhereId}.URL }}\n`;
+
+        await db.update(resources).set({ settings: { env } }).where(eq(resources.id, workerId));
+
+        const group = await create([apiId, workerId]);
+
+        const copy = await call(
+            resourcesRouter.copyGroup,
+            { projectId, groupId: group.id, toProjectId: otherProjectId, name: "Backend copy" },
+            { context },
+        );
+
+        const copies = await db
+            .select()
+            .from(resources)
+            .where(eq(resources.groupId, copy.id))
+            .orderBy(resources.name);
+
+        const [apiCopy, workerCopy] = copies;
+
+        expect(copy).toMatchObject({ projectId: otherProjectId, name: "Backend copy" });
+        expect(copies.map((row) => [row.name, row.projectId])).toEqual([
+            ["api", otherProjectId],
+            ["worker", otherProjectId],
+        ]);
+        expect(workerCopy?.settings).toEqual({
+            env: `API={{ ${apiCopy?.id}.URL }}\nOTHER={{ ${elsewhereId}.URL }}\n`,
+        });
+        expect(await groupOf(apiId)).toBe(group.id);
+
+        await db.update(resources).set({ settings: null }).where(eq(resources.id, workerId));
+    });
+
+    it("copies a Git member with its staged config file edits", async () => {
+        const gitSource = {
+            repositoryUrl: "https://git.example.test/shop.git",
+            branch: "main",
+            path: "compose.yaml",
+            revision: "a".repeat(40),
+            message: "Add nginx",
+            blob: "b".repeat(40),
+            tree: "c".repeat(40),
+            autoDeploy: false,
+            watchPath: ".",
+        };
+
+        const draftConfigFiles = { "nginx.conf": "worker_processes 2;\n" };
+
+        await db
+            .update(resources)
+            .set({ gitSource, draftConfigFiles })
+            .where(eq(resources.id, apiId));
+
+        const group = await create([apiId]);
+
+        const copy = await call(
+            resourcesRouter.copyGroup,
+            { projectId, groupId: group.id, toProjectId: otherProjectId, name: "Backend copy" },
+            { context },
+        );
+
+        const [apiCopy] = await db.select().from(resources).where(eq(resources.groupId, copy.id));
+
+        expect(apiCopy).toMatchObject({ gitSource, draftConfigFiles });
+
+        await db
+            .update(resources)
+            .set({ gitSource: null, draftConfigFiles: null })
+            .where(eq(resources.id, apiId));
+    });
 });

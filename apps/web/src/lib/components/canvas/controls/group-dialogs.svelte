@@ -25,6 +25,7 @@
         action,
         group,
         resource,
+        members,
         onclose,
     }: {
         projectId: string;
@@ -34,6 +35,8 @@
         group: CanvasGroup | undefined;
         /** The card whose menu opened rename, a new group or a transfer. */
         resource: CanvasResource | undefined;
+        /** The resources in `group`, for a group transfer. */
+        members: CanvasResource[];
         onclose: () => void;
     } = $props();
 
@@ -183,7 +186,16 @@
     </DialogContent>
 </Dialog>
 
-{#if resource && (action === "move" || action === "copy")}
+{#if group && (action === "move" || action === "copy" || action === "duplicate")}
+    <TransferDialog
+        mode={action === "move" ? "move" : "copy"}
+        duplicate={action === "duplicate"}
+        {projectId}
+        {group}
+        {members}
+        {onclose}
+    />
+{:else if resource && (action === "move" || action === "copy")}
     <TransferDialog mode={action} {projectId} {resource} {onclose} />
 {:else if resource && action === "duplicate"}
     <TransferDialog

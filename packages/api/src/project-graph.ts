@@ -260,7 +260,19 @@ function serviceDomains(compose: string, row: GraphResourceInput, clusterDomain?
         // Without the `.env`, variable hostnames simply stay unresolved.
     }
 
-    const { entries, caddyRoutes } = parseIngressCompose(compose, env);
+    let resolved: string | undefined;
+
+    // Resolve like a deploy so Variables built from `${CLOWDER_DOMAIN}` and friends expand.
+    if (clusterDomain)
+        try {
+            resolved = interpolateCompose(compose, env, resourceComposePrefix(row), clusterDomain);
+        } catch {
+            // Falls back to the raw `.env` below.
+        }
+
+    const { entries, caddyRoutes } = resolved
+        ? parseIngressCompose(resolved)
+        : parseIngressCompose(compose, env);
 
     const add = (service: string, host: string) => {
         const hosts = domains.get(service) ?? [];

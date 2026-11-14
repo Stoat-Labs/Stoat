@@ -29,6 +29,7 @@ docker-compose.yml
 !**/.env.schema
 # Template .env files are defaults bundled into the app, not secrets.
 !templates/*/versions/*/.env
+!templates/*/versions/*/*/.env
 
 local.db
 local.db-*

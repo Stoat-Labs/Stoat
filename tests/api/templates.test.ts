@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs";
+import { globSync, readdirSync, readFileSync } from "node:fs";
+import { matchesGlob } from "node:path";
 import { parseEnv } from "node:util";
 import * as v from "valibot";
 import { describe, expect, it } from "vite-plus/test";
@@ -67,6 +68,19 @@ describe("templates", () => {
         const folders = readdirSync(new URL("../../templates", import.meta.url));
 
         expect(templates.map(({ appId }) => appId).toSorted()).toEqual(folders.toSorted());
+    });
+
+    // `.dockerignore` drops every `.env`, so the image only has the template ones it re-includes.
+    it("keeps every template .env in the Docker build context", () => {
+        const kept = readFileSync(new URL("../../.dockerignore", import.meta.url), "utf8")
+            .split("\n")
+            .flatMap((line) => (line.startsWith("!templates/") ? [line.slice(1)] : []));
+
+        const dropped = globSync("templates/**/.env").filter(
+            (file) => !kept.some((pattern) => matchesGlob(file, pattern)),
+        );
+
+        expect(dropped).toEqual([]);
     });
 
     it("bundles a database template for every engine", () => {

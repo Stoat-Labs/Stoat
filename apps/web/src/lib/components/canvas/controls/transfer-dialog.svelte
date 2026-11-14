@@ -29,20 +29,26 @@
     import { createQuery } from "@tanstack/svelte-query";
     import { untrack } from "svelte";
     import * as v from "valibot";
-    import type { CanvasResource } from "../graph";
+    import type { CanvasGroup, CanvasResource } from "../graph";
 
     let {
         mode: initialMode,
         duplicate = false,
         projectId,
         resource,
+        group,
+        members = [],
         onclose,
     }: {
         mode: "move" | "copy";
         /** Railway's Duplicate: a copy with this project already picked. */
         duplicate?: boolean;
         projectId: string;
-        resource: CanvasResource;
+        /** Set with `group` unset: one resource. */
+        resource?: CanvasResource;
+        /** A whole group and the resources in it. */
+        group?: CanvasGroup;
+        members?: CanvasResource[];
         onclose: () => void;
     } = $props();
 
@@ -63,9 +69,12 @@
         orpc.projects.listProjects.queryOptions(),
     );
 
+    const subject = $derived(group?.name ?? resource?.name ?? "");
+
     const resourceQuery = createQuery(() =>
         orpc.resources.getResource.queryOptions({
-            input: { projectId, resourceId: resource.id },
+            input: { projectId, resourceId: resource?.id ?? "" },
+            enabled: !group && resource !== undefined,
         }),
     );
 
@@ -97,9 +106,7 @@
 
     const name = $derived(
         editedName ??
-            (targetId === projectId
-                ? `${resource.name} copy`
-                : resource.name),
+            (targetId === projectId ? `${subject} copy` : subject),
     );
 
     const otherCluster = $derived(
@@ -112,7 +119,9 @@
     const blocked = $derived(
         mode === "move" &&
             otherCluster &&
-            resource.deploymentId !== null,
+            (group ? members : resource ? [resource] : []).some(
+                (item) => item.deploymentId !== null,
+            ),
     );
 
     const ready = $derived(
@@ -126,6 +135,30 @@
         return id === projectId ? `${label} (this project)` : label;
     }
 
+    function transfer() {
+        const base = { projectId, toProjectId: targetId };
+
+        if (group) {
+            const input = { ...base, groupId: group.id };
+
+            return mode === "move"
+                ? client.resources.moveGroup(input)
+                : client.resources.copyGroup({
+                      ...input,
+                      name: name.trim(),
+                  });
+        }
+
+        const input = { ...base, resourceId: resource?.id ?? "" };
+
+        return mode === "move"
+            ? client.resources.moveResource(input)
+            : client.resources.copyResource({
+                  ...input,
+                  name: name.trim(),
+              });
+    }
+
     async function submit(event: Event) {
         event.preventDefault();
 
@@ -135,19 +168,7 @@
         error = "";
 
         try {
-            const input = {
-                projectId,
-                resourceId: resource.id,
-                toProjectId: targetId,
-            };
-
-            const result =
-                mode === "move"
-                    ? await client.resources.moveResource(input)
-                    : await client.resources.copyResource({
-                          ...input,
-                          name: name.trim(),
-                      });
+            const result = await transfer();
 
             await Promise.all([
                 queryClient.invalidateQueries({
@@ -159,6 +180,9 @@
                 queryClient.invalidateQueries({
                     queryKey: orpc.projects.key(),
                 }),
+                queryClient.invalidateQueries({
+                    queryKey: orpc.resources.listGroups.key(),
+                }),
             ]);
 
             onclose();
@@ -169,7 +193,7 @@
             error =
                 cause instanceof Error
                     ? cause.message
-                    : `Unable to ${mode} the resource.`;
+                    : `Unable to ${mode} ${group ? "the group" : "the resource"}.`;
         } finally {
             pending = false;
         }
@@ -188,12 +212,14 @@
         <DialogHeader>
             <DialogTitle>
                 {mode === "move" ? "Move" : "Copy"}
-                {resource.name}
+                {subject}
             </DialogTitle>
             <DialogDescription>
                 {mode === "move"
                     ? "It leaves this canvas and lands on the other project's, as it is."
-                    : "Its Compose, variables, icon and Git source become a new draft that deploys with the next apply."}
+                    : group
+                      ? "Each resource's Compose, variables, icon and Git source become a new draft in a new group, reading each other's variables instead of the originals'."
+                      : "Its Compose, variables, icon and Git source become a new draft that deploys with the next apply."}
             </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -255,7 +281,17 @@
                         />
                     </Field>
 
-                    {#if prefixed}
+                    {#if group}
+                        <Alert variant="info">
+                            <AlertDescription>
+                                Volumes aren't copied. A resource with
+                                Prefix names off keeps the original's
+                                service and volume names on the
+                                cluster, so check those before
+                                deploying the copies.
+                            </AlertDescription>
+                        </Alert>
+                    {:else if prefixed}
                         <Alert variant="info">
                             <AlertDescription>
                                 Volumes aren't copied. The copy gets
@@ -283,7 +319,9 @@
                     <Alert variant="warning">
                         <AlertDescription>
                             That project is on another cluster, and
-                            this resource runs on its current one.
+                            {group
+                                ? "its resources run"
+                                : "this resource runs"} on its current one.
                             Copy it instead.
                         </AlertDescription>
                     </Alert>

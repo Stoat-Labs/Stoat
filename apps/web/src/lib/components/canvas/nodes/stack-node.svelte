@@ -126,6 +126,17 @@
                 {data.collapsed ? "Show contents" : "Hide contents"}
             </MenuItem>
             {#if data.group}
+                <MenuItem
+                    onclick={() => actions.edit("duplicate", id)}
+                >
+                    Duplicate…
+                </MenuItem>
+                <MenuItem onclick={() => actions.edit("move", id)}>
+                    Move to Project…
+                </MenuItem>
+                <MenuItem onclick={() => actions.edit("copy", id)}>
+                    Copy to Project…
+                </MenuItem>
                 <!-- Railway's "Remove Group": the frame goes, its resources stay. -->
                 <MenuItem onclick={() => actions.ungroup(id)}>
                     Remove Group

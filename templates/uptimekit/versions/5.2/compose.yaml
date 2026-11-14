@@ -1,6 +1,6 @@
 services:
     uptimekit-dash:
-        image: ghcr.io/uptimekit/dash:5.2.1
+        image: ghcr.io/uptimekit/dash:latest
         restart: unless-stopped
         x-ports:
             - ${UPTIMEKIT_HOST}:3000/https
