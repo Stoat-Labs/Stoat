@@ -115,15 +115,18 @@ Kudos to the contributors of [Coolify](https://coolify.io/) and [Dokploy](https:
 [![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
 ## Screenshots
+from my instance
 
-<img width="2242" height="1334" alt="image" src="https://github.com/user-attachments/assets/c3ac1f85-a097-4f1e-a603-a5d183ef8dbd" />
-<img width="2242" height="1336" alt="image" src="https://github.com/user-attachments/assets/6cc931ac-b1d0-4dd8-b1a1-3f2f302f00f0" />
-<img width="2243" height="1338" alt="image" src="https://github.com/user-attachments/assets/27913699-748c-46f0-9b0a-55d0a47005f6" />
-<img width="2248" height="1336" alt="image" src="https://github.com/user-attachments/assets/6d69d901-efc5-4f3e-89a0-63e42de5f65e" />
-<img width="2240" height="1338" alt="image" src="https://github.com/user-attachments/assets/6a5b98b9-4c83-4e71-acfa-674291b77730" />
-<img width="2241" height="1337" alt="image" src="https://github.com/user-attachments/assets/7b059d7c-bfa4-4a10-ab08-3cd44cd3025b" />
+<img width="2417" height="1359" alt="image" src="https://github.com/user-attachments/assets/9e810ca1-af84-4f38-91f9-3a3a05f8a8cd" />
+<img width="2417" height="1351" alt="image" src="https://github.com/user-attachments/assets/8464bac8-202e-4861-85f3-5a2c6b74fcf6" />
+<img width="2413" height="1356" alt="image" src="https://github.com/user-attachments/assets/92c0e2b5-294d-4138-9028-9569de29ab90" />
+<img width="2422" height="1355" alt="image" src="https://github.com/user-attachments/assets/4bb8b34d-3de7-4317-b218-a13766d02bbd" />
+<img width="2421" height="1354" alt="image" src="https://github.com/user-attachments/assets/dcf0ff9c-c50e-44bc-9c8d-301924bfb1d3" />
+<img width="2415" height="1355" alt="image" src="https://github.com/user-attachments/assets/ce2ba6a4-1384-4797-b1bd-6443c3b35a1d" />
+<img width="2418" height="1357" alt="image" src="https://github.com/user-attachments/assets/8ff236e6-f63b-4c09-82d4-a850af93915d" />
 
-and there's more...
+
+[and there's more...](https://github.com/clowder-run/Clowder#quick-install)
 
 ---
 
